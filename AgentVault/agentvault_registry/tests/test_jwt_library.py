@@ -1,7 +1,8 @@
 """§DEPS (2026-09-28): the registry's JWTs are PyJWT's; python-jose is gone.
 
 python-jose pulled in ecdsa, whose P-256 timing flaw (CVE-2024-23342, PYSEC-2026-1325) will never be fixed upstream, and
-it was the last user of rsa and six. PyJWT was already installed (spiffe needs it, < 2.14). Every token the registry
+it was the last user of rsa and six. PyJWT was already installed (spiffe needs it: < 2.14 under spiffe 0.3.1, any 2.x
+since spiffe 0.3.2, V0647). Every token the registry
 mints is HS256 over the 64-byte API_KEY_SECRET, and a token minted before the swap must still be accepted after it (and
 the reverse after a rollback): the fixture below was made by python-jose 3.5.0 in the V0476 image with a test key.
 """
@@ -53,8 +54,15 @@ def test_an_expired_token_is_a_jwterror_where_the_code_catches_it():
 
 
 def test_pyjwt_is_the_line_spiffe_accepts():
-    major, minor = (int(x) for x in jwt.__version__.split(".")[:2])
-    assert (major, minor) >= (2, 13) and (major, minor) < (2, 14), jwt.__version__
+    # V0647: read the line from spiffe's own declared requirement rather than pinning it here (spiffe 0.3.1 said
+    # pyjwt<2.14, 0.3.2 says <3): the test follows the installed spiffe, and still refuses a PyJWT it would not accept
+    from importlib.metadata import requires
+
+    from packaging.requirements import Requirement
+
+    reqs = [Requirement(r) for r in (requires("spiffe") or []) if Requirement(r).name.lower() == "pyjwt"]
+    assert len(reqs) == 1, requires("spiffe")
+    assert reqs[0].specifier.contains(jwt.__version__), (jwt.__version__, str(reqs[0].specifier))
 
 
 SRC = pathlib.Path(security.__file__).resolve().parent

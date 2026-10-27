@@ -2,7 +2,7 @@
 
 # MCP Tool Catalog
 
-Generated from the public MCP server's own tool list at `TheProtocolReleaseV0646`. The page is written by `agentvault_registry/scripts/gen_reference_docs.py`; do not edit it, regenerate it. 421 tools in 11 groups.
+Generated from the public MCP server's own tool list at `TheProtocolReleaseV0647`. The page is written by `agentvault_registry/scripts/gen_reference_docs.py`; do not edit it, regenerate it. 421 tools in 11 groups.
 
 **Connect.** Every registry serves the public MCP server at `<registry>/mcp/rpc` (JSON-RPC 2.0), `<registry>/mcp/sse` and `<registry>/mcp`; `?mode=gateway` lists the core tools plus the discovery tools (`listToolsets`, `searchTools`, `describeTools`, `invokeTool`), and `?toolsets=a,b` lists chosen groups only. Each tool's full input schema is in the server's `tools/list` answer.
 

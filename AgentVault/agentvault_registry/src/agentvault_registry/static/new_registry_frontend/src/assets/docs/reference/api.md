@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from the registry's own OpenAPI description at `TheProtocolReleaseV0646`. The page is written by `agentvault_registry/scripts/gen_reference_docs.py`; do not edit it, regenerate it. 703 routes in 69 groups.
+Generated from the registry's own OpenAPI description at `TheProtocolReleaseV0647`. The page is written by `agentvault_registry/scripts/gen_reference_docs.py`; do not edit it, regenerate it. 703 routes in 69 groups.
 
 Each route's parameters, request bodies and answers are in the interactive description every registry serves: [api.theprotocol.cloud/docs](https://api.theprotocol.cloud/docs), machine-readable at [openapi.json](https://api.theprotocol.cloud/openapi.json); on your own registry, `<your-registry-url>/docs`.
 

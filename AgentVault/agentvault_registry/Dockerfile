@@ -96,8 +96,8 @@ RUN pip install --no-cache-dir -c /tmp/constraints.txt \
     "grpcio-tools>=1.78.0"
 
 # Install spiffe for mTLS support.
-# §DEPS (2026-09-27): spiffe 0.3.1 declares cryptography>=46 and pyjwt<2.14; the registry now runs cryptography 50 and
-# PyJWT 2.13, so spiffe installs WITH its dependency check. (Until V0473 it went in with --no-deps because the registry
+# §DEPS (2026-09-27): spiffe 0.3.1 declared cryptography>=46 and pyjwt<2.14; since V0647 spiffe 0.3.2 (pyjwt>=2,<3) and
+# PyJWT 2.15.1, with cryptography 50, so spiffe installs WITH its dependency check. (Until V0473 it went in with --no-deps because the registry
 # held cryptography at 41.0.7, and every image carried that one known conflict; the pip check below now allows none.)
 RUN pip install --no-cache-dir -c /tmp/constraints.txt spiffe cryptography PyJWT
 
@@ -145,10 +145,10 @@ RUN pip install --no-cache-dir -c /tmp/constraints.txt \
     prometheus-client==0.26.0 \
     prometheus-fastapi-instrumentator==8.1.0 \
     httpx==0.28.1 \
-    aiohttp==3.14.3 \
+    aiohttp==3.14.5 \
     pyotp==2.10.0 \
     "qrcode[pil]==8.2" \
-    Pillow==12.3.0 \
+    Pillow==13.0.0 \
     docker==7.2.0 \
     psutil==7.2.2 \
     "numpy>=1.24.0" \
