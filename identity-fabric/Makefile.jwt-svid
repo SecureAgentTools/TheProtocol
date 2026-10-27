@@ -1,0 +1,172 @@
+# Makefile for AgentVault Identity Fabric with JWT-SVID Support
+
+.PHONY: help init start stop test clean logs status jwt-svid-init jwt-svid-test
+
+# Default target
+help:
+	@echo "AgentVault Identity Fabric - JWT-SVID Management"
+	@echo "==============================================="
+	@echo ""
+	@echo "Basic Commands:"
+	@echo "  make init           - Initialize SPIRE with mTLS support"
+	@echo "  make jwt-svid-init  - Add JWT-SVID configuration"
+	@echo "  make start          - Start all services"
+	@echo "  make stop           - Stop all services"
+	@echo "  make status         - Check service status"
+	@echo "  make test           - Run JWT-SVID test suite"
+	@echo "  make logs           - Show service logs"
+	@echo "  make clean          - Clean up everything"
+	@echo ""
+	@echo "JWT-SVID Commands:"
+	@echo "  make register-agent EMAIL=user@example.com  - Register an agent"
+	@echo "  make list-agents    - List registered agents"
+	@echo "  make test-jwt-svid  - Test JWT-SVID acquisition"
+	@echo "  make validate-jwt   TOKEN=...  - Validate a JWT-SVID"
+	@echo ""
+	@echo "Debugging Commands:"
+	@echo "  make debug-registry - Show Registry JWT-SVID logs"
+	@echo "  make debug-teg      - Show TEG validation logs"
+	@echo "  make health-check   - Check all service health"
+
+# Initialize SPIRE with mTLS
+init:
+	@echo "Initializing SPIRE with mTLS support..."
+	chmod +x init-spire-mtls.sh
+	./init-spire-mtls.sh
+	@echo "✓ SPIRE initialized with mTLS"
+
+# Add JWT-SVID support
+jwt-svid-init: init
+	@echo "Adding JWT-SVID configuration..."
+	chmod +x init-spire-jwt-svid.sh
+	./init-spire-jwt-svid.sh
+	@echo "✓ JWT-SVID support configured"
+
+# Start all services
+start:
+	@echo "Starting all services..."
+	docker-compose -f docker-compose.full.yml up -d
+	@echo "✓ Services started"
+	@echo "Waiting for services to be ready..."
+	@sleep 10
+	@make health-check
+
+# Stop all services
+stop:
+	@echo "Stopping all services..."
+	docker-compose -f docker-compose.full.yml down
+	@echo "✓ Services stopped"
+
+# Check service status
+status:
+	@echo "Service Status:"
+	@echo "=============="
+	@docker-compose -f docker-compose.full.yml ps
+
+# Run JWT-SVID test suite
+test:
+	@echo "Running JWT-SVID test suite..."
+	@python test_jwt_svid_e2e.py
+
+# Show logs
+logs:
+	docker-compose -f docker-compose.full.yml logs -f
+
+# Clean up everything
+clean:
+	@echo "Cleaning up..."
+	docker-compose -f docker-compose.full.yml down -v
+	@echo "✓ Cleanup complete"
+
+# Register an agent
+register-agent:
+ifndef EMAIL
+	$(error EMAIL is required. Usage: make register-agent EMAIL=user@example.com)
+endif
+	@echo "Registering agent: $(EMAIL)"
+	@SAFE_AGENT_ID=$$(echo "$(EMAIL)" | sed 's/@/_at_/g' | sed 's/\./_dot_/g'); \
+	docker exec agentvault-spire-server \
+		/opt/spire/bin/spire-server entry create \
+		-parentID spiffe://agentvault.com/service/registry-backend \
+		-spiffeID "spiffe://agentvault.com/agent/$$SAFE_AGENT_ID" \
+		-selector "k8s:ns:agentvault" \
+		-selector "k8s:sa:agent-$$SAFE_AGENT_ID" \
+		-ttl 3600 \
+		-jwtSVIDTTL 300
+	@echo "✓ Agent registered: spiffe://agentvault.com/agent/$$SAFE_AGENT_ID"
+
+# List registered agents
+list-agents:
+	@echo "Registered Agents:"
+	@echo "=================="
+	@docker exec agentvault-spire-server \
+		/opt/spire/bin/spire-server entry show | \
+		grep -A3 "spiffe://agentvault.com/agent/" || echo "No agents registered"
+
+# Test JWT-SVID acquisition
+test-jwt-svid:
+	@echo "Testing JWT-SVID acquisition..."
+	@docker exec agentvault-registry-backend python -c "\
+from agentvault_registry.core.jwt_svid_provider import acquire_agent_jwt_svid; \
+import asyncio; \
+token = asyncio.run(acquire_agent_jwt_svid('test@example.com')); \
+print(f'✓ JWT-SVID acquired successfully'); \
+print(f'Token (first 50 chars): {token[:50]}...')"
+
+# Validate a JWT-SVID token
+validate-jwt:
+ifndef TOKEN
+	$(error TOKEN is required. Usage: make validate-jwt TOKEN=eyJ...)
+endif
+	@echo "Validating JWT-SVID..."
+	@docker exec agentvault-teg-core python -c "\
+import jwt; \
+payload = jwt.decode('$(TOKEN)', options={'verify_signature': False}); \
+print('Token Claims:'); \
+import json; \
+print(json.dumps(payload, indent=2))"
+
+# Debug Registry JWT-SVID operations
+debug-registry:
+	@echo "Registry JWT-SVID Logs:"
+	@echo "======================"
+	@docker logs agentvault-registry-backend 2>&1 | grep -i "jwt-svid" | tail -20
+
+# Debug TEG JWT-SVID validation
+debug-teg:
+	@echo "TEG JWT-SVID Validation Logs:"
+	@echo "============================"
+	@docker logs agentvault-teg-core 2>&1 | grep -i "jwt-svid" | tail -20
+
+# Health check all services
+health-check:
+	@echo "Health Check Results:"
+	@echo "===================="
+	@echo -n "Registry Backend: "
+	@curl -s http://localhost:8000/health | jq -r '.status' || echo "FAILED"
+	@echo -n "TEG Core Service: "
+	@curl -sk https://localhost:8001/health | jq -r '.status' || echo "FAILED"
+	@echo -n "JWT-SVID Validator: "
+	@curl -sk https://localhost:8001/health | jq -r '.checks.jwt_svid_validator.status' || echo "FAILED"
+	@echo -n "mTLS Status: "
+	@curl -sk https://localhost:8001/health | jq -r '.checks.mtls.status' || echo "FAILED"
+	@echo -n "SPIRE Server: "
+	@curl -s http://localhost:8080/ready | grep -q "true" && echo "healthy" || echo "FAILED"
+	@echo -n "SPIRE Agent: "
+	@curl -s http://localhost:8082/ready | grep -q "true" && echo "healthy" || echo "FAILED"
+
+# Quick start for development
+quickstart: jwt-svid-init start
+	@echo ""
+	@echo "AgentVault Identity Fabric is ready!"
+	@echo "===================================="
+	@echo ""
+	@echo "Next steps:"
+	@echo "1. Register test agents: make register-agent EMAIL=test@example.com"
+	@echo "2. Run tests: make test"
+	@echo "3. Check logs: make logs"
+	@echo ""
+	@echo "Services available at:"
+	@echo "- Registry Backend: http://localhost:8000"
+	@echo "- TEG Core Service: https://localhost:8001"
+	@echo "- SPIRE Server: http://localhost:8080"

@@ -1,0 +1,66 @@
+[build-system]
+# Pinned (2026-09-22): hatchling 1.28+ writes Metadata-Version 2.5, which twine 6.2.0 refuses to upload
+# ("'2.5' is not a valid metadata version"); 1.27.0 writes 2.4, the version every published release carries.
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "theprotocol-sdk"
+version = "0.7.6"
+description = "Build sovereign AI agents with DID identity on TheProtocol. Speaks the A2A protocol (v1.0) natively, with bridges for Google A2A, ANP, and MCP. Works with Vertex AI, AWS AgentCore, LangGraph, CrewAI."
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+authors = [
+    {name = "TheProtocol", email = "sdk@theprotocol.cloud"},
+]
+keywords = ["agents", "a2a", "a2a-protocol", "agent-to-agent", "ai-agents", "mcp", "did", "sovereign", "federation", "vertex-ai", "langchain", "crewai", "fastapi", "json-rpc", "theprotocol"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "pydantic>=2.0,<3.0",
+    "httpx[http2]>=0.27",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+server = ["fastapi>=0.111"]
+keyring = ["keyring>=24"]
+anp = ["cryptography>=42.0"]
+all = ["theprotocol-sdk[server,keyring,anp]"]
+test = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "respx>=0.20",
+    "cryptography>=42.0",
+    "httpx>=0.27",
+]
+
+[project.urls]
+Homepage = "https://theprotocol.cloud"
+Documentation = "https://docs.theprotocol.cloud"
+"API Reference" = "https://api.theprotocol.cloud/docs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/theprotocol"]
+
+# Published-artifact provenance lives in dist_release/ for our own records; a
+# source distribution has no business shipping PREVIOUS releases' binaries.
+# Without this the 0.6.2 sdist carried the 0.5.1 and 0.6.1 wheels (636K vs a
+# 104K wheel), and every future release would inherit the one before it.
+[tool.hatch.build.targets.sdist]
+exclude = ["dist_release", "dist", "htmlcov", ".pytest_cache"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

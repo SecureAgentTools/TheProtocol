@@ -1,0 +1,115 @@
+# §MTLSHOPS T2 (S4, 2026-09-15): {{REGISTRY_NAME}}-nginx-edge, the frame's host edge. Each app server block below is one
+# host door: a loopback port docker publishes from this container alone, proxied to one app's unix socket. The host vhost
+# in front already wrote X-Real-IP and X-Forwarded-For; they pass through as they arrived, because setting them here would
+# name the docker gateway as every caller. Websockets upgrade.
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+# §MTLSHOPS T2 (S4, 2026-09-15, agentvault2-85's rule): an app behind a socket has no peer address, so every door names the
+# caller: the host vhost's X-Real-IP as it arrived, or, when a host-local caller wrote none, the address this edge saw.
+map $http_x_real_ip $edge_real_ip {
+    ""      $remote_addr;
+    default $http_x_real_ip;
+}
+
+# The container's own liveness, on its loopback only.
+server {
+    listen 127.0.0.1:8080;
+    location = /health {
+        access_log off;
+        return 200 "ok\n";
+    }
+}
+
+# Grafana: the compose publishes the frame's Grafana port on the host's loopback to 3000 here.
+server {
+    listen 3000;
+    # The app's own limits apply, as they did when Grafana published the port itself.
+    client_max_body_size 0;
+    location / {
+        proxy_pass http://unix:/sock/grafana/grafana.sock:;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $edge_real_ip;
+        proxy_set_header X-Forwarded-For   $http_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        $connection_upgrade;
+    }
+}
+
+# ntfy: the compose publishes the frame's push port on the host's loopback to 80 here. The phones' door, subscribe only, as
+# a PATH allowlist: ntfy also publishes on GET (/<topic>/publish?message=, /<topic>/send, /<topic>/trigger), so a method
+# limit alone lets a publish through (measured on v2.11.0). Allowed, GET and HEAD only: ntfy's health, and for one or more
+# comma-separated topics json, sse, raw and ws (the subscribe streams) and auth (the ntfy app's check when a subscription
+# is added; it creates no message, measured). Everything else is 403, the web app and every publish form included. The
+# registry publishes through nginx-ntfy.
+server {
+    listen 80;
+    location = /v1/health {
+        limit_except GET { deny all; }
+        proxy_pass http://unix:/sock/ntfy/ntfy.sock:;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $edge_real_ip;
+        proxy_set_header X-Forwarded-For   $http_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        $connection_upgrade;
+    }
+    location ~ "^/[-_A-Za-z0-9]{1,64}(,[-_A-Za-z0-9]{1,64})*/(json|sse|raw|ws|auth)$" {
+        limit_except GET { deny all; }
+        proxy_pass http://unix:/sock/ntfy/ntfy.sock:;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $edge_real_ip;
+        proxy_set_header X-Forwarded-For   $http_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        $connection_upgrade;
+        # a subscription stays open (ntfy sends a keepalive every 45 s); the host vhost's own timeout decides
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+    }
+    location / {
+        return 403;
+    }
+}
+
+# The auditor: the compose publishes the frame's auditor port on the host's loopback to 8045 here (its page, its API and its
+# websocket; its admin routes take the auditor's own token). Prometheus scrapes it through nginx-auditor instead.
+server {
+    listen 8045;
+    location / {
+        proxy_pass http://unix:/sock/auditor/auditor.sock:;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $edge_real_ip;
+        proxy_set_header X-Forwarded-For   $http_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        $connection_upgrade;
+    }
+}
+
+# The event store: the compose publishes the frame's store port on the host's loopback to 8200 here (the es vhost's ledger
+# reads and client-certificate writes, and the console's ledger sockets). The host vhost's certificate headers and its proxy
+# marker pass through as they arrived; the store honours them only beside the right marker.
+server {
+    listen 8200;
+    client_max_body_size 50m;
+    location / {
+        proxy_pass http://unix:/sock/event-store/event-store.sock:;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $edge_real_ip;
+        proxy_set_header X-Forwarded-For   $http_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        $connection_upgrade;
+        proxy_read_timeout 86400s;
+    }
+}

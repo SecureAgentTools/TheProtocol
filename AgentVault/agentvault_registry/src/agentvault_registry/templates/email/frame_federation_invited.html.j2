@@ -1,0 +1,20 @@
+{% extends "_base.html.j2" %}
+{% set kicker = "// FRAME FEDERATION INVITATION" %}
+{% set headline = "Inbound Federation Request: " ~ initiator_name %}
+{% block body %}
+<p>A new frame federation invitation has been received.</p>
+{% with rows=[
+  ('Name', initiator_name),
+  ('Trust domain', trust_domain),
+  ('Bundle endpoint', bundle_endpoint_url),
+  ('Federation endpoint', federation_endpoint_url),
+  ('Contact', contact_email | default('n/a')),
+  ('Source IP', source_ip | default('unknown')),
+  ('Invitation ID', invitation_id)
+] %}{% include '_partials/data_table.html' %}{% endwith %}
+{% if description %}
+<p><strong>Description:</strong></p>
+<p style="white-space: pre-wrap;">{{ description }}</p>
+{% endif %}
+{% with cta_url=registry_ui_url ~ '#/federation', cta_label="REVIEW INVITATION" %}{% include '_partials/cta_button.html' %}{% endwith %}
+{% endblock %}

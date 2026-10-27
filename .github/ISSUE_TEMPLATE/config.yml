@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/SecureAgentTools/TheProtocol/security/policy
+    about: Never file a security vulnerability as an issue. The security policy says where to send it.
+  - name: Licensing or a commercial licence
+    url: https://github.com/SecureAgentTools/TheProtocol/blob/main/LICENSING.md
+    about: Which licence covers which component, and who to ask about a commercial licence.

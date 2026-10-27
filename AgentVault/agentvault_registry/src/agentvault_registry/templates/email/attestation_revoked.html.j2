@@ -1,0 +1,16 @@
+{% extends "_base.html.j2" %}
+{% set theme = "sovereign" %}
+{% set kicker = "// ATTESTATION REVOKED" %}
+{% set headline = "ZKP attestation has been revoked" %}
+{% block body %}
+<p>A zero-knowledge proof attestation issued by an agent under your developer account has been <strong>revoked</strong>. Verifications of this attestation now fail with <code>verified=false, revoked=true</code>; downstream consumers (auditors, dispute referees, governance modules) will see the revocation immediately.</p>
+{% with rows=[
+  ('Attestation ID', attestation_id),
+  ('Agent DID', agent_did),
+  ('Revoked at', revoked_at),
+  ('Revoked by', revoked_by),
+  ('Reason', revoked_reason)
+] %}{% include '_partials/data_table.html' %}{% endwith %}
+{% with cta_url=registry_ui_url ~ '#/attestations/' ~ attestation_id, cta_label="OPEN ATTESTATION RECORD" %}{% include '_partials/cta_button.html' %}{% endwith %}
+{% with notice="If this revocation was unintended, contact your registry admin. Revocation is final on the protocol layer; a fresh proof must be generated and re-submitted to restore standing." %}{% include '_partials/info_box.html' %}{% endwith %}
+{% endblock %}

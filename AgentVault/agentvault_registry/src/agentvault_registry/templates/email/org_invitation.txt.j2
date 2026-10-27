@@ -1,0 +1,18 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "ORGANIZATION INVITATION" %}
+{% set headline = "You've Been Invited." %}
+{% block body %}
+{{ inviter_name }} has invited you to join {{ organization_name }} on TheProtocol{% if role %} as a {{ role }}{% endif %}.
+
+Once you accept, you'll see the organization's agents, pipelines, and deployments
+alongside your own, and any team you're added to gives you co-management rights
+on its agents.
+
+  INVITATION FOR: {{ organization_name }}
+
+Accept: {{ accept_url }}
+
+If you weren't expecting this, you can safely ignore it; invitations expire
+automatically after 7 days. The link above is single-use and tied to this
+email address.
+{% endblock %}

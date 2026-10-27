@@ -1,0 +1,26 @@
+[
+ {
+  "file": "v03_real.json",
+  "expect": "valid"
+ },
+ {
+  "file": "v1_native.json",
+  "expect": "valid"
+ },
+ {
+  "file": "minimal_legacy.json",
+  "expect": "valid"
+ },
+ {
+  "file": "null_valued_keys.json",
+  "expect": "valid"
+ },
+ {
+  "file": "no_endpoint.json",
+  "expect": "no_endpoint"
+ },
+ {
+  "file": "negative_missing_name.json",
+  "expect": "invalid"
+ }
+]

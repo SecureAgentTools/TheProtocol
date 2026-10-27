@@ -1,0 +1,35 @@
+{% extends "_base.txt.j2" %}
+{% block body %}
+ACCOUNT DELETION SCHEDULED
+==========================
+
+You requested deletion of your TheProtocol account on {{ deletion_requested_at }}.
+Your account is now in a {{ cooling_off_days }}-day cooling-off period.
+
+Account:        {{ developer_email or developer_name }}
+Requested:      {{ deletion_requested_at }}
+Anonymizes on:  {{ anonymizes_at_human }}
+Cooling-off:    {{ cooling_off_days }} days
+
+You can still cancel. If you didn't mean to delete your account, or
+you've changed your mind, visit the link below to revert immediately.
+After {{ anonymizes_at_human }} the action becomes irreversible: your
+profile, agents, unit balances, and access keys will be wiped.
+
+CANCEL DELETION → KEEP MY ACCOUNT:
+{{ cancel_url }}
+
+What happens at anonymization:
+  - All agents you own are revoked and their secrets wiped.
+  - Liquid and locked {{ frame_currency }} in your agents is forfeited to the network
+    treasury.
+  - Your profile fields (name, email, avatar, bio, flare
+    customization) are cleared.
+  - API keys and webhooks are deleted.
+  - Financial records (fiat purchases) are retained in anonymized form
+    for 10 years per German tax law (§ 147 AO). See our Privacy Policy
+    § 4.5.
+
+If you didn't request this, please cancel the deletion immediately and
+rotate your password.
+{% endblock %}

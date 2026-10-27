@@ -1,0 +1,73 @@
+[project]
+    name = "agentvault-cli"
+    version = "1.0.0"
+    description = "Command-line client for the AgentVault ecosystem."
+    authors = [{ name = "Raphael Zbigniew Jeziorny", email = "r.jeziorny@theprotocol.cloud" }]
+    license = { text = "Apache-2.0" }
+    readme = "README.md"
+    requires-python = ">=3.10"
+    keywords = ["ai", "agent", "a2a", "mcp", "cli", "command-line", "client", "tool", "security", "key-management", "python", "click", "rich", "developer-tools", "asyncclick"]
+    classifiers = [
+        "Development Status :: 3 - Alpha",
+        "Intended Audience :: Developers",
+        "Intended Audience :: System Administrators",
+        "License :: OSI Approved :: Apache Software License",
+        "Operating System :: OS Independent",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
+        "Environment :: Console",
+        "Topic :: Utilities",
+        "Topic :: Security",
+        "Topic :: Communications",
+        "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    ]
+
+    dependencies = [
+        "asyncclick>=8.0,<9.0",
+        "httpx>=0.27,<1.0",
+        "rich>=13.0,<15.0",
+        "agentvault>=1.0.0,<2.0.0",
+    ]
+
+    [project.scripts]
+    agentvault = "agentvault_cli.main:cli"
+
+    [project.optional-dependencies]
+    dev = [
+        "pytest>=9.1,<10",
+        "pytest-mock>=3.16,<4.0",
+        "pytest-httpx>=0.36,<0.37",   # §DEPS: the line that supports httpx 0.28
+        "asyncclick>=8.0,<9.0",
+    ]
+    [project.urls]
+    Homepage = "https://theprotocol.cloud"
+    Documentation = "https://theprotocol.cloud"
+    Repository = "https://github.com/SecureAgentTools/TheProtocol"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "agentvault-cli"
+version = "1.0.0"
+packages = [{include = "agentvault_cli", from = "src"}]
+
+[tool.poetry.dependencies]
+python = ">=3.10"
+asyncclick = ">=8.0,<9.0"
+httpx = ">=0.27,<1.0"
+rich = ">=13.0,<15.0"
+agentvault = {path = "../agentvault_library", develop = true}   # the sibling library, as the lock always resolved it
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=9.1,<10"
+pytest-mock = ">=3.16,<4.0"
+pytest-httpx = ">=0.36,<0.37"
+asyncclick = ">=8.0,<9.0"
+
+[tool.poetry.scripts]
+agentvault = "agentvault_cli.main:cli"

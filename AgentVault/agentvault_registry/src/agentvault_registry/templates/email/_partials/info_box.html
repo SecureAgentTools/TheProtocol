@@ -1,0 +1,20 @@
+{#
+  Notice / warning box. Use:
+    {% with notice="If you didn't request this..." %}
+      {% include '_partials/info_box.html' %}
+    {% endwith %}
+
+  Or with multi-line content via raw inclusion (override `notice`).
+#}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 18px 0;">
+  <tr>
+    <td style="padding: 12px 14px;
+               border-left: 3px solid {{ palette.info_border }};
+               background: rgba(0,0,0,0.18);
+               font-size: 12px;
+               color: {{ palette.text_body }};
+               line-height: 1.6;">
+      {{ notice | safe }}
+    </td>
+  </tr>
+</table>

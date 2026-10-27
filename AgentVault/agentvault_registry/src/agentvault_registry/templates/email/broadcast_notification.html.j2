@@ -1,0 +1,9 @@
+{# Theme is set dynamically by the caller via context['theme'] override.
+   When broadcast_type is "warning"|"critical", theme=sovereign; else neural. #}
+{% extends "_base.html.j2" %}
+{% set kicker = "// " ~ (type_label | default('NOTICE')) %}
+{% set headline = title %}
+{% block body %}
+<p style="white-space: pre-wrap;">{{ body }}</p>
+{% with cta_url=registry_ui_url, cta_label="OPEN CONSOLE" %}{% include '_partials/cta_button.html' %}{% endwith %}
+{% endblock %}

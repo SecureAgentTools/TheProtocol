@@ -1,0 +1,10 @@
+# Canonical pass-case witness for contentSafetyAttestation/v1.0.0.
+# Used by generate_zkp_keys.sh to produce target/canonical_proof.bin.
+# Public:  policy hash, time window hash, total samples, min rejection threshold.
+# Private: actual rejection count.
+# Math:    rejected 950 of 1000 — comfortably above the 900 minimum.
+policy_parameters_hash = "12345"
+time_window_hash = "67890"
+total_samples = "1000"
+min_rejection_count = "900"
+actual_rejection_count = "950"

@@ -1,0 +1,25 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "OPERATOR ACTIVATION COMPLETE" %}
+{% set headline = "Welcome to the Federation" %}
+{% block body %}
+Your operator registry license for {{ name }} has been activated successfully.
+
+  Developer account:  {{ developer_email }}
+  Bundle:             {{ bundle_status | default('Provisioned: download from the Operator Portal') }}
+
+{% if pull_token %}
+--- Docker Image Registry Credentials (token auth) ---
+  Username:    {{ docker_username }}
+  Pull Token:  {{ pull_token }}
+  Login:       docker login images.raphaeljeziorny.com -u {{ docker_username }} -p <token>
+
+THIS TOKEN IS SHOWN ONCE AND CANNOT BE RECOVERED.
+If lost, request a token rotation from the admin.
+-----------------------------------------------------
+{% endif %}
+
+Visit your Operator Portal at {{ registry_ui_url }} to download
+your deployment bundle and get started.
+
+Welcome to the federation.
+{% endblock %}

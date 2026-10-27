@@ -1,0 +1,31 @@
+# =============================================================
+# OWL19: SVID Certificate Writer for nginx mTLS Sidecars
+# =============================================================
+# Multi-stage build:
+#   Stage 1: Extract spire-agent binary from official SPIRE image
+#   Stage 2: Alpine with shell, openssl, and the spire-agent binary
+#
+# The SPIRE agent image is distroless (no /bin/sh), so we need
+# Alpine as the runtime base to run our cert-writer.sh script.
+# =============================================================
+
+FROM ghcr.io/spiffe/spire-agent:1.15.3 AS spire
+
+FROM alpine:3.24
+
+# Install openssl for certificate inspection, jq for federated bundle extraction
+RUN apk add --no-cache openssl jq
+
+# Copy spire-agent binary from official image
+COPY --from=spire /opt/spire/bin/spire-agent /opt/spire/bin/spire-agent
+
+# Copy the cert-writer script
+COPY cert-writer.sh /opt/cert-writer.sh
+RUN chmod +x /opt/cert-writer.sh
+
+ENTRYPOINT ["/bin/sh", "/opt/cert-writer.sh"]
+
+# OCI image labels (REVIEW_2026-09-30_LICENSING.md): the licence scanners read, and where the source is
+LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+      org.opencontainers.image.source="https://github.com/SecureAgentTools/TheProtocol" \
+      org.opencontainers.image.url="https://theprotocol.cloud"

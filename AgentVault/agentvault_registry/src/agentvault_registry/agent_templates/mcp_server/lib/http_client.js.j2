@@ -1,0 +1,68 @@
+/**
+ * http_client.js — Shared HTTP wrapper with auto-auth
+ * All Registry API calls go through here.
+ */
+'use strict';
+
+const { getAgentJwt, invalidateJwt } = require('./auth');
+const config = require('./config');
+
+/**
+ * Make an authenticated request to the Registry.
+ * @param {string} path - API path e.g. '/api/v1/teg/balance'
+ * @param {object} opts - fetch options (method, body, headers)
+ * @param {boolean} useAgentJwt - true (default) = agent JWT, false = no auth
+ * @returns {Promise<any>} parsed JSON response
+ */
+async function registryRequest(path, opts = {}, useAgentJwt = true) {
+  const url = `${config.registryUrl}${path}`;
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+
+  if (useAgentJwt) {
+    const jwt = await getAgentJwt();
+    headers['Authorization'] = `Bearer ${jwt}`;
+  }
+
+  const res = await fetch(url, { ...opts, headers });
+
+  // On 401, invalidate cached JWT and retry once
+  if (res.status === 401 && useAgentJwt) {
+    invalidateJwt();
+    const jwt2 = await getAgentJwt();
+    headers['Authorization'] = `Bearer ${jwt2}`;
+    const res2 = await fetch(url, { ...opts, headers });
+    return _parseResponse(res2, path);
+  }
+
+  return _parseResponse(res, path);
+}
+
+async function _parseResponse(res, path) {
+  const text = await res.text();
+  if (!res.ok) {
+    let detail = text;
+    try { detail = JSON.parse(text)?.detail || text; } catch {}
+    throw new Error(`[HTTP] ${res.status} ${res.statusText} — ${path}: ${detail}`);
+  }
+  if (!text) return {};
+  try { return JSON.parse(text); } catch { return { raw: text }; }
+}
+
+/**
+ * GET helper
+ */
+async function get(path, useAgentJwt = true) {
+  return registryRequest(path, { method: 'GET' }, useAgentJwt);
+}
+
+/**
+ * POST helper
+ */
+async function post(path, body, useAgentJwt = true) {
+  return registryRequest(path, {
+    method: 'POST',
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  }, useAgentJwt);
+}
+
+module.exports = { get, post, registryRequest };

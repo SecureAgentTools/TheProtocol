@@ -1,0 +1,13 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "REGISTRY LICENSE REINSTATED" %}
+{% set headline = "License Reinstated: " ~ name %}
+{% block body %}
+Your operator registry license for {{ name }} has been REINSTATED.
+
+Your operator status has been restored to approved. All existing SPIRE and
+Docker credentials remain valid: no re-deployment is required.
+
+Welcome back to the federation.
+
+Open Operator Portal: {{ registry_ui_url }}
+{% endblock %}

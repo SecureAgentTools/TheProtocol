@@ -1,0 +1,22 @@
+{# Generic admin/ops notification.
+   Caller passes:
+     kicker_label  (str)        — small monospace label (defaults to "ADMIN NOTICE")
+     headline_text (str)        — large header text
+     body_text     (str)        — main paragraph (preserves newlines)
+     rows          (list?)      — optional list of (label, value) tuples
+     notice_text   (str?)       — optional info-box body
+   Theme defaults to neural; pass theme="sovereign" via context for security/critical. #}
+{% extends "_base.html.j2" %}
+{% set kicker = "// " ~ (kicker_label | default('ADMIN NOTICE')) %}
+{% set headline = headline_text | default('Notification') %}
+{% block body %}
+{% if body_text %}
+<p style="white-space: pre-wrap;">{{ body_text }}</p>
+{% endif %}
+{% if rows %}
+{% with rows=rows %}{% include '_partials/data_table.html' %}{% endwith %}
+{% endif %}
+{% if notice_text %}
+{% with notice=notice_text %}{% include '_partials/info_box.html' %}{% endwith %}
+{% endif %}
+{% endblock %}

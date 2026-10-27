@@ -1,0 +1,20 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "CROSS-FRAME BRIDGE EXPIRED" %}
+{% set headline = "Bridge transfer didn't redeem in time: funds unlocked" %}
+{% block body %}
+Your cross-frame bridge transfer expired before it was redeemed on the
+destination frame. The escrowed amount has been automatically unlocked
+back to the source agent.
+
+  Bridge transaction:  {{ bridge_tx_id }}
+  Source agent:        {{ source_agent_did }}
+  Source frame:        {{ source_frame_id }}
+  Target frame:        {{ target_frame_id }}
+  Amount:              {{ amount }} {{ frame_currency }}
+  Expires at:          {{ expires_at or '-' }}
+  Expired at:          {{ expired_at }}
+
+Open bridge console: {{ registry_ui_url }}#/bridge
+
+No action required: the source agent's balance has already been credited.
+{% endblock %}

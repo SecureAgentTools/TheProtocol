@@ -1,0 +1,7 @@
+[package]
+name = "fair_cross_registry_fee"
+type = "bin"
+authors = ["TheProtocol"]
+compiler_version = ">=0.1.0"
+
+[dependencies]

@@ -1,0 +1,13 @@
+# §SOVKIT — the frame's own Prometheus (rendered per frame), under the uid every shipped dashboard names (DS_PROMETHEUS).
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: DS_PROMETHEUS
+    access: proxy
+    # §MTLSHOPS T2 (2026-09-15): through the kit's egress (kit/grafana/egress.conf), which dials Prometheus over mutual TLS;
+    # its listener is reachable only on the private network Grafana, the egress and Prometheus share.
+    url: http://{{REGISTRY_NAME}}-grafana-egress:9090
+    isDefault: true
+    editable: false
+    jsonData: { timeInterval: '15s', httpMethod: POST }

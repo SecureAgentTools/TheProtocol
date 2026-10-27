@@ -1,0 +1,66 @@
+{#
+  Master HTML email layout for TheProtocol.
+
+  Variables expected:
+    palette       (dict)  — theme color tokens, injected by send_themed_email
+    theme         (str)   — "neural" | "sovereign", set in child via {% set theme = "..." %}
+    kicker        (str)   — small monospace label above the headline
+    headline      (str)   — large header text
+    project_name  (str)   — defaults to "TheProtocol"
+    current_year  (int)   — for footer copyright
+
+  Rendering pipeline:
+    1. Jinja renders this with the child's body block.
+    2. premailer.transform() inlines all `<style>` rules into style="" attributes
+       so Gmail/Outlook/Apple Mail keep the styling.
+    3. Multipart MIME wraps this with the matching .txt.j2 plain text body.
+#}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark only" />
+  <meta name="supported-color-schemes" content="dark only" />
+  <title>{{ subject | default('TheProtocol') }}</title>
+  <style>
+    /* Premailer inlines these. Keep selectors simple; no compound selectors. */
+    body { margin: 0; padding: 0; background: {{ palette.bg }}; font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: {{ palette.text_body }}; -webkit-font-smoothing: antialiased; }
+    a { color: {{ palette.accent }}; text-decoration: none; }
+    .em-outer-table { width: 100%; background: {{ palette.bg }}; padding: 32px 16px; }
+    .em-card { width: 100%; max-width: 600px; background: {{ palette.surface }}; border: 1px solid {{ palette.border }}; border-radius: 6px; }
+    .em-header { padding: 36px 32px 22px; border-bottom: 1px solid {{ palette.border }}; text-align: center; background: radial-gradient(circle at 50% 0%, {% if theme == 'sovereign' %}rgba(220,38,38,0.06){% else %}rgba(0,210,210,0.05){% endif %} 0%, transparent 70%); }
+    .em-kicker { font-family: 'IBM Plex Mono', 'Courier New', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.22em; color: {{ palette.kicker }}; margin: 14px 0 6px; }
+    .em-headline { font-family: 'Orbitron', 'IBM Plex Sans', sans-serif; font-size: 22px; font-weight: 700; color: {{ palette.headline }}; margin: 0; line-height: 1.3; }
+    .em-body { padding: 24px 32px 8px; font-size: 14px; line-height: 1.7; color: {{ palette.text_body }}; }
+    .em-body p { margin: 0 0 14px; }
+    .em-body strong { color: {{ palette.text_primary }}; font-weight: 600; }
+    .em-body code { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: {{ palette.accent }}; background: rgba(0,0,0,0.25); padding: 2px 6px; border-radius: 3px; }
+    .em-footer { padding: 18px 32px 22px; border-top: 1px solid {{ palette.border }}; font-size: 11px; color: {{ palette.muted }}; line-height: 1.6; }
+    .em-footer a { color: {{ palette.muted }}; text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <table role="presentation" class="em-outer-table" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+      <td align="center">
+        <table role="presentation" class="em-card" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td class="em-header">
+              {% include '_partials/logo_chevron.html' %}
+              <div class="em-kicker">{{ kicker | default('// NOTIFICATION') }}</div>
+              <h1 class="em-headline">{{ headline | default('TheProtocol') }}</h1>
+            </td>
+          </tr>
+          <tr>
+            <td class="em-body">
+              {% block body %}{% endblock %}
+            </td>
+          </tr>
+          {% include '_partials/footer.html' %}
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

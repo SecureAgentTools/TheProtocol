@@ -1,0 +1,9 @@
+function navigateToAgent(agent: any) {
+  agentStore.currentAgent = { ...agent, name: agentName(agent) }
+  router.push({ name: 'agent-details', params: { agentId: agent.did } })
+}
+
+function editAgent(agent: any) {
+  agentStore.currentAgent = { ...agent, name: agentName(agent) }
+  router.push({ name: 'agent-details', params: { agentId: agent.did }, query: { edit: 'true' } })
+}

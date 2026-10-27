@@ -1,0 +1,1 @@
+"""AgentVault Registry CLI module"""

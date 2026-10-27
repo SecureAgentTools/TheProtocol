@@ -1,0 +1,35 @@
+# Caddy reverse-proxy config for a standalone TheProtocol registry.
+# DOMAIN and ACME_EMAIL are read from the environment (set in .env.operator).
+#
+# Caddy automatically obtains and renews a Let's Encrypt certificate for {$DOMAIN}
+# and terminates TLS, forwarding requests to the registry container on the internal
+# Docker network. No manual certificate management required.
+
+{
+	# Email for Let's Encrypt expiry/renewal notices (optional but recommended).
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	# Proxy everything to the registry (HTTP, internal network).
+	reverse_proxy registry:8000 {
+		# Forward the real client info so the app sees correct scheme/host/IP.
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host {host}
+		header_up X-Real-IP {remote_host}
+	}
+
+	# WebSocket endpoints (live ledger feed, metrics) upgrade transparently through
+	# reverse_proxy; no extra config needed.
+
+	# Sensible security headers for a browser-facing app.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	encode gzip zstd
+}

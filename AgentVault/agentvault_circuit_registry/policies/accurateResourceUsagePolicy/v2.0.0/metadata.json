@@ -1,0 +1,52 @@
+{
+  "PolicyName": "Proof-of-Accurate-Resource-Usage",
+  "PolicyID": "PARU_V2",
+  "CircuitVersion": "2.0.0",
+  "Supersedes": "1.0.0",
+  "DSL": "Noir",
+  "NoirVersion": "1.0.0-beta.3",
+  "ProvingSystem": "UltraHonk (Barretenberg 0.82.2)",
+  "Statement": "The units reported for a transaction are within the policy tolerance of a committed meter log: |reported_units - logged_units| * 10000 <= logged_units * max_discrepancy_bps.",
+  "PublicInputs": {
+    "max_discrepancy_bps": {
+      "type": "u32",
+      "description": "Allowed discrepancy in basis points. The verifier refuses a proof whose tolerance is looser than the registry policy."
+    },
+    "transaction_ref": {
+      "type": "Field",
+      "description": "Non-zero reference to the transaction the usage belongs to."
+    },
+    "reported_units": {
+      "type": "u64",
+      "description": "The units the agent reports, for example shots or QPU seconds."
+    }
+  },
+  "PrivateInputs": {
+    "logged_units": {
+      "type": "u64",
+      "description": "The units in the meter log."
+    },
+    "salt": {
+      "type": "Field",
+      "description": "Random blinding value for the log commitment."
+    }
+  },
+  "PublicOutputs": {
+    "log_commitment": {
+      "type": "Field",
+      "description": "Poseidon2(DOMAIN, transaction_ref, logged_units, salt). A meter that publishes this when the work runs lets a verifier check the report against it."
+    }
+  },
+  "Policy": {
+    "max_discrepancy_bps": {
+      "rule": "at_most",
+      "default": 100
+    }
+  },
+  "Limits": "Binds the report to a committed log. The log is only as trustworthy as whoever publishes its commitment, so a verifier should compare log_commitment with one the meter published.",
+  "Artifacts": {
+    "circuit": "circuit.json",
+    "verification_key": "verification_key.bin",
+    "verification_key_sha256": "c28f0564d7124c855a59a1c40bf34fb865e9a5960c0883e65c9df6dd30895eff"
+  }
+}

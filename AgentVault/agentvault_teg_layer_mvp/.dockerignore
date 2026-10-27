@@ -1,0 +1,99 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+.env.local
+.env.*.local
+
+# Virtual environments
+.venv
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+data/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Backups
+*.bak
+*.backup
+*~
+
+# Temp files
+*.tmp
+temp/
+tmp/
+
+# pass78-bak-exclude: keep sandbox rollback *.bak* backups OUT of the prod build context.
+# (the .bak files remain on disk as documented FX-build rollback points — this only
+#  excludes them from the image, per Commander's non-destructive request 2026-06-04.)
+**/*.bak*
+*.bak*
+**/*.orig
+*.orig
+**/*~
+
+# §MONEY-M3a (R32, 2026-09-03): the build-context env files carried a LIVE token-signing key
+# into every shipped TEG image (/app/.env; frame-b and frame-c signed with it). Never again;
+# only the tracked, secret-free .env.example may ride along.
+.env
+.env.*
+!.env.example

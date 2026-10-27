@@ -1,0 +1,42 @@
+[
+  {
+    "label": "Hotel-1",
+    "registry": "B",
+    "did": "did:cos:c80698ff-06e9-c762-2df3",
+    "client_id": "agent-152ae44c6053ee66",
+    "client_secret": "cos_secret_809a1c00e0fb33ded6569d733852cc6b195c0815dc09e4bd5beaec4809bc473c",
+    "type": "data-analyst"
+  },
+  {
+    "label": "Hotel-2",
+    "registry": "A",
+    "did": "did:cos:a874d6bf-8f92-7aae-d359",
+    "client_id": "agent-2de4df7f582ea17e",
+    "client_secret": "cos_secret_6aeb6f642b8fe7803f3d877854127662221e1eeee5dcf7cbe17585971818c3cc",
+    "type": "code-reviewer"
+  },
+  {
+    "label": "Hotel-3",
+    "registry": "B",
+    "did": "did:cos:29a0df2a-3358-615f-f950",
+    "client_id": "agent-e898d7ec29e47eb3",
+    "client_secret": "cos_secret_c8cee53ce98e17c2954557c2e864a419c991adb9c6df0bc1e6ad0835c91482c1",
+    "type": "market-maker"
+  },
+  {
+    "label": "Hotel-4",
+    "registry": "A",
+    "did": "did:cos:b73221c8-f325-5f5f-2e45",
+    "client_id": "agent-06ada3e95c876700",
+    "client_secret": "cos_secret_bb2e0eb48ea974d73e478cebfecab67d795b4c94338db6f4fd4a3f80e0d460cb",
+    "type": "risk-assessor"
+  },
+  {
+    "label": "Hotel-5",
+    "registry": "B",
+    "did": "did:cos:cebcd19f-cce3-a706-72ac",
+    "client_id": "agent-f1b86b51ad73ce1a",
+    "client_secret": "cos_secret_92681df7ce82e55d702f1e9126401c858ebfed33eb35ae25f84e5f9a947e41c6",
+    "type": "compliance-auditor"
+  }
+]

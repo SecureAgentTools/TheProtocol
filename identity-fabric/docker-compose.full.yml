@@ -1,0 +1,155 @@
+version: '3.8'
+
+services:
+  spire-server:
+    image: ghcr.io/spiffe/spire-server:1.10.4
+    container_name: agentvault-spire-server
+    hostname: spire-server
+    user: "0:0"  # SPIRE 1.10+ runs as non-root; dev volumes need root
+    volumes:
+      - ./spire-server:/opt/spire/conf
+      - spire-server-data:/opt/spire/data
+    ports:
+      - "8081:8081"  # SPIRE Server API
+    command: >
+      -config /opt/spire/conf/server.conf
+    networks:
+      - agentvault-identity
+
+  spire-agent:
+    image: ghcr.io/spiffe/spire-agent:1.10.4
+    container_name: agentvault-spire-agent
+    hostname: spire-agent
+    user: "0:0"  # SPIRE 1.10+ runs as non-root; Docker socket needs root
+    depends_on:
+      - spire-server
+    volumes:
+      - ./spire-agent:/opt/spire/conf
+      - spire-agent-socket:/opt/spire/sockets
+    command: >
+      -config /opt/spire/conf/agent.conf
+    networks:
+      - agentvault-identity
+    environment:
+      - SPIRE_SERVER_ADDRESS=spire-server
+      - SPIRE_AGENT_JOIN_TOKEN=${SPIRE_AGENT_JOIN_TOKEN:-default-join-token}
+
+  # TEG Core Service with mTLS support
+  teg-core:
+    build:
+      context: ../AgentVault/agentvault_teg_layer_mvp
+      dockerfile: Dockerfile
+    container_name: agentvault-teg-core
+    depends_on:
+      - spire-agent
+      - postgres-teg
+    volumes:
+      - spire-agent-socket:/spire-agent-socket
+      - ../AgentVault/agentvault_teg_layer_mvp:/app
+    environment:
+      - SPIFFE_ENDPOINT_SOCKET=unix:///spire-agent-socket/agent.sock
+      - DATABASE_URL=postgresql://teg_user:teg_pass@postgres-teg:5432/teg_db
+      - TEG_SYSTEM_TREASURY_DID=did:theprotocol:teg_system_treasury
+      - LOG_LEVEL=INFO
+    ports:
+      - "8001:8001"  # TEG API with mTLS
+    networks:
+      - agentvault-identity
+      - agentvault-backend
+    command: python -m src.teg_core_service.main_mtls
+
+  # Registry Backend with mTLS client support
+  registry-backend:
+    build:
+      context: ../AgentVault/agentvault_registry
+      dockerfile: Dockerfile
+    container_name: agentvault-registry-backend
+    depends_on:
+      - spire-agent
+      - postgres-registry
+      - teg-core
+    volumes:
+      - spire-agent-socket:/spire-agent-socket
+      - ../AgentVault/agentvault_registry:/app
+    environment:
+      - SPIFFE_ENDPOINT_SOCKET=unix:///spire-agent-socket/agent.sock
+      - DATABASE_URL=postgresql://registry_user:registry_pass@postgres-registry:5432/registry_db
+      - TEG_API_BASE_URL=https://teg-core:8001
+      - SECRET_KEY=${REGISTRY_SECRET_KEY:-your-secret-key-here}
+      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000
+    ports:
+      - "8000:8000"  # Registry API
+    networks:
+      - agentvault-identity
+      - agentvault-backend
+    command: uvicorn agentvault_registry.main_mtls:app --host 0.0.0.0 --port 8000
+
+  # PostgreSQL for TEG Layer
+  postgres-teg:
+    image: postgres:15-alpine
+    container_name: agentvault-postgres-teg
+    environment:
+      - POSTGRES_DB=teg_db
+      - POSTGRES_USER=teg_user
+      - POSTGRES_PASSWORD=teg_pass   # g11: local dev default of this dev-only compose
+    volumes:
+      - postgres-teg-data:/var/lib/postgresql/data
+    networks:
+      - agentvault-backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teg_user -d teg_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL for Registry
+  postgres-registry:
+    image: postgres:15-alpine
+    container_name: agentvault-postgres-registry
+    environment:
+      - POSTGRES_DB=registry_db
+      - POSTGRES_USER=registry_user
+      - POSTGRES_PASSWORD=registry_pass   # g11: local dev default of this dev-only compose
+    volumes:
+      - postgres-registry-data:/var/lib/postgresql/data
+    networks:
+      - agentvault-backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U registry_user -d registry_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: Sample workload for testing
+  sample-workload:
+    build:
+      context: ./sample-workload
+      dockerfile: Dockerfile
+    container_name: agentvault-sample-workload
+    depends_on:
+      - spire-agent
+    volumes:
+      - spire-agent-socket:/spire-agent-socket
+    environment:
+      - SPIFFE_ENDPOINT_SOCKET=unix:///spire-agent-socket/agent.sock
+    networks:
+      - agentvault-identity
+    command: python app.py
+    profiles:
+      - sample
+
+volumes:
+  spire-server-data:
+    driver: local
+  spire-agent-socket:
+    driver: local
+  postgres-teg-data:
+    driver: local
+  postgres-registry-data:
+    driver: local
+
+networks:
+  agentvault-identity:
+    driver: bridge
+  agentvault-backend:
+    driver: bridge

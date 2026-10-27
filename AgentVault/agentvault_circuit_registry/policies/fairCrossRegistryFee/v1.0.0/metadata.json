@@ -1,0 +1,55 @@
+{
+  "PolicyName": "Proof-of-Fair-Cross-Registry-Fee",
+  "PolicyID": "FAIR_CROSS_REGISTRY_FEE_V1",
+  "CircuitVersion": "1.0.0",
+  "DSL": "Noir",
+  "ProvingSystem": "PlonK with Barretenberg/Honk",
+  "PublicInputs": {
+    "policy_parameters_hash": {
+      "type": "Field",
+      "description": "SHA256 hash of the active cross-registry fee policy parameters"
+    },
+    "total_volume_transferred": {
+      "type": "u64",
+      "description": "Total AVT volume transferred cross-registry in the attested window"
+    },
+    "total_fees_collected": {
+      "type": "u64",
+      "description": "Total fees collected by the receiver TEG in the attested window"
+    }
+  },
+  "PrivateInputs": {
+    "actual_fee_rate_bps": {
+      "type": "u64",
+      "description": "The actual fee rate in basis points applied across the window (private)"
+    },
+    "max_fee_rate_bps_policy": {
+      "type": "u64",
+      "description": "Maximum fee rate (bps) allowed by the published policy (private)"
+    }
+  },
+  "Constraints": [
+    "actual_fee_rate_bps <= max_fee_rate_bps_policy",
+    "total_fees_collected * 10000 == total_volume_transferred * actual_fee_rate_bps",
+    "policy_parameters_hash != 0"
+  ],
+  "EigenTrustWeight": 0.04,
+  "ArtifactHashes": {
+    "circuit": "TBD - generated after compilation",
+    "provingKey": "TBD - generated after trusted setup",
+    "verificationKey": "TBD - generated after trusted setup"
+  },
+  "TrustedSetupMethod": "Solo Developer MVP Setup - For production use only with proper ceremony",
+  "DateCreated": "2026-04-28T00:00:00Z",
+  "LastUpdated": "2026-04-28T00:00:00Z",
+  "Notes": {
+    "MVP_Limitations": [
+      "Policy parameters hash verification is simplified",
+      "Integer-only arithmetic (no decimal precision); all rates expressed in basis points"
+    ],
+    "Security_Considerations": [
+      "Trusted setup performed by single developer for MVP",
+      "Production deployment requires multi-party computation ceremony"
+    ]
+  }
+}

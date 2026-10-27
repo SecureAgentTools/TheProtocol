@@ -1,0 +1,573 @@
+/* ============================================================================
+   auth-shell.css — unified AAA+ auth design system (FE upgrade batch 1)
+   Consumed by AuthShell.vue + the 5 auth views (Login / Register / Forgot /
+   Reset / EmailVerification). Imported inside `<style scoped>` which, by Vue's
+   handling of @import, hoists these rules to GLOBAL scope — every selector is
+   therefore namespaced under `.nc-auth-page` so it can ONLY affect auth pages
+   and cleanly overrides the neural-command base on those pages.
+   Visual only — no logic, additive, sandbox-first.
+   ========================================================================== */
+
+/* ── Page + ambient ──────────────────────────────────────────────────────── */
+.nc-auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(var(--nc-primary-rgb), 0.06), transparent 60%),
+    #05070e;
+  overflow: hidden;
+  padding: 2.5rem 1rem;
+}
+
+.nc-auth-page .nc-bg-effects { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+
+.nc-auth-page .nc-grid-overlay {
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(var(--nc-primary-rgb), 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--nc-primary-rgb), 0.035) 1px, transparent 1px);
+  background-size: 58px 58px;
+  mask-image: radial-gradient(1000px 700px at 50% 35%, #000 30%, transparent 78%);
+  -webkit-mask-image: radial-gradient(1000px 700px at 50% 35%, #000 30%, transparent 78%);
+}
+
+.nc-auth-page .nc-scan {
+  position: absolute; top: 0; left: 0;
+  width: 100%; height: 200px;
+  background: linear-gradient(180deg, rgba(var(--nc-primary-rgb), 0.05), rgba(var(--nc-primary-rgb), 0.015) 45%, transparent);
+  animation: nc-auth-scan 13s linear infinite;
+}
+@keyframes nc-auth-scan { 0% { transform: translateY(-220px); } 100% { transform: translateY(calc(100vh + 2600px)); } }
+
+.nc-auth-page .nc-glow { position: absolute; border-radius: 50%; filter: blur(120px); }
+.nc-auth-page .nc-glow-1 { width: 600px; height: 600px; top: -220px; right: -120px; background: #00b8b8; opacity: 0.12; }
+.nc-auth-page .nc-glow-2 { width: 420px; height: 420px; bottom: 22%; left: -120px; background: #0066aa; opacity: 0.10; }
+.nc-auth-page .nc-glow-3 { width: 520px; height: 520px; top: 48%; right: -200px; background: #009966; opacity: 0.06; }
+
+/* ── Column ──────────────────────────────────────────────────────────────── */
+.nc-auth-page .nc-auth-container {
+  position: relative; z-index: 1;
+  width: 100%;
+  max-width: var(--auth-col, 420px);
+  display: flex; flex-direction: column; align-items: stretch;
+}
+
+/* ── Brand ───────────────────────────────────────────────────────────────── */
+.nc-auth-page .auth-brand { text-align: center; margin-bottom: 1.6rem; }
+
+.nc-auth-page .auth-mark {
+  position: relative;
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  margin-bottom: 0.85rem;
+}
+.nc-auth-page .auth-mark::before {
+  content: '';
+  position: absolute; inset: -22% ;
+  background: radial-gradient(circle, rgba(220, 38, 38, 0.18), transparent 62%);
+  filter: blur(6px);
+  z-index: -1;
+}
+
+.nc-auth-page .auth-wordmark {
+  font-size: clamp(1.5rem, 5vw, 2rem);
+  font-weight: 300;
+  letter-spacing: 0.28em;
+  margin: 0;
+  white-space: nowrap;
+  background: linear-gradient(180deg, #ffffff 0%, #c8d2e0 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  text-shadow: 0 0 30px rgba(255, 255, 255, 0.06);
+}
+
+.nc-auth-page .auth-tagline {
+  margin-top: 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(var(--nc-primary-rgb), 0.85);
+}
+
+/* ── Card ────────────────────────────────────────────────────────────────── */
+.nc-auth-page .nc-auth-card,
+.nc-auth-page .nc-auth-card.nc-card {
+  position: relative;
+  background:
+    linear-gradient(168deg, rgba(20, 26, 40, 0.92) 0%, rgba(10, 13, 22, 0.96) 100%);
+  border: 1px solid rgba(var(--nc-primary-rgb), 0.14);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow:
+    0 28px 70px -28px rgba(0, 0, 0, 0.85),
+    0 0 0 1px rgba(255, 255, 255, 0.02) inset,
+    0 0 50px -16px rgba(var(--nc-primary-rgb), 0.10);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 0;
+  transform: translateY(16px);
+  animation: nc-auth-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.nc-auth-page .nc-auth-card:hover { background: linear-gradient(168deg, rgba(20, 26, 40, 0.92) 0%, rgba(10, 13, 22, 0.96) 100%); }
+@keyframes nc-auth-rise { to { opacity: 1; transform: translateY(0); } }
+
+/* refined animated top accent (replaces NeuralCard's default hologram bar) */
+.nc-auth-page .nc-auth-card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(var(--nc-primary-rgb), 0.7) 50%, transparent);
+  background-size: 220% 100%;
+  animation: nc-auth-sheen 4s linear infinite;
+}
+@keyframes nc-auth-sheen { 0% { background-position: 120% 0; } 100% { background-position: -120% 0; } }
+
+/* ── Card header ─────────────────────────────────────────────────────────── */
+.nc-auth-page .nc-auth-header {
+  padding: 1.5rem 1.6rem 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  text-align: center;
+}
+.nc-auth-page .nc-auth-title {
+  font-size: 0.92rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--nc-text-primary); margin: 0;
+}
+.nc-auth-page .nc-auth-description {
+  font-size: 0.84rem; color: var(--nc-text-muted); line-height: 1.55; margin: 0.55rem 0 0;
+}
+
+/* ── Form ────────────────────────────────────────────────────────────────── */
+.nc-auth-page .nc-auth-form,
+.nc-auth-page .nc-form { padding: 1.6rem; display: flex; flex-direction: column; }
+.nc-auth-page .nc-form { gap: 1.15rem; }
+
+.nc-auth-page .nc-form-group,
+.nc-auth-page .nc-input-group { display: flex; flex-direction: column; }
+.nc-auth-page .nc-form-group { margin-bottom: 1.15rem; }
+.nc-auth-page .nc-input-group { gap: 0.45rem; }
+
+.nc-auth-page .nc-form-label,
+.nc-auth-page .nc-label {
+  display: block;
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--nc-text-muted); margin-bottom: 0.5rem;
+}
+.nc-auth-page .nc-input-group .nc-label { margin-bottom: 0; }
+
+/* ── Inputs ──────────────────────────────────────────────────────────────── */
+.nc-auth-page .nc-input-wrapper { position: relative; display: flex; align-items: center; }
+
+.nc-auth-page .nc-input-icon {
+  position: absolute; left: 0.95rem;
+  display: flex; align-items: center;
+  color: var(--nc-text-muted); pointer-events: none;
+  transition: color var(--nc-duration-fast);
+  z-index: 1;
+}
+.nc-auth-page .nc-input-wrapper:focus-within .nc-input-icon { color: rgba(var(--nc-primary-rgb), 0.9); }
+
+.nc-auth-page .nc-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 1rem;
+  background: rgba(8, 11, 20, 0.65);
+  border: 1px solid var(--nc-border);
+  border-radius: 10px;
+  color: var(--nc-text-primary);
+  font-size: 0.9rem;
+  font-family: inherit;
+  transition: border-color var(--nc-duration-fast), box-shadow var(--nc-duration-fast), background var(--nc-duration-fast);
+}
+.nc-auth-page .nc-input-wrapper .nc-input { padding-left: 2.85rem; }
+.nc-auth-page .nc-input-wrapper:has(.nc-input-toggle) .nc-input { padding-right: 2.85rem; }
+.nc-auth-page .nc-input::placeholder { color: rgba(255, 255, 255, 0.28); }
+.nc-auth-page .nc-input:hover { border-color: var(--nc-border-strong); }
+.nc-auth-page .nc-input:focus,
+.nc-auth-page .nc-input:focus-visible {
+  outline: none;
+  border-color: rgba(var(--nc-primary-rgb), 0.7);
+  background: rgba(8, 11, 20, 0.9);
+  box-shadow: 0 0 0 3px rgba(var(--nc-primary-rgb), 0.14);
+}
+.nc-auth-page .nc-input-error,
+.nc-auth-page .nc-input.nc-input-error {
+  border-color: rgba(255, 51, 102, 0.7) !important;
+  box-shadow: 0 0 0 3px rgba(255, 51, 102, 0.12);
+}
+.nc-auth-page .nc-input-prefilled {
+  opacity: 0.75; cursor: default;
+  background: rgba(var(--nc-primary-rgb), 0.05) !important;
+  border-color: rgba(var(--nc-primary-rgb), 0.3) !important;
+}
+
+.nc-auth-page .nc-input-toggle {
+  position: absolute; right: 0.85rem;
+  background: none; border: none; padding: 0.25rem;
+  color: var(--nc-text-muted); cursor: pointer;
+  display: flex; align-items: center;
+  border-radius: 6px;
+  transition: color var(--nc-duration-fast), background var(--nc-duration-fast);
+}
+.nc-auth-page .nc-input-toggle:hover { color: rgba(var(--nc-primary-rgb), 0.95); }
+.nc-auth-page .nc-input-toggle:focus-visible { outline: 2px solid rgba(var(--nc-primary-rgb), 0.5); outline-offset: 1px; }
+
+.nc-auth-page .nc-field-error,
+.nc-auth-page .nc-error {
+  font-size: 0.74rem; color: var(--nc-danger); margin: 0.4rem 0 0;
+  display: flex; align-items: center; gap: 0.3rem;
+}
+.nc-auth-page .nc-hint {
+  display: block; font-size: 0.7rem; color: rgba(var(--nc-primary-rgb), 0.85);
+  margin-top: 0.35rem;
+}
+.nc-auth-page .nc-label-optional {
+  font-size: 0.62rem; color: var(--nc-text-muted); font-weight: 400;
+  margin-left: 0.4rem; text-transform: none; letter-spacing: 0;
+}
+
+/* ── Checkbox (login "maintain session", register terms) ─────────────────── */
+.nc-auth-page .nc-checkbox-group { display: flex; flex-direction: row; align-items: center; gap: 0.6rem; }
+/* login's row is also a .nc-form-group (which is column) — force it back to a row */
+.nc-auth-page .nc-form-group.nc-checkbox-group {
+  flex-direction: row; flex-wrap: wrap; gap: 0.6rem 1rem;
+  justify-content: space-between; margin-bottom: 0;
+}
+
+.nc-auth-page .nc-checkbox {
+  display: inline-flex; align-items: center; cursor: pointer; user-select: none; gap: 0.5rem;
+}
+.nc-auth-page .nc-checkbox-input { position: absolute; opacity: 0; width: 18px; height: 18px; cursor: pointer; }
+.nc-auth-page .nc-checkbox-box {
+  width: 18px; height: 18px; flex: 0 0 auto;
+  border: 1px solid var(--nc-border-strong); border-radius: 5px;
+  background: rgba(8, 11, 20, 0.7);
+  position: relative; transition: all var(--nc-duration-fast);
+}
+.nc-auth-page .nc-checkbox-input:checked + .nc-checkbox-box {
+  background: var(--nc-primary); border-color: var(--nc-primary);
+  box-shadow: 0 0 12px rgba(var(--nc-primary-rgb), 0.4);
+}
+.nc-auth-page .nc-checkbox-input:checked + .nc-checkbox-box::after {
+  content: ''; position: absolute; left: 5px; top: 1.5px;
+  width: 5px; height: 9px; border: solid var(--nc-void); border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.nc-auth-page .nc-checkbox-input:focus-visible + .nc-checkbox-box { outline: 2px solid rgba(var(--nc-primary-rgb), 0.55); outline-offset: 2px; }
+.nc-auth-page .nc-checkbox-label { font-size: 0.82rem; color: var(--nc-text-secondary); }
+
+/* Register's bare checkbox input variant */
+.nc-auth-page .nc-checkbox-group > input.nc-checkbox {
+  width: 18px; height: 18px; flex: 0 0 auto; margin-top: 1px;
+  accent-color: var(--nc-primary); cursor: pointer;
+}
+.nc-auth-page .nc-checkbox-group { align-items: flex-start; }
+.nc-auth-page .nc-form-group.nc-checkbox-group { align-items: center; }
+.nc-auth-page .nc-checkbox-group > .nc-checkbox-label { flex: 1; line-height: 1.5; }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.nc-auth-page .nc-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  height: 48px; padding: 0 1.4rem;
+  font-size: 0.8rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  border-radius: 10px; cursor: pointer;
+  transition: transform var(--nc-duration-fast), box-shadow var(--nc-duration-fast), background var(--nc-duration-fast), border-color var(--nc-duration-fast), opacity var(--nc-duration-fast);
+}
+.nc-auth-page .nc-btn-content { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; }
+.nc-auth-page .nc-btn-full { width: 100%; }
+
+.nc-auth-page .nc-btn-primary {
+  background: linear-gradient(135deg, var(--nc-primary-bright), var(--nc-primary));
+  color: var(--nc-void); border: 1px solid var(--nc-primary);
+  box-shadow: 0 6px 20px -8px rgba(var(--nc-primary-rgb), 0.6);
+}
+.nc-auth-page .nc-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 28px -8px rgba(var(--nc-primary-rgb), 0.7), 0 0 22px rgba(var(--nc-primary-rgb), 0.25);
+}
+.nc-auth-page .nc-btn-primary:active:not(:disabled) { transform: translateY(0); filter: brightness(0.95); }
+
+.nc-auth-page .nc-btn-secondary {
+  background: rgba(var(--nc-primary-rgb), 0.08);
+  color: rgba(var(--nc-primary-rgb), 0.95);
+  border: 1px solid rgba(var(--nc-primary-rgb), 0.3);
+}
+.nc-auth-page .nc-btn-secondary:hover:not(:disabled) { background: rgba(var(--nc-primary-rgb), 0.16); border-color: rgba(var(--nc-primary-rgb), 0.5); }
+
+.nc-auth-page .nc-btn-ghost {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--nc-text-secondary);
+  border: 1px solid var(--nc-border);
+}
+.nc-auth-page .nc-btn-ghost:hover:not(:disabled) { color: rgba(var(--nc-primary-rgb), 0.95); border-color: rgba(var(--nc-primary-rgb), 0.4); }
+
+.nc-auth-page .nc-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.nc-auth-page .nc-btn:focus-visible { outline: 2px solid rgba(var(--nc-primary-rgb), 0.6); outline-offset: 2px; }
+.nc-auth-page .nc-btn-full { margin-top: 0.35rem; }
+
+.nc-auth-page .nc-icon-spin { animation: nc-auth-spin 0.9s linear infinite; }
+@keyframes nc-auth-spin { to { transform: rotate(360deg); } }
+
+/* ── Alerts ──────────────────────────────────────────────────────────────── */
+.nc-auth-page .nc-alert {
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.7rem 0.85rem; margin-top: 1rem;
+  font-size: 0.82rem; line-height: 1.4;
+  border: 1px solid; border-left-width: 3px; border-radius: 8px;
+}
+.nc-auth-page .nc-alert-danger,
+.nc-auth-page .nc-alert-error {
+  background: rgba(255, 51, 102, 0.07); border-color: rgba(255, 51, 102, 0.45); color: #ff6b8a;
+}
+.nc-auth-page .nc-alert-success {
+  background: rgba(0, 255, 136, 0.06); border-color: rgba(0, 255, 136, 0.4); color: #4dffb0;
+}
+
+/* ── Info box ────────────────────────────────────────────────────────────── */
+.nc-auth-page .nc-info-box {
+  display: flex; gap: 0.7rem; padding: 0.8rem 0.9rem; margin-bottom: 1rem;
+  background: rgba(var(--nc-primary-rgb), 0.04);
+  border: 1px solid rgba(var(--nc-primary-rgb), 0.18);
+  border-left: 3px solid rgba(var(--nc-primary-rgb), 0.6);
+  border-radius: 8px;
+  font-size: 0.78rem; color: var(--nc-text-secondary); line-height: 1.55;
+}
+.nc-auth-page .nc-info-box p { margin: 0; }
+
+/* ── Password requirements (register) ────────────────────────────────────── */
+.nc-auth-page .nc-requirements { display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem 0.75rem; margin-top: 0.65rem; }
+.nc-auth-page .nc-requirement {
+  display: flex; align-items: center; gap: 0.45rem;
+  font-size: 0.72rem; color: var(--nc-text-muted);
+  transition: color var(--nc-duration-fast);
+}
+.nc-auth-page .nc-requirement-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--nc-border-strong); transition: all var(--nc-duration-fast);
+}
+.nc-auth-page .nc-requirement-met { color: var(--nc-success); }
+.nc-auth-page .nc-requirement-met .nc-requirement-dot { background: var(--nc-success); box-shadow: 0 0 9px var(--nc-success-glow); }
+
+/* ── Password strength chips (reset) ─────────────────────────────────────── */
+.nc-auth-page .nc-strength-grid { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.6rem; }
+.nc-auth-page .nc-req {
+  font-size: 0.68rem; letter-spacing: 0.03em;
+  padding: 0.2rem 0.55rem; border-radius: 999px;
+  border: 1px solid var(--nc-border); color: var(--nc-text-muted);
+  background: rgba(8, 11, 20, 0.6); transition: all var(--nc-duration-fast);
+}
+.nc-auth-page .nc-req.ok {
+  border-color: rgba(var(--nc-primary-rgb), 0.5); color: rgba(var(--nc-primary-rgb), 0.95);
+  background: rgba(var(--nc-primary-rgb), 0.1);
+}
+
+/* ── Links ───────────────────────────────────────────────────────────────── */
+.nc-auth-page .nc-link {
+  color: rgba(var(--nc-primary-rgb), 0.95); text-decoration: none; font-weight: 500;
+  transition: color var(--nc-duration-fast);
+}
+.nc-auth-page .nc-link:hover { color: var(--nc-primary-bright); text-decoration: underline; }
+.nc-auth-page .nc-link:focus-visible { outline: 2px solid rgba(var(--nc-primary-rgb), 0.5); outline-offset: 2px; border-radius: 3px; }
+
+.nc-auth-page .nc-link-btn {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: rgba(var(--nc-primary-rgb), 0.9); font: inherit;
+  text-decoration: underline; text-decoration-color: transparent;
+  transition: text-decoration-color var(--nc-duration-fast), color var(--nc-duration-fast);
+}
+.nc-auth-page .nc-link-btn:hover { text-decoration-color: currentColor; color: var(--nc-primary-bright); }
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+.nc-auth-page .nc-auth-footer {
+  padding: 1.25rem 1.6rem; border-top: 1px solid rgba(255, 255, 255, 0.05); text-align: center;
+}
+.nc-auth-page .nc-auth-form + .nc-auth-footer,
+.nc-auth-page .nc-form + .nc-auth-footer { padding-top: 1.25rem; }
+.nc-auth-page .nc-auth-footer-text,
+.nc-auth-page .nc-footer-text { font-size: 0.82rem; color: var(--nc-text-secondary); margin: 0; }
+
+/* Register puts the footer inside the card with a top margin */
+.nc-auth-page .nc-auth-card > .nc-auth-footer { margin-top: 0.5rem; }
+
+.nc-auth-page .nc-success-icon { margin-bottom: 1rem; display: flex; justify-content: center; }
+
+/* ── Status footer (under card) ──────────────────────────────────────────── */
+.nc-auth-page .nc-system-status {
+  display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  margin-top: 1.6rem;
+  font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--nc-text-muted);
+}
+.nc-auth-page .nc-status-item { display: flex; align-items: center; gap: 0.5rem; }
+.nc-auth-page .nc-status-text { font-weight: 600; }
+.nc-auth-page .nc-status-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--nc-text-muted);
+}
+.nc-auth-page .nc-status-dot.online {
+  background: var(--nc-success);
+  box-shadow: 0 0 9px var(--nc-success-glow);
+  animation: nc-auth-pulse 2s ease-in-out infinite;
+}
+@keyframes nc-auth-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+/* ── Dev demo box (login, DEV only) ──────────────────────────────────────── */
+.nc-auth-page .nc-demo-box {
+  margin: 0 1.6rem 1.6rem; padding: 0.9rem 1rem;
+  background: rgba(255, 149, 0, 0.05);
+  border: 1px solid rgba(255, 149, 0, 0.25);
+  border-left: 3px solid var(--nc-warning);
+  border-radius: 8px;
+}
+.nc-auth-page .nc-demo-header {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.66rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--nc-warning); margin-bottom: 0.5rem;
+}
+.nc-auth-page .nc-demo-content { font-size: 0.8rem; line-height: 1.5; }
+.nc-auth-page .nc-mono { font-family: var(--nc-font-mono, monospace); color: var(--nc-text-secondary); }
+
+/* ── Resend block (login verification CTA) ───────────────────────────────── */
+.nc-auth-page .nc-resend-block { margin-top: 0.85rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.nc-auth-page .nc-resend-btn { font-weight: 700; letter-spacing: 0.08em; }
+.nc-auth-page .nc-resend-confirm {
+  font-size: 0.78rem; color: #4dffb0; margin: 0; padding: 0.65rem 0.8rem;
+  background: rgba(0, 255, 136, 0.06); border: 1px solid rgba(0, 255, 136, 0.3);
+  border-radius: 8px; line-height: 1.5;
+}
+.nc-auth-page .nc-resend-error { font-size: 0.78rem; color: #ff6b8a; margin: 0; padding: 0.5rem 0.8rem; }
+
+/* ── Register confirmation panel ─────────────────────────────────────────── */
+.nc-auth-page .nc-confirm-panel {
+  display: flex; flex-direction: column; align-items: center; gap: 1rem;
+  padding: 2rem 1.6rem 1.6rem; text-align: center;
+}
+.nc-auth-page .nc-confirm-icon {
+  width: 76px; height: 76px; border-radius: 18px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(var(--nc-primary-rgb), 0.4);
+  background: rgba(var(--nc-primary-rgb), 0.08);
+  color: rgba(var(--nc-primary-rgb), 0.95);
+  position: relative;
+}
+.nc-auth-page .nc-confirm-icon--warn { border-color: rgba(255, 149, 0, 0.5); background: rgba(255, 149, 0, 0.08); color: var(--nc-warning); }
+.nc-auth-page .nc-confirm-icon::after {
+  content: ''; position: absolute; inset: -7px; border-radius: 22px;
+  border: 1px solid; border-color: inherit; opacity: 0.25;
+  animation: nc-auth-pulse 2.5s ease-in-out infinite;
+}
+.nc-auth-page .nc-confirm-title { font-size: 1.05rem; font-weight: 600; letter-spacing: 0.08em; color: var(--nc-text-primary); margin: 0; }
+.nc-auth-page .nc-confirm-body { font-size: 0.84rem; color: var(--nc-text-muted); margin: 0; line-height: 1.5; max-width: 36ch; }
+.nc-auth-page .nc-confirm-body--warn { color: var(--nc-warning); }
+.nc-auth-page .nc-confirm-email {
+  display: inline-flex; align-items: center; gap: 0.5rem; width: 100%; justify-content: center;
+  padding: 0.55rem 1rem; border-radius: 8px;
+  background: rgba(8, 11, 20, 0.7); border: 1px solid rgba(var(--nc-primary-rgb), 0.25);
+  font-family: var(--nc-font-mono, monospace); font-size: 0.8rem; color: rgba(var(--nc-primary-rgb), 0.95);
+  word-break: break-all;
+}
+.nc-auth-page .nc-confirm-feedback { width: 100%; font-size: 0.8rem; margin-top: 0; }
+
+/* recovery keys */
+.nc-auth-page .nc-recovery-block {
+  width: 100%; text-align: left; border-radius: 10px;
+  border: 1px solid rgba(255, 149, 0, 0.35); background: rgba(255, 149, 0, 0.05);
+  padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem;
+}
+.nc-auth-page .nc-recovery-header {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--nc-warning);
+}
+.nc-auth-page .nc-recovery-warn { font-size: 0.74rem; color: var(--nc-text-muted); margin: 0; line-height: 1.5; }
+.nc-auth-page .nc-recovery-keys { display: flex; flex-direction: column; gap: 0.4rem; }
+.nc-auth-page .nc-recovery-key {
+  display: flex; align-items: center; gap: 0.75rem;
+  background: rgba(5, 7, 14, 0.8); border: 1px solid var(--nc-border); border-radius: 7px;
+  padding: 0.45rem 0.75rem; font-family: var(--nc-font-mono, monospace); font-size: 0.74rem;
+}
+.nc-auth-page .nc-recovery-index { color: var(--nc-text-muted); min-width: 1rem; }
+.nc-auth-page .nc-recovery-value { color: rgba(var(--nc-primary-rgb), 0.95); word-break: break-all; flex: 1; }
+.nc-auth-page .nc-recovery-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+.nc-auth-page .nc-recovery-btn {
+  flex: 1; padding: 0.55rem 0.75rem; border-radius: 7px;
+  background: rgba(var(--nc-primary-rgb), 0.08); border: 1px solid rgba(var(--nc-primary-rgb), 0.3);
+  color: rgba(var(--nc-primary-rgb), 0.95); font-family: var(--nc-font-mono, monospace);
+  font-size: 0.7rem; letter-spacing: 0.06em; cursor: pointer; transition: all var(--nc-duration-fast);
+}
+.nc-auth-page .nc-recovery-btn:hover { background: rgba(var(--nc-primary-rgb), 0.16); border-color: rgba(var(--nc-primary-rgb), 0.5); }
+
+/* register card title (form variant — no header border) */
+.nc-auth-page .nc-card-title { font-size: 1.05rem; font-weight: 600; letter-spacing: 0.04em; color: var(--nc-text-primary); margin: 0 0 0.4rem; }
+.nc-auth-page .nc-card-subtitle { font-size: 0.84rem; color: var(--nc-text-muted); margin: 0 0 1.5rem; line-height: 1.5; }
+.nc-auth-page .nc-auth-card > .nc-confirm-panel + *,
+.nc-auth-page .nc-auth-card > .nc-card-title { padding-top: 0; }
+
+/* ── EmailVerification states ────────────────────────────────────────────── */
+.nc-auth-page .ev-status { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 2.2rem 1.6rem; }
+.nc-auth-page .ev-icon {
+  width: 76px; height: 76px; border-radius: 18px; margin-bottom: 1.25rem;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid; position: relative;
+}
+.nc-auth-page .ev-icon::after {
+  content: ''; position: absolute; inset: -7px; border-radius: 22px;
+  border: 1px solid; border-color: inherit; opacity: 0.22;
+  animation: nc-auth-pulse 2.6s ease-in-out infinite;
+}
+.nc-auth-page .ev-icon-success { color: #00ff88; border-color: rgba(0, 255, 136, 0.45); background: rgba(0, 255, 136, 0.08); }
+.nc-auth-page .ev-icon-failed  { color: #ff3366; border-color: rgba(255, 51, 102, 0.45); background: rgba(255, 51, 102, 0.08); }
+.nc-auth-page .ev-icon-pending { color: rgba(var(--nc-primary-rgb), 0.9); border-color: rgba(var(--nc-primary-rgb), 0.4); background: rgba(var(--nc-primary-rgb), 0.08); }
+
+.nc-auth-page .ev-title { font-size: 1.05rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--nc-text-primary); margin: 0 0 0.7rem; }
+.nc-auth-page .ev-title-success { color: #00ff88; }
+.nc-auth-page .ev-title-failed { color: #ff3366; }
+.nc-auth-page .ev-desc { font-size: 0.84rem; color: var(--nc-text-muted); line-height: 1.6; margin: 0 0 1.6rem; max-width: 34ch; }
+
+.nc-auth-page .ev-actions { display: flex; flex-direction: column; gap: 0.6rem; width: 100%; }
+.nc-auth-page .ev-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; width: 100%;
+  height: 46px; padding: 0 1.5rem; border-radius: 10px; border: 1px solid;
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+  cursor: pointer; transition: all var(--nc-duration-fast);
+}
+.nc-auth-page .ev-btn-primary { background: rgba(var(--nc-primary-rgb), 0.12); border-color: rgba(var(--nc-primary-rgb), 0.35); color: rgba(var(--nc-primary-rgb), 0.95); }
+.nc-auth-page .ev-btn-primary:hover:not(:disabled) { background: rgba(var(--nc-primary-rgb), 0.2); border-color: rgba(var(--nc-primary-rgb), 0.55); }
+.nc-auth-page .ev-btn-secondary { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.55); }
+.nc-auth-page .ev-btn-secondary:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.2); color: rgba(255, 255, 255, 0.75); }
+.nc-auth-page .ev-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.nc-auth-page .ev-resend-form { width: 100%; display: flex; flex-direction: column; gap: 0.55rem; margin-bottom: 1.25rem; }
+.nc-auth-page .ev-resend-label { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--nc-text-secondary); margin: 0 0 0.15rem; text-align: left; }
+.nc-auth-page .ev-resend-input { width: 100%; padding-left: 1rem !important; }
+.nc-auth-page .ev-resend-confirmation {
+  width: 100%; display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
+  padding: 1rem 0.75rem; border-radius: 10px;
+  border: 1px solid rgba(0, 255, 136, 0.3); background: rgba(0, 255, 136, 0.05); margin-bottom: 1.25rem;
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .nc-auth-page { padding: 1.75rem 0.9rem; }
+  .nc-auth-page .nc-requirements { grid-template-columns: 1fr; }
+}
+@media (max-width: 400px) {
+  .nc-auth-page { padding: 1.25rem 0.7rem; }
+  .nc-auth-page .auth-wordmark { letter-spacing: 0.2em; }
+  .nc-auth-page .nc-auth-header,
+  .nc-auth-page .nc-auth-form,
+  .nc-auth-page .nc-form { padding-left: 1.15rem; padding-right: 1.15rem; }
+  .nc-auth-page .nc-auth-footer { padding-left: 1.15rem; padding-right: 1.15rem; }
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .nc-auth-page .nc-scan,
+  .nc-auth-page .nc-auth-card::before,
+  .nc-auth-page .nc-status-dot.online,
+  .nc-auth-page .nc-confirm-icon::after,
+  .nc-auth-page .ev-icon::after,
+  .nc-auth-page .nc-icon-spin { animation: none; }
+  .nc-auth-page .nc-auth-card { opacity: 1; transform: none; animation: none; }
+}

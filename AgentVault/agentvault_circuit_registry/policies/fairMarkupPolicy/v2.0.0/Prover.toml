@@ -1,0 +1,5 @@
+max_markup_bps = "3000"
+offered_price = "1200"
+context = "0x1234"
+total_cost = "1000"
+salt = "0x5eed"

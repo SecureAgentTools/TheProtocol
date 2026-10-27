@@ -1,0 +1,20 @@
+{% extends "_base.html.j2" %}
+{% set kicker = "// REGISTRY LICENSE APPLICATION" %}
+{% set headline = "New Operator Application: " ~ name %}
+{% block body %}
+<p>A new operator registry license application has been received at <strong>{{ timestamp }}</strong>.</p>
+{% with rows=[
+  ('Name', name),
+  ('Email', email),
+  ('Organization', organization | default('Not specified')),
+  ('Deployment', deployment),
+  ('Docker experience', experience),
+  ('Developer linked', developer_linked | default('No')),
+  ('Settings chosen', env_choices | default('inherited from the frame'))
+] %}{% include '_partials/data_table.html' %}{% endwith %}
+{% if use_case %}
+<p><strong>Use case:</strong></p>
+<p style="white-space: pre-wrap;">{{ use_case }}</p>
+{% endif %}
+{% with notice="Reply directly to this email to contact the applicant. Application received via theprotocol.cloud landing page." %}{% include '_partials/info_box.html' %}{% endwith %}
+{% endblock %}

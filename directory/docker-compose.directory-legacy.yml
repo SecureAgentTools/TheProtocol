@@ -1,0 +1,138 @@
+# THE DIRECTORY — legacy-tier instance (2026-09-09).
+#
+# A third, fully separate instance beside directory-eu-asia and directory-sandbox: own project
+# name, own container, own port, own volume, own image tag. A Directory is pull-only and
+# read-only, so instances indexing different anchors never interact — but the NAMES would
+# collide and a shared volume would merge two indexes into one.
+#
+# 🔴 THE PROJECT NAME IS LOAD-BEARING. Compose derives the project from the DIRECTORY when it is
+# not set, and all three of these files live in the same one. Without `name:` a plain `up -d`
+# here would RECREATE the EU/ASIA container as this one; that happened once already and had to
+# be restored by hand.
+#
+# The image is built FROM the image the legacy frames actually run
+# (agentvault2-registry-a:v0292-20260909), so this index verifies signatures and parses DIDs
+# with exactly their code. That is what tier parity has to mean.
+#
+# ── §LEGACYINDEX-MTLS (2026-09-09, his word: "mtls why is this not fixed") ──────────────────
+# The first cut of this file had no identity at all and registry-a read it over plain http on a
+# private docker network. That was the §MTLSGAP finding repeated on a new tier one day after it
+# was closed on the live one: a hop with no gateway raises nothing, logs nothing and passes every
+# health check. The read leg is the one that matters — the Directory AGGREGATES every frame's
+# cards and `DISCOVERY_VIA_DIRECTORY` means registries RENDER what it returns, so an
+# unauthenticated index is a place to INJECT.
+#
+# Identity comes from FRAME A's SPIRE agent (`spiffe://agentvault.com/service/directory-legacy`),
+# federated with frame-b and frame-c so all three retiring registries can be verified by it and
+# can verify it. The SVID carries `directory-legacy-nginx` as a DNS SAN because that is the name
+# the caller dials and verifies — the §XFRAMETEG trap, where a sound chain still fails on a
+# hostname mismatch.
+name: directory-legacy
+
+services:
+  # ── THE LEGACY INDEX'S OWN IDENTITY ───────────────────────────────────────────────────────
+  # Borrows Frame A's agent socket because it is Frame A's tier that hosts it. The volume is
+  # EXTERNAL: this compose does not own that socket.
+  directory-legacy-cert-writer:
+    image: agentvault2-cert-writer-test-a:latest
+    container_name: directory-legacy-cert-writer
+    restart: unless-stopped
+    environment:
+      SPIRE_SOCKET: /opt/spire/sockets/agent.sock
+      CERT_DIR: /certs
+      REFRESH_SEC: "300"
+      SERVICE_NAME: directory-legacy
+    volumes:
+      - framea-spire-socket:/opt/spire/sockets:ro
+      - directory-legacy-certs:/certs
+    labels:
+      # the SPIRE selector keys on THIS label — change it and the workload silently gets no SVID
+      - "com.agentvault.service=svid-writer-directory-legacy"
+    networks:
+      - default
+      - identity
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+  directory:
+    image: theprotocol-directory:legacy
+    container_name: directory-legacy
+    restart: unless-stopped
+    ports:
+      # ⚠ KEPT alongside the mTLS sidecar, exactly as EU keeps its 8600. Removing the plain port
+      # is a separate deliberate step; what closes the gap is that the REGISTRIES now dial the
+      # gateway instead of this.
+      - "127.0.0.1:8603:8600"
+    env_file: .env.directory.legacy
+    volumes:
+      - directory-legacy-data:/data
+      # the crawl leg: presented as a CLIENT cert to every frame this index reads
+      - directory-legacy-certs:/certs:ro
+    depends_on:
+      directory-legacy-cert-writer:
+        condition: service_started
+    networks:
+      # ⚠ `main` was hand-attached with `docker network connect` when this index was first wired;
+      # declaring it here is what stops the next recreate from silently dropping it (the
+      # §FRAMELIC "hand-added half a clean standup deletes" class, committed by my own hand).
+      # NOT on `identity`, for the reason the EU file spells out at length: operator sidecars
+      # carry public-hostname ALIASES on identity networks, so an index joined to one resolves
+      # its own crawl targets to containers on :8443 and every anchor goes quietly unreachable.
+      # A COMPONENT'S IDENTITY IS NOT ITS ROUTE — the SVID lives in the volume above.
+      - default
+      - main
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+  # ── THE READ LEG ──────────────────────────────────────────────────────────────────────────
+  # Deliberately NO host port: the only callers are the three registries, and they reach it on
+  # the identity network. A port this tier does not need is a port §LEGACYQUIET showed can be
+  # taken out from under you by an ephemeral source port.
+  #
+  # The conf is EU's, unchanged and shared on purpose: the read leg's contract is the same on
+  # both tiers, and `set $upstream http://directory:8600` resolves per PROJECT, so inside this
+  # one it names this index. Two copies would drift.
+  directory-legacy-nginx:
+    image: nginx:1.25-alpine
+    container_name: directory-legacy-nginx
+    restart: unless-stopped
+    volumes:
+      - ./nginx-directory.conf:/etc/nginx/conf.d/default.conf:ro
+      - /opt/theprotocol/stack/Agentvault2/nginx/nginx-entrypoint.sh:/opt/nginx-entrypoint.sh:ro
+      - directory-legacy-certs:/certs:ro
+    environment:
+      CERT_DIR: /certs
+      RELOAD_SEC: "300"
+      SERVICE_NAME: directory-legacy-nginx
+    entrypoint: ["/bin/sh", "/opt/nginx-entrypoint.sh"]
+    depends_on:
+      directory-legacy-cert-writer:
+        condition: service_started
+      directory:
+        condition: service_started
+    healthcheck:
+      # plain http on purpose: a healthcheck that needs a client cert reports the CERT's state,
+      # not the proxy's.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - default
+      - identity
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+volumes:
+  directory-legacy-data: {}
+  directory-legacy-certs: {}
+  framea-spire-socket:
+    external: true
+    name: agentvault_spire_agent_socket
+
+networks:
+  default: {}
+  identity:
+    external: true
+    name: agentvault_identity_network
+  main:
+    external: true
+    name: agentvault_main_network

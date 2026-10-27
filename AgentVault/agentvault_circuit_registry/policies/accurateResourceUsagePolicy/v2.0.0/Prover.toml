@@ -1,0 +1,5 @@
+max_discrepancy_bps = "100"
+transaction_ref = "0xabc"
+reported_units = "202"
+logged_units = "200"
+salt = "0x5eed"

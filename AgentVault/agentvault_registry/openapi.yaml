@@ -1,0 +1,196 @@
+openapi: 3.0.3
+info:
+  title: AgentVault Registry API
+  description: |
+    API for discovering and managing Agent Cards in the AgentVault ecosystem.
+    
+    This includes endpoints for:
+    - Public agent discovery
+    - Developer authentication and management
+    - Agent card CRUD operations
+    - TEG (Token Economy Gateway) integration
+    - Federated registry management
+    - Inter-registry health checks
+  version: 1.0.0
+  contact:
+    name: AgentVault Team
+    url: https://agentvault.com
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+  - url: https://registry.agentvault.com
+    description: Production central registry
+
+paths:
+  /api/v1/federation/health-check:
+    get:
+      summary: Federation Health Check
+      description: |
+        Health check endpoint for peer registries. This endpoint is called by other 
+        AgentVault registries (particularly the central registry) to verify that this 
+        registry instance is operational and reachable.
+        
+        **Security**: Requires mTLS authentication with a valid SPIFFE ID from the 
+        agentvault.com trust domain. Specifically accepts:
+        - spiffe://agentvault.com/service/central-registry
+        - spiffe://agentvault.com/service/central-registry-health-checker
+      operationId: federationHealthCheck
+      tags:
+        - Federation - Public
+      security:
+        - mtlsAuth: []
+      responses:
+        '200':
+          description: Registry is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                  - registry_name
+                  - timestamp
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy]
+                    description: Health status of the registry
+                  registry_name:
+                    type: string
+                    description: Name of this registry instance
+                  timestamp:
+                    type: string
+                    format: date-time
+                    description: ISO 8601 timestamp of the health check
+                  version:
+                    type: string
+                    description: API version of the registry
+                  components:
+                    type: object
+                    description: Health status of individual components
+                    properties:
+                      database:
+                        type: string
+                        enum: [healthy, unhealthy]
+                  authenticated_by:
+                    type: string
+                    description: SPIFFE ID of the authenticated client
+                example:
+                  status: "healthy"
+                  registry_name: "AgentVault Registry - West Coast"
+                  timestamp: "2025-06-05T12:34:56.789Z"
+                  version: "1.0.0"
+                  components:
+                    database: "healthy"
+                  authenticated_by: "spiffe://agentvault.com/service/central-registry-health-checker"
+        '401':
+          description: Unauthorized - Missing client certificate or invalid SPIFFE ID
+        '403':
+          description: Forbidden - Valid certificate but unauthorized SPIFFE ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Service Unavailable - Registry is unhealthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [degraded, unhealthy]
+                  registry_name:
+                    type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+                  version:
+                    type: string
+                  components:
+                    type: object
+                  detail:
+                    type: string
+
+  /api/v1/federation/info:
+    get:
+      summary: Federation Information
+      description: |
+        Public information about this registry instance. This endpoint provides 
+        basic information about the registry that can be accessed without 
+        authentication. Used for discovery and initial federation setup.
+      operationId: federationInfo
+      tags:
+        - Federation - Public
+      responses:
+        '200':
+          description: Registry information
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - registry_name
+                  - api_version
+                  - federation_protocol_version
+                  - supported_auth_methods
+                  - health_check_endpoint
+                  - timestamp
+                properties:
+                  registry_name:
+                    type: string
+                    description: Name of this registry instance
+                  api_version:
+                    type: string
+                    description: API version
+                  federation_protocol_version:
+                    type: string
+                    description: Version of the federation protocol supported
+                  supported_auth_methods:
+                    type: array
+                    items:
+                      type: string
+                      enum: [mtls]
+                    description: Authentication methods supported for federation
+                  health_check_endpoint:
+                    type: string
+                    description: Path to the health check endpoint
+                  timestamp:
+                    type: string
+                    format: date-time
+                  spiffe_trust_domain:
+                    type: string
+                    description: SPIFFE trust domain for this registry
+                example:
+                  registry_name: "AgentVault Registry - West Coast"
+                  api_version: "1.0.0"
+                  federation_protocol_version: "1.0"
+                  supported_auth_methods: ["mtls"]
+                  health_check_endpoint: "/api/v1/federation/health-check"
+                  timestamp: "2025-06-05T12:34:56.789Z"
+                  spiffe_trust_domain: "agentvault.com"
+
+components:
+  schemas:
+    Error:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Error message
+        
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Bearer token authentication for developer/admin endpoints.
+    mtlsAuth:
+      type: mutualTLS
+      description: |
+        Mutual TLS authentication using X.509 certificates with SPIFFE IDs.
+        Client must present a valid certificate with SPIFFE ID from the 
+        agentvault.com trust domain.

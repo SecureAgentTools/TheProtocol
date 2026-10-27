@@ -1,0 +1,55 @@
+[tool.poetry]
+name = "agentvault-teg-layer-mvp"
+version = "0.1.0"
+description = "AgentVault v2.0 TEG Layer MVP Core Service"
+authors = ["Raphael Zbigniew Jeziorny <r.jeziorny@theprotocol.cloud>"]
+license = "AGPL-3.0-or-later"
+readme = "README.md"
+packages = [{include = "teg_core_service", from = "src"}]
+
+[tool.poetry.dependencies]
+# §DEPS (2026-09-27): the TEG image's direct dependencies at the versions it runs (deps1): the image installs
+# requirements.txt against constraints.txt (its own freeze), not this file. spiffe is gone: nothing the TEG runs imports
+# it (the JWT-SVID validator refuses every token when pySpiffe is absent; there is no fallback).
+python = ">=3.14,<3.15"
+fastapi = ">=0.141.1,<0.142"
+uvicorn = {extras = ["standard"], version = ">=0.54,<0.55"}
+sqlalchemy = {version = ">=2.1.1,<2.2", extras = ["asyncio"]}   # 2.1 defaults postgresql:// to psycopg 3: sync engines name psycopg2 (core/db_url.py)
+psycopg2-binary = ">=2.9.13,<3.0"
+asyncpg = ">=0.31,<0.32"
+alembic = ">=1.20,<1.21"
+pydantic = ">=2.13.5,<3.0"
+pydantic-settings = ">=2.15,<2.16"
+python-dotenv = ">=1.2.3,<2.0"
+requests = ">=2.34.2,<3.0"
+httpx = ">=0.28.1,<0.29"
+aiohttp = ">=3.14.3,<4.0"
+cryptography = ">=50.0.1,<51.0"
+PyJWT = ">=2.15.1,<3.0"
+structlog = ">=26.1,<27.0"
+prometheus-fastapi-instrumentator = ">=8.1,<9.0"
+prometheus-client = ">=0.26,<0.27"
+redis = ">=8.1,<9.0"
+cffi = ">=2.1.1,<3.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=9.1,<10"
+pytest-asyncio = ">=1.4,<2"
+pytest-json-report = ">=1.5.0"
+pytest-xdist = ">=3.8,<4"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+addopts = "-v --strict-markers --json-report --json-report-file=test_results/latest_report.json --json-report-indent=2"

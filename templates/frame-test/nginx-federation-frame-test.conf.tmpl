@@ -1,0 +1,167 @@
+# =============================================================
+# nginx mTLS Federation Sidecar — Frame Test (ephemeral)
+# Parameterized from the Frame B template; only the upstream
+# container names change ({{REGISTRY_NAME}}-* instead of frame-b-*).
+# =============================================================
+
+server {
+    listen 8443 ssl;
+    server_name {{REGISTRY_NAME}}-nginx-federation;
+
+    ssl_certificate     /certs/svid.0.pem;
+    ssl_certificate_key /certs/svid.0.key;
+    ssl_client_certificate /certs/bundle.0.pem;
+    ssl_verify_client on;
+
+    ssl_protocols TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # §MTLSHOPS G1/G2 (2026-09-15): every location that forwards a client certificate to the registry or the TEG also sends
+    # nginx's verdict and that app's marker (X-Registry-Proxy-Auth / X-TEG-Proxy-Auth, substituted at the container's start).
+    # The apps count a forwarded certificate only with both, so a caller that reaches an app's port directly proves nothing.
+
+    location /api/v1/federation/ {
+        resolver 127.0.0.11 valid=10s;
+        set $upstream_registry http://{{REGISTRY_NAME}}-registry:8000;
+        proxy_pass $upstream_registry;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-SSL-Client-Cert   $ssl_client_escaped_cert;
+        proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
+        proxy_set_header X-SSL-Client-S-DN   $ssl_client_s_dn;
+        proxy_set_header X-Registry-Proxy-Auth "${REGISTRY_PROXY_TRUST_SECRET}";
+        proxy_set_header X-Federation-Secret    "";
+        proxy_set_header X-Federation-SPIFFE-ID "";
+        proxy_connect_timeout 30s;
+        proxy_read_timeout    60s;
+    }
+
+    # §SBXFED 2026-09-03 — Registry Card over the SAME mTLS fabric as agent-card sync.
+    # WITHOUT THIS the frame answers 404 from `location /` below, so a peer FRAME can never
+    # populate `peer_registries.cached_registry_card`; `_resolve_peer_currency()` then refuses
+    # (it never assumes 1:1) and EVERY cross-frame FX quote dies `no_cross_currency_peer`.
+    # The cloud-operator proxy has carried this block since §pass60; the frame proxy never did.
+    # D6-645: and the AGORA card the registry card links (fees.exchange.stock_card.url), the document a peer's
+    # STOCK_CARD_SYNC pulls first-hand over this lane; without it the pull met 404 and no frame's federated_stock_cards
+    # filled (network-listings named no source but the local catalogue). Public and signed, like the card.
+    location ~ ^/\.well-known/(registry-card\.json|registry-jwks\.json|registry-card-schema\.json|stock-card\.json)$ {
+        resolver 127.0.0.11 valid=10s;
+        set $upstream_rc http://{{REGISTRY_NAME}}-registry:8000;
+        proxy_pass $upstream_rc;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-SSL-Client-Cert   $ssl_client_escaped_cert;
+        proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
+        proxy_set_header X-SSL-Client-S-DN   $ssl_client_s_dn;
+        proxy_set_header X-Registry-Proxy-Auth "${REGISTRY_PROXY_TRUST_SECRET}";
+        proxy_connect_timeout 5s;
+        proxy_read_timeout    10s;
+    }
+
+    location /api/v1/bridge/ {
+        # 2026-04-25 — `resolver 127.0.0.11 valid=10s` is REQUIRED here.
+        # Without it, nginx resolves the upstream once at config-load and
+        # caches the IP forever. Our bilateral_bundle_exchange stage restarts
+        # the registry container (to force svid_client refresh) — the new
+        # container gets a different IP, and the cached one returns "no
+        # resolver defined" + 502 Bad Gateway. Production frame-b is missing
+        # this line too (same bug, just doesn't surface because frame-b
+        # registry is never restarted mid-flight).
+        resolver 127.0.0.11 valid=10s;
+        set $upstream http://{{REGISTRY_NAME}}-registry:8000;
+        proxy_pass $upstream;
+        proxy_set_header Host              $host;
+        proxy_set_header X-SSL-Client-Cert   $ssl_client_escaped_cert;
+        proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
+        proxy_set_header X-Registry-Proxy-Auth "${REGISTRY_PROXY_TRUST_SECRET}";
+        proxy_set_header X-Federation-Secret    "";
+        proxy_set_header X-Federation-SPIFFE-ID "";
+        proxy_connect_timeout 30s;
+        proxy_read_timeout    60s;
+    }
+
+    location /api/v1/cross-teg/ {
+        # §MTLSHOPS T2 (S4): the TEG's unix socket (this terminator mounts it for this location alone).
+        proxy_pass http://unix:/sock/teg/teg.sock:;
+        proxy_set_header Host              $host;
+        # §MTLSHOPS T2 (S4): over a socket the app has no peer address; V0378 reads the client from X-Real-IP
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-SSL-Client-Cert   $ssl_client_escaped_cert;
+        proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
+        proxy_set_header X-TEG-Proxy-Auth    "${TEG_PROXY_TRUST_SECRET}";
+        proxy_set_header X-Federation-Secret    "";
+        proxy_set_header X-Federation-SPIFFE-ID "";
+        proxy_connect_timeout 30s;
+        proxy_read_timeout    60s;
+    }
+
+    location = /api/v1/teg/cross-teg-balance-sync {
+        resolver 127.0.0.11 valid=10s;
+        set $upstream http://{{REGISTRY_NAME}}-registry:8000;
+        proxy_pass $upstream;
+        proxy_set_header Host              $host;
+        proxy_set_header X-SSL-Client-Cert   $ssl_client_escaped_cert;
+        proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
+        proxy_set_header X-Registry-Proxy-Auth "${REGISTRY_PROXY_TRUST_SECRET}";
+        proxy_set_header X-Federation-Secret    "";
+        proxy_set_header X-Federation-SPIFFE-ID "";
+        proxy_connect_timeout 30s;
+        proxy_read_timeout    60s;
+    }
+
+    location /api/v1/contracts/ {
+        resolver 127.0.0.11 valid=10s;
+        set $upstream http://{{REGISTRY_NAME}}-registry:8000;
+        proxy_pass $upstream;
+        proxy_set_header Host              $host;
+        proxy_set_header X-SSL-Client-Cert   $ssl_client_escaped_cert;
+        proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
+        proxy_set_header X-Registry-Proxy-Auth "${REGISTRY_PROXY_TRUST_SECRET}";
+        proxy_set_header X-Federation-Secret    "";
+        proxy_set_header X-Federation-SPIFFE-ID "";
+        proxy_connect_timeout 30s;
+        proxy_read_timeout    60s;
+    }
+    # §SBXFXROUTE (2026-09-06) — op→op FX route delegation, the block every
+    # PRODUCTION frame vhost has carried since §pass78c and this template never
+    # did. Without it a gateway frame answers the delegated hop with nginx's own
+    # 404 {"error":"Only federation endpoints are served via mTLS proxy"}, and the
+    # route dies AFTER the origin's 1:1 ingress has already moved funds to this
+    # frame's @fx_router — measured on the sandbox pair 2026-09-06, 1.99 units
+    # parked and Δ still 0.0 on both frames, because both legs are ordinary
+    # transfers. Same backend + client-cert forwarding as /api/v1/federation/.
+    location /api/v1/teg/fx/route-hop {
+        resolver 127.0.0.11 valid=10s;
+        set $upstream_routehop http://{{REGISTRY_NAME}}-registry:8000;
+        proxy_pass $upstream_routehop;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_set_header X-SSL-Client-Cert   $ssl_client_escaped_cert;
+        proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
+        proxy_set_header X-SSL-Client-S-DN   $ssl_client_s_dn;
+        proxy_set_header X-Registry-Proxy-Auth "${REGISTRY_PROXY_TRUST_SECRET}";
+
+        proxy_set_header X-Federation-Secret    "";
+        proxy_set_header X-Federation-SPIFFE-ID "";
+
+        proxy_connect_timeout 30s;
+        proxy_read_timeout    90s;
+        proxy_send_timeout    30s;
+    }
+
+
+    location / {
+        return 404 '{"error":"Only federation endpoints are served via mTLS proxy"}\n';
+        add_header Content-Type application/json;
+    }
+}

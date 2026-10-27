@@ -1,0 +1,14 @@
+{
+  "_comment": "Policy of the frame runner (tools/frame-runner/frame_runner.py), read from /etc/theprotocol/frame-runner.json at start. Every image a runner-built frame may use is allowlisted here by tag; Frame Management offers only these. images.event_store, images.auditor and images.directory are the frame kit (§SOVKIT): the first entry is the default when a request names none. Never a :latest tag: a tag is a name, an allowlist entry is a decision.",
+  "allowed_uids": [1000],
+  "domain": "example.com",
+  "images": {
+    "registry": ["theprotocol/registry:1.0.0"],
+    "teg": ["theprotocol/teg-layer:1.0.0"],
+    "event_store": ["theprotocol/event-store:1.0.0"],
+    "auditor": ["theprotocol/auditor:1.0.0"],
+    "directory": ["theprotocol/directory:1.0.0"]
+  },
+  "wire_prod": false,
+  "max_load": 40
+}

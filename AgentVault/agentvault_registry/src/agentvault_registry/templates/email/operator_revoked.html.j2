@@ -1,0 +1,10 @@
+{% extends "_base.html.j2" %}
+{% set theme = "sovereign" %}
+{% set kicker = "// REGISTRY LICENSE REVOKED" %}
+{% set headline = "License Revoked: " ~ name %}
+{% block body %}
+<p>Your operator registry license for <strong>{{ name }}</strong> has been <strong>REVOKED</strong>.</p>
+{% with notice="<strong>Reason:</strong><br/>" ~ reason %}{% include '_partials/info_box.html' %}{% endwith %}
+<p>This action is <strong>irreversible</strong>. All SPIRE access, Docker image registry credentials, and federation licenses have been revoked.</p>
+<p>If you believe this is an error, please contact <a href="mailto:operators@theprotocol.cloud">operators@theprotocol.cloud</a>.</p>
+{% endblock %}

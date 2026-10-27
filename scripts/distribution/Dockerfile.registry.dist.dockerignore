@@ -1,0 +1,45 @@
+# Dockerfile.registry.dist.dockerignore: the build-context rules for scripts/distribution/Dockerfile.registry.dist ONLY.
+#
+# BuildKit (the default builder since Docker 23) reads a Dockerfile-specific ignore file INSTEAD of the context
+# root's .dockerignore (AgentVault/.dockerignore, which production builds use). The rules below mirror that file with
+# one deliberate difference: the frontend SOURCE stays in the context, because this image builds the frontend itself
+# (stage `frontend`) and a repository carries no dist/. The builder stage removes the source again, so the runtime
+# image holds dist/ only, as a production image does. §OSSRC 2026-09-14.
+
+# backups and editor litter
+**/*.bak*
+*.bak*
+**/*.orig
+*.orig
+**/*~
+
+# operator tooling, never read at runtime (§EXCISION)
+agentvault_registry/scripts
+
+# the frontend's installed dependencies, any host-built dist, and its test output: stage `frontend` installs and builds
+**/node_modules
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/dist
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/e2e
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/test-results
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/playwright-report
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/shot_*.mjs
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/diag_*.mjs
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/gate_*.mjs
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/TempScreenshots
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/e2e-screenshots
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/aw2_*.png
+# a frontend env file: vite inlines VITE_* values into the bundle that ships, so a working tree's .env must not
+# reach stage `frontend` (a repository and the export carry none; the build needs none)
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/.env
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/.env.*
+
+# build and test detritus
+**/htmlcov
+**/.coverage
+**/coverage.xml
+**/__pycache__
+**/.pytest_cache
+
+# a registry env file must never be baked into an image (§MONEY-R37); config/network_profile.*.env stays
+agentvault_registry/.env
+agentvault_registry/.env.*

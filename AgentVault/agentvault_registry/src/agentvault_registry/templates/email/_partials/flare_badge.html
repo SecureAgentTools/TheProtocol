@@ -1,0 +1,74 @@
+{#
+  Flare badge partial (PB-1 Phase Q, 2026-05-09).
+
+  Renders a stylized cosmetic badge in the email matching the in-app
+  FlareBadge component. Email-client safe — uses bgcolor + border-radius
+  + table layout (works in Gmail, Outlook, Apple Mail). No inline SVG
+  because Outlook strips it; no external assets.
+
+  Required context vars:
+    flare_tier   — 'sentinel' | 'architect' | 'founder' | 'operator' | 'commander'
+    flare_label  — display label (e.g. "Sentinel" or buyer's display_name)
+
+  Optional:
+    tagline      — short tagline shown below
+#}
+{%- set _tier_glyph = {
+  'sentinel':  '◆',
+  'architect': '◈',
+  'founder':   '◇',
+  'operator':  '⬢',
+  'commander': '♛',
+} -%}
+{%- set _tier_color = {
+  'sentinel':  '#00d2d2',
+  'architect': '#10b981',
+  'founder':   '#fcd34d',
+  'operator':  '#67e8f9',
+  'commander': '#fcd34d',
+} -%}
+{%- set _tier_bg = {
+  'sentinel':  '#001a1a',
+  'architect': '#001a14',
+  'founder':   '#1a1100',
+  'operator':  '#001520',
+  'commander': '#1a0808',
+} -%}
+{%- set _tier_border = {
+  'sentinel':  '#00d2d2',
+  'architect': '#10b981',
+  'founder':   '#f59e0b',
+  'operator':  '#cbd5e1',
+  'commander': '#dc2626',
+} -%}
+{%- set _glyph = _tier_glyph.get(flare_tier, '◆') -%}
+{%- set _color = _tier_color.get(flare_tier, '#00d2d2') -%}
+{%- set _bg = _tier_bg.get(flare_tier, '#001a1a') -%}
+{%- set _border = _tier_border.get(flare_tier, '#00d2d2') -%}
+
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:18px auto;border-collapse:separate;">
+  <tr>
+    <td align="center" style="padding:18px 24px;background:{{ _bg }};border:2px solid {{ _border }};border-radius:14px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td align="center" valign="middle" style="width:48px;height:48px;background:{{ _bg }};border:2px solid {{ _border }};border-radius:50%;font-size:22px;line-height:48px;color:{{ _color }};font-weight:bold;">
+            {{ _glyph }}
+          </td>
+          <td style="padding-left:14px;text-align:left;">
+            <div style="font-family:Helvetica,Arial,sans-serif;font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:{{ _color }};opacity:0.85;font-weight:bold;line-height:1.2;">
+              {{ flare_tier|upper }} BACKER
+            </div>
+            <div style="font-family:Helvetica,Arial,sans-serif;font-size:18px;font-weight:600;color:#ffffff;line-height:1.3;margin-top:2px;">
+              {{ flare_label }}
+            </div>
+            {%- if tagline %}
+            <div style="font-family:Helvetica,Arial,sans-serif;font-size:12px;color:#cbd5e1;line-height:1.4;margin-top:4px;max-width:340px;">
+              {{ tagline }}
+            </div>
+            {%- endif %}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>

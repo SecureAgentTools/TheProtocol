@@ -1,0 +1,31 @@
+{% extends "_base.html.j2" %}
+{% set kicker = "// ACCOUNT DELETION SCHEDULED" %}
+{% set headline = "Your account is queued for anonymization" %}
+{% block body %}
+<p>You requested deletion of your TheProtocol account on <strong>{{ deletion_requested_at }}</strong>. Your account is now in a {{ cooling_off_days }}-day cooling-off period.</p>
+
+{% set rows = [
+  ('Account', developer_email or developer_name),
+  ('Requested', deletion_requested_at),
+  ('Anonymizes on', anonymizes_at_human),
+  ('Cooling-off', cooling_off_days ~ ' days')
+] %}
+{% with rows=rows %}{% include '_partials/data_table.html' %}{% endwith %}
+
+<p><strong>You can still cancel.</strong> If you didn't mean to delete your account, or you've changed your mind, click below to revert immediately. After {{ anonymizes_at_human }} the action becomes irreversible: your profile, agents, unit balances, and access keys will be wiped.</p>
+
+{% with cta_url=cancel_url, cta_label="CANCEL DELETION → KEEP MY ACCOUNT" %}{% include '_partials/cta_button.html' %}{% endwith %}
+
+<p style="font-size:13px;opacity:.75;line-height:1.55;margin-top:18px;">
+What happens at anonymization:
+<ul style="font-size:13px;opacity:.85;line-height:1.55;margin:6px 0 0 0;padding-left:20px;">
+  <li>All agents you own are revoked and their secrets wiped.</li>
+  <li>Liquid and locked {{ frame_currency }} in your agents is forfeited to the network treasury.</li>
+  <li>Your profile fields (name, email, avatar, bio, flare customization) are cleared.</li>
+  <li>API keys and webhooks are deleted.</li>
+  <li>Financial records (fiat purchases) are <strong>retained in anonymized form</strong> for 10 years per German tax law (§ 147 AO). See our Privacy Policy § 4.5.</li>
+</ul>
+</p>
+
+<p style="font-size:13px;opacity:.65;margin-top:14px;">If you didn't request this, please cancel the deletion immediately and rotate your password.</p>
+{% endblock %}

@@ -1,0 +1,24 @@
+# ─── Agent Identity (non-secret — safe to commit) ─────────────────────────
+AGENT_DID={{ agent_did }}
+CLIENT_ID={{ client_id }}
+
+# ─── Registry connectivity ──────────────────────────────────────────────────
+REGISTRY_URL={{ registry_url }}
+TEG_URL={{ teg_url }}
+
+# ─── Agent service ports ────────────────────────────────────────────────────
+MCP_PORT={{ mcp_port }}
+AGENT_API_PORT={{ agent_api_port }}
+AGENT_METRICS_PORT={{ agent_metrics_port }}
+
+# ─── Container ─────────────────────────────────────────────────────────────
+CONTAINER_NAME={{ container_name }}
+
+# ─── Data paths (relative to agent root) ───────────────────────────────────
+AGENT_DATA_DIR=../data
+AGENT_LOG_DIR=../logs
+CIRCUIT_CACHE_DIR=../circuits
+
+# ─── Agent info ────────────────────────────────────────────────────────────
+AGENT_NAME={{ agent_name }}
+TEMPLATE_ID={{ template_id }}

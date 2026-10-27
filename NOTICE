@@ -1,0 +1,41 @@
+TheProtocol
+Copyright (C) 2025-2026 Raphael Zbigniew Jeziorny
+
+The server and platform components are licensed under AGPL-3.0-or-later; the
+SDKs, the agent library, the CLI and the independent auditor under
+Apache-2.0; the public documentation and protocol specifications under
+CC BY 4.0. LICENSING.md maps every directory, and REUSE.toml records the same
+map for licence scanners.
+
+This distribution includes third-party components under their own licenses:
+
+- The Python packages its images install. Each package's licence files ship
+  inside the image with the package (site-packages/*.dist-info).
+- The npm packages the web application bundles. Every build writes their
+  licence and notice files to THIRD_PARTY_NOTICES.txt beside the bundle.
+- Swagger UI 5.9.0 (Apache-2.0; its NOTICE is carried as
+  public/vendor/NOTICE.swagger-ui) and ReDoc 2.5.0 (MIT, with
+  redoc.standalone.js.LICENSE.txt), vendored in the web application.
+- CesiumJS (Apache-2.0, with its own third-party list in its LICENSE.md,
+  copied with its assets).
+- The Inter, IBM Plex Sans, IBM Plex Mono, Orbitron and JetBrains Mono fonts
+  (SIL Open Font License 1.1; the copyright lines are in each fonts/OFL.txt).
+- Base map tiles generated from Natural Earth (public domain) and night-light
+  tiles from NASA GIBS, VIIRS Black Marble (public domain; NASA asks for the
+  acknowledgement in public/assets/nightlights/SOURCE.txt).
+
+The container images also carry their base distributions' packages (Debian,
+Alpine) with their licences under /usr/share/doc or /lib/apk/db. The source of
+their GPL and LGPL parts is published by Debian (https://snapshot.debian.org)
+and Alpine (https://gitlab.alpinelinux.org/alpine/aports) for the exact
+versions an image lists, and is available on request from the licensor for
+three years after an image was published.
+
+A frame also runs third-party images this repository does not include: among
+them Redpanda (Business Source License 1.1, not an open-source licence; it
+restricts offering Redpanda itself as a commercial streaming or queuing
+service), Redis 8 (used under its AGPL-3.0 option) and Grafana (AGPL-3.0).
+PUBLIC_DOCS/THIRD_PARTY_SOFTWARE.md says what each licence means for a frame.
+
+The names and logos of TheProtocol are not licensed under these licenses; see
+LICENSING.md, Trademarks.

@@ -1,0 +1,52 @@
+/**
+ * trading_sentinel_tools.js — Trading Sentinel specific MCP tools
+ */
+'use strict';
+
+const { get } = require('../lib/http_client');
+const config = require('../lib/config');
+const fs = require('fs');
+const path = require('path');
+
+const tools = [
+  {
+    name: 'get_opportunity_log',
+    description: 'View recent arbitrage opportunities detected by the sentinel.',
+    inputSchema: {
+      type: 'object',
+      properties: { limit: { type: 'integer', default: 20 } },
+    },
+    async handler({ limit = 20 }) {
+      const file = path.join(config.dataDir, 'opportunities.json');
+      if (!fs.existsSync(file)) return { opportunities: [], message: 'No opportunities logged yet' };
+      const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      const opps = data.opportunities || data || [];
+      return { opportunities: opps.slice(-limit), total: opps.length };
+    },
+  },
+  {
+    name: 'check_cross_registry_balances',
+    description: 'Check balances on both Registry-A and Registry-B for arbitrage assessment.',
+    inputSchema: { type: 'object', properties: {} },
+    async handler() {
+      const balanceA = await get('/api/v1/teg/balance').catch(e => ({ error: e.message }));
+      return {
+        registry_a: { url: config.registryUrl, balance: balanceA },
+        note: 'Configure REGISTRY_B_URL in .env and extend this tool for dual-registry monitoring',
+      };
+    },
+  },
+  {
+    name: 'get_monitored_pairs',
+    description: 'List currency/service pairs being monitored for price spread opportunities.',
+    inputSchema: { type: 'object', properties: {} },
+    async handler() {
+      const file = path.join(config.dataDir, 'config.json');
+      if (!fs.existsSync(file)) return { pairs: [], message: 'No pairs configured yet. Edit data/config.json to add pairs.' };
+      const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      return { pairs: data.monitored_pairs || [] };
+    },
+  },
+];
+
+module.exports = tools;

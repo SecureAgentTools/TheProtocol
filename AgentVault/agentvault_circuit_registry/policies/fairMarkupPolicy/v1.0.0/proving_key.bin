@@ -1,0 +1,5 @@
+# Placeholder for Proving Key
+# In production, this would be a binary file generated during trusted setup
+# For MVP, this is a placeholder indicating the key needs to be generated
+# Command to generate: nargo prove
+MVP_PLACEHOLDER_PROVING_KEY

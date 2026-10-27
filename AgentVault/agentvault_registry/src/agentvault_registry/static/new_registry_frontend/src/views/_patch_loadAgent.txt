@@ -1,0 +1,4 @@
+  // 1. Check store first — only pre-populate if the route DID matches the active agent
+  if (agentStore.currentAgent?.did === agentId) {
+    agent.value = agentStore.currentAgent
+  }

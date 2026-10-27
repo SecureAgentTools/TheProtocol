@@ -1,0 +1,9 @@
+{% extends "_base.html.j2" %}
+{% set kicker = "// REGISTRY LICENSE REINSTATED" %}
+{% set headline = "License Reinstated: " ~ name %}
+{% block body %}
+<p>Your operator registry license for <strong>{{ name }}</strong> has been <strong>REINSTATED</strong>.</p>
+<p>Your operator status has been restored to <strong>approved</strong>. All existing SPIRE and Docker credentials remain valid: no re-deployment is required.</p>
+{% with cta_url=registry_ui_url, cta_label="OPEN OPERATOR PORTAL" %}{% include '_partials/cta_button.html' %}{% endwith %}
+<p>Welcome back to the federation.</p>
+{% endblock %}

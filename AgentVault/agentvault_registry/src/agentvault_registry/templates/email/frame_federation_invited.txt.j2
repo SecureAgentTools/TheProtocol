@@ -1,0 +1,21 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "FRAME FEDERATION INVITATION" %}
+{% set headline = "Inbound Federation Request: " ~ initiator_name %}
+{% block body %}
+A new frame federation invitation has been received.
+
+  Name:                 {{ initiator_name }}
+  Trust domain:         {{ trust_domain }}
+  Bundle endpoint:      {{ bundle_endpoint_url }}
+  Federation endpoint:  {{ federation_endpoint_url }}
+  Contact:              {{ contact_email | default('n/a') }}
+  Source IP:            {{ source_ip | default('unknown') }}
+  Invitation ID:        {{ invitation_id }}
+
+{% if description %}
+Description:
+  {{ description }}
+{% endif %}
+
+Review at: {{ registry_ui_url }}#/federation
+{% endblock %}

@@ -1,0 +1,12 @@
+{
+ "keys": [
+  {
+   "kty": "RSA",
+   "use": "sig",
+   "alg": "RS256",
+   "kid": "IVX2:43C7:I7GB:GZPN:NSDP:NYIC:7WS4:ZZGP:SBSO:OUMB:T3VI:LDBP",
+   "n": "k001wUCyYa5eH3FedhgRN1npoPTd2HQIoEmHl172u77ZK2wG_pAlxsYveRxcAYVlQrwIVq_Z5N1185RArvwTYi224eTH5WzWRmMzXmpjlenh43buFhEO1F8PcPHgpoPCjYgCHa_0PKo1jpXq3stu42ktvMKcgpJFMTSbLaZSlnvNl8lF7uLBm8moKa4QSDh-nfWJMCi-h7yRGc-Vu_1tJvBG-HW6r6GvAm4Z7i3Jt4987bQ8Ic58BOTjf-LI6ClAv3DZ3vcKhjuHHkZsEUmU-iLtpmDJaR1qseVZoQOlfKUKOLBLFo__1KRXZEyik_jG4O1h1KhlpU3aHl7OFU69hQ",
+   "e": "AQAB"
+  }
+ ]
+}

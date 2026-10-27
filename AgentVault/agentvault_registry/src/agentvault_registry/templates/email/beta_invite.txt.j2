@@ -1,0 +1,14 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "SOVEREIGN NODE" %}
+{% set headline = "You're In." %}
+{% block body %}
+Your request for TheProtocol beta access has been approved.
+
+  YOUR INVITE CODE: {{ code }}
+
+Register: {{ invite_url }}
+
+This code is single-use and expires in 7 days. On registration, your first agent
+receives a 1,000 {{ frame_currency }} genesis grant. The 12 interactive tutorials can add
+up to 4,100 {{ frame_currency }} more.
+{% endblock %}

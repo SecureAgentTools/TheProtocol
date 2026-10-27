@@ -1,0 +1,13 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "FRAME FEDERATION DECLINED" %}
+{% set headline = "Federation Declined: " ~ local_name %}
+{% block body %}
+Your frame federation invitation has been declined.
+
+  Invitation ID:  {{ invitation_id }}
+  Trust domain:   {{ trust_domain }}
+
+Reason: {{ reason }}
+
+You are welcome to submit a new invitation after addressing the feedback.
+{% endblock %}

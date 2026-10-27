@@ -1,0 +1,7 @@
+TheProtocol Auditor
+Copyright 2025-2026 Raphael Zbigniew Jeziorny
+
+The auditor (this directory) is licensed under the Apache License, Version 2.0 (see LICENSE here), so that anyone can
+run, embed and adapt an independent verifier of TheProtocol frames without copyleft obligations. It was licensed as part
+of the AGPL-3.0-or-later platform until 30 September 2026; the author relicensed it. The rest of the repository keeps the
+licences LICENSING.md names.

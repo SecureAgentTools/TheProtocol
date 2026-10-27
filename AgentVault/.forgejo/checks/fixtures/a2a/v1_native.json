@@ -1,0 +1,58 @@
+{
+ "protocolVersion": "1.0",
+ "name": "Native One",
+ "description": "A v1.0-native card.",
+ "version": "2.0.0",
+ "supportedInterfaces": [
+  {
+   "url": "https://native.example/a2a",
+   "protocolBinding": "JSONRPC",
+   "protocolVersion": "1.0"
+  }
+ ],
+ "securitySchemes": {
+  "apiKey": {
+   "type": "apiKey",
+   "in": "header",
+   "name": "X-Api-Key"
+  }
+ },
+ "capabilities": {
+  "streaming": true,
+  "extensions": [
+   {
+    "uri": "https://theprotocol.cloud/extensions/v1/track-record",
+    "description": "Registry-attested guild work history",
+    "required": false,
+    "params": {
+     "attestation_url": "https://frame-c.example/api/v1/agents/x/track-record",
+     "receipt_kind": "guild.receipt.v1"
+    }
+   }
+  ],
+  "extendedAgentCard": true
+ },
+ "defaultInputModes": [
+  "application/json"
+ ],
+ "defaultOutputModes": [
+  "application/json"
+ ],
+ "skills": [
+  {
+   "id": "native",
+   "name": "Native skill",
+   "description": "Does things.",
+   "tags": [
+    "native",
+    "fixture"
+   ]
+  }
+ ],
+ "signatures": [
+  {
+   "protected": "eyJhbGciOiJFZERTQSJ9",
+   "signature": "c2ln"
+  }
+ ]
+}

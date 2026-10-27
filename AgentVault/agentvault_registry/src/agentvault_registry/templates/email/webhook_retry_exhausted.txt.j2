@@ -1,0 +1,19 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "WEBHOOK INTEGRATION OFFLINE" %}
+{% set headline = "Webhook auto-disabled after retry exhaustion" %}
+{% block body %}
+Your registered webhook has been auto-disabled after {{ consecutive_failures }}
+consecutive delivery failures. No further events will be sent to this endpoint
+until you re-enable it.
+
+  Webhook ID:           {{ webhook_id }}
+  Target URL:           {{ target_url }}
+  Consecutive failures: {{ consecutive_failures }}
+  Last response code:   {{ last_response_code or '-' }}
+  Last error:           {{ last_error }}
+  Disabled at:          {{ disabled_at }}
+
+Re-enable: {{ registry_ui_url }}#/account/webhooks
+
+The failure counter resets on the first successful delivery.
+{% endblock %}

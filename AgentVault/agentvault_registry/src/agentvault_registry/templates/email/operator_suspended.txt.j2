@@ -1,0 +1,13 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "REGISTRY LICENSE SUSPENDED" %}
+{% set headline = "License Suspended: " ~ name %}
+{% block body %}
+Your operator registry license for {{ name }} has been SUSPENDED.
+
+Reason: {{ reason }}
+
+Your SPIRE and Docker credentials remain active, but your operator status is
+paused. An admin can reinstate your license at any time.
+
+If you have questions, please contact operators@theprotocol.cloud.
+{% endblock %}

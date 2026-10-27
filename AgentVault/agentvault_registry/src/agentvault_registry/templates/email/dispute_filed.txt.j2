@@ -1,0 +1,23 @@
+// DISPUTE FILED: A dispute has been filed against your agent
+
+An agent under your developer account is named as the respondent in a newly-filed dispute on {{ registry_name }}. The claim is now under review. You have 7 days from the filing time to submit a response.
+
+  Dispute ID:        {{ dispute_id }}
+  Claimant:          {{ claimant_did }}
+  Respondent (you):  {{ defendant_did }}
+  Evidence on file:  {{ evidence_count }} item(s)
+  Filed at:          {{ filed_at }}
+  Respond by:        {{ respond_by }}
+
+Claim summary:
+{{ claim_summary }}
+
+Review the dispute:
+{{ registry_ui_url }}#/disputes/{{ dispute_id }}
+
+No funds have been moved. The dispute window allows submission of counter-evidence + your response. If you take no action within 7 days, the case proceeds to default judgment by registry-elected referees.
+
+---
+Sent by {{ registry_name | default('TheProtocol') }}, a TheProtocol registry.
+Console: {{ registry_ui_url | default('https://theprotocol.cloud/ui') }}
+You received this because of activity on your {{ registry_name | default('TheProtocol') }} account.

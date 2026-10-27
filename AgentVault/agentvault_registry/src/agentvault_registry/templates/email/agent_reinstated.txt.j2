@@ -1,0 +1,21 @@
+// AGENT REINSTATED: Your agent has been reinstated
+
+An agent under your developer account, previously {{ previous_status }}, has been reinstated. Cross-TEG transfer routes, IRONHAND mTLS, and federation-sync access are restored. The agent is back in the active roster across the federation.
+
+  Agent DID:         {{ agent_did }}
+  Previous status:   {{ previous_status }}
+  Reinstated at:     {{ reinstated_at }}
+  Reinstated by:     {{ reinstated_by }}
+
+Reason recorded:
+{{ reason }}
+
+Open agent profile:
+{{ registry_ui_url }}#/agents/{{ agent_did }}
+
+No new SVID is required: the agent's existing IRONHAND credential is back in the trust store. Suspended balances and locked positions are unchanged; payouts on locked units, where this registry makes them, resume on the next cycle.
+
+---
+Sent by {{ registry_name | default('TheProtocol') }}, a TheProtocol registry.
+Console: {{ registry_ui_url | default('https://theprotocol.cloud/ui') }}
+You received this because of activity on your {{ registry_name | default('TheProtocol') }} account.

@@ -1,0 +1,63 @@
+/**
+ * config.js — Agent configuration loader
+ * Reads .env (non-secret) and .env.secret (secret) at startup.
+ * Generated for: {{ agent_name }} ({{ template_id }})
+ */
+'use strict';
+
+const path = require('path');
+const fs = require('fs');
+
+// Load .env (non-secret, committed)
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
+
+// Load .env.secret from AGENT_SECRET_FILE env var or default location
+const secretFile = process.env.AGENT_SECRET_FILE || path.resolve(__dirname, '../../.env.secret');
+if (fs.existsSync(secretFile)) {
+  require('dotenv').config({ path: secretFile });
+} else {
+  console.error(`[CONFIG] WARNING: Secret file not found: ${secretFile}`);
+  console.error('[CONFIG] Create .env.secret with CLIENT_SECRET=your_secret_here');
+}
+
+function requireEnv(name) {
+  const val = process.env[name];
+  if (!val) {
+    console.error(`[CONFIG] FATAL: Required env var ${name} is not set`);
+    process.exit(1);
+  }
+  return val;
+}
+
+const config = {
+  // Agent identity
+  agentDid:    requireEnv('AGENT_DID'),
+  clientId:    requireEnv('CLIENT_ID'),
+  clientSecret: requireEnv('CLIENT_SECRET'),  // from .env.secret
+
+  // Registry connectivity
+  registryUrl: process.env.REGISTRY_URL || '{{ registry_url }}',
+  tegUrl:      process.env.TEG_URL || '{{ teg_url }}',
+
+  // MCP server
+  mcpPort: parseInt(process.env.MCP_PORT || '{{ mcp_port }}', 10),
+
+  // Agent service
+  containerName: process.env.CONTAINER_NAME || '{{ container_name }}',
+
+  // Data paths
+  dataDir:    path.resolve(__dirname, '../../', process.env.AGENT_DATA_DIR || '../data'),
+  logDir:     path.resolve(__dirname, '../../', process.env.AGENT_LOG_DIR || '../logs'),
+  circuitDir: path.resolve(__dirname, '../../', process.env.CIRCUIT_CACHE_DIR || '../circuits'),
+
+  // Agent metadata
+  agentName:  process.env.AGENT_NAME || '{{ agent_name }}',
+  templateId: process.env.TEMPLATE_ID || '{{ template_id }}',
+};
+
+// Validate connectivity URLs
+try { new URL(config.registryUrl); } catch {
+  console.error(`[CONFIG] Invalid REGISTRY_URL: ${config.registryUrl}`); process.exit(1);
+}
+
+module.exports = config;

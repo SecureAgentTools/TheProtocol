@@ -1,0 +1,52 @@
+{
+  "PolicyName": "Proof-of-Fair-Markup",
+  "PolicyID": "FAIR_MARKUP_POLICY_V2",
+  "CircuitVersion": "2.0.0",
+  "Supersedes": "1.0.0",
+  "DSL": "Noir",
+  "NoirVersion": "1.0.0-beta.3",
+  "ProvingSystem": "UltraHonk (Barretenberg 0.82.2)",
+  "Statement": "The offered price is at most the committed cost plus the policy maximum markup: offered_price * 10000 <= total_cost * (10000 + max_markup_bps).",
+  "PublicInputs": {
+    "max_markup_bps": {
+      "type": "u32",
+      "description": "Markup cap in basis points. The verifier refuses a proof whose cap is looser than the registry policy."
+    },
+    "offered_price": {
+      "type": "u64",
+      "description": "The offered price, in the smallest unit of the frame unit."
+    },
+    "context": {
+      "type": "Field",
+      "description": "Non-zero reference to the offer, for example a hash of the quote id. The verifier compares it when the caller names the offer."
+    }
+  },
+  "PrivateInputs": {
+    "total_cost": {
+      "type": "u64",
+      "description": "The provider total cost, in the same unit as offered_price."
+    },
+    "salt": {
+      "type": "Field",
+      "description": "Random blinding value for the cost commitment."
+    }
+  },
+  "PublicOutputs": {
+    "cost_commitment": {
+      "type": "Field",
+      "description": "Poseidon2(DOMAIN, total_cost, salt). Binds the prover to one cost it can open to an auditor."
+    }
+  },
+  "Policy": {
+    "max_markup_bps": {
+      "rule": "at_most",
+      "default": 3000
+    }
+  },
+  "Limits": "Proves the price is consistent with a committed cost. It does not prove the cost is true: an auditor checks that by asking the provider to open the commitment.",
+  "Artifacts": {
+    "circuit": "circuit.json",
+    "verification_key": "verification_key.bin",
+    "verification_key_sha256": "24319a2473afd5d6aea99bbe5f5c4d6a86650571cfcc57e6e01303d3927e3e6e"
+  }
+}

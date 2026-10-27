@@ -1,0 +1,3 @@
+"""
+Admin Health test module
+"""

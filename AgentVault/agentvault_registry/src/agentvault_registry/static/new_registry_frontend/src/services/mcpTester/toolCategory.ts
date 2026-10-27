@@ -1,0 +1,73 @@
+// §MCPTEST30: the category of a row in the tester's All tools list (moved out of AdminMcpTester.vue so it is unit-tested).
+import { rowCategory } from './categories'
+
+/**
+ * Auto-derive a category from a tool name.
+ *
+ * Strategy: strip the `theprotocol_` namespace, then group by verb prefix
+ * (Read / Write / Admin Action / Federation / TEG / Locks / Governance /
+ * Auth / Bundles / Webhooks / Bridges / Pipelines / Fiat / Onboarding /
+ * Other). For admin-bridge tools, prepend "Admin · ".
+ *
+ * This derivation lives client-side so backend doesn't need a `category`
+ * field per tool — naming convention IS the category. If a tool drifts
+ * out of convention, it falls into "Other" — that's a useful signal.
+ */
+export function categorizeTool(rawName: string, tier?: string): string {
+  // §FESUITE: a console lifecycle row is `ui:<lifecycle>.<step>`; its category is the lifecycle
+  const ui = /^ui:([^.]+)\./.exec(rawName)
+  if (ui) return 'Console · ' + ui[1].replace(/_/g, ' ')
+  // §MCPTEST30 (V0535): a federation suite row and a probe row are not tools; each family has its own category
+  const own = rowCategory(rawName)
+  if (own) return own
+  const name = rawName.replace(/^theprotocol[._]/i, '')
+  // §MCPTEST30 (V0550): the row's own tier decides; the name only guesses for a row that came without one. The name
+  // rule alone filed six public tools under Admin (approveContractCompletion is an agent's tool; revokeApiKey,
+  // approve/rejectDisputeSettlement and grant/revokeSupportReview a developer's).
+  const isAdmin = tier
+    ? (tier === 'admin' || tier === 'admin-bridge')
+    : (/^admin/i.test(name) || /^(approve|reject|suspend|reinstate|revoke|blacklist|quarantine|grant)/i.test(name))
+  const adminPrefix = isAdmin ? 'Admin · ' : ''
+
+  // Specific bucketing rules — most specific first
+  if (/^getAdminFederation|^getAllFederationPeers|^getFederationCompliance|^getFederationSync|^getFederationTopology|^listQuarantinedRegistries|^approvePeerRegistry|^rejectPeerRegistry|^deactivatePeerRegistry|^reactivatePeerRegistry|^getPeerRegistryCard|^getPendingPeerRegistries|^validateFederationPolicy|^pollPeerComplianceNow|^setFederationComplianceEnforcementMode/i.test(name)) return adminPrefix + 'Federation Compliance & Sync'
+  if (/^federation[A-Z]|^getFederation|^getRegistryFederation|^getMyFederation|^createFederationPeer|^updateFederationPeer|^deleteFederationPeer|^listFederation|^backfillPullTokens|^rotateOperatorPullToken|^triggerFederationSync/i.test(name)) return adminPrefix + 'Federation'
+  if (/^getAdminFrameInvitation|^listAdminFrameInvitations|^approveFrameInvitation|^rejectFrameInvitation|^finalizeRetryFrameInvitation|^createFrameInvitation|^finalizeFrameInvitation|^getAdminFrameInvitation|^requestFrame|^revokeFrame/i.test(name)) return adminPrefix + 'Frame Invitations'
+  if (/^getEventStore|^adminQueryEventStore|^getFederationLocalEvents|^searchAdminEvents|^getEventsAggregate|^getPublicEventStore/i.test(name)) return adminPrefix + 'EventStore'
+  if (/^getSupplyAuditor|^triggerSupplyAudit/i.test(name)) return adminPrefix + 'Supply Auditor'
+  if (/^getCanary|^fireCanaryPath|^setCanaryMaintenance|^toggleCanaryPath/i.test(name)) return adminPrefix + 'Canary'
+  if (/^getCollusion|^getAdminCollusion/i.test(name)) return adminPrefix + 'Collusion'
+  if (/^teg[A-Z]|^Teg|^getTeg|^createTeg|^updateTeg|^deleteTeg|^listTeg|^submitTegAttestation|^logTegDispute|^claimTegRewards|^claimTegPayouts|^resolveTegDispute/i.test(name)) return adminPrefix + 'TEG'
+  if (/^stak|^Stak|^getStaking|^claimStakingRewards|^claimLockPayouts|^estimateMyStakingRewards|^estimateMyLockPayouts|^getMyStak|^lockUnits|^unlockUnits|^getMyLock|^getLock|^claimLockPayouts|^estimateMyLockPayouts/i.test(name)) return adminPrefix + 'Locks'   // the staking API: the console's word is locks (§VOCAB)
+  if (/^createProposal|^castVote|^tallyProposal|^getProposalDetail|^getProposalVotes|^getGovernanceProposals|^getMyVoteOnProposal|^getMyVotingPower|^getAutoTallyConfig|^federationProposeRaise|^federationVoteProposal|^federationVetoProposal|^getRegistryFederationProposals|^federationSlashRequest|^federationSlashConfirmation/i.test(name)) return adminPrefix + 'Governance'
+  if (/^createAgent|^deleteMyAgent|^getMyAgent|^getAgentByDID|^getAgentCard|^getAgentDIDDoc|^getAgentFlare|^getAgentLocation|^getAgentProfile|^getAgentMetrics|^getAgentPublicKey|^getAgentReputation|^getAgentRewardsHistory|^getAgentPayoutHistory|^getAgentStaking|^getAgentLock|^getAgentTemplate|^getAgentTransactionHistory|^getAgentANP|^cloneAgent|^agentBuilderGenerate|^agentBulkExport|^assignAgentToOrg|^transferAgentOwnership|^unassignAgentFromOrg|^importAgent|^exportAgentDev|^getAgentHealth|^agentHeartbeat|^discoverAgents|^validateAgentCard|^validateAgentImport|^listAgentCards|^listAgentTemplates|^listAgentBuilderTemplates|^listFederationAgentCards|^getBatchAgentBalances|^getAgentContracts|^getAgentAttestation|^forceRegisterAgentCard|^bulkRefreshAgentCards|^refreshAgentCardDrift|^pauseAgentRewards|^pauseAgentPayouts|^resumeAgentRewards|^resumeAgentPayouts|^suspendAgent|^reinstateAgentEnforcement|^deleteAdminAgent|^getAdminAgent|^acknowledgeAgentFlag|^recordAgentOffense|^blockFederationAgent|^unblockFederationAgent|^rotateAgentCredentials|^rotateAgentSigningKey|^getAdminAgent|^bulkSuspendAgents|^bulkReinstateAgents/i.test(name)) return adminPrefix + 'Agents'
+  if (/^authRegister|^authForgotPassword|^authRecover2FA|^authRecoverAccount|^authRefresh|^authResendVerification|^authResetPassword|^authSetNewPassword|^authValidate2FA|^authVerifyEmail|^getAuthProfile|^getAuthRegistrationConfig|^getMy2FAStatus|^setup2FA|^verify2FA|^disable2FASelf|^disableDeveloper2FA|^regenerateBackupCodes|^changePassword|^forceDeveloperPasswordReset|^forceEmailVerify|^logoutSession|^oauthIntrospect|^oauthTokenExchange|^getOAuthFederationStatus|^submitOnboardRegister|^resetAgentCredentialsOnboard|^downloadBundleViaOnboard|^getAgentToken|^adminGetDeveloperToken|^requestSelfRevocation/i.test(name)) return adminPrefix + 'Auth & Onboarding'
+  if (/^getMyDeveloper|^getDeveloperFlare|^getDeveloperStats|^getAdminDeveloper|^getMyApiKey|^listDeveloperApikeysMe|^createDeveloperApikeyMe|^createApiKey|^revokeApiKey|^deleteMyApiKey|^revokeDeveloperApiKeys|^updateDeveloperAdminFlags|^updateMyDeveloperLocation|^updateMyDeveloperProfile|^getMyDeletionStatus|^requestAccountDeletion|^cancelAccountDeletion|^softDeleteDeveloper|^reinstateDeveloper|^suspendDeveloper|^patchDeveloperQuota|^getAdminDeveloperQuota|^getDevTrustGraph|^getMyMcpAuditLog|^getMcpStdioBridge|^getMyDeveloperJwks|^getWellKnownDevJwks/i.test(name)) return adminPrefix + 'Developers'
+  if (/^createBundle|^downloadBundle|^getBundleManifest|^getDownloadsManifest|^getFeaturedBundles|^getMyAgentBundles|^getOperatorMyBundle|^getAdminOperatorApplication|^deleteBundle|^restoreBundle|^restoreFromUpload|^forkBundle|^hideBundle|^unhideBundle|^patchBundle|^rateBundle|^reportBundle|^downloadPipelineTemplate|^getPipelineTemplates|^purchasePipelineTemplate|^createPipeline|^updatePipeline|^deletePipeline|^createVersion|^activateVersion|^deleteVersion|^rollbackVersion|^getMyCicd|^appendDeploymentLogs|^triggerDeployment|^updateDeploymentStatus|^getMyAgentCicd|^getCicdSummary|^getCicdDeployments|^getOrganizationCicdSummary|^getDeployment|^listAdminBundlesReports|^dismissBundleReport/i.test(name)) return adminPrefix + 'Bundles & CI/CD'
+  if (/^createOrganization|^createOrganizationTeam|^deleteOrganization|^deleteOrganizationTeam|^getMyOrganizations|^getOrganization|^getOrganizationBySlug|^getOrganizationTeam|^acceptOrgInvitation|^assignAgentToOrg|^inviteOrganizationMember|^listOrganizationAgents|^listOrganizationMembers|^listOrganizationTeams|^removeOrganizationMember|^updateOrganization|^updateOrganizationTeam|^addTeamMember|^removeTeamMember/i.test(name)) return adminPrefix + 'Organizations & Teams'
+  if (/^submitFundingRequest|^getMyFundingRequests|^approveFunding|^rejectFunding|^getAdminFunding|^distributeFromFeeCollector|^getFeeCollectorInfo|^getRewardFundingPolicy|^getPayoutFundingPolicy|^getFeeCurrentRate|^triggerManualDistribution|^triggerLockPayoutRun|^getStakingDistribution|^getMyRewardHistory|^getMyPayoutHistory|^getMyEarnings|^getMyIncome|^estimateMyStakingRewards|^estimateMyLockPayouts|^claimTegRewards|^claimTegPayouts|^claimStakingRewards|^claimLockPayouts|^getAgentPendingRewards|^getAgentPendingPayouts|^claimPendingAchievements/i.test(name)) return adminPrefix + 'Treasury & Grants'
+  if (/^getFiat|^reconcileFiat|^refundFiat|^replayFiat|^resendFiatMagicLink|^simulateFiatPricing|^validateFiatPricing|^grantFiatFlare|^revokeFiatFlare|^getAdminFiat|^getMyFiat/i.test(name)) return adminPrefix + 'Fiat Onramp'
+  if (/^createWebhook|^deleteWebhook|^disableWebhookAdmin|^enableWebhookAdmin|^getMyWebhooks|^getWebhook|^getRecentWebhookDeliveries|^getDeveloperWebhookDeliveriesAlt|^getSupportedWebhookEvents|^getWebhookAggregate|^listDeveloperWebhooks|^testDeveloperWebhookAlt|^testWebhook|^testWebhookAdmin|^updateWebhook/i.test(name)) return adminPrefix + 'Webhooks'
+  if (/^bridge[A-Z]|^Bridge|^getBridge|^crossRegistry|^crossTeg/i.test(name)) return adminPrefix + 'Bridges'
+  if (/^getCircuit|^getAttestation|^submitAttestation|^reverifyAttestation|^verifyPublicAttestationBundle|^previewSlashReductionAttestation|^previewVotingPowerAttestation|^createAttestationSchedule|^disableMyAttestationSchedule|^listMyAttestationSchedules|^getAgentAttestation|^getMyAttestation|^listMyAttestations|^getAttestationsAnalytics|^adminRevokeAttestation|^runAttestationExpirySweep|^runAttestationScheduleCron|^agentRevokeAttestation/i.test(name)) return adminPrefix + 'Attestations & ZKP'
+  if (/^getSpire|^getFramesSpire|^deleteSpireOrphan|^enableMtls|^disableMyMtls|^forceMtlsEnroll|^getMyMtlsStatus|^svidRefresh|^listIronhandIdentities|^ironhandDeleteAgentProxy|^ironhandEnrollAgent|^ironhandRegisterAgentProxy|^ironhandRevokeAgent|^getCanaryIronhand/i.test(name)) return adminPrefix + 'SPIRE & IRONHAND'
+  if (/^getNetworkStats|^getNetworkHealth|^discoverRegistries|^getSystemActivityFeed|^getActivityFeedByType|^getPublicRegistryConfig|^getPublicShowcase|^getRegistryCard|^getWellKnownRegistryCard|^getAdminRegistryCard|^uploadRegistryCardIcon|^rotateRegistrySigningKey/i.test(name)) return 'Public Discovery'
+  if (/^submitDispute|^submitDisputeEvidence|^approveDisputeSettlement|^rejectDisputeSettlement|^updateDisputeRuling|^getDisputeById|^getMyDisputes|^getMyAgentDisputes|^getMyTegDisputes|^createMalpracticeDispute|^logEnhancedDispute|^resolveTegDispute|^getFederationDisputeSettlement|^getFederationDisputeSettlements/i.test(name)) return adminPrefix + 'Disputes'
+  if (/^getReactor|^getCrossTegSweeper|^getSagaTimeout|^getEnforcement|^approvePendingEnforcement|^rejectPendingEnforcement|^reinstateOperator|^revokeOperatorAccess|^suspendOperator|^updateEnforcementPolicy|^liftQuarantine|^previewQuarantine|^quarantineRegistry|^blacklistRegistry/i.test(name)) return adminPrefix + 'Enforcement & Reactors'
+  if (/^createContract|^acceptContract|^acceptContractFederated|^approveContractCompletion|^getContractById|^getMyContracts|^markContractFailed|^submitContractWork|^submitContractWorkFederated|^crossRegistryContractProxy/i.test(name)) return adminPrefix + 'Contracts'
+  if (/^getMyA2A|^authorizePayment|^verifyPayment|^settlePayment|^releasePayment|^releasePaymentById/i.test(name)) return adminPrefix + 'A2A Payment'
+  if (/^getApyRates|^getLockPayoutTiers|^getMyAutoCompound|^getMyPayoutRelock|^getAutoCompoundForAgent|^getPayoutRelockForAgent|^updateAutoCompound|^updatePayoutRelock|^getCommunityAnnouncements|^getMyAchievements|^getAchievementCatalog|^recordAchievement|^getMyNotificationPrefs|^markNotificationRead|^getMyUnreadNotifications|^getMySupportTickets|^getSupportTicketDetail|^replySupportTicket|^submitSupportTicket|^supportListTickets|^supportReplyTicket|^supportCloseTicket|^updateSupportTicketStatus|^customizeFlare|^equipFlare|^moveFlare|^selectFlare|^setFlareCornerVariant|^setFlareOverlay|^setFlareVariant|^unequipFlare|^flareCelebrationAcknowledge|^getMyFlareStatus|^getAdminFiatFlares/i.test(name)) return 'User Experience'
+  if (/^getDocker|^getSystemResources|^getDiagnostic|^triggerDiagnosticAction|^runAllDiagnostics|^runDiagnosticsSubset|^getPrometheusMetrics|^getTokenomics|^getUnitTransactions|^getRegistryTreasury|^getUnitPayouts|^getTransactionsAnalytics|^getVolumeProfile|^getStackHealth|^getCombinedHealth|^getCloudOperator|^restartCloudOperatorService|^cloudOperatorSelfRestart|^getDockerStats|^getCloudOperators|^teardownCloudOperator|^provisionCloudOperator|^operatorPortalSelfLogs|^operatorPortalSelfRestart|^getOperator|^getOperatorLifecycle|^getOperatorsLifecycleOverview|^getCloudOperatorHealth|^getCloudOperatorLogs|^getCloudOperatorSelfLogs|^selfProvisionOperator/i.test(name)) return adminPrefix + 'Infrastructure'
+  if (/^getBroadcast|^getAdminBroadcast|^composeBroadcast|^reinstateBroadcast|^retractBroadcast|^updateBroadcast|^getEmailTemplates|^previewAdminEmail|^previewAdminEmailText|^previewAdminEmailWithContext|^getInviteCodes|^revokeInviteCode|^generateInviteCodes|^validateInviteCodeAdmin/i.test(name)) return adminPrefix + 'Comms & Invites'
+  if (/^getRegisry|^getFederationLicense|^listFederationLicenses|^generateFederationLicense|^reinstateFederationLicense|^revokeFederationLicense|^rotateFederationLicenseSelf|^suspendFederationLicense|^deleteFederationLicense/i.test(name)) return adminPrefix + 'Federation Licenses'
+  if (/^test_|^TestApi|^runAllApiTests|^getApiTest|^resetApiTest|^testApi/i.test(name)) return adminPrefix + 'API Tester Harness'
+  if (/^federationCliAudit|^federationDriftScan|^completeAdmission|^federationRequestAdmission|^federationPolicyUpdateRequest|^getAdmissionStatus/i.test(name)) return adminPrefix + 'Federation Admission'
+  if (/^crossTegBalanceSync|^tegSystemTransfer|^transferTokens|^transferUnits|^tegCrossRegistryTransferDirect|^getMyBalance|^getMyTegBalance|^getMyTreasuryBalance|^getMyTegTransactions/i.test(name)) return adminPrefix + 'Value Movement'
+  if (/^getTutorialHealth|^getTutorialProof|^executeTutorial|^generateTutorialProof/i.test(name)) return adminPrefix + 'Tutorials'
+  if (/^getRelayStatus|^relayAction/i.test(name)) return adminPrefix + 'Relay'
+  if (/^getArena|^createArenaMatch|^listArenaMatches/i.test(name)) return adminPrefix + 'Arena'
+  if (/^bulk|^Bulk/i.test(name)) return adminPrefix + 'Bulk Operations'
+  if (/^trigger|^reset|^reset_/i.test(name)) return adminPrefix + 'Triggers & Resets'
+  if (/^get[A-Z]|^list[A-Z]/i.test(name)) return adminPrefix + 'Reads (uncategorized)'
+  return adminPrefix + 'Other'
+}

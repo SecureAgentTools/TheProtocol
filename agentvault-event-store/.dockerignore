@@ -1,0 +1,9 @@
+
+# pass78-bak-exclude: keep sandbox rollback *.bak* backups OUT of the prod build context.
+# (the .bak files remain on disk as documented FX-build rollback points — this only
+#  excludes them from the image, per Commander's non-destructive request 2026-06-04.)
+**/*.bak*
+*.bak*
+**/*.orig
+*.orig
+**/*~

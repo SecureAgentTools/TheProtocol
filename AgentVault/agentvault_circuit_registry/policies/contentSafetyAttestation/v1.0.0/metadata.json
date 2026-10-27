@@ -1,0 +1,56 @@
+{
+  "PolicyName": "Proof-of-Content-Safety-Attestation",
+  "PolicyID": "CONTENT_SAFETY_ATTESTATION_V1",
+  "CircuitVersion": "1.0.0",
+  "DSL": "Noir",
+  "ProvingSystem": "PlonK with Barretenberg/Honk",
+  "PublicInputs": {
+    "policy_parameters_hash": {
+      "type": "Field",
+      "description": "SHA256 hash of the active content safety policy parameters"
+    },
+    "time_window_hash": {
+      "type": "Field",
+      "description": "SHA256 hash of (start, end) timestamps of the attested window"
+    },
+    "total_samples": {
+      "type": "u64",
+      "description": "Total number of moderated samples in the window"
+    },
+    "min_rejection_count": {
+      "type": "u64",
+      "description": "Minimum rejection count the agent claims to have met"
+    }
+  },
+  "PrivateInputs": {
+    "actual_rejection_count": {
+      "type": "u64",
+      "description": "Actual count of samples rejected as unsafe (kept private)"
+    }
+  },
+  "Constraints": [
+    "actual_rejection_count >= min_rejection_count",
+    "actual_rejection_count <= total_samples",
+    "policy_parameters_hash != 0",
+    "time_window_hash != 0"
+  ],
+  "EigenTrustWeight": 0.06,
+  "ArtifactHashes": {
+    "circuit": "TBD - generated after compilation",
+    "provingKey": "TBD - generated after trusted setup",
+    "verificationKey": "TBD - generated after trusted setup"
+  },
+  "TrustedSetupMethod": "Solo Developer MVP Setup - For production use only with proper ceremony",
+  "DateCreated": "2026-04-28T00:00:00Z",
+  "LastUpdated": "2026-04-28T00:00:00Z",
+  "Notes": {
+    "MVP_Limitations": [
+      "Policy hash + time window hash verification is simplified",
+      "Integer-only arithmetic; samples & rejection counts are u64"
+    ],
+    "Security_Considerations": [
+      "Trusted setup performed by single developer for MVP",
+      "Production deployment requires multi-party computation ceremony"
+    ]
+  }
+}

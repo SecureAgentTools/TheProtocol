@@ -1,0 +1,29 @@
+# §PUSH (2026-10-06, agentvault2-09; his words "afterwards we do the same with push", "provisioner should also provision
+# them", "fix the things you find on the way make it secure"): the operator's own push relay. Every operator ran with push
+# switched off (no PUSH_NOTIFY_ENABLED), so neither Web Push nor Pocket's phone pairing reached an operator's users. The
+# registry publishes to this relay on the operator's own network (PUSH_NTFY_URL=http://<REGISTRY_NAME>-ntfy); the public
+# side is a SUBSCRIBE-ONLY vhost the runner writes from core/operator_compose.operator_push_vhost, named
+# <safe>-push.<suffix> (one label under the frame's wildcard: DNS and certificate both already cover it).
+#
+# ⚠ AN OVERRIDE, NEVER THE BASE, for the db-TLS and OPA overrides' reason: only an image that knows it
+# (host_work._push_steps) copies this file into the stack and passes it with `-f`, after the base, and writes the values
+# below into .env.operator. They are REQUIRED (${VAR:?...}), so a missing one fails by name before anything starts.
+# The relay is the frames' (the template's ntfy service): its cache on a volume, behind the host's proxy.
+services:
+  ntfy:
+    image: ${OPERATOR_NTFY_IMAGE:?the provisioning step writes it to .env.operator}
+    container_name: ${REGISTRY_NAME:-operator}-ntfy
+    restart: unless-stopped
+    command: serve
+    environment:
+      NTFY_CACHE_FILE: /var/cache/ntfy/cache.db
+      NTFY_BEHIND_PROXY: "true"
+    volumes:
+      - ntfy-cache:/var/cache/ntfy
+    ports:
+      - "127.0.0.1:${OPERATOR_PUSH_PORT:?the provisioning step writes it to .env.operator}:80"
+    networks:
+      - operator-net
+
+volumes:
+  ntfy-cache:

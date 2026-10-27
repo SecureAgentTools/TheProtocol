@@ -1,0 +1,92 @@
+# THE DIRECTORY, sandbox tier (his ask 2026-09-06: "would be awesome if you could do this for the sandbox too for parity").
+# §SOVKIT T4 sandbox parity (2026-09-14): the EU shape (`docker-compose.directory.yml`): its own SVID from sbx-alpha's SPIRE
+# agent (`spiffe://sandbox-a.theprotocol.cloud/service/directory`, federated with sandbox-b), the reader gate
+# (`directory/reader_gate.py`, DIRECTORY_READERS = the two sandbox registries' Workload API identity) and an mTLS sidecar on
+# `sandbox-federation-identity`. NO host port: the plain 127.0.0.1:8601 answered /graphql with no TLS and no reader check.
+# 🔴 THE PROJECT NAME IS LOAD-BEARING (see docker-compose.directory.yml): a second file in this folder without its own `name:`
+# adopts the EU container. The volume key `directory-sandbox-data` is kept, so the index's data survives.
+name: directory-sandbox
+
+services:
+  directory-sandbox-cert-writer:
+    image: sha256:cf930da0086262e136ef6450869ecdce0cabd6301d0e09c4b8221071a0657577
+    container_name: directory-sandbox-cert-writer
+    restart: unless-stopped
+    environment:
+      SPIRE_SOCKET: /opt/spire/sockets/agent.sock
+      CERT_DIR: /certs
+      REFRESH_SEC: "300"
+      SERVICE_NAME: directory-sandbox
+    volumes:
+      - sbx-alpha-spire-socket:/opt/spire/sockets:ro
+      - directory-sandbox-certs:/certs
+    labels:
+      # the SPIRE selector keys on THIS label (distinct from EU's: every agent on this host attests the same docker daemon)
+      - "com.agentvault.service=svid-writer-directory-sandbox"
+    networks:
+      - default
+      - identity
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+  directory:
+    image: theprotocol-directory:sovkit1
+    container_name: directory-sandbox
+    restart: unless-stopped
+    env_file: .env.directory.sandbox
+    environment:
+      DIRECTORY_PROXY_TRUST_SECRET: ${DIRECTORY_PROXY_TRUST_SECRET:?set DIRECTORY_PROXY_TRUST_SECRET in .env.directory.sandbox}
+      DIRECTORY_READERS: ${DIRECTORY_READERS:?set DIRECTORY_READERS in .env.directory.sandbox}
+    volumes:
+      - directory-sandbox-data:/data
+      - directory-sandbox-certs:/certs:ro
+    depends_on:
+      directory-sandbox-cert-writer:
+        condition: service_started
+    networks:
+      # NOT on the identity network (the §MTLSGAP alias collision): the SVID lives in the volume, the sidecar joins identity
+      - default
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+  directory-sandbox-nginx:
+    image: nginx:1.25-alpine
+    container_name: directory-sandbox-nginx
+    restart: unless-stopped
+    volumes:
+      - ./nginx-directory.conf.template:/etc/nginx/templates/nginx-directory.conf.template:ro
+      - ./nginx-directory-entrypoint.sh:/opt/nginx-directory-entrypoint.sh:ro
+      - /opt/theprotocol/stack/Agentvault2/nginx/nginx-entrypoint.sh:/opt/nginx-entrypoint.sh:ro
+      - directory-sandbox-certs:/certs:ro
+    environment:
+      CERT_DIR: /certs
+      RELOAD_SEC: "300"
+      SERVICE_NAME: directory-sandbox-nginx
+      DIRECTORY_PROXY_TRUST_SECRET: ${DIRECTORY_PROXY_TRUST_SECRET:?set DIRECTORY_PROXY_TRUST_SECRET in .env.directory.sandbox}
+    entrypoint: ["/bin/sh", "/opt/nginx-directory-entrypoint.sh"]
+    depends_on:
+      directory-sandbox-cert-writer:
+        condition: service_started
+      directory:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - default
+      - identity
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+volumes:
+  directory-sandbox-data: {}
+  directory-sandbox-certs: {}
+  sbx-alpha-spire-socket:
+    external: true
+    name: sbx_alpha_spire_socket_1788462456
+
+networks:
+  default: {}
+  identity:
+    external: true
+    name: sandbox-federation-identity

@@ -1,0 +1,25 @@
+{% extends "_base.txt.j2" %}
+{% block body %}
+WELCOME TO THEPROTOCOL
+======================
+
+Thanks for your purchase. We've created a TheProtocol account for you and
+credited your AVT to a fresh agent wallet.
+
+Amount paid:    EUR {{ amount_eur }}
+AVT credited:   {{ amount_avt }} AVT
+Tier:           {{ tier_label }}
+Your agent DID: {{ agent_did }}
+
+SET YOUR PASSWORD & LOG IN
+--------------------------
+Use this secure link (valid for 3 days):
+
+    {{ magic_link }}
+
+These units are platform-internal: bought only, never paid out in money.
+Use them to pay agent service fees, take part in governance and fund disputes.
+
+Once logged in, you can rename your wallet agent and create additional agents
+under the same account.
+{% endblock %}

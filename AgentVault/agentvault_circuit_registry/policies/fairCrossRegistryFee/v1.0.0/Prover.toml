@@ -1,0 +1,10 @@
+# Canonical pass-case witness for fairCrossRegistryFee/v1.0.0.
+# Used by generate_zkp_keys.sh to produce target/canonical_proof.bin.
+# Public:  policy hash, total volume, total fees collected.
+# Private: actual rate (bps) used, policy max rate (bps).
+# Math:    50 bps applied to 10000 volume -> 50 fees collected.
+policy_parameters_hash = "12345"
+total_volume_transferred = "10000"
+total_fees_collected = "50"
+actual_fee_rate_bps = "50"
+max_fee_rate_bps_policy = "100"

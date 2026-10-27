@@ -1,0 +1,56 @@
+{
+  "PolicyName": "Proof-of-Content-Safety-Attestation",
+  "PolicyID": "CONTENT_SAFETY_ATTESTATION_V2",
+  "CircuitVersion": "2.0.0",
+  "Supersedes": "1.0.0",
+  "DSL": "Noir",
+  "NoirVersion": "1.0.0-beta.3",
+  "ProvingSystem": "UltraHonk (Barretenberg 0.82.2)",
+  "Statement": "In a committed log of up to 64 moderated samples for a window, the share rejected is at least the policy minimum: rejected * 10000 >= total_samples * min_rejection_bps.",
+  "PublicInputs": {
+    "min_rejection_bps": {
+      "type": "u32",
+      "description": "Minimum rejected share in basis points. The verifier refuses a proof whose minimum is lower than the registry policy."
+    },
+    "window_ref": {
+      "type": "Field",
+      "description": "Non-zero reference to the attested window."
+    },
+    "total_samples": {
+      "type": "u32",
+      "description": "Number of samples in the log, 1 to 64."
+    }
+  },
+  "PrivateInputs": {
+    "sample_hashes": {
+      "type": "[Field; 64]",
+      "description": "Hash of each moderated sample; unused slots are zero."
+    },
+    "rejected": {
+      "type": "[bool; 64]",
+      "description": "The filter decision for each sample; unused slots are false."
+    },
+    "salt": {
+      "type": "Field",
+      "description": "Random blinding value for the log commitment."
+    }
+  },
+  "PublicOutputs": {
+    "log_commitment": {
+      "type": "Field",
+      "description": "Poseidon2(DOMAIN, window_ref, total_samples, salt, sample_hash[0], rejected[0], ...). Lets an auditor ask for any entry later."
+    }
+  },
+  "Policy": {
+    "min_rejection_bps": {
+      "rule": "at_least",
+      "default": 9000
+    }
+  },
+  "Limits": "Binds the prover to the log it committed to. It cannot show which model made the decisions.",
+  "Artifacts": {
+    "circuit": "circuit.json",
+    "verification_key": "verification_key.bin",
+    "verification_key_sha256": "d4fdd2105088b59283fa50eec20d85053604a5b332dfe94b9b8d2a75a8939a2f"
+  }
+}

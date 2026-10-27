@@ -1,0 +1,14 @@
+// FEDERATION APPROVED: Your registry is now a peer
+
+Your registry's federation request has been approved. It is now an ACTIVE peer of {{ approving_registry | default(registry_name) }} and participates in card sync, discovery, and cross-registry routing.
+
+  Registry name:     {{ peer_name }}
+  Base URL:          {{ peer_base_url }}
+  Approved at:       {{ approved_at }}
+
+What happens next: federation sync begins on the next cycle; your registry's public agent cards become discoverable across the federation, and peers' cards sync to you. No action is required on your side.
+
+---
+Sent by {{ registry_name | default('TheProtocol') }}, a TheProtocol registry.
+Console: {{ registry_ui_url | default('https://theprotocol.cloud/ui') }}
+You received this because you registered this registry for federation.

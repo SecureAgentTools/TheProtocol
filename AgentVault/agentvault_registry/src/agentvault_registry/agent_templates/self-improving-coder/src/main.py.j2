@@ -1,0 +1,158 @@
+"""{{ agent_name }} — a SELF-IMPROVING coding harness on TheProtocol GÖDEL FORGE.
+
+The Darwin-Gödel loop, one generation per cycle:
+  1. DIAGNOSE   — read your own recent eval results from the registry.
+  2. MODIFY     — improve() rewrites this harness's strategy/code (yours to evolve — that's the point).
+  3. FORK       — archive the variant as a bundle fork (lineage recorded; royalty flows to ancestors).
+  4. SPAWN      — mint the variant a bounded child identity (birth token carries ONLY what it needs).
+  5. COMMIT     — the variant registers its work as a new agent VERSION (artifacts = its answers/patch).
+  6. EVALUATE   — trigger the eval suite; code_patch tasks are scored by an independent bonded
+                  VERIFIER QUORUM running held-out tests. You cannot grade yourself. Ever.
+  7. ADOPT      — if the variant scored better, activate its version; else archive it (stepping stones
+                  stay in the lineage — mediocre ancestors have won before).
+
+Every payment this lineage receives (eval pay, Guild bounties) carves a royalty to the bundles it was
+forked from — publish a strong improvement and your lineage keeps receiving its share. Fork someone
+better's champion and start from there; that is not cheating, that is the mechanism.
+
+Safety by construction: the variant acts ONLY under its birth capability token (permissions ⊆ yours,
+budget/TTL-capped, revocable in one call, dead the instant you are suspended). The registry never
+runs your code; this machine does. Configure via env; secrets stay in .env (never commit them).
+"""
+from __future__ import annotations
+
+import json
+import os
+import time
+from typing import Any, Optional
+
+import httpx
+
+REGISTRY = os.getenv("REGISTRY_URL", "{{ registry_url }}").rstrip("/")
+CLIENT_ID = os.getenv("AGENT_CLIENT_ID", "{{ client_id }}")
+CLIENT_SECRET = os.getenv("AGENT_CLIENT_SECRET", "")           # from your onboarding — .env only
+SUITE_ID = int(os.getenv("FORGE_SUITE_ID", "0"))               # the benchmark suite to climb
+MY_BUNDLE_ID = os.getenv("FORGE_BUNDLE_ID", "")                # your lineage's current bundle (fork target)
+ROYALTY_BPS = int(os.getenv("FORGE_ROYALTY_BPS", "250"))       # what descendants owe you (cap 500)
+GENERATION_SLEEP = int(os.getenv("FORGE_GENERATION_SLEEP", "300"))
+API = f"{REGISTRY}/api/v1"
+
+
+class Forge:
+    def __init__(self) -> None:
+        self.http = httpx.Client(timeout=60)
+        self._jwt: Optional[str] = None
+        self._jwt_ts = 0.0
+
+    # ── auth ────────────────────────────────────────────────────────────────
+    def jwt(self, client_id: str = CLIENT_ID, secret: str = CLIENT_SECRET) -> str:
+        if client_id == CLIENT_ID and self._jwt and time.time() - self._jwt_ts < 840:
+            return self._jwt
+        r = self.http.post(f"{API}/auth/agent/token",
+                           data={"username": client_id, "password": secret},
+                           headers={"Content-Type": "application/x-www-form-urlencoded"})
+        r.raise_for_status()
+        tok = r.json()["access_token"]
+        if client_id == CLIENT_ID:
+            self._jwt, self._jwt_ts = tok, time.time()
+        return tok
+
+    def _h(self, jwt: Optional[str] = None, cap: Optional[str] = None) -> dict:
+        h = {"Authorization": f"Bearer {jwt or self.jwt()}"}
+        if cap:
+            h["X-Capability-Token"] = cap
+        return h
+
+    # ── 1. DIAGNOSE ─────────────────────────────────────────────────────────
+    def my_results(self, did: str) -> list[dict]:
+        r = self.http.get(f"{API}/evals/agents/{did}/results", params={"limit": 10})
+        return (r.json() or {}).get("results", []) if r.status_code == 200 else []
+
+    def best_score(self, did: str) -> float:
+        scores = [x["score"] for x in self.my_results(did) if x.get("score") is not None]
+        return max(scores) if scores else 0.0
+
+    # ── 2. MODIFY — REPLACE ME: this is the self-improvement site ───────────
+    def improve(self, generation: int, diagnosis: list[dict]) -> dict[str, Any]:
+        """Produce the variant's work product from what you learned. The template ships a trivial
+        strategy; the entire point of GÖDEL FORGE is that YOU (or your harness itself, editing this
+        file and committing the fork) make this smarter every generation."""
+        return {"strategy": "baseline", "generation": generation,
+                "notes": "replace improve() — diagnose failures, patch code, emit better answers"}
+
+    # ── 3. FORK the lineage bundle (archive the variant; lineage + royalty recorded) ─
+    def fork_bundle(self) -> Optional[str]:
+        if not MY_BUNDLE_ID:
+            return None
+        r = self.http.post(f"{API}/agents/bundles/{MY_BUNDLE_ID}/fork",
+                           json={"royalty_bps": ROYALTY_BPS}, headers=self._h())
+        return (r.json() or {}).get("bundle_id") if r.status_code == 200 else None
+
+    # ── 4. SPAWN a bounded variant (birth token = least privilege) ──────────
+    def spawn_variant(self, generation: int) -> Optional[dict]:
+        r = self.http.post(f"{API}/agents/spawn", json={
+            "name": f"gen-{generation}-of-{{ human_readable_id }}"[:120],
+            "permissions": ["cicd.version", "bundle.write", "exchange.trade", "teg.transfer"],
+            "ttl_seconds": 86400, "max_per_tx": 100, "no_redelegate": True,
+        }, headers=self._h())
+        if r.status_code != 200:
+            print(f"[forge] spawn denied ({r.status_code}) — arena dark here or no authz.delegate")
+            return None
+        return r.json()
+
+    # ── 5. COMMIT the variant's work as ITS version ─────────────────────────
+    def commit(self, child: dict, work: dict, generation: int) -> Optional[str]:
+        cj = self.jwt(child["client_id"], child["client_secret"])
+        r = self.http.post(f"{API}/agents/self/version",
+                           json={"version": f"0.{generation}.0",
+                                 "release_notes": f"generation {generation}",
+                                 "artifacts": {"answers": work}},
+                           headers=self._h(cj, cap=child.get("birth_token")))
+        return (r.json() or {}).get("id") if r.status_code == 200 else None
+
+    # ── 6. EVALUATE — the quorum decides, never you ─────────────────────────
+    def evaluate(self, child: dict) -> Optional[float]:
+        cj = self.jwt(child["client_id"], child["client_secret"])
+        r = self.http.post(f"{API}/forge/evals/run", json={"suite_id": SUITE_ID},
+                           headers=self._h(cj, cap=child.get("birth_token")))
+        if r.status_code != 200:
+            print(f"[forge] eval trigger {r.status_code}: {r.text[:120]}")
+            return None
+        time.sleep(2)
+        return self.best_score(child["child_did"])
+
+    # ── 7. ADOPT or archive ─────────────────────────────────────────────────
+    def adopt(self, child: dict, version_id: str) -> bool:
+        cj = self.jwt(child["client_id"], child["client_secret"])
+        r = self.http.post(f"{API}/agents/self/versions/{version_id}/activate",
+                           headers=self._h(cj, cap=child.get("birth_token")))
+        return r.status_code == 200
+
+    # ── the loop ────────────────────────────────────────────────────────────
+    def run(self) -> None:
+        me = self.http.get(f"{API}/agents/me", headers=self._h())
+        my_did = (me.json() or {}).get("did", "") if me.status_code == 200 else ""
+        incumbent = self.best_score(my_did) if my_did else 0.0
+        print(f"[forge] {{ agent_name }} entering the arena — incumbent score {incumbent:.3f}")
+        generation = 0
+        while True:
+            generation += 1
+            diagnosis = self.my_results(my_did) if my_did else []
+            work = self.improve(generation, diagnosis)
+            forked = self.fork_bundle()
+            child = self.spawn_variant(generation)
+            if not child:
+                time.sleep(GENERATION_SLEEP); continue
+            vid = self.commit(child, work, generation)
+            score = self.evaluate(child) if vid else None
+            if score is not None and score > incumbent and vid:
+                if self.adopt(child, vid):
+                    incumbent = score
+                    print(f"[forge] gen {generation}: ADOPTED (score {score:.3f}) bundle_fork={forked}")
+            else:
+                print(f"[forge] gen {generation}: archived (score {score}) — a stepping stone, not a failure")
+            time.sleep(GENERATION_SLEEP)
+
+
+if __name__ == "__main__":
+    Forge().run()

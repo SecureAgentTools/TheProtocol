@@ -1,0 +1,303 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   TheProtocol Modal Shared Styles
+   Used by all 7 organization modal components via @import
+   Design tokens: void #060b14, surface #0d1626, cyan rgba(var(--nc-primary-rgb),*)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Overlay ──────────────────────────────────────────────────────────────── */
+.tp-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+/* ── Modal box ────────────────────────────────────────────────────────────── */
+.tp-modal {
+  position: relative;
+  background: linear-gradient(180deg, #0e1929, #0a1220);
+  border: 1px solid rgba(var(--nc-primary-rgb), 0.2);
+  border-radius: 12px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(var(--nc-primary-rgb), 0.06) inset;
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: tp-modal-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.tp-modal--wide {
+  max-width: 580px;
+}
+
+.tp-modal::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(var(--nc-primary-rgb), 0.75), transparent);
+}
+
+@keyframes tp-modal-in {
+  from { opacity: 0; transform: scale(0.97) translateY(6px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ── Header ───────────────────────────────────────────────────────────────── */
+.tp-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px 16px;
+  border-bottom: 1px solid rgba(var(--nc-primary-rgb), 0.12);
+  background: linear-gradient(180deg, rgba(var(--nc-primary-rgb), 0.05), transparent);
+  flex-shrink: 0;
+}
+
+.tp-modal-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tp-modal-glyph {
+  font-size: 1.1rem;
+  color: rgba(var(--nc-primary-rgb), 0.85);
+  filter: drop-shadow(0 0 5px rgba(var(--nc-primary-rgb), 0.4));
+  line-height: 1;
+}
+
+.tp-modal-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: rgba(var(--nc-primary-rgb), 0.92);
+  margin: 0;
+}
+
+.tp-modal-subtitle {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  color: rgba(148, 163, 184, 0.4);
+  margin-top: 2px;
+}
+
+.tp-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  color: rgba(148, 163, 184, 0.4);
+  cursor: pointer;
+  transition: all 0.12s;
+  flex-shrink: 0;
+}
+
+.tp-close-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: rgba(226, 232, 240, 0.8);
+}
+
+/* ── Body ─────────────────────────────────────────────────────────────────── */
+.tp-modal-body {
+  padding: 20px 22px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
+.tp-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 22px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+}
+
+/* ── Form fields ──────────────────────────────────────────────────────────── */
+.tp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tp-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgba(148, 163, 184, 0.58);
+}
+
+.tp-required {
+  color: rgba(239, 68, 68, 0.6);
+}
+
+.tp-input {
+  background: rgba(6, 11, 20, 0.8);
+  border: 1px solid rgba(var(--nc-primary-rgb), 0.15);
+  border-radius: 7px;
+  padding: 9px 12px;
+  color: rgba(226, 232, 240, 0.88);
+  font-size: 0.85rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.tp-input:focus {
+  border-color: rgba(var(--nc-primary-rgb), 0.42);
+  box-shadow: 0 0 0 3px rgba(var(--nc-primary-rgb), 0.07);
+}
+
+.tp-input::placeholder {
+  color: rgba(148, 163, 184, 0.25);
+}
+
+.tp-textarea {
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.5;
+}
+
+.tp-hint {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.58rem;
+  color: rgba(148, 163, 184, 0.3);
+  margin: 0;
+}
+
+/* Slug field */
+.tp-slug-row {
+  display: flex;
+  align-items: center;
+  background: rgba(6, 11, 20, 0.8);
+  border: 1px solid rgba(var(--nc-primary-rgb), 0.15);
+  border-radius: 7px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.tp-slug-row:focus-within {
+  border-color: rgba(var(--nc-primary-rgb), 0.42);
+  box-shadow: 0 0 0 3px rgba(var(--nc-primary-rgb), 0.07);
+}
+.tp-slug-prefix {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem;
+  color: rgba(148, 163, 184, 0.3);
+  padding: 9px 8px 9px 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+.tp-input--slug {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding-left: 10px;
+  box-shadow: none;
+}
+.tp-input--slug:focus {
+  box-shadow: none;
+  border: none;
+}
+
+/* Info banner */
+.tp-info-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: rgba(var(--nc-primary-rgb), 0.04);
+  border: 1px solid rgba(var(--nc-primary-rgb), 0.12);
+  border-radius: 7px;
+  padding: 10px 13px;
+  font-size: 0.76rem;
+  color: rgba(148, 163, 184, 0.5);
+  line-height: 1.5;
+}
+.tp-info-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: rgba(var(--nc-primary-rgb), 0.4);
+}
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.tp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 9px 18px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.tp-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tp-btn--primary {
+  background: linear-gradient(180deg, rgba(var(--nc-primary-rgb), 0.22), rgba(var(--nc-primary-rgb), 0.12));
+  border-color: rgba(var(--nc-primary-rgb), 0.4);
+  color: rgba(var(--nc-primary-rgb), 1);
+}
+
+.tp-btn--primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(var(--nc-primary-rgb), 0.3), rgba(var(--nc-primary-rgb), 0.18));
+  border-color: rgba(var(--nc-primary-rgb), 0.6);
+  box-shadow: 0 0 16px rgba(var(--nc-primary-rgb), 0.18);
+}
+
+.tp-btn--ghost {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.09);
+  color: rgba(148, 163, 184, 0.55);
+}
+
+.tp-btn--ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(226, 232, 240, 0.75);
+}
+
+/* ── Spinner ──────────────────────────────────────────────────────────────── */
+.tp-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid rgba(var(--nc-primary-rgb), 0.2);
+  border-top-color: rgba(var(--nc-primary-rgb), 0.8);
+  border-radius: 50%;
+  animation: tp-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes tp-spin {
+  to { transform: rotate(360deg); }
+}

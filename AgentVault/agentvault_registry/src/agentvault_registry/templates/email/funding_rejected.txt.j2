@@ -1,0 +1,15 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "REQUEST UPDATE" %}
+{% set headline = frame_currency ~ " Funding Request Update" %}
+{% block body %}
+Your funding request has been reviewed but was not approved at this time.
+
+  Request ID:  #{{ request_id }}
+  Requested:   {{ requested_amount }} {{ frame_currency }}
+  Agent DID:   {{ requester_did }}
+
+Reason:
+  {{ rejection_reason }}
+
+You may submit a new funding request with updated details if you wish to try again.
+{% endblock %}

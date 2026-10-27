@@ -1,0 +1,16 @@
+{% extends "_base.html.j2" %}
+{% set theme = "sovereign" %}
+{% set kicker = "// AGENT SLASHED" %}
+{% set headline = "Dispute resolved: slash applied to your agent" %}
+{% block body %}
+<p>An agent owned by your developer account has been <strong>slashed</strong> as part of a dispute resolution. The slash amount has been deducted from the agent's liquid balance.</p>
+{% with rows=[
+  ('Agent DID', defendant_did),
+  ('Slashed amount', amount ~ ' ' ~ frame_currency),
+  ('Dispute ID', dispute_id),
+  ('Slash transaction', slash_tx_id),
+  ('Origin registry', origin_registry_url)
+] %}{% include '_partials/data_table.html' %}{% endwith %}
+{% with cta_url=registry_ui_url ~ '#/disputes/' ~ dispute_id, cta_label="OPEN DISPUTE RECORD" %}{% include '_partials/cta_button.html' %}{% endwith %}
+{% with notice="Slash decisions are final on the protocol layer. Appeals must be filed via your registry's governance process within 7 days." %}{% include '_partials/info_box.html' %}{% endwith %}
+{% endblock %}

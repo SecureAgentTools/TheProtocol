@@ -1,0 +1,486 @@
+/* tp-cicd.css — CI/CD Module Design Tokens & Shared Styles
+   Palette anchor: #060b14 bg / #0d1626 surface / var(--nc-primary) cyan / IBM Plex Mono
+   Part of the global cyberpunk dark theme campaign.
+*/
+
+/* ── Tokens ──────────────────────────────────────────────────────────────── */
+.cicd-module {
+  --cicd-bg:           #060b14;
+  --cicd-surface:      #0d1626;
+  --cicd-surface-2:    #111d2e;
+  --cicd-surface-3:    #162035;
+  --cicd-border:       rgba(var(--nc-primary-rgb), 0.12);
+  --cicd-border-hover: rgba(var(--nc-primary-rgb), 0.28);
+  --cicd-cyan:         var(--nc-primary);
+  --cicd-cyan-dim:     rgba(var(--nc-primary-rgb), 0.7);
+  --cicd-cyan-glow:    rgba(var(--nc-primary-rgb), 0.15);
+  --cicd-cyan-10:      rgba(var(--nc-primary-rgb), 0.10);
+  --cicd-cyan-20:      rgba(var(--nc-primary-rgb), 0.20);
+  --cicd-text:         #c8d8e8;
+  /* §FESUITE: 4.5:1+ on every CI/CD surface (muted was #3d5570 at 2.1-2.4:1); dim stays the brighter of the two */
+  --cicd-text-dim:     #8aa6c4;
+  --cicd-text-muted:   #7593b6;
+  --cicd-green:        #00e5a0;
+  --cicd-green-bg:     rgba(0, 229, 160, 0.10);
+  --cicd-red:          #ff4d6a;
+  --cicd-red-bg:       rgba(255, 77, 106, 0.10);
+  --cicd-yellow:       #f5c842;
+  --cicd-yellow-bg:    rgba(245, 200, 66, 0.10);
+  --cicd-blue:         #4d9fff;
+  --cicd-blue-bg:      rgba(77, 159, 255, 0.10);
+  --cicd-purple:       #b46cff;
+  --cicd-purple-bg:    rgba(180, 108, 255, 0.10);
+  --cicd-radius:       6px;
+  --cicd-radius-lg:    10px;
+  --cicd-font-mono:    'IBM Plex Mono', 'Courier New', monospace;
+}
+
+/* ── Card ────────────────────────────────────────────────────────────────── */
+.cicd-card {
+  background: var(--cicd-surface);
+  border: 1px solid var(--cicd-border);
+  border-radius: var(--cicd-radius-lg);
+  transition: border-color 0.2s;
+}
+.cicd-card:hover { border-color: var(--cicd-border-hover); }
+
+.cicd-card-accent {
+  border-left: 3px solid var(--cicd-cyan);
+}
+
+/* ── Section Header ──────────────────────────────────────────────────────── */
+.cicd-section-title {
+  font-family: var(--cicd-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cicd-cyan);
+}
+
+/* ── Stat Tile ───────────────────────────────────────────────────────────── */
+.cicd-stat-tile {
+  background: var(--cicd-surface-2);
+  border: 1px solid var(--cicd-border);
+  border-radius: var(--cicd-radius);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cicd-stat-tile .stat-label {
+  font-family: var(--cicd-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cicd-text-dim);
+}
+.cicd-stat-tile .stat-value {
+  font-family: var(--cicd-font-mono);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--cicd-cyan);
+  line-height: 1;
+}
+.cicd-stat-tile .stat-sub {
+  font-size: 11px;
+  color: var(--cicd-text-muted);
+}
+
+/* ── Status Badges ───────────────────────────────────────────────────────── */
+.cicd-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--cicd-font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.cicd-badge-success  { background: var(--cicd-green-bg);  color: var(--cicd-green);  border: 1px solid rgba(0,229,160,0.25); }
+.cicd-badge-failed   { background: var(--cicd-red-bg);    color: var(--cicd-red);    border: 1px solid rgba(255,77,106,0.25); }
+.cicd-badge-running  { background: var(--cicd-blue-bg);   color: var(--cicd-blue);   border: 1px solid rgba(77,159,255,0.25); }
+.cicd-badge-pending  { background: var(--cicd-yellow-bg); color: var(--cicd-yellow); border: 1px solid rgba(245,200,66,0.25); }
+.cicd-badge-active   { background: var(--cicd-cyan-10);   color: var(--cicd-cyan);   border: 1px solid rgba(var(--nc-primary-rgb),0.25); }
+.cicd-badge-inactive { background: var(--cicd-surface-3); color: var(--cicd-text-muted); border: 1px solid var(--cicd-border); }
+.cicd-badge-manual   { background: var(--cicd-purple-bg); color: var(--cicd-purple); border: 1px solid rgba(180,108,255,0.25); }
+.cicd-badge-cancelled { background: var(--cicd-surface-3); color: var(--cicd-text-dim); border: 1px solid var(--cicd-border); }
+
+.cicd-badge-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.cicd-badge-running .cicd-badge-dot {
+  animation: cicd-pulse 1.4s ease-in-out infinite;
+}
+@keyframes cicd-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.cicd-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--cicd-radius);
+  font-family: var(--cicd-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.cicd-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.cicd-btn-primary {
+  background: var(--cicd-cyan-20);
+  color: var(--cicd-cyan);
+  border-color: rgba(var(--nc-primary-rgb),0.35);
+}
+.cicd-btn-primary:hover:not(:disabled) {
+  background: var(--cicd-cyan-glow);
+  border-color: var(--cicd-cyan);
+  box-shadow: 0 0 12px rgba(var(--nc-primary-rgb),0.2);
+}
+
+.cicd-btn-ghost {
+  background: transparent;
+  color: var(--cicd-text-dim);
+  border-color: var(--cicd-border);
+}
+.cicd-btn-ghost:hover:not(:disabled) {
+  color: var(--cicd-text);
+  border-color: var(--cicd-border-hover);
+  background: var(--cicd-surface-2);
+}
+
+.cicd-btn-danger {
+  background: var(--cicd-red-bg);
+  color: var(--cicd-red);
+  border-color: rgba(255,77,106,0.25);
+}
+.cicd-btn-danger:hover:not(:disabled) {
+  background: rgba(255,77,106,0.18);
+  border-color: rgba(255,77,106,0.5);
+}
+
+.cicd-btn-success {
+  background: var(--cicd-green-bg);
+  color: var(--cicd-green);
+  border-color: rgba(0,229,160,0.25);
+}
+.cicd-btn-success:hover:not(:disabled) {
+  background: rgba(0,229,160,0.18);
+  border-color: rgba(0,229,160,0.5);
+}
+
+.cicd-btn-sm {
+  padding: 3px 9px;
+  font-size: 10px;
+}
+
+.cicd-btn-icon {
+  padding: 5px 7px;
+  font-size: 12px;
+}
+
+/* ── Input / Select ──────────────────────────────────────────────────────── */
+.cicd-input {
+  background: var(--cicd-surface-2);
+  border: 1px solid var(--cicd-border);
+  border-radius: var(--cicd-radius);
+  color: var(--cicd-text);
+  padding: 7px 11px;
+  font-size: 13px;
+  width: 100%;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+}
+.cicd-input::placeholder { color: var(--cicd-text-muted); }
+.cicd-input:focus {
+  border-color: rgba(var(--nc-primary-rgb),0.45);
+  box-shadow: 0 0 0 2px rgba(var(--nc-primary-rgb),0.08);
+}
+
+.cicd-input-mono {
+  font-family: var(--cicd-font-mono);
+  font-size: 12px;
+}
+
+.cicd-label {
+  font-family: var(--cicd-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cicd-text-dim);
+  display: block;
+  margin-bottom: 5px;
+}
+
+/* ── Figures row (the fleet list, an agent's CI/CD) ─────────────────────── */
+/* four columns that may shrink below their words (a 1fr column grew to "SUCCESS RATE" and the last tile ran past a
+   phone's edge), two on a phone (the camera, 2026-10-13) */
+.cicd-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 640px) {
+  .cicd-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ── Tab Bar ─────────────────────────────────────────────────────────────── */
+.cicd-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--cicd-border);
+  padding-bottom: 0;
+}
+/* §FESUITE — the tabs are buttons (keyboard and screen readers reach them); keep the look of the old divs. */
+button.cicd-tab { background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0; }
+.cicd-tab {
+  padding: 8px 16px;
+  font-family: var(--cicd-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cicd-text-dim);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  margin-bottom: -1px;
+  white-space: nowrap;
+}
+.cicd-tab:hover { color: var(--cicd-text); }
+.cicd-tab.active {
+  color: var(--cicd-cyan);
+  border-bottom-color: var(--cicd-cyan);
+}
+/* a phone: the strip scrolls sideways inside its own box, where the last tabs ran past the screen (the camera,
+   2026-10-13, Pixel 7); its line is drawn inside the box, under the tabs' own, since a scrolling box clips the 1 px the
+   tabs used to lay over its border */
+@media (max-width: 640px) {
+  .cicd-tabs { overflow-x: auto; scrollbar-width: none; border-bottom: none; box-shadow: inset 0 -1px 0 var(--cicd-border); }
+  .cicd-tabs::-webkit-scrollbar { display: none; }
+  .cicd-tab { margin-bottom: 0; flex: 0 0 auto; }
+}
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+.cicd-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.cicd-table th {
+  font-family: var(--cicd-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cicd-text-muted);
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--cicd-border);
+  white-space: nowrap;
+}
+.cicd-table td {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--cicd-text);
+  border-bottom: 1px solid rgba(var(--nc-primary-rgb),0.05);
+  vertical-align: middle;
+}
+.cicd-table tr:last-child td { border-bottom: none; }
+.cicd-table tr:hover td { background: var(--cicd-surface-2); }
+
+.cicd-table .mono { font-family: var(--cicd-font-mono); font-size: 11px; }
+
+/* ── Modal Backdrop ──────────────────────────────────────────────────────── */
+.cicd-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 8, 20, 0.82);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.cicd-modal {
+  background: var(--cicd-surface);
+  border: 1px solid var(--cicd-border);
+  border-radius: var(--cicd-radius-lg);
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(var(--nc-primary-rgb),0.06);
+}
+.cicd-modal-wide { max-width: 800px; }
+.cicd-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--cicd-border);
+}
+.cicd-modal-title {
+  font-family: var(--cicd-font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--cicd-cyan);
+  letter-spacing: 0.06em;
+}
+.cicd-modal-body { padding: 20px 22px; }
+.cicd-modal-footer {
+  padding: 14px 22px 18px;
+  border-top: 1px solid var(--cicd-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ── Terminal Log ────────────────────────────────────────────────────────── */
+.cicd-terminal {
+  background: #03070f;
+  border: 1px solid rgba(var(--nc-primary-rgb),0.10);
+  border-radius: var(--cicd-radius);
+  padding: 14px 16px;
+  font-family: var(--cicd-font-mono);
+  font-size: 11px;
+  line-height: 1.7;
+  color: #7fb8c0;
+  overflow-y: auto;
+  max-height: 400px;
+}
+.cicd-terminal .log-info    { color: var(--cicd-text-dim); }
+.cicd-terminal .log-success { color: var(--cicd-green); }
+.cicd-terminal .log-error   { color: var(--cicd-red); }
+.cicd-terminal .log-warn    { color: var(--cicd-yellow); }
+.cicd-terminal .log-ts      { color: var(--cicd-text-muted); margin-right: 8px; }
+
+/* ── Progress Bar ────────────────────────────────────────────────────────── */
+.cicd-progress-track {
+  background: var(--cicd-surface-3);
+  border-radius: 2px;
+  height: 4px;
+  overflow: hidden;
+}
+.cicd-progress-fill {
+  height: 100%;
+  background: var(--cicd-cyan);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+.cicd-progress-fill.success { background: var(--cicd-green); }
+.cicd-progress-fill.failed  { background: var(--cicd-red); }
+.cicd-progress-fill.running {
+  background: var(--cicd-cyan);
+  animation: cicd-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes cicd-shimmer {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+/* ── Pipeline Stage ──────────────────────────────────────────────────────── */
+.cicd-stage {
+  background: var(--cicd-surface-2);
+  border: 1px solid var(--cicd-border);
+  border-radius: var(--cicd-radius);
+  overflow: hidden;
+}
+.cicd-stage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--cicd-surface-3);
+  border-bottom: 1px solid var(--cicd-border);
+  cursor: pointer;
+}
+.cicd-stage-header:hover { background: rgba(var(--nc-primary-rgb),0.04); }
+.cicd-stage-number {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--cicd-cyan-10);
+  border: 1px solid rgba(var(--nc-primary-rgb),0.3);
+  font-family: var(--cicd-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--cicd-cyan);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.cicd-step {
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(var(--nc-primary-rgb),0.04);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.cicd-step:last-child { border-bottom: none; }
+
+/* ── Empty State ─────────────────────────────────────────────────────────── */
+.cicd-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  color: var(--cicd-text-muted);
+  text-align: center;
+  gap: 8px;
+}
+.cicd-empty-icon { font-size: 32px; opacity: 0.4; }
+.cicd-empty-title {
+  font-family: var(--cicd-font-mono);
+  font-size: 12px;
+  color: var(--cicd-text-dim);
+  letter-spacing: 0.06em;
+}
+.cicd-empty-sub { font-size: 12px; color: var(--cicd-text-muted); }
+
+/* ── Divider ─────────────────────────────────────────────────────────────── */
+.cicd-divider {
+  border: none;
+  border-top: 1px solid var(--cicd-border);
+  margin: 16px 0;
+}
+
+/* ── Webhook URL block ───────────────────────────────────────────────────── */
+.cicd-webhook-block {
+  background: var(--cicd-surface-3);
+  border: 1px solid var(--cicd-border);
+  border-radius: var(--cicd-radius);
+  padding: 10px 14px;
+  font-family: var(--cicd-font-mono);
+  font-size: 11px;
+  color: var(--cicd-text-dim);
+  word-break: break-all;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+.cicd-module ::-webkit-scrollbar { width: 6px; height: 6px; }
+.cicd-module ::-webkit-scrollbar-track { background: var(--cicd-surface); }
+.cicd-module ::-webkit-scrollbar-thumb { background: rgba(var(--nc-primary-rgb),0.2); border-radius: 3px; }
+.cicd-module ::-webkit-scrollbar-thumb:hover { background: rgba(var(--nc-primary-rgb),0.35); }
+
+/* §FESUITE — the webhook secret, shown once in place; the relay status, asked for */
+.cicd-secret { padding: 14px 16px; margin-bottom: 16px; border-color: rgba(255, 178, 69, 0.45); }
+.cicd-secret-note { margin: 6px 0 10px; font-size: 12px; color: var(--cicd-text-muted); }
+.cicd-secret-code { display: block; padding: 8px 10px; border-radius: 6px; background: var(--cicd-surface-3, rgba(255,255,255,0.06));
+  font-family: var(--cicd-font-mono); font-size: 12px; color: var(--cicd-text); word-break: break-all; user-select: all; }
+.cicd-secret-actions { display: flex; gap: 8px; margin-top: 10px; }
+.cicd-relay-ask { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.cicd-relay-none { font-size: 12px; color: var(--cicd-text-muted); }
+
+.cicd-editing { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; padding: 6px 10px;
+  border-radius: 6px; background: var(--cicd-yellow-bg); color: var(--cicd-yellow); font-family: var(--cicd-font-mono); font-size: 11px; }

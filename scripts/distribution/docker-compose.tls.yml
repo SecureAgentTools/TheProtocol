@@ -1,0 +1,54 @@
+# TLS reverse-proxy overlay (Caddy) for STANDALONE self-hosters.
+#
+# The registry serves plain HTTP on port 8000. For any internet-facing deployment
+# you must terminate HTTPS in front of it. This overlay adds a Caddy container that
+# obtains and auto-renews a Let's Encrypt certificate for your domain and proxies
+# traffic to the registry over the internal Docker network.
+#
+# Usage (from your deployment directory):
+#   1. Point your domain's A/AAAA record at this server.
+#   2. Set DOMAIN=registry.example.com (and optionally ACME_EMAIL=you@example.com)
+#      in .env.operator.
+#   3. Boot with BOTH compose files:
+#        docker compose -f docker-compose.standalone.yml -f docker-compose.tls.yml \
+#          --env-file .env.operator up -d
+#   4. (Recommended) Stop exposing raw HTTP to the internet: in
+#      docker-compose.standalone.yml change the registry port mapping from
+#        - "8000:8000"        →        - "127.0.0.1:8000:8000"
+#      so only Caddy (on the internal network) can reach it. Then open ONLY
+#      ports 80 and 443 on your host firewall.
+#
+# Caddy handles the ACME HTTP-01 challenge on port 80 and serves HTTPS on 443.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: ${REGISTRY_NAME:-operator}-caddy
+    restart: unless-stopped
+    depends_on:
+      - registry
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN=your.domain.com in .env.operator}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - operator-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  operator-net:
+    driver: bridge

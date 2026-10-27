@@ -1,0 +1,76 @@
+# §OPA (2026-10-06, agentvault2-09; his words "please roll out and enable opa for the whole production cluster", then
+# "we need this whole ... provisioner fix"): the operator's own OPA. Its registry asks every authz decision of it in
+# SHADOW (OPA_ENABLED=true, OPA_ENFORCE=false, written to .env.operator by the same provisioning step): Python decides,
+# OPA is asked and the answer recorded beside Python's ([OPA-SHADOW] lines, opa_decisions_total). The frames have
+# carried one since §SOVKIT (the frame template's kit); an operator had none, so its registry's OPA code stayed dark.
+#
+# ⚠ AN OVERRIDE, NEVER THE BASE, for the db-TLS override's reason: eu, asia, sbx-alpha and sbx-beta mount this same
+# live directory, and an image that registers no OPA entry would leave an opa-cert-writer in the base waiting forever
+# on a `.ready` nobody writes, with `up` waiting on it. Only an image that registers the entry (host_work._opa_steps)
+# copies this file into the stack and passes it with `-f`, after the base.
+#
+# The OPA entry (registered at stack time, NEVER federated: this OPA answers its own registry alone, so its bundle
+# holds the frame's own root): spiffe://<td>/operator/<slug>/opa, selector
+# docker:label:com.agentvault.service:svid-writer-opa-operator, DNS SAN ${REGISTRY_NAME}-opa (the host OPA_URL dials).
+# TLS on that SVID: every caller presents a certificate (--authentication=tls against bundle.0.pem) and
+# opa/policies/system_authz.rego, rendered per operator from opa/system_authz.rego.tmpl, authorizes the operator's
+# registry alone. The policies beside it are identity-fabric/policies (the copy under opa/policies is held equal to
+# them by the stack's hygiene workflow).
+#
+# OPA's three values are REQUIRED (${VAR:?...}): blank, compose would refuse the project for an image-less service
+# anyway, and the required form says which value is missing, by name, before anything starts.
+# The writer runs the base writer's image (the release's cert-writer tag) unless OPERATOR_OPA_WRITER_IMAGE names one:
+# an operator whose base compose pins its writer by hand (the sandbox operators, VERSION=fedsuite-local) names it.
+services:
+  opa-cert-writer:
+    image: ${OPERATOR_OPA_WRITER_IMAGE:-${IMAGES_PREFIX:-images.theprotocol.cloud}/cert-writer:${VERSION:-stable}}
+    container_name: ${REGISTRY_NAME:-operator}-opa-cert-writer
+    depends_on:
+      spire-agent:
+        condition: service_healthy
+    volumes:
+      - spire-agent-socket:/opt/spire/sockets:ro
+      - opa-certs:/certs
+    environment:
+      SPIRE_SOCKET: /opt/spire/sockets/agent.sock
+      CERT_DIR: /certs
+      REFRESH_SEC: "300"
+      SERVICE_NAME: ${REGISTRY_NAME:-operator}-opa
+      # the OPA image runs as uid 1000 and reads the key itself: 600, owned by that uid (cert-writer.sh's KEY_* pair)
+      KEY_MODE: "600"
+      KEY_OWNER: "1000"
+    user: "0:0"
+    pid: "host"
+    restart: unless-stopped
+    labels:
+      - "com.agentvault.service=svid-writer-opa-operator"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /certs/.ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    networks:
+      - operator-net
+
+  # The image is distroless (no shell), so no healthcheck: the provisioning step probes /health through the registry,
+  # on the registry's own certificate. `opa run` does not watch its directory: a policy change is a container restart.
+  opa:
+    image: ${OPERATOR_OPA_IMAGE:?the provisioning step writes it to .env.operator}
+    container_name: ${REGISTRY_NAME:-operator}-opa
+    restart: unless-stopped
+    command: ["run", "--server", "--addr", ":8181", "--log-level", "${OPERATOR_OPA_LOG_LEVEL:?set in .env.operator}",
+              "--authentication=tls", "--authorization=basic",
+              "--tls-cert-file", "/certs/svid.0.pem", "--tls-private-key-file", "/certs/svid.0.key",
+              "--tls-ca-cert-file", "/certs/bundle.0.pem", "--tls-cert-refresh-period", "${OPERATOR_OPA_TLS_REFRESH:?set in .env.operator}",
+              "/policies"]
+    volumes:
+      - ./opa/policies:/policies:ro
+      - opa-certs:/certs:ro
+    depends_on:
+      opa-cert-writer:
+        condition: service_healthy
+    networks:
+      - operator-net
+
+volumes:
+  opa-certs:

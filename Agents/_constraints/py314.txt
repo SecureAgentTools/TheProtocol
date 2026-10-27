@@ -1,0 +1,66 @@
+# §DEPS 2c (2026-09-29): the showcase agents' shared constraints on Python 3.14.7
+# (python:3.14-slim@sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d).
+#
+# Every agent Dockerfile installs with `pip install --only-binary=:all: -c <this file> ...`, so its own
+# requirements pick exactly these versions and a missing cp314 wheel fails the build instead of compiling.
+# Resolved in a throwaway python:3.14-slim container from the union of every agent's requirements
+# (plus theprotocol-sdk[server]==0.7.3), wheels only, `pip check` clean; `pip freeze` below.
+# theprotocol-sdk itself is NOT constrained here: the PyPI agents pin it in their requirements and the
+# stack-root builds (Glass Gerald, IRONHAND) install it from the stack tree.
+#
+# Agent-dir builds reach this file through the compose's additional build context `constraints`
+# (a plain build: docker build --build-context constraints=Agents/_constraints ...); stack-root builds COPY it.
+aiofiles==25.1.0
+aiosqlite==0.22.1
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+asyncpg==0.31.0
+certifi==2026.7.22
+cffi==2.1.1
+charset-normalizer==3.5.1
+click==8.5.0
+cryptography==50.0.1
+et_xmlfile==2.0.0
+fastapi==0.141.1
+greenlet==3.5.6
+grpcio==1.84.0
+h11==0.16.0
+h2==4.4.1
+hpack==4.2.0
+httpcore==1.0.9
+httptools==0.8.0
+httpx==0.28.1
+hyperframe==6.1.0
+idna==3.20
+lxml==6.1.3
+Markdown==3.11
+networkx==3.7
+numpy==2.5.3
+openpyxl==3.1.5
+pdfminer.six==20260107
+pdfplumber==0.11.10
+pem==23.1.0
+pillow==12.3.0
+prometheus_client==0.26.0
+protobuf==7.36.2
+pyasn1==0.6.4
+pyasn1_modules==0.4.2
+pycparser==3.0
+pydantic==2.13.5
+pydantic_core==2.46.5
+PyJWT==2.13.0
+pypdfium2==5.13.0
+python-docx==1.2.0
+python-dotenv==1.2.3
+PyYAML==6.0.3
+spiffe==0.3.1
+SQLAlchemy==2.0.54
+starlette==1.7.0
+toml==0.10.2
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+uvicorn==0.54.0
+uvloop==0.22.1
+watchfiles==1.3.0
+websockets==17.1

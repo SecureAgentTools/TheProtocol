@@ -1,0 +1,57 @@
+{
+  "PolicyName": "Proof-of-Fair-Markup",
+  "PolicyID": "FAIR_MARKUP_POLICY_V1",
+  "CircuitVersion": "1.0.0",
+  "DSL": "Noir",
+  "ProvingSystem": "PlonK with Barretenberg/Honk",
+  "PublicInputs": {
+    "policy_parameters_hash": {
+      "type": "Field",
+      "description": "SHA256 hash of the active Fair Markup Policy parameters"
+    },
+    "self_attested_total_component_costs": {
+      "type": "Field",
+      "description": "Total component costs as claimed by the agent"
+    },
+    "offered_price": {
+      "type": "Field",
+      "description": "The price offered to the client"
+    }
+  },
+  "PrivateInputs": {
+    "actual_markup_percentage_used": {
+      "type": "Field",
+      "description": "The actual markup percentage applied (kept private)"
+    },
+    "max_markup_percentage_policy": {
+      "type": "Field",
+      "description": "Maximum allowed markup percentage from policy"
+    }
+  },
+  "Constraints": [
+    "actual_markup_percentage_used >= 0",
+    "actual_markup_percentage_used <= max_markup_percentage_policy",
+    "offered_price * 100 == self_attested_total_component_costs * (100 + actual_markup_percentage_used)",
+    "policy_parameters_hash != 0"
+  ],
+  "ArtifactHashes": {
+    "circuit": "TBD - generated after compilation",
+    "provingKey": "TBD - generated after trusted setup",
+    "verificationKey": "TBD - generated after trusted setup"
+  },
+  "TrustedSetupMethod": "Solo Developer MVP Setup - For production use only with proper ceremony",
+  "DateCreated": "2025-05-29T00:00:00Z",
+  "LastUpdated": "2025-05-29T00:00:00Z",
+  "Notes": {
+    "MVP_Limitations": [
+      "Policy parameters hash verification is simplified",
+      "No Merkle tree verification for policy membership",
+      "Integer-only arithmetic (no decimal precision)"
+    ],
+    "Security_Considerations": [
+      "Trusted setup performed by single developer for MVP",
+      "Production deployment requires multi-party computation ceremony",
+      "Circuit has been tested but not formally audited"
+    ]
+  }
+}

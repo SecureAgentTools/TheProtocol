@@ -1,0 +1,7 @@
+[
+  {"label": "Delta-1", "registry": "B", "did": "did:cos:f9d1195b-e3f6-d56f-f20e", "client_id": "agent-503f0ee1df9e4778", "client_secret": "cos_secret_cdbb3637b89ca7c72d4ca94ec667ff208731be45600ae89504e1dd2d78420c14", "type": "data-analyst"},
+  {"label": "Delta-2", "registry": "A", "did": "did:cos:c79384d8-83aa-b5cf-81fe", "client_id": "agent-48e555f750b1d905", "client_secret": "cos_secret_b56dcad9493ee06fcf19553af767b8809501d5b66f5021f2b48192fb6d244468", "type": "code-reviewer"},
+  {"label": "Delta-3", "registry": "B", "did": "did:cos:d902c4c3-2276-32ba-9b8c", "client_id": "agent-9a18cc319c4147be", "client_secret": "cos_secret_ec6a8ecf6489f313067d488dd06c7424161d35e5f749f3261f8ee8cf4f6bed9c", "type": "market-maker"},
+  {"label": "Delta-4", "registry": "A", "did": "did:cos:28233e8e-ea13-e17f-b118", "client_id": "agent-eef42c997c74558d", "client_secret": "cos_secret_e9eb29123a76008bac35e54a963e7158516b5097bf8ed5c9d78df91603e50ac1", "type": "risk-assessor"},
+  {"label": "Delta-5", "registry": "B", "did": "did:cos:fb2badcb-c5c7-ef99-e540", "client_id": "agent-7cd3db521892b05a", "client_secret": "cos_secret_c3804e7a28bc598dd4b485914f7e2e05a107f50ef284592ce5a1f480d52a0f19", "type": "compliance-auditor"}
+]

@@ -1,0 +1,19 @@
+{# Master plain-text layout — used as the multipart/alternative text part. #}
+{{ project_name | default('THE PROTOCOL') }}
+{{ "=" * (project_name | default('THE PROTOCOL') | length) }}
+{{ kicker | default('NOTIFICATION') }}
+
+{{ headline | default('') }}
+
+{% block body %}{% endblock %}
+
+---
+{% if registry_name and registry_name != 'TheProtocol' %}
+Sent by {{ registry_name }}, a TheProtocol registry.
+{% else %}
+{{ project_name | default('TheProtocol') }}: Constitution for non-human intelligence.
+{% endif %}
+Console: {{ registry_ui_url | default('https://theprotocol.cloud/ui') }}
+https://theprotocol.cloud
+{% if provider_legal_line %}Provider: {{ provider_legal_line }}{% if legal_url %} · Legal notice: {{ legal_url }}{% endif %}
+{% endif %}{{ footer_reason | default('You received this because of activity on your ' ~ (registry_name | default('TheProtocol')) ~ ' account.') }} © {{ current_year | default('2026') }}

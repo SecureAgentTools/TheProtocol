@@ -1,0 +1,60 @@
+{
+  "PolicyName": "Proof-of-Fair-Cross-Registry-Fee",
+  "PolicyID": "FAIR_CROSS_REGISTRY_FEE_V2",
+  "CircuitVersion": "2.0.0",
+  "Supersedes": "1.0.0",
+  "DSL": "Noir",
+  "NoirVersion": "1.0.0-beta.3",
+  "ProvingSystem": "UltraHonk (Barretenberg 0.82.2)",
+  "Statement": "In a committed batch of up to 16 transfers, every fee is at most the policy rate and the totals are as stated: fees[i] * 10000 <= amounts[i] * max_fee_bps for every i, sum(amounts) == total_volume, sum(fees) == total_fees.",
+  "PublicInputs": {
+    "max_fee_bps": {
+      "type": "u32",
+      "description": "Fee cap per transfer in basis points. The verifier refuses a proof whose cap is looser than the registry policy."
+    },
+    "window_ref": {
+      "type": "Field",
+      "description": "Non-zero reference to the attested window and batch."
+    },
+    "total_volume": {
+      "type": "u64",
+      "description": "Sum of the batch amounts, in the smallest unit."
+    },
+    "total_fees": {
+      "type": "u64",
+      "description": "Sum of the batch fees, in the smallest unit."
+    }
+  },
+  "PrivateInputs": {
+    "amounts": {
+      "type": "[u64; 16]",
+      "description": "Transfer amounts; unused slots are zero."
+    },
+    "fees": {
+      "type": "[u64; 16]",
+      "description": "Fee charged on each transfer; unused slots are zero."
+    },
+    "salt": {
+      "type": "Field",
+      "description": "Random blinding value for the batch commitment."
+    }
+  },
+  "PublicOutputs": {
+    "batch_commitment": {
+      "type": "Field",
+      "description": "Poseidon2(DOMAIN, window_ref, salt, amounts[0], fees[0], ...). Lets the batch be opened to an auditor later."
+    }
+  },
+  "Policy": {
+    "max_fee_bps": {
+      "rule": "at_most",
+      "default": 50
+    }
+  },
+  "Limits": "Covers up to 16 transfers per proof; a larger window takes several proofs, each with its own window_ref.",
+  "Artifacts": {
+    "circuit": "circuit.json",
+    "verification_key": "verification_key.bin",
+    "verification_key_sha256": "7e6734840a076baac9f4af183ddeba533bff576f32aa0ac23e0e11d5fe0df3c2"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "_comment": "color-contrast nodes per accessibility check label, measured by a full run of the console lifecycle suite (scripts/fesuite/run.py). At or under: a known row; over: a failure. Lower it when a run measures fewer; never raise it to pass a run (fix the colour).",
+  "_run": "fes-20261001T200930Z-2839",
+  "visitor-logo": {
+    "color-contrast": 20
+  }
+}

@@ -1,0 +1,21 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "ATTESTATION REVOKED" %}
+{% set headline = "ZKP attestation has been revoked" %}
+{% block body %}
+A zero-knowledge proof attestation issued by an agent under your developer
+account has been revoked. Verifications now fail with verified=false,
+revoked=true; downstream consumers (auditors, dispute referees, governance
+modules) will see the revocation immediately.
+
+  Attestation ID:  {{ attestation_id }}
+  Agent DID:       {{ agent_did }}
+  Revoked at:      {{ revoked_at }}
+  Revoked by:      {{ revoked_by }}
+  Reason:          {{ revoked_reason }}
+
+Open record: {{ registry_ui_url }}#/attestations/{{ attestation_id }}
+
+If this revocation was unintended, contact your registry admin. Revocation
+is final on the protocol layer; a fresh proof must be generated and
+re-submitted to restore standing.
+{% endblock %}

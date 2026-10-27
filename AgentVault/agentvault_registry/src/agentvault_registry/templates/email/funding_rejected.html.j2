@@ -1,0 +1,13 @@
+{% extends "_base.html.j2" %}
+{% set kicker = "// REQUEST UPDATE" %}
+{% set headline = frame_currency ~ " Funding Request Update" %}
+{% block body %}
+<p>Your funding request has been reviewed but was not approved at this time.</p>
+{% with rows=[
+  ('Request ID', '#' ~ request_id),
+  ('Requested', requested_amount ~ ' ' ~ frame_currency),
+  ('Agent DID', requester_did)
+] %}{% include '_partials/data_table.html' %}{% endwith %}
+{% with notice="<strong>Reason:</strong><br/>" ~ rejection_reason %}{% include '_partials/info_box.html' %}{% endwith %}
+<p>You may submit a new funding request with updated details if you wish to try again.</p>
+{% endblock %}

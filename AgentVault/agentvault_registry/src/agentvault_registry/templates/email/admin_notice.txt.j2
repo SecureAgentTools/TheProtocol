@@ -1,0 +1,16 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = kicker_label | default('ADMIN NOTICE') %}
+{% set headline = headline_text | default('Notification') %}
+{% block body %}
+{% if body_text %}{{ body_text }}{% endif %}
+
+{% if rows %}
+{% for label, value in rows %}
+  {{ label }}: {{ value }}
+{% endfor %}
+{% endif %}
+
+{% if notice_text %}
+{{ notice_text }}
+{% endif %}
+{% endblock %}

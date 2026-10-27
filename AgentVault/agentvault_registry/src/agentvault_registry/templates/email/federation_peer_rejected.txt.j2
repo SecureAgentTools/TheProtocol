@@ -1,0 +1,14 @@
+// FEDERATION REQUEST DECLINED
+
+Your registry's federation request was not approved at this time.
+
+  Registry name:     {{ peer_name }}
+  Base URL:          {{ peer_base_url }}
+  Reviewed at:       {{ rejected_at }}
+
+This does not affect your ability to run your registry in standalone mode. You may re-apply for federation later; if you believe this was in error, reply to this email.
+
+---
+Sent by {{ registry_name | default('TheProtocol') }}, a TheProtocol registry.
+Console: {{ registry_ui_url | default('https://theprotocol.cloud/ui') }}
+You received this because you registered this registry for federation.

@@ -1,0 +1,110 @@
+/**
+ * agent_lifecycle.js — Docker container lifecycle tools
+ * Controls ONLY the {{ container_name }} container.
+ */
+'use strict';
+
+const { execSync, exec } = require('child_process');
+const { promisify } = require('util');
+const config = require('../lib/config');
+const execAsync = promisify(exec);
+
+const CONTAINER = config.containerName;
+
+function dockerInspect() {
+  try {
+    const out = execSync(`docker inspect ${CONTAINER} --format="{{ '{{' }}.State.Status{{ '}}' }}|{{ '{{' }}.State.StartedAt{{ '}}' }}|{{ '{{' }}.Config.Image{{ '}}' }}"`, { timeout: 5000 }).toString().trim();
+    const [status, startedAt, image] = out.replace(/"/g, '').split('|');
+    return { running: status === 'running', status, startedAt, image };
+  } catch {
+    return { running: false, status: 'not_found', startedAt: null, image: null };
+  }
+}
+
+const tools = [
+  {
+    name: 'agent_container_status',
+    description: `Get the Docker container status for ${CONTAINER}.`,
+    inputSchema: { type: 'object', properties: {} },
+    async handler() {
+      return { container: CONTAINER, ...dockerInspect() };
+    },
+  },
+  {
+    name: 'start_agent',
+    description: `Start the ${CONTAINER} Docker container.`,
+    inputSchema: { type: 'object', properties: {} },
+    async handler() {
+      const { stdout, stderr } = await execAsync(`docker start ${CONTAINER}`, { timeout: 15000 });
+      return { container: CONTAINER, action: 'start', stdout: stdout.trim(), stderr: stderr.trim(), ...dockerInspect() };
+    },
+  },
+  {
+    name: 'stop_agent',
+    description: `Stop the ${CONTAINER} Docker container.`,
+    inputSchema: { type: 'object', properties: {} },
+    async handler() {
+      const { stdout, stderr } = await execAsync(`docker stop ${CONTAINER}`, { timeout: 30000 });
+      return { container: CONTAINER, action: 'stop', stdout: stdout.trim(), stderr: stderr.trim() };
+    },
+  },
+  {
+    name: 'restart_agent',
+    description: `Restart the ${CONTAINER} Docker container.`,
+    inputSchema: { type: 'object', properties: {} },
+    async handler() {
+      const { stdout, stderr } = await execAsync(`docker restart ${CONTAINER}`, { timeout: 30000 });
+      await new Promise(r => setTimeout(r, 2000));  // wait for startup
+      return { container: CONTAINER, action: 'restart', stdout: stdout.trim(), stderr: stderr.trim(), ...dockerInspect() };
+    },
+  },
+  {
+    name: 'get_container_logs',
+    description: `Get recent Docker logs from the ${CONTAINER} container.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tail: { type: 'integer', description: 'Number of log lines (default 50)', default: 50 },
+        since: { type: 'string', description: 'Time filter e.g. "5m", "1h", "2024-01-01T00:00:00"' },
+      },
+    },
+    async handler({ tail = 50, since }) {
+      let cmd = `docker logs ${CONTAINER} --tail ${tail}`;
+      if (since) cmd += ` --since ${since}`;
+      try {
+        const { stdout, stderr } = await execAsync(cmd, { timeout: 10000 });
+        const combined = (stdout + stderr).split('\n').filter(Boolean);
+        return { container: CONTAINER, tail, lines: combined.length, logs: combined };
+      } catch (err) {
+        return { container: CONTAINER, error: err.message };
+      }
+    },
+  },
+  {
+    name: 'agent_status',
+    description: `Get full status: container state, registry info, and balance for ${CONTAINER}.`,
+    inputSchema: { type: 'object', properties: {} },
+    async handler() {
+      const { get } = require('../lib/http_client');
+      const container = { container: CONTAINER, ...dockerInspect() };
+
+      let registry = null;
+      try {
+        registry = await get(`/api/v1/agents/by-did/${config.agentDid}`, false);
+      } catch (e) {
+        registry = { error: e.message };
+      }
+
+      let balance = null;
+      try {
+        balance = await get('/api/v1/teg/balance');
+      } catch (e) {
+        balance = { error: e.message };
+      }
+
+      return { container, registry, balance, agent_did: config.agentDid };
+    },
+  },
+];
+
+module.exports = tools;

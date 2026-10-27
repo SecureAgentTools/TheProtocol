@@ -1,0 +1,42 @@
+[
+  {
+    "label": "Juliet-1",
+    "registry": "B",
+    "did": "did:cos:a829c99d-ed00-c70f-4601",
+    "client_id": "agent-bc532bc76d5523e0",
+    "client_secret": "cos_secret_39a986c996c12214236757fa421e619f8ee7a77b4dfdff8e57378706c5a549eb",
+    "type": "data-analyst"
+  },
+  {
+    "label": "Juliet-2",
+    "registry": "B",
+    "did": "did:cos:92685e54-39ca-798c-5bb4",
+    "client_id": "agent-e1611bf456c33b3f",
+    "client_secret": "cos_secret_5b3f89c4164b97fe97d4803a78ddae4749731f24afb7a0f47ce06f9a925f6fb4",
+    "type": "code-reviewer"
+  },
+  {
+    "label": "Juliet-3",
+    "registry": "A",
+    "did": "did:cos:de8c5df9-1b93-9462-096f",
+    "client_id": "agent-f6306a663280e85f",
+    "client_secret": "cos_secret_a5a2d2741b9379d69b405faeb788bcb906d6b67f5face492175ecd254b317afc",
+    "type": "market-maker"
+  },
+  {
+    "label": "Juliet-4",
+    "registry": "A",
+    "did": "did:cos:732c291f-581d-da9e-24ea",
+    "client_id": "agent-5e3bf8f6ef13882f",
+    "client_secret": "cos_secret_e04b4936f69d49993f876fe0a6f2c2b4d2824412c71b0726dca21388e55e8074",
+    "type": "risk-assessor"
+  },
+  {
+    "label": "Juliet-5",
+    "registry": "B",
+    "did": "did:cos:9adab716-2c7d-4da8-ec8f",
+    "client_id": "agent-7ecaf798fd4a217f",
+    "client_secret": "cos_secret_bf2e577accf1c46c59eeb8b6ec925ede9d4bb7ded523c56348b62c43a39f6c7c",
+    "type": "compliance-auditor"
+  }
+]

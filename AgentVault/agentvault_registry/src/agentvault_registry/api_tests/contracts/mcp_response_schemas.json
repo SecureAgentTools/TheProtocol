@@ -1,0 +1,410 @@
+{
+  "theprotocol_adminDownloadOperatorBundle": [
+    "application_id",
+    "content_type",
+    "encoded_preview_hex",
+    "size_bytes"
+  ],
+  "theprotocol_adminGetDeveloperToken": [
+    "access_token",
+    "developer_id",
+    "note",
+    "token_type"
+  ],
+  "theprotocol_adminGrafanaQuery": [
+    "ok",
+    "path",
+    "response",
+    "status_code"
+  ],
+  "theprotocol_adminPromQuery": [
+    "ok",
+    "query",
+    "query_type",
+    "result",
+    "result_type",
+    "status"
+  ],
+  "theprotocol_adminQueryEventStore": [
+    "ok",
+    "path",
+    "response",
+    "status_code"
+  ],
+  "theprotocol_adminRequest": [
+    "endpoint",
+    "method",
+    "ok",
+    "response",
+    "status_code"
+  ],
+  "theprotocol_castVote": [
+    "created_at",
+    "message",
+    "proposal_id",
+    "reason",
+    "vote",
+    "vote_id",
+    "voter_did",
+    "voting_power"
+  ],
+  "theprotocol_createAgent": [
+    "client_id",
+    "client_secret",
+    "did",
+    "message",
+    "name",
+    "status"
+  ],
+  "theprotocol_createProposal": [
+    "duration_days",
+    "message",
+    "pass_threshold",
+    "proposal_id",
+    "proposal_type",
+    "proposer_did",
+    "quorum_required",
+    "status",
+    "title",
+    "voting_deadline"
+  ],
+  "theprotocol_deleteAdminAgent": [
+    "status"
+  ],
+  "theprotocol_deleteFederationLicense": [
+    "status"
+  ],
+  "theprotocol_deleteOauthFederationTrust": [
+    "status"
+  ],
+  "theprotocol_deleteSpireOrphan": [
+    "status"
+  ],
+  "theprotocol_discoverAgents": [
+    "agents",
+    "limit",
+    "offset",
+    "query",
+    "total"
+  ],
+  "theprotocol_discoverRegistries": [
+    "registries",
+    "total"
+  ],
+  "theprotocol_getAdminFundingAll": [
+    "requests",
+    "total"
+  ],
+  "theprotocol_getAdminFundingPending": [
+    "pending",
+    "total"
+  ],
+  "theprotocol_getAgentContracts": [
+    "contracts",
+    "total"
+  ],
+  "theprotocol_getAgentToken": [
+    "access_token",
+    "expires_in",
+    "note",
+    "token_type"
+  ],
+  "theprotocol_getBroadcastTemplates": [
+    "templates",
+    "total"
+  ],
+  "theprotocol_getCircuitACIR": [
+    "circuit_id",
+    "content_type",
+    "preview_b64",
+    "size_bytes"
+  ],
+  "theprotocol_getCircuitNargoToml": [
+    "circuit_id",
+    "nargo_toml"
+  ],
+  "theprotocol_getCircuitSource": [
+    "circuit_id",
+    "language",
+    "source"
+  ],
+  "theprotocol_getEnforcementPending": [
+    "items",
+    "total"
+  ],
+  "theprotocol_getEventEmissionPolicies": [
+    "policies",
+    "total"
+  ],
+  "theprotocol_getEventStoreRecent": [
+    "events",
+    "total"
+  ],
+  "theprotocol_getFederationDisputeSettlements": [
+    "settlements",
+    "total"
+  ],
+  "theprotocol_getFederationSyncPeers": [
+    "peers",
+    "total"
+  ],
+  "theprotocol_getGovernanceProposals": [
+    "proposals",
+    "status_filter",
+    "total"
+  ],
+  "theprotocol_getInviteCodes": [
+    "invite_codes",
+    "total"
+  ],
+  "theprotocol_getMcpStdioBridgeAdminJs": [
+    "content_type",
+    "preview",
+    "size_bytes"
+  ],
+  "theprotocol_getMcpStdioBridgeJs": [
+    "content_type",
+    "preview",
+    "size_bytes"
+  ],
+  "theprotocol_getMyA2APaymentTokens": [
+    "tokens",
+    "total"
+  ],
+  "theprotocol_getMyAgentDisputes": [
+    "disputes",
+    "total"
+  ],
+  "theprotocol_getMyAgents": [
+    "agents",
+    "developer_id",
+    "total"
+  ],
+  "theprotocol_getMyApiKeys": [
+    "api_keys",
+    "total"
+  ],
+  "theprotocol_getMyBalance": [
+    "active_stakes",
+    "agent_did",
+    "can_vote",
+    "last_updated",
+    "liquid_balance",
+    "pending_rewards",
+    "staked_balance",
+    "total_balance",
+    "ve_token_power"
+  ],
+  "theprotocol_getMyCicdDeployments": [
+    "deployments",
+    "total"
+  ],
+  "theprotocol_getMyCicdPipelines": [
+    "pipelines",
+    "total"
+  ],
+  "theprotocol_getMyCicdVersions": [
+    "total",
+    "versions"
+  ],
+  "theprotocol_getMyContracts": [
+    "contracts",
+    "total"
+  ],
+  "theprotocol_getMyDisputes": [
+    "disputes",
+    "total"
+  ],
+  "theprotocol_getMyFiatPurchases": [
+    "purchases",
+    "total"
+  ],
+  "theprotocol_getMyFundingRequests": [
+    "requests",
+    "total"
+  ],
+  "theprotocol_getMyOrganizations": [
+    "organizations",
+    "total"
+  ],
+  "theprotocol_getMyRewardHistory": [
+    "history",
+    "total"
+  ],
+  "theprotocol_getMySigningKeys": [
+    "signing_keys",
+    "total"
+  ],
+  "theprotocol_getMyStakes": [
+    "positions",
+    "total"
+  ],
+  "theprotocol_getMySupportTickets": [
+    "tickets",
+    "total"
+  ],
+  "theprotocol_getMyTegDisputes": [
+    "disputes",
+    "total"
+  ],
+  "theprotocol_getMyUnreadNotifications": [
+    "total",
+    "unread"
+  ],
+  "theprotocol_getMyWebhooks": [
+    "total",
+    "webhooks"
+  ],
+  "theprotocol_getNetworkStats": [
+    "active_agents",
+    "active_disputes",
+    "active_proposals",
+    "description",
+    "network_status",
+    "platform",
+    "total_agents",
+    "total_staked",
+    "tvl_pct"
+  ],
+  "theprotocol_getPrometheusMetrics": [
+    "content_type",
+    "metric_count_lines",
+    "preview",
+    "size_bytes"
+  ],
+  "theprotocol_getRegistryFederationProposals": [
+    "proposals",
+    "total"
+  ],
+  "theprotocol_getStakingDistributions": [
+    "distributions",
+    "total"
+  ],
+  "theprotocol_getTegAttestations": [
+    "attestations",
+    "total"
+  ],
+  "theprotocol_listAgentTemplates": [
+    "templates",
+    "total"
+  ],
+  "theprotocol_listDeveloperWebhooksAlt": [
+    "total",
+    "webhooks"
+  ],
+  "theprotocol_listFederationPeers": [
+    "peers",
+    "total"
+  ],
+  "theprotocol_listOrganizationMembers": [
+    "members",
+    "total"
+  ],
+  "theprotocol_listOrganizationTeams": [
+    "teams",
+    "total"
+  ],
+  "theprotocol_listQuarantinedRegistries": [
+    "registries",
+    "total"
+  ],
+  "theprotocol_listTegPolicies": [
+    "policies",
+    "total"
+  ],
+  "theprotocol_markNotificationRead": [
+    "broadcast_id",
+    "status"
+  ],
+  "theprotocol_patchDeveloperQuota": [
+    "status"
+  ],
+  "theprotocol_previewAdminEmail": [
+    "content_type",
+    "html_length_bytes",
+    "html_preview",
+    "template"
+  ],
+  "theprotocol_releasePayment": [
+    "status"
+  ],
+  "theprotocol_retractBroadcast": [
+    "status"
+  ],
+  "theprotocol_revokeApiKey": [
+    "key_id",
+    "message",
+    "status"
+  ],
+  "theprotocol_revokeInviteCode": [
+    "status"
+  ],
+  "theprotocol_softDeleteDeveloper": [
+    "status"
+  ],
+  "theprotocol_stakeTokens": [
+    "amount",
+    "lock_period_days",
+    "message",
+    "stake_id",
+    "status",
+    "unlock_date"
+  ],
+  "theprotocol_submitDispute": [
+    "complainant_did",
+    "created_at",
+    "defendant_did",
+    "dispute_id",
+    "next_steps",
+    "status"
+  ],
+  "theprotocol_supportCloseTicket": [
+    "action",
+    "ok",
+    "reply_sent",
+    "response",
+    "ticket_id"
+  ],
+  "theprotocol_supportListTickets": [
+    "ok",
+    "status_filter"
+  ],
+  "theprotocol_supportReplyTicket": [
+    "action",
+    "ok",
+    "response",
+    "ticket_id"
+  ],
+  "theprotocol_transferTokens": [
+    "amount",
+    "fee_amount",
+    "message",
+    "new_sender_balance",
+    "recipient_did",
+    "sender_did",
+    "status",
+    "timestamp",
+    "transaction_id"
+  ],
+  "theprotocol_unstakeTokens": [
+    "message",
+    "new_liquid_balance",
+    "new_staked_balance",
+    "stake_id",
+    "status",
+    "transaction_id",
+    "unstaked_amount"
+  ],
+  "theprotocol_updateBroadcast": [
+    "status"
+  ],
+  "theprotocol_updateDeveloperAdminFlags": [
+    "status"
+  ],
+  "theprotocol_updateDisputeRuling": [
+    "status"
+  ],
+  "theprotocol_updateEnforcementPolicy": [
+    "status"
+  ]
+}

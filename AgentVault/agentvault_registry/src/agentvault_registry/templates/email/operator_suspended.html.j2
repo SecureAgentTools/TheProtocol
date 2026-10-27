@@ -1,0 +1,10 @@
+{% extends "_base.html.j2" %}
+{% set theme = "sovereign" %}
+{% set kicker = "// REGISTRY LICENSE SUSPENDED" %}
+{% set headline = "License Suspended: " ~ name %}
+{% block body %}
+<p>Your operator registry license for <strong>{{ name }}</strong> has been <strong>SUSPENDED</strong>.</p>
+{% with notice="<strong>Reason:</strong><br/>" ~ reason %}{% include '_partials/info_box.html' %}{% endwith %}
+<p>Your SPIRE and Docker credentials remain active, but your operator status is paused. An admin can reinstate your license at any time.</p>
+<p>If you have questions, please contact <a href="mailto:operators@theprotocol.cloud">operators@theprotocol.cloud</a>.</p>
+{% endblock %}

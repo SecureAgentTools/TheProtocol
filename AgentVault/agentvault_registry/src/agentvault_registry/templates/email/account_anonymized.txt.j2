@@ -1,0 +1,32 @@
+{% extends "_base.txt.j2" %}
+{% block body %}
+ACCOUNT ANONYMIZED
+==================
+
+The 14-day cooling-off period has elapsed and your TheProtocol account
+has been anonymized as requested. This action is irreversible.
+
+Anonymized at:   {{ anonymized_at }}
+Agents revoked:  {{ agents_revoked }}
+{{ frame_currency }} forfeited:   {{ avt_forfeited }} {{ frame_currency }}
+Reference:       {{ deletion_id }}
+
+Your profile (name, email, avatar, bio, flare customization), API keys,
+and webhooks have been deleted. All agents you owned are revoked and
+their authentication secrets wiped. Their {{ frame_currency }} balances were forfeited
+to the network treasury per § 13.5 of the Terms of Service.
+
+What we kept and why
+--------------------
+Financial records (Stripe fiat purchases, unit transfer ledger entries)
+are retained in anonymized form for ten (10) years as required by § 147
+AO (German Fiscal Code). Your name and email no longer appear in those records: only the anonymized placeholder we generated for this
+account. This retention is the lawful exception to GDPR Art. 17 erasure
+under Art. 17(3)(b) GDPR (compliance with a legal obligation). See our
+Privacy Policy § 4.5.
+
+If this is a surprise, please contact {{ privacy_email or "the privacy contact named in this registry's legal notice" }}
+immediately. We can investigate but cannot un-anonymize the account.
+
+Reference for support: {{ deletion_id }}
+{% endblock %}

@@ -1,0 +1,55 @@
+/**
+ * data_oracle_tools.js — Data Oracle specific MCP tools
+ */
+'use strict';
+
+const { get } = require('../lib/http_client');
+const config = require('../lib/config');
+const fs = require('fs');
+const path = require('path');
+
+const tools = [
+  {
+    name: 'get_subscribed_events',
+    description: 'List Registry event types this oracle is subscribed to.',
+    inputSchema: { type: 'object', properties: {} },
+    async handler() {
+      const file = path.join(config.dataDir, 'config.json');
+      if (!fs.existsSync(file)) return { subscriptions: [], message: 'No subscriptions configured yet' };
+      const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      return { subscriptions: data.event_subscriptions || [] };
+    },
+  },
+  {
+    name: 'get_event_feed',
+    description: 'View recently captured Registry events aggregated by this oracle.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'integer', default: 50 },
+        event_type: { type: 'string', description: 'Filter by event type (optional)' },
+      },
+    },
+    async handler({ limit = 50, event_type }) {
+      const file = path.join(config.dataDir, 'events.json');
+      if (!fs.existsSync(file)) return { events: [], message: 'No events captured yet' };
+      const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      let events = data.events || data || [];
+      if (event_type) events = events.filter(e => e.type === event_type || e.event_type === event_type);
+      return { events: events.slice(-limit), total: events.length };
+    },
+  },
+  {
+    name: 'get_feed_consumers',
+    description: 'List agents subscribed to this oracle\'s data feed.',
+    inputSchema: { type: 'object', properties: {} },
+    async handler() {
+      const file = path.join(config.dataDir, 'state.json');
+      if (!fs.existsSync(file)) return { consumers: [] };
+      const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      return { consumers: data.feed_consumers || [], subscription_fee: data.subscription_fee || '0' };
+    },
+  },
+];
+
+module.exports = tools;

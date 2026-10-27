@@ -1,0 +1,135 @@
+# THE DIRECTORY (trial) — his word 2026-09-06: option C, a new compose service; production runs on other hardware,
+# development on this box. Anchors = the EU/ASIA rehearsal pair; the Directory reads their PUBLIC feeds over TLS.
+#
+# 🔴 COPYING THIS FILE INTO THIS FOLDER WITHOUT CHANGING `name:` WILL ADOPT THIS CONTAINER, NOT ADD ONE.
+# Compose derives the project from the DIRECTORY, and a service name is only unique WITHIN a project — so a
+# second file here that also declares a service called `directory` is, to compose, the same service with
+# changed config: `up -d` reports "Recreated" and the container it took over is simply gone. That happened on
+# 2026-09-06 (agentvault2-eb's sandbox Directory adopted `directory-eu-asia`; restored from the same volume,
+# no data lost — the volume survives because `down` without `-v` keeps it). A distinct container_name, port
+# and volume key do NOT prevent it; only a distinct PROJECT or a distinct SERVICE name does.
+# The project is pinned below rather than left to the folder, so it is intrinsic to the file and not a `-p`
+# flag someone has to remember. If you copy this, change `name:` FIRST.
+name: directory
+services:
+  # ── THE DIRECTORY'S OWN IDENTITY (§MTLSGAP 2026-09-08) ────────────────────────────────────
+  # His question: "i need to know if mtls is setup to directory otherwise we need to set this up
+  # too. everything is mtls enforced." The answer was NO in BOTH directions — it held no SVID at
+  # all (no /certs, no /spire mount, so it could not present one even in principle), sat on
+  # `directory_default` and no identity network, crawled the frames anonymously over the public
+  # vhost, and was read back by them over plain http on loopback. On a fleet where TEG and
+  # federation are `ssl_verify_client on`, it was the one component with no identity.
+  #
+  # It borrows EU's SPIRE agent socket because it is EU that hosts it; the entry is
+  # `spiffe://eu.theprotocol.cloud/service/directory`, federated with ASIA so the peer frame's
+  # gateways accept it too. The volume is EXTERNAL: this compose does not own EU's socket.
+  directory-cert-writer:
+    image: agentvault2-cert-writer-test-a:latest
+    container_name: directory-cert-writer
+    restart: unless-stopped
+    environment:
+      SPIRE_SOCKET: /opt/spire/sockets/agent.sock
+      CERT_DIR: /certs
+      REFRESH_SEC: "300"
+      SERVICE_NAME: directory
+    volumes:
+      - eu-spire-socket:/opt/spire/sockets:ro
+      - directory-certs:/certs
+    labels:
+      # the SPIRE selector keys on THIS label — change it and the workload silently gets no SVID
+      - "com.agentvault.service=svid-writer-directory"
+    networks:
+      - default
+      - identity
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+  directory:
+    image: theprotocol-directory:sovkit1
+    container_name: directory-eu-asia
+    restart: unless-stopped
+    # §SOVKIT T4 (2026-09-14): NO host port. The plain 127.0.0.1:8600 kept "during the transition" answered /graphql with no
+    # TLS and no reader check; the registries dial the sidecar (DIRECTORY_MTLS_URL) and the console reads through its
+    # registry. A battery that wants /status reads it inside the container or through the sidecar with an allowlisted SVID.
+    env_file: .env.directory
+    environment:
+      # who may read (`directory/reader_gate.py`). Required: an unset value stops `docker compose` HERE, loudly, instead
+      # of starting an index that refuses every reader. The secret is shared with directory-nginx below.
+      DIRECTORY_PROXY_TRUST_SECRET: ${DIRECTORY_PROXY_TRUST_SECRET:?set DIRECTORY_PROXY_TRUST_SECRET in .env.directory}
+      DIRECTORY_READERS: ${DIRECTORY_READERS:?set DIRECTORY_READERS in .env.directory}
+    volumes:
+      - directory-data:/data
+      # the crawl leg: the Directory presents this SVID as a CLIENT cert to every frame it
+      # indexes, and verifies internal names against the SPIRE bundle
+      - directory-certs:/certs:ro
+    depends_on:
+      directory-cert-writer:
+        condition: service_started
+    networks:
+      # ⚠ NOT ON THE IDENTITY NETWORK, AND THAT IS THE WHOLE POINT.
+      # Joining `fresh-identity` to "give the index an identity" broke its CRAWL within the hour,
+      # and the failure was silent: every operator's nginx-federation carries the network ALIAS
+      # `<op>.op.theprotocol.cloud` on that network, so docker's embedded resolver answered
+      # `amsterdam.op.theprotocol.cloud` with 172.16.97.10 — a container listening on 8443 — and
+      # the crawl got `Connection refused` on 443 while the same name resolved to the public IP
+      # from the host. All four operators went "unreachable" and the index kept answering from
+      # rows it had gathered before. A COMPONENT'S IDENTITY IS NOT ITS ROUTE: the SVID lives in a
+      # VOLUME (below) and is offered on every hop regardless of which networks this container is
+      # on. The identity network is needed only by the READ leg's sidecar, which is where it is.
+      - default
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+  # ── THE READ LEG (§MTLSGAP) ───────────────────────────────────────────────────────────────
+  # The Directory is the one component that AGGREGATES every frame's cards, and
+  # `DISCOVERY_VIA_DIRECTORY` means registries render what it returns — so an unauthenticated
+  # index is a place to INJECT. Before this, anything that could reach 127.0.0.1:8600 could shape
+  # what a person sees in Discovery.
+  directory-nginx:
+    image: nginx:1.25-alpine
+    container_name: directory-nginx
+    restart: unless-stopped
+    ports:
+      # ⚠ 8601 IS THE SANDBOX DIRECTORY's (agentvault2-eb's `directory-sandbox`). Two projects
+      # share this box; taking a neighbour's port is the same class of mistake as the project-name
+      # adoption documented at the top of this file, and just as invisible until something breaks.
+      - "127.0.0.1:8602:8443"
+    volumes:
+      # §SOVKIT T4: a TEMPLATE, rendered at start by nginx-directory-entrypoint.sh (the shared entrypoint substitutes
+      # nothing). `nginx-directory.conf` stays as it was: directory-legacy-nginx binds it live.
+      - ./nginx-directory.conf.template:/etc/nginx/templates/nginx-directory.conf.template:ro
+      - ./nginx-directory-entrypoint.sh:/opt/nginx-directory-entrypoint.sh:ro
+      - /opt/theprotocol/stack/Agentvault2/nginx/nginx-entrypoint.sh:/opt/nginx-entrypoint.sh:ro
+      - directory-certs:/certs:ro
+    environment:
+      CERT_DIR: /certs
+      RELOAD_SEC: "300"
+      SERVICE_NAME: directory-nginx
+      DIRECTORY_PROXY_TRUST_SECRET: ${DIRECTORY_PROXY_TRUST_SECRET:?set DIRECTORY_PROXY_TRUST_SECRET in .env.directory}
+    entrypoint: ["/bin/sh", "/opt/nginx-directory-entrypoint.sh"]
+    depends_on:
+      directory-cert-writer:
+        condition: service_started
+      directory:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - default
+      - identity
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+volumes:
+  directory-data: {}
+  directory-certs: {}
+  eu-spire-socket:
+    external: true
+    name: eu_spire_socket_1788764190
+
+networks:
+  default: {}
+  identity:
+    external: true
+    name: fresh-identity

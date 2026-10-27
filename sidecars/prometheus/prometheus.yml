@@ -1,0 +1,32 @@
+# §ONESHOT P2.2 — the sidecar Prometheus: every frame is a JSON file in targets/ (file_sd), written by
+# scripts/hetzner_demo/sidecars.py wire()/unwire(); nothing here is edited per frame.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+rule_files:
+  - /etc/prometheus/rules/*.yml
+scrape_configs:
+  - job_name: 'frames'
+    metrics_path: '/metrics'
+    file_sd_configs:
+      - files: ['/etc/prometheus/targets/*.json']
+        refresh_interval: 30s
+  # §FRAMEKIT P3.1 — the sidecars themselves, so a dead auditor or evaluator is visible (a quiet auditor
+  # reads exactly like a healthy one: FrameAuditorStale needs auditor_last_cycle_age_seconds scraped here)
+  - job_name: 'auditor'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['auditor:8045']
+        labels: { tier: 'sidecar', service: 'auditor' }
+  - job_name: 'vmalert'
+    static_configs:
+      - targets: ['vmalert:8880']
+        labels: { tier: 'sidecar', service: 'vmalert' }
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']
+        labels: { tier: 'sidecar', service: 'alertmanager' }
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels: { tier: 'sidecar', service: 'prometheus' }

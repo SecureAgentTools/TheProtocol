@@ -1,0 +1,56 @@
+[project]
+    name = "agentvault-server-sdk"
+    version = "1.0.0"
+    description = "Server SDK for building AgentVault A2A compliant agents."
+    authors = [{ name = "Raphael Zbigniew Jeziorny", email = "r.jeziorny@theprotocol.cloud" }]
+    license = { text = "Apache-2.0" }
+    readme = "README.md"
+    classifiers = [
+        "License :: OSI Approved :: Apache Software License",
+    ]
+    requires-python = ">=3.10"
+    dependencies = [
+        "fastapi>=0.111,<1.0",
+        "pydantic>=2.0,<3.0",
+        "typer>=0.9.0",
+        "agentvault>=1.0.0,<2.0.0",
+    ]
+    [project.scripts]
+    agentvault-sdk = "agentvault_server_sdk.packager.cli:app"
+
+    [project.optional-dependencies]
+    dev = [
+        "pytest>=7.0,<9.0",
+        "pytest-asyncio>=0.23,<0.24",
+        "freezegun>=1.1.0",
+    ]
+    [project.urls]
+    Homepage = "https://theprotocol.cloud"
+    Documentation = "https://theprotocol.cloud"
+    Repository = "https://github.com/SecureAgentTools/TheProtocol"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "agentvault-server-sdk"
+version = "1.0.0"
+description = "Server SDK for building AgentVault A2A compliant agents."
+authors = ["Raphael Zbigniew Jeziorny <r.jeziorny@theprotocol.cloud>"]
+packages = [{include = "agentvault_server_sdk", from = "src"}]
+
+[tool.poetry.dependencies]
+python = ">=3.10"
+fastapi = ">=0.111,<1.0"
+pydantic = ">=2.0,<3.0"
+typer = ">=0.9.0"
+agentvault = ">=1.0.0,<2.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=7.0,<9.0"
+pytest-asyncio = ">=0.23,<0.24"
+freezegun = ">=1.1.0"
+
+[tool.poetry.scripts]
+agentvault-sdk = "agentvault_server_sdk.packager.cli:app"

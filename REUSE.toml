@@ -1,0 +1,73 @@
+# The licence of every file in this repository, in the form licence scanners read (https://reuse.software, REUSE 3.x).
+# LICENSING.md says the same in words. Later annotations override earlier ones for the files they match; the texts of
+# the licences named here are in LICENSES/. Check with: scripts/distribution/reuse_lint.sh <repository root>
+version = 1
+SPDX-PackageName = "TheProtocol"
+SPDX-PackageSupplier = "Raphael Zbigniew Jeziorny"
+SPDX-PackageDownloadLocation = "https://github.com/SecureAgentTools/TheProtocol"
+
+# The server and platform: everything, unless a later annotation says otherwise
+[[annotations]]
+path = "**"
+precedence = "override"
+SPDX-FileCopyrightText = "2025-2026 Raphael Zbigniew Jeziorny"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# The SDKs, the agent library, the CLI and the independent auditor
+[[annotations]]
+path = ["theprotocol-sdk/**", "AgentVault/agentvault_library/**", "AgentVault/agentvault_server_sdk/**",
+        "AgentVault/agentvault_cli/**", "Agents/TheAuditor/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2025-2026 Raphael Zbigniew Jeziorny"
+SPDX-License-Identifier = "Apache-2.0"
+
+# The public documentation, the protocol specifications and the console's documentation chapters
+[[annotations]]
+path = ["PUBLIC_DOCS/**", "AgentVault/agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/assets/docs/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2025-2026 Raphael Zbigniew Jeziorny"
+SPDX-License-Identifier = "CC-BY-4.0"
+
+# Third-party material vendored or embedded in the web application
+[[annotations]]
+path = ["AgentVault/agentvault_registry/src/agentvault_registry/static/new_registry_frontend/public/vendor/swagger-ui-bundle.js",
+        "AgentVault/agentvault_registry/src/agentvault_registry/static/new_registry_frontend/public/vendor/swagger-ui.css",
+        "AgentVault/agentvault_registry/src/agentvault_registry/static/new_registry_frontend/public/vendor/LICENSE.swagger-ui",
+        "AgentVault/agentvault_registry/src/agentvault_registry/static/new_registry_frontend/public/vendor/NOTICE.swagger-ui"]
+precedence = "override"
+SPDX-FileCopyrightText = "SmartBear Software Inc."
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["AgentVault/agentvault_registry/src/agentvault_registry/static/new_registry_frontend/public/vendor/redoc.standalone.js",
+        "AgentVault/agentvault_registry/src/agentvault_registry/static/new_registry_frontend/public/vendor/redoc.standalone.js.LICENSE.txt",
+        "AgentVault/agentvault_registry/src/agentvault_registry/static/new_registry_frontend/public/vendor/LICENSE.redoc"]
+precedence = "override"
+SPDX-FileCopyrightText = "Rebilly, Inc."
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = ["AgentVault/agentvault_registry/src/agentvault_registry/static/new_registry_frontend/public/fonts/*.woff2",
+        "AgentVault/agentvault_registry/src/agentvault_registry/static/new_registry_frontend/public/fonts/OFL.txt"]
+precedence = "override"
+SPDX-FileCopyrightText = ["2016 The Inter Project Authors", "2017, 2019 IBM Corp.", "2018 The Orbitron Project Authors"]
+SPDX-License-Identifier = "OFL-1.1"
+
+[[annotations]]
+path = "AgentVault/agentvault_registry/src/agentvault_registry/static/new_registry_frontend/public/assets/nightlights/**"
+precedence = "override"
+SPDX-FileCopyrightText = "NASA Global Imagery Browse Services (GIBS)"
+SPDX-License-Identifier = "LicenseRef-NASA-Imagery"
+
+[[annotations]]
+path = "AgentVault/agentvault_registry/src/agentvault_registry/static/new_registry_frontend/scripts/licenses/material-design-icons.LICENSE.txt"
+precedence = "override"
+SPDX-FileCopyrightText = "Pictogrammers"
+SPDX-License-Identifier = "Apache-2.0"
+
+# Our icon component, which carries Material Design Icons shapes
+[[annotations]]
+path = "AgentVault/agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/components/Icon.vue"
+precedence = "override"
+SPDX-FileCopyrightText = ["2025-2026 Raphael Zbigniew Jeziorny", "Pictogrammers"]
+SPDX-License-Identifier = "AGPL-3.0-or-later AND Apache-2.0"

@@ -1,0 +1,417 @@
+/* ============================================
+   TP-WEBHOOKS.CSS — TheProtocol Webhook View
+   Design tokens for AAA+ cyberpunk webhook UI
+   OWL-22 — 2026-03-11
+   ============================================ */
+
+/* --- Webhook List Item Card --- */
+.webhook-card {
+  background: var(--nc-surface, #131825);
+  border: 1px solid rgba(var(--nc-primary-rgb), 0.12);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.webhook-card:hover {
+  border-color: rgba(var(--nc-primary-rgb), 0.3);
+  background: var(--nc-elevated, #181f2e);
+}
+.webhook-card--deleting {
+  border-color: rgba(255, 51, 102, 0.4);
+  background: rgba(255, 51, 102, 0.05);
+}
+
+/* --- Status Dot --- */
+.webhook-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.webhook-status-dot--active {
+  background: var(--nc-primary, var(--nc-primary));
+  box-shadow: 0 0 8px rgba(var(--nc-primary-rgb), 0.7);
+  animation: webhook-pulse 2s infinite;
+}
+.webhook-status-dot--inactive {
+  background: var(--nc-text-muted, #5f6368);
+  box-shadow: none;
+}
+@keyframes webhook-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+/* --- Status Badge --- */
+.webhook-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.6rem;
+  border-radius: 0.25rem;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  border: 1px solid;
+}
+.webhook-badge--active {
+  background: rgba(var(--nc-primary-rgb), 0.1);
+  border-color: rgba(var(--nc-primary-rgb), 0.35);
+  color: var(--nc-primary, var(--nc-primary));
+}
+.webhook-badge--inactive {
+  background: rgba(95, 99, 104, 0.15);
+  border-color: rgba(95, 99, 104, 0.35);
+  color: var(--nc-text-muted, #5f6368);
+}
+.webhook-badge--failed {
+  background: rgba(255, 149, 0, 0.1);
+  border-color: rgba(255, 149, 0, 0.35);
+  color: var(--nc-warning, #ff9500);
+}
+.webhook-badge--test-ok {
+  background: rgba(0, 255, 136, 0.1);
+  border-color: rgba(0, 255, 136, 0.3);
+  color: var(--nc-success, #00ff88);
+}
+.webhook-badge--test-fail {
+  background: rgba(255, 51, 102, 0.1);
+  border-color: rgba(255, 51, 102, 0.3);
+  color: var(--nc-danger, #ff3366);
+}
+
+/* --- Event Type Pill --- */
+.webhook-event-pill {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  background: rgba(var(--nc-primary-rgb), 0.08);
+  border: 1px solid rgba(var(--nc-primary-rgb), 0.2);
+  border-radius: 0.25rem;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+  color: var(--nc-primary, var(--nc-primary));
+  white-space: nowrap;
+}
+
+/* --- Action Buttons --- */
+.webhook-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 0.3rem;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+/* Enable (green) */
+.webhook-btn--enable {
+  background: rgba(0, 255, 136, 0.08);
+  border-color: rgba(0, 255, 136, 0.25);
+  color: var(--nc-success, #00ff88);
+}
+.webhook-btn--enable:hover {
+  background: rgba(0, 255, 136, 0.18);
+  border-color: rgba(0, 255, 136, 0.5);
+}
+/* Disable (amber) */
+.webhook-btn--disable {
+  background: rgba(255, 149, 0, 0.08);
+  border-color: rgba(255, 149, 0, 0.25);
+  color: var(--nc-warning, #ff9500);
+}
+.webhook-btn--disable:hover {
+  background: rgba(255, 149, 0, 0.18);
+  border-color: rgba(255, 149, 0, 0.5);
+}
+/* Test (cyan) */
+.webhook-btn--test {
+  background: rgba(var(--nc-primary-rgb), 0.08);
+  border-color: rgba(var(--nc-primary-rgb), 0.25);
+  color: var(--nc-primary, var(--nc-primary));
+}
+.webhook-btn--test:hover {
+  background: rgba(var(--nc-primary-rgb), 0.18);
+  border-color: rgba(var(--nc-primary-rgb), 0.5);
+}
+.webhook-btn--test:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* History (purple) */
+.webhook-btn--history {
+  background: rgba(168, 85, 247, 0.08);
+  border-color: rgba(168, 85, 247, 0.25);
+  color: #af62f8;  /* 4.6:1 (§FESUITE; #a855f7 was 4.1:1) */
+}
+.webhook-btn--history:hover {
+  background: rgba(168, 85, 247, 0.18);
+  border-color: rgba(168, 85, 247, 0.5);
+}
+/* Edit (muted) */
+.webhook-btn--edit {
+  background: rgba(154, 160, 166, 0.08);
+  border-color: rgba(154, 160, 166, 0.2);
+  color: var(--nc-text-secondary, #9aa0a6);
+}
+.webhook-btn--edit:hover {
+  background: rgba(154, 160, 166, 0.15);
+  border-color: rgba(154, 160, 166, 0.4);
+  color: var(--nc-text-primary, #e8eaed);
+}
+/* Delete (red) */
+.webhook-btn--delete {
+  background: rgba(255, 51, 102, 0.08);
+  border-color: rgba(255, 51, 102, 0.25);
+  color: var(--nc-danger, #ff3366);
+}
+.webhook-btn--delete:hover {
+  background: rgba(255, 51, 102, 0.18);
+  border-color: rgba(255, 51, 102, 0.5);
+}
+/* Confirm delete (solid red) */
+.webhook-btn--confirm-delete {
+  background: rgba(255, 51, 102, 0.2);
+  border-color: var(--nc-danger, #ff3366);
+  color: var(--nc-danger, #ff3366);
+  font-weight: 700;
+}
+.webhook-btn--confirm-delete:hover {
+  background: rgba(255, 51, 102, 0.35);
+}
+/* Cancel (ghost) */
+.webhook-btn--cancel {
+  background: transparent;
+  border-color: rgba(154, 160, 166, 0.2);
+  color: var(--nc-text-muted, #5f6368);
+}
+.webhook-btn--cancel:hover {
+  color: var(--nc-text-secondary, #9aa0a6);
+  border-color: rgba(154, 160, 166, 0.4);
+}
+
+/* --- Test Feedback Banner --- */
+.webhook-test-result {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.3rem;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  margin-top: 0.75rem;
+  animation: webhook-fadein 0.2s ease;
+}
+.webhook-test-result--ok {
+  background: rgba(0, 255, 136, 0.06);
+  border: 1px solid rgba(0, 255, 136, 0.25);
+  color: var(--nc-success, #00ff88);
+}
+.webhook-test-result--fail {
+  background: rgba(255, 51, 102, 0.06);
+  border: 1px solid rgba(255, 51, 102, 0.25);
+  color: var(--nc-danger, #ff3366);
+}
+@keyframes webhook-fadein {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Delete Confirm Zone --- */
+.webhook-delete-confirm {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.75rem;
+  background: rgba(255, 51, 102, 0.05);
+  border: 1px solid rgba(255, 51, 102, 0.2);
+  border-radius: 0.3rem;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--nc-danger, #ff3366);
+}
+
+/* --- Modal Styles --- */
+.wh-modal {
+  background: #0d1117;
+  border: 1px solid rgba(var(--nc-primary-rgb), 0.25);
+  border-radius: 0.75rem;
+  box-shadow: 0 0 60px rgba(0, 0, 0, 0.9), 0 0 30px rgba(var(--nc-primary-rgb), 0.05);
+}
+.wh-modal-header {
+  background: var(--nc-deep, #0a0d16);
+  border-bottom: 1px solid rgba(var(--nc-primary-rgb), 0.12);
+  padding: 1.25rem 1.5rem;
+  border-radius: 0.75rem 0.75rem 0 0;
+}
+.wh-modal-footer {
+  background: var(--nc-deep, #0a0d16);
+  border-top: 1px solid rgba(var(--nc-primary-rgb), 0.12);
+  padding: 1rem 1.5rem;
+  border-radius: 0 0 0.75rem 0.75rem;
+}
+.wh-modal-eyebrow {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
+  color: var(--nc-text-muted, #5f6368);
+  margin-bottom: 0.25rem;
+}
+.wh-modal-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--nc-text-primary, #e8eaed);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* --- Form Inputs --- */
+.wh-input {
+  width: 100%;
+  padding: 0.6rem 0.9rem;
+  background: var(--nc-deep, #0a0d16);
+  border: 1px solid rgba(var(--nc-primary-rgb), 0.18);
+  border-radius: 0.375rem;
+  color: var(--nc-text-primary, #e8eaed);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.875rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  outline: none;
+}
+.wh-input::placeholder { color: var(--nc-text-muted, #5f6368); }
+.wh-input:focus {
+  border-color: var(--nc-primary, var(--nc-primary));
+  box-shadow: 0 0 0 3px rgba(var(--nc-primary-rgb), 0.1);
+}
+.wh-input--error { border-color: var(--nc-danger, #ff3366); }
+.wh-input--error:focus { box-shadow: 0 0 0 3px rgba(255, 51, 102, 0.1); }
+
+/* --- Event Category Header --- */
+.wh-category-header {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--nc-primary, var(--nc-primary));
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid rgba(var(--nc-primary-rgb), 0.1);
+  margin-bottom: 0.5rem;
+}
+
+/* --- Checkbox (cyan accent) --- */
+.wh-checkbox {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--nc-primary, var(--nc-primary));
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* --- Status Toggle --- */
+.wh-toggle {
+  position: relative;
+  display: inline-flex;
+  height: 1.5rem;
+  width: 2.75rem;
+  align-items: center;
+  border-radius: 9999px;
+  border: 1px solid;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+.wh-toggle--on {
+  background: rgba(var(--nc-primary-rgb), 0.2);
+  border-color: var(--nc-primary, var(--nc-primary));
+}
+.wh-toggle--off {
+  background: var(--nc-deep, #0a0d16);
+  border-color: rgba(154, 160, 166, 0.3);
+}
+.wh-toggle-knob {
+  display: inline-block;
+  height: 1rem;
+  width: 1rem;
+  border-radius: 50%;
+  transition: transform 0.2s, background 0.2s;
+}
+.wh-toggle-knob--on {
+  transform: translateX(1.4rem);
+  background: var(--nc-primary, var(--nc-primary));
+}
+.wh-toggle-knob--off {
+  transform: translateX(0.2rem);
+  background: var(--nc-text-muted, #5f6368);
+}
+
+/* --- Secret Panel --- */
+.wh-secret-panel {
+  background: rgba(245, 158, 11, 0.06);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+}
+.wh-secret-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #f59e0b;
+  text-transform: uppercase;
+  margin-bottom: 0.4rem;
+}
+.wh-secret-code {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--nc-deep, #0a0d16);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.75rem;
+}
+.wh-secret-code code {
+  flex: 1;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--nc-text-primary, #e8eaed);
+  word-break: break-all;
+}
+
+/* --- Delivery Item --- */
+.wh-delivery-item {
+  background: var(--nc-deep, #0a0d16);
+  border: 1px solid rgba(var(--nc-primary-rgb), 0.1);
+  border-radius: 0.375rem;
+  padding: 0.875rem 1rem;
+  transition: border-color 0.15s ease;
+}
+.wh-delivery-item:hover {
+  border-color: rgba(var(--nc-primary-rgb), 0.25);
+}
+.wh-delivery-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.wh-delivery-status--ok    { background: var(--nc-success, #00ff88); }
+.wh-delivery-status--warn  { background: var(--nc-warning, #ff9500); }
+.wh-delivery-status--error { background: var(--nc-danger, #ff3366); }
+.wh-delivery-status--null  { background: var(--nc-text-muted, #5f6368); }
+
+/* --- Spinner --- */
+.wh-spin { animation: wh-rotate 0.8s linear infinite; }
+@keyframes wh-rotate { to { transform: rotate(360deg); } }
+
+/* --- List Transition --- */
+.wh-list-enter-active,
+.wh-list-leave-active { transition: all 0.25s ease; }
+.wh-list-enter-from   { opacity: 0; transform: translateY(-12px); }
+.wh-list-leave-to     { opacity: 0; transform: translateY(8px); }

@@ -1,0 +1,31 @@
+{#
+  Themed CTA button. Use:
+    {% with cta_url=verification_link, cta_label="VERIFY EMAIL" %}
+      {% include '_partials/cta_button.html' %}
+    {% endwith %}
+
+  Renders as a centered <a> styled like a button. Plain-text fallback shows the URL.
+#}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin: 24px auto;">
+  <tr>
+    <td align="center" style="padding: 0;">
+      <a href="{{ cta_url }}"
+         style="display: inline-block;
+                background: {{ palette.cta_bg }};
+                color: {{ palette.cta_fg }};
+                border: 1px solid {{ palette.cta_border }};
+                padding: 12px 36px;
+                font-family: 'IBM Plex Mono', 'Courier New', monospace;
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 0.15em;
+                text-decoration: none;
+                border-radius: 4px;">{{ cta_label | default('OPEN LINK') }}</a>
+    </td>
+  </tr>
+</table>
+<p style="font-size: 11px; color: {{ palette.muted }}; word-break: break-all; margin: 0 0 14px; text-align: center;">
+  {#- cta_hint is overridable so a German (or any localized) email is not forced to carry an
+     English fallback line under its button. Default byte-identical to the old hardcoded text. #}
+  {{ cta_hint | default('Or copy this link:') }} {{ cta_url }}
+</p>

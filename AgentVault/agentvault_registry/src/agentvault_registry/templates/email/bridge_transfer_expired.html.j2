@@ -1,0 +1,18 @@
+{% extends "_base.html.j2" %}
+{% set theme = "neural" %}
+{% set kicker = "// CROSS-FRAME BRIDGE EXPIRED" %}
+{% set headline = "Bridge transfer didn't redeem in time: funds unlocked" %}
+{% block body %}
+<p>Your cross-frame bridge transfer expired before it was redeemed on the destination frame. The escrowed amount has been <strong>automatically unlocked</strong> back to the source agent.</p>
+{% with rows=[
+  ('Bridge transaction', bridge_tx_id),
+  ('Source agent', source_agent_did),
+  ('Source frame', source_frame_id),
+  ('Target frame', target_frame_id),
+  ('Amount', amount ~ ' ' ~ frame_currency),
+  ('Expires at', expires_at or 'n/a'),
+  ('Expired at', expired_at)
+] %}{% include '_partials/data_table.html' %}{% endwith %}
+{% with cta_url=registry_ui_url ~ '#/bridge', cta_label="OPEN BRIDGE CONSOLE" %}{% include '_partials/cta_button.html' %}{% endwith %}
+{% with notice="No action required: the source agent's balance has already been credited. Re-initiate from the console if you still want to move the funds." %}{% include '_partials/info_box.html' %}{% endwith %}
+{% endblock %}

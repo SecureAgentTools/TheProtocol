@@ -1,0 +1,66 @@
+/**
+ * auth.js — Agent JWT lifecycle manager
+ * Obtains and caches the agent JWT using FLOW 4 from TheProtocol docs.
+ * JWT auto-refreshes 60s before expiry.
+ */
+'use strict';
+
+const config = require('./config');
+
+let cachedJwt = null;
+let jwtExpiresAt = 0;  // unix ms
+
+/**
+ * Returns a valid agent JWT, refreshing if needed.
+ * Uses FLOW 4: POST /api/v1/auth/agent/token (form-encoded)
+ */
+async function getAgentJwt() {
+  const now = Date.now();
+  if (cachedJwt && jwtExpiresAt > now + 60_000) {
+    return cachedJwt;
+  }
+
+  const url = `${config.registryUrl}/api/v1/auth/agent/token`;
+  const body = new URLSearchParams({
+    grant_type: 'password',
+    username: config.clientId,
+    password: config.clientSecret,
+  });
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+  } catch (err) {
+    throw new Error(`[AUTH] Network error reaching registry at ${url}: ${err.message}`);
+  }
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => res.status);
+    throw new Error(`[AUTH] Token endpoint returned ${res.status}: ${detail}`);
+  }
+
+  const data = await res.json();
+  if (!data.access_token) {
+    throw new Error('[AUTH] Token response missing access_token');
+  }
+
+  cachedJwt = data.access_token;
+  // expires_in is in seconds; default 3600 if not provided
+  const expiresIn = (data.expires_in || 3600) * 1000;
+  jwtExpiresAt = now + expiresIn;
+
+  console.error(`[AUTH] JWT refreshed, expires in ${Math.round(expiresIn / 1000)}s`);
+  return cachedJwt;
+}
+
+/** Invalidate cached JWT (call on 401 responses) */
+function invalidateJwt() {
+  cachedJwt = null;
+  jwtExpiresAt = 0;
+}
+
+module.exports = { getAgentJwt, invalidateJwt };

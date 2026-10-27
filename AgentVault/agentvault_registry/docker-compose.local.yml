@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: agentvault_registry_db_local
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: agentvault_registry
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_local:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - registry-network
+
+  registry:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    container_name: agentvault_registry_local
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/agentvault_registry
+      # Security
+      SECRET_KEY: "dev-secret-key-change-in-production"
+      JWT_SECRET_KEY: "dev-jwt-secret-change-in-production"
+      API_KEY_SECRET: "dev-api-key-secret-change-in-production"
+      # Email settings
+      MAIL_SERVER: ${MAIL_SERVER:-smtp.example.org}
+      MAIL_PORT: 587
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-noreply@example.org}
+      MAIL_STARTTLS: "True"
+      MAIL_SSL_TLS: "False"
+      MAIL_FROM_NAME: "The Protocol Registry"
+      # Application settings
+      PROJECT_NAME: "The Protocol Registry"
+      PORT: 8000
+      BASE_URL: http://localhost:8000
+      DEPLOYMENT_ENV: development
+      # TEG Layer (optional for local dev)
+      TEG_API_BASE_URL: http://host.docker.internal:8100
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+    command: >
+      sh -c "echo 'Waiting for DB...' &&
+             sleep 5 &&
+             cd /app &&
+             alembic upgrade heads &&
+             echo 'DB migration complete, starting server...' &&
+             PYTHONPATH=/app/src uvicorn agentvault_registry.main:app --host 0.0.0.0 --port 8000 --reload"
+    networks:
+      - registry-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  postgres_data_local:
+    name: agentvault_registry_postgres_data_local
+
+networks:
+  registry-network:
+    driver: bridge
+    name: agentvault_registry_network_local

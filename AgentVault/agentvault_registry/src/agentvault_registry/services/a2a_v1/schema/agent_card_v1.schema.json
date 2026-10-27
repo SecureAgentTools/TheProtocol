@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://theprotocol.cloud/schemas/a2a/agent-card-v1.schema.json",
+  "$comment": "§AGENTDISC #189 (2026-08-16) — encoded field-for-field from a2aproject/A2A v1.0.1 specification/a2a.proto (vendored beside this file, sha256 e195bf96ab630c69797851970203e1b2b6b19528f2e9803b7d904b91a5104016). required[] = exactly the proto's google.api.field_behavior=REQUIRED annotations; AgentExtension carries none in the proto, so none here. additionalProperties stays TRUE deliberately: the fleet keeps v0.3 sibling fields during the transition (compat.py Q5) and A2A tolerates additive data — the CI gate REPORTS strict extras without gating on them. minItems:1 on the REQUIRED repeated fields encodes 'present and populated'.",
+  "title": "A2A AgentCard (v1.0)",
+  "type": "object",
+  "required": [
+    "name",
+    "description",
+    "supportedInterfaces",
+    "version",
+    "capabilities",
+    "defaultInputModes",
+    "defaultOutputModes",
+    "skills"
+  ],
+  "properties": {
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "supportedInterfaces": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/AgentInterface" }
+    },
+    "provider": { "$ref": "#/$defs/AgentProvider" },
+    "version": { "type": "string" },
+    "documentationUrl": { "type": "string" },
+    "capabilities": { "$ref": "#/$defs/AgentCapabilities" },
+    "securitySchemes": { "type": "object" },
+    "securityRequirements": { "type": "array" },
+    "defaultInputModes": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "defaultOutputModes": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+    "skills": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/AgentSkill" } },
+    "signatures": { "type": "array", "items": { "$ref": "#/$defs/AgentCardSignature" } },
+    "iconUrl": { "type": "string" }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "AgentInterface": {
+      "type": "object",
+      "required": ["url", "protocolBinding", "protocolVersion"],
+      "properties": {
+        "url": { "type": "string" },
+        "protocolBinding": { "type": "string" },
+        "tenant": { "type": "string" },
+        "protocolVersion": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "AgentSkill": {
+      "type": "object",
+      "required": ["id", "name", "description", "tags"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "examples": { "type": "array", "items": { "type": "string" } },
+        "inputModes": { "type": "array", "items": { "type": "string" } },
+        "outputModes": { "type": "array", "items": { "type": "string" } },
+        "securityRequirements": { "type": "array" }
+      },
+      "additionalProperties": true
+    },
+    "AgentCapabilities": {
+      "type": "object",
+      "properties": {
+        "streaming": { "type": "boolean" },
+        "pushNotifications": { "type": "boolean" },
+        "extensions": { "type": "array", "items": { "$ref": "#/$defs/AgentExtension" } },
+        "extendedAgentCard": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "AgentExtension": {
+      "type": "object",
+      "required": [],
+      "properties": {
+        "uri": { "type": "string" },
+        "description": { "type": "string" },
+        "required": { "type": "boolean" },
+        "params": { "type": "object" }
+      },
+      "additionalProperties": true
+    },
+    "AgentProvider": {
+      "type": "object",
+      "required": ["url", "organization"],
+      "properties": {
+        "url": { "type": "string" },
+        "organization": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "AgentCardSignature": {
+      "type": "object",
+      "required": ["protected", "signature"],
+      "properties": {
+        "protected": { "type": "string" },
+        "signature": { "type": "string" },
+        "header": { "type": "object" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

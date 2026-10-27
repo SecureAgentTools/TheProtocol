@@ -1,0 +1,14 @@
+# This folder will contain the built frontend
+# The dist folder is created by running: npm run build
+# It should not be committed to git
+
+dist/
+
+# Keep this README so the folder structure is preserved
+!.gitkeep
+TempScreenshots/
+
+# §FEFRAME W4: test and screenshot OUTPUT, never source (122 such files were tracked until V0507)
+/playwright-report/
+/test-results/
+/e2e-screenshots/

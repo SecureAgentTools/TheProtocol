@@ -1,0 +1,34 @@
+{% extends "_base.html.j2" %}
+{% set theme = "neural" %}
+{% set kicker = "// IRONHAND mTLS ENROLLED" %}
+{% set headline = "Your agent now has cryptographic identity" %}
+
+{% block body %}
+<p>An agent under your developer account is enrolled in <strong>IRONHAND</strong>, TheProtocol's SPIFFE/SPIRE-based mTLS identity fabric. The agent now has a short-lived X.509 SVID that other agents on the federation can verify cryptographically: no shared secrets, no central authority lookups.</p>
+
+{% with rows=[
+  ('Agent DID', agent_did),
+  ('SPIFFE ID', spiffe_id),
+  ('Cert serial', cert_serial),
+  ('Issued at', issued_at),
+  ('Expires at', expires_at),
+  ('Renewal window', renewal_window)
+] %}
+{% include '_partials/data_table.html' %}
+{% endwith %}
+
+<p style="margin-top: 14px;"><strong>What this enables:</strong></p>
+<ul style="font-size: 14px; line-height: 1.7; color: {{ palette.text_body }}; padding-left: 22px; margin-bottom: 18px;">
+  <li>Agent-to-agent calls authenticated by <code>spiffe://...</code> identity, not API keys.</li>
+  <li>Cross-registry mTLS without coordinating credentials per peer.</li>
+  <li>Sub-500ms revocation propagation if the agent is ever suspended or its key is rotated.</li>
+</ul>
+
+{% with cta_url=registry_ui_url ~ '#/admin/ironhand', cta_label="OPEN IRONHAND CONSOLE" %}
+{% include '_partials/cta_button.html' %}
+{% endwith %}
+
+{% with notice="The SDK's <code>A2AAuthenticator</code> auto-injects the SVID into every outbound A2A call when <code>ENABLE_MTLS=true</code> is set. No code change required if you're already using <code>create_a2a_router()</code>." %}
+{% include '_partials/info_box.html' %}
+{% endwith %}
+{% endblock %}

@@ -1,0 +1,63 @@
+# docker-compose.image-registry.yml — Self-hosted Docker Registry
+# Serves TheProtocol distribution images to operators
+# Run on production server alongside the main stack
+#
+# Auth: Docker Registry v2 Token Authentication (f050)
+#   Token server: https://a.theprotocol.cloud/api/v1/docker-registry/token  (Frame A — see the realm note below)
+#   Signing cert:  ./token-signing/token-signing.crt (mounted read-only)
+#   Operators authenticate with dpt_ pull tokens validated against the registry DB
+#
+# Usage:
+#   docker compose -f docker-compose.image-registry.yml up -d
+#
+# Rollback to htpasswd:
+#   Replace token auth env vars with:
+#     REGISTRY_AUTH: htpasswd
+#     REGISTRY_AUTH_HTPASSWD_REALM: "TheProtocol Image Registry"
+#     REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
+#   And mount ./registry-auth:/auth:ro instead of the cert
+
+services:
+  image-registry:
+    image: registry:3.1.2@sha256:ddf754342cfc8acc51a56d5d0ab6af06826461864460636d8bd5c546dab2a7b8
+    container_name: theprotocol_image_registry
+    restart: unless-stopped
+    environment:
+      REGISTRY_AUTH: token
+      # §APEXEU aftermath (2026-09-09): this realm named api.theprotocol.cloud, and that name moved
+      # to the EU frame at tonight's switch. Only Frame A carries DOCKER_ADMIN_PULL_TOKEN_HASH and
+      # the token signing key, so every push and pull answered 401 "Admin token auth not configured".
+      # The 68-row apex matrix could not see it: UNAUTHENTICATED both names answer the identical
+      # "Missing or invalid Authorization header" — the difference appears only WITH credentials
+      # (measured: a. issues a token 200, api. refuses 401). Classify by the BODY, never the status.
+      # The image registry is Frame A's service, so the realm names Frame A's own host.
+      # §LEGACYSTOP 2026-09-25: EU now carries the signing key path and the admin hash (DOCKER_* in its .env.frame-test),
+      # so the realm names api.theprotocol.cloud (EU) again; Frame A stays up but no longer signs these logins.
+      REGISTRY_AUTH_TOKEN_REALM: "https://api.theprotocol.cloud/api/v1/docker-registry/token"
+      REGISTRY_AUTH_TOKEN_SERVICE: "images.theprotocol.cloud"
+      REGISTRY_AUTH_TOKEN_ISSUER: "theprotocol-registry-auth"
+      REGISTRY_AUTH_TOKEN_ROOTCERTBUNDLE: /auth/token-signing.crt
+      REGISTRY_AUTH_TOKEN_JWKS: /auth/token-signing.jwks.json
+      REGISTRY_LOG_LEVEL: info
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+      REGISTRY_HTTP_ADDR: 0.0.0.0:5000
+    volumes:
+      - image_registry_data:/var/lib/registry
+      - ./token-signing/token-signing.crt:/auth/token-signing.crt:ro
+      - ./token-signing/token-signing.jwks.json:/auth/token-signing.jwks.json:ro
+    ports:
+      - "127.0.0.1:5000:5000"
+    healthcheck:
+      # 2026-05-04 (B9): switched from /v2/ to / for healthcheck. The previous
+      # /v2/ probe relied on 401 = "alive + auth working", but the docker
+      # registry logged `error authorizing context: authorization token
+      # required` for every probe (~520/h). The root `/` endpoint returns
+      # 200 OK without auth — same liveness signal, zero log noise.
+      test: ["CMD", "sh", "-c", "wget -q -O /dev/null http://localhost:5000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  image_registry_data:
+    name: theprotocol_image_registry_data

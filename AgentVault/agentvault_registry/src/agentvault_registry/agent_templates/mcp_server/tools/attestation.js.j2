@@ -1,0 +1,101 @@
+/**
+ * attestation.js — ZKP attestation tools
+ * Proving runs inside the agent container through its own Python client (attestation_client.py).
+ */
+'use strict';
+
+const { execFileSync } = require('child_process');
+const { get } = require('../lib/http_client');
+const { getAgentJwt } = require('../lib/auth');
+const config = require('../lib/config');
+const fs = require('fs');
+const path = require('path');
+
+const CONTAINER = config.containerName;
+
+
+const tools = [
+  {
+    name: 'list_circuits',
+    description: 'List bundled ZKP circuits and compare with registry to find updates.',
+    inputSchema: { type: 'object', properties: {} },
+    async handler() {
+      // Local circuits
+      const local = [];
+      if (fs.existsSync(config.circuitDir)) {
+        for (const d of fs.readdirSync(config.circuitDir)) {
+          const full = path.join(config.circuitDir, d);
+          if (fs.statSync(full).isDirectory()) local.push(d);
+        }
+      }
+
+      // Registry circuits
+      let registry = [];
+      try {
+        const res = await get('/api/v1/circuits/', false);
+        registry = res.circuits || res || [];
+      } catch (e) {
+        registry = [{ error: e.message }];
+      }
+
+      return {
+        local_circuits: local,
+        local_count: local.length,
+        circuit_dir: config.circuitDir,
+        registry_circuits: registry,
+      };
+    },
+  },
+  {
+    name: 'get_agent_card',
+    description: "Read this agent's agent-card.json from disk.",
+    inputSchema: { type: 'object', properties: {} },
+    async handler() {
+      const cardPath = path.resolve(__dirname, '../../agent-card.json');
+      if (!fs.existsSync(cardPath)) {
+        return { found: false, path: cardPath };
+      }
+      try {
+        return { found: true, card: JSON.parse(fs.readFileSync(cardPath, 'utf-8')) };
+      } catch (e) {
+        return { found: true, error: e.message };
+      }
+    },
+  },
+  {
+    name: 'submit_attestation',
+    description: 'Prove a policy attestation with a v2.0.0 circuit inside the agent container and submit it to the Registry. ' +
+      "The proof's reference names this agent (derived from its DID and reference_label), so no other agent can submit it. " +
+      'Private inputs stay in the container; the answer carries the commitment, the reference, the label and the opening to keep.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        circuit_id: { type: 'string', description: 'A v2.0.0 policy circuit, e.g. "fairMarkupPolicy/v2.0.0"' },
+        public_inputs: { type: 'object', description: 'Public inputs by name, without the reference (context, transaction_ref or window_ref): it is derived from this agent\'s DID and reference_label' },
+        private_inputs: { type: 'object', description: 'Private inputs by name; never sent to the Registry' },
+        reference_label: { type: 'string', minLength: 1, maxLength: 200, description: 'The offer, transaction or window id the proof is about; random when omitted. One verified attestation per circuit and label.' },
+      },
+      required: ['circuit_id', 'public_inputs', 'private_inputs'],
+    },
+    async handler({ circuit_id, public_inputs, private_inputs, reference_label }) {
+      try {
+        const agent_jwt = await getAgentJwt();
+        const request = { agent_jwt, agent_did: config.agentDid, circuit_id, public_inputs, private_inputs };
+        if (reference_label !== undefined && reference_label !== null) request.reference_label = String(reference_label);
+        // No shell: the request travels as JSON on stdin to the agent's own client
+        // (src/{{ package_name }}/attestation_client.py), never through a command line.
+        const out = execFileSync(
+          'docker',
+          ['exec', '-i', CONTAINER, 'python', '-m', 'src.{{ package_name }}.attestation_client'],
+          { input: JSON.stringify(request), timeout: 180000 },
+        );
+        const result = JSON.parse(out.toString());
+        return { success: result.status === 'verified', circuit_id, ...result };
+      } catch (err) {
+        return { success: false, circuit_id, error: err.message };
+      }
+    },
+  },
+];
+
+module.exports = tools;

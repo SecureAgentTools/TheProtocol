@@ -1,0 +1,24 @@
+# §MTLSHOPS T2 (2026-09-15, agentvault2-85's spec): Grafana's only way to the frame's Prometheus. Grafana dials this plain
+# listener, which sits on a private internal network whose members are Grafana, this egress and Prometheus alone; the egress
+# dials Prometheus over mutual TLS with the kit's certificate, which the entrypoint's reload loop re-reads. Grafana's own
+# datasource reload does not pick up a rotated file certificate (measured on 10.0.0), which is why this exists.
+# Measured (agentvault2-b5's lab, grafana 10.0.0, prometheus v2.45.0): datasource health through the egress 200; a frame
+# member cannot connect by name or address; a wrong root 502; an expired certificate 502, then 200 after the rotated files
+# and a reload, with no restart. Session reuse is off, so every upstream request is a full handshake with the current
+# certificate.
+server {
+    listen 9090;
+    location / {
+        resolver 127.0.0.11 valid=10s;
+        set $upstream https://{{REGISTRY_NAME}}-prometheus:9090;
+        proxy_pass $upstream;
+        proxy_ssl_certificate         /certs/svid.0.pem;
+        proxy_ssl_certificate_key     /certs/svid.0.key;
+        proxy_ssl_trusted_certificate /certs/bundle.0.pem;
+        proxy_ssl_verify              on;
+        proxy_ssl_verify_depth        2;
+        proxy_ssl_name                {{REGISTRY_NAME}}-prometheus;
+        proxy_ssl_server_name         on;
+        proxy_ssl_session_reuse       off;
+    }
+}

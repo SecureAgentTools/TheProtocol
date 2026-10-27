@@ -1,0 +1,180 @@
+@import './variables.css';
+
+/* ─── Links ─── */
+a {
+  color: var(--au-accent);
+  text-decoration: none;
+  transition: color var(--au-transition);
+}
+
+a:hover {
+  color: var(--au-text);
+}
+
+/* ─── Buttons ─── */
+button {
+  font-family: var(--au-font);
+  cursor: pointer;
+  border: 1px solid var(--au-border);
+  background: var(--au-card);
+  color: var(--au-text);
+  padding: 8px 16px;
+  border-radius: var(--au-radius);
+  transition: all var(--au-transition);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+button:hover {
+  border-color: var(--au-border-bright);
+  background: var(--au-accent-subtle);
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+/* ─── Inputs ─── */
+input, select {
+  font-family: var(--au-font);
+  background: var(--au-surface);
+  border: 1px solid var(--au-border);
+  color: var(--au-text);
+  padding: 8px 12px;
+  border-radius: var(--au-radius);
+  font-size: 13px;
+  transition: border-color var(--au-transition);
+}
+
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--au-accent);
+  box-shadow: 0 0 0 1px rgba(0, 200, 83, 0.1);
+}
+
+/* ─── Card ─── */
+.card {
+  background: var(--au-gradient);
+  border: 1px solid var(--au-border);
+  border-radius: var(--au-radius-lg);
+  padding: 20px;
+  box-shadow: var(--au-shadow);
+  transition: border-color var(--au-transition), box-shadow var(--au-transition);
+}
+
+.card:hover {
+  border-color: var(--au-border-bright);
+  box-shadow: var(--au-shadow-lg);
+}
+
+/* ─── Typography Utility ─── */
+.au-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--au-text-dim);
+  line-height: 1;
+}
+
+.au-mono {
+  font-family: var(--au-font);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Badges ─── */
+.badge-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: rgba(0, 200, 83, 0.12);
+  color: var(--au-accent);
+  border: 1px solid rgba(0, 200, 83, 0.20);
+}
+
+.badge-breach {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: rgba(255, 23, 68, 0.12);
+  color: var(--au-danger);
+  border: 1px solid rgba(255, 23, 68, 0.20);
+}
+
+.badge-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: rgba(255, 145, 0, 0.12);
+  color: var(--au-warning);
+  border: 1px solid rgba(255, 145, 0, 0.20);
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(74, 122, 94, 0.3);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--au-accent-dim);
+}
+
+/* ─── Selection ─── */
+::selection {
+  background: rgba(0, 200, 83, 0.20);
+  color: var(--au-text);
+}
+
+/* ─── Accessibility: visible keyboard focus everywhere ─── */
+:focus-visible {
+  outline: 2px solid var(--au-accent-dim);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+/* mouse users don't get the ring */
+:focus:not(:focus-visible) { outline: none; }
+
+/* ─── Skeleton shimmer (empty/loading states) ─── */
+.au-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.au-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(0, 200, 83, 0.06), transparent);
+  transform: translateX(-100%);
+  animation: auShimmer 1.6s ease-in-out infinite;
+}
+@keyframes auShimmer { to { transform: translateX(100%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .au-shimmer::after { animation: none; }
+  * { scroll-behavior: auto !important; }
+}

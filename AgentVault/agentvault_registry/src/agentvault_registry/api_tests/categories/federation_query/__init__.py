@@ -1,0 +1,3 @@
+"""
+Federation Query test module
+"""

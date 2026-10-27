@@ -1,0 +1,47 @@
+# {{NAME}}-push — the ntfy push endpoint of frame {{NAME}} (§BATCH10, rendered; 443 only, 80 is the acme vhost)
+# §PUSH (2026-10-06, his words "fix the things you find on the way make it secure"): SUBSCRIBE ONLY, by PATH, not by
+# method. `limit_except GET` alone is not subscribe-only: ntfy publishes on GET too (<topic>/publish?message=, /send,
+# /trigger, measured 2026-09-15) and since v2.16 deletes and clears on GET (<topic>/<id>/delete|read|clear). This
+# template rendered the method-only shape until 2026-10-06 while the live EU/ASIA vhosts carried the allowlist below
+# (b5's measured allowlist, §DEPS ntfy 2026-09-29), so the next frame stood up from it would have let anyone who
+# learned a topic name push to a paired phone. Publishing stays internal (registry -> the frame's ntfy).
+server {
+    listen 443 ssl http2;
+    server_name {{NAME}}-push.{{DOMAIN}};
+    ssl_certificate     /etc/letsencrypt/live/{{CERT_NAME}}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{CERT_NAME}}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    add_header Strict-Transport-Security "max-age=63072000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location = /v1/health {
+        limit_except GET { deny all; }
+        proxy_pass http://127.0.0.1:{{PORT_PUSH}};
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # subscribe only: one or more comma-separated topics, then json | sse | raw | ws; auth is the app's access check
+    location ~ "^/[-_A-Za-z0-9]{1,64}(,[-_A-Za-z0-9]{1,64})*/(json|sse|raw|ws|auth)$" {
+        limit_except GET { deny all; }
+        proxy_pass http://127.0.0.1:{{PORT_PUSH}};
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        "upgrade";
+        proxy_buffering off;
+        proxy_read_timeout 350s;
+        proxy_send_timeout 350s;
+    }
+
+    location / {
+        return 403;
+    }
+}

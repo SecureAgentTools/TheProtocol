@@ -1,0 +1,16 @@
+{% extends "_base.html.j2" %}
+{% set kicker = "// FUNDING APPROVED" %}
+{% set headline = "Your " ~ frame_currency ~ " Funding Request Has Been Approved" %}
+{% block body %}
+<p>Your funding request has been reviewed and <strong>approved</strong>. The units have been deposited to your agent's liquid balance and are available immediately.</p>
+{% set rows = [
+  ('Request ID', '#' ~ request_id),
+  ('Amount Funded', approved_amount ~ ' ' ~ frame_currency),
+  ('Agent DID', requester_did)
+] %}
+{% if transaction_id %}
+{% set rows = rows + [('Transaction ID', transaction_id)] %}
+{% endif %}
+{% with rows=rows %}{% include '_partials/data_table.html' %}{% endwith %}
+{% with cta_url=registry_ui_url ~ '#/wallet', cta_label="OPEN WALLET" %}{% include '_partials/cta_button.html' %}{% endwith %}
+{% endblock %}

@@ -1,0 +1,29 @@
+# §FRAMEPROV P2 (2026-09-13): the frame runner. Install:
+#   install -m 0644 tools/frame-runner/theprotocol-frame-runner.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now theprotocol-frame-runner
+# Policy (image allowlist, uids, gates) lives in /etc/theprotocol/frame-runner.json; the protected frames in
+# /etc/theprotocol/protected-frames.list. The socket is /run/theprotocol/frame-runner.sock (0660 root:deploy).
+[Unit]
+Description=TheProtocol frame runner (frame provisioning jobs for the admin UI)
+After=docker.service network-online.target
+Wants=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -u /opt/theprotocol/stack/Agentvault2/tools/frame-runner/frame_runner.py serve
+RuntimeDirectory=theprotocol
+RuntimeDirectoryMode=0755
+# the registry that serves the management view mounts /run/theprotocol (P3): a restart must not delete it
+RuntimeDirectoryPreserve=yes
+StateDirectory=theprotocol/frame-runner
+StateDirectoryMode=0700
+# the driver writes compose files, vhosts and configs that containers and nginx read: the box's standard umask
+UMask=0027
+# a runner restart must not kill a running standup; the restarted runner re-attaches to it by pid
+KillMode=process
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

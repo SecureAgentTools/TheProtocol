@@ -1,0 +1,64 @@
+/**
+ * senate_delegate_tools.js — Senate Delegate specific MCP tools
+ */
+'use strict';
+
+const { get, post } = require('../lib/http_client');
+const config = require('../lib/config');
+const fs = require('fs');
+const path = require('path');
+
+const tools = [
+  {
+    name: 'get_voting_power',
+    description: "Get this delegate's current voting weight.",
+    inputSchema: { type: 'object', properties: {} },
+    async handler() {
+      const positions = await get('/api/v1/staking/positions').catch(e => ({ error: e.message }));
+      return { agent_did: config.agentDid, staking_positions: positions };
+    },
+  },
+  {
+    name: 'get_voting_history',
+    description: "View this delegate's past votes.",
+    inputSchema: { type: 'object', properties: { limit: { type: 'integer', default: 20 } } },
+    async handler({ limit = 20 }) {
+      const file = path.join(config.dataDir, 'state.json');
+      if (!fs.existsSync(file)) return { votes: [], message: 'No voting history yet' };
+      const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      const votes = data.voting_history || [];
+      return { votes: votes.slice(-limit), total: votes.length };
+    },
+  },
+  {
+    name: 'tally_proposal',
+    description: 'Tally a governance proposal (only works if this agent created it).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        proposal_id: { type: 'integer', description: 'ID of the proposal to tally' },
+      },
+      required: ['proposal_id'],
+    },
+    async handler({ proposal_id }) {
+      // NOTE: FLOW 7 — tally requires the PROPOSER's agent JWT (already injected via auth.js)
+      return await post(`/api/v1/governance/proposals/${proposal_id}/tally`, {});
+    },
+  },
+  {
+    name: 'get_delegation_state',
+    description: "Check delegation state: who has delegated votes to this agent.",
+    inputSchema: { type: 'object', properties: {} },
+    async handler() {
+      const file = path.join(config.dataDir, 'state.json');
+      if (!fs.existsSync(file)) return { delegators: [], voting_power_delegated: '0' };
+      const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      return {
+        delegators: data.delegators || [],
+        voting_power_delegated: data.voting_power_delegated || '0',
+      };
+    },
+  },
+];
+
+module.exports = tools;

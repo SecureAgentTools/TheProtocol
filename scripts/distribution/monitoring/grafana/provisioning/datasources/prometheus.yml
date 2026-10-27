@@ -1,0 +1,11 @@
+# §SOVKIT — the frame's own Prometheus (rendered per frame), under the uid every shipped dashboard names (DS_PROMETHEUS).
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: DS_PROMETHEUS
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData: { timeInterval: '15s', httpMethod: POST }

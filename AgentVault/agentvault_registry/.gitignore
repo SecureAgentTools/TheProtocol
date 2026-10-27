@@ -1,0 +1,94 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+# §SUITES1018: the agent builder MCP server template's lib/ (auth/config/http_client .js.j2) is source, not a build dir
+!src/agentvault_registry/agent_templates/mcp_server/lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Environments
+.env
+.env.*
+!.env.example
+.venv
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# VS Code settings
+.vscode/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# FastAPI / Uvicorn instance data
+/instance/
+
+# Local database files (example)
+*.db
+local_*.db
+
+# Generated certificates (example)
+*.pem
+*.crt
+*.key
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Database backups
+backups/
+*.sql
+*.dump
+*.bak
+
+# Temp files
+temp/
+tmp/

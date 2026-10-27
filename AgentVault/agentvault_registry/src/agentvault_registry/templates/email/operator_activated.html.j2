@@ -1,0 +1,21 @@
+{% extends "_base.html.j2" %}
+{% set kicker = "// OPERATOR ACTIVATION COMPLETE" %}
+{% set headline = "Welcome to the Federation" %}
+{% block body %}
+<p>Your operator registry license for <strong>{{ name }}</strong> has been activated successfully.</p>
+{% with rows=[
+  ('Developer account', developer_email),
+  ('Bundle', bundle_status | default('Provisioned: download from the Operator Portal'))
+] %}{% include '_partials/data_table.html' %}{% endwith %}
+{% if pull_token %}
+<p><strong>Docker Image Registry Credentials (token auth):</strong></p>
+{% with rows=[
+  ('Username', docker_username),
+  ('Pull token', pull_token),
+  ('Registry', 'images.raphaeljeziorny.com')
+] %}{% include '_partials/data_table.html' %}{% endwith %}
+{% with notice="THIS TOKEN IS SHOWN ONCE AND CANNOT BE RECOVERED. If lost, request a token rotation from the admin." %}{% include '_partials/info_box.html' %}{% endwith %}
+<p style="font-family: 'IBM Plex Mono', monospace; font-size: 12px;"><strong>Login:</strong><br/><code>docker login images.raphaeljeziorny.com -u {{ docker_username }} -p &lt;token&gt;</code></p>
+{% endif %}
+{% with cta_url=registry_ui_url, cta_label="OPEN OPERATOR PORTAL" %}{% include '_partials/cta_button.html' %}{% endwith %}
+{% endblock %}

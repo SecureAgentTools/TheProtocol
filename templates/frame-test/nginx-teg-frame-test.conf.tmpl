@@ -1,0 +1,121 @@
+# =============================================================
+# nginx mTLS Sidecar — Frame TEG  (§XFRAMETEG 2026-09-04)
+# =============================================================
+# TLS-terminating reverse proxy in front of this frame's TEG. Presents the
+# frame's SPIRE SVID as the server cert, VERIFIES the caller's client SVID, and
+# forwards the cert headers so the TEG's resolve_internal_caller() can
+# authenticate Mode-1 (mTLS).
+#
+# WHY A FRAME NEEDS THIS AND AN OPERATOR'S IS DIFFERENT.
+# The cloud-operator sidecar is deliberately NOT on the identity network — its
+# only job is the operator's OWN registry->TEG hop, and peers reach it through
+# nginx-federation. A FRAME's sidecar is the opposite: a PEER FRAME's registry
+# dials it directly. `FX_RATE_MODE=pool` prices a cross-frame move off BOTH
+# frames' `fx_reserve`, which means the source frame reads
+# `GET /api/v1/admin/fx/reserve` on the DESTINATION frame's TEG. Without this
+# service that read had nowhere to land: `_resolve_dest_teg_mtls_base` fell
+# through to the peer's REGISTRY vhost, which 404s a TEG route, and every
+# cross-registry transfer between two fresh frames answered
+# 503 "FX pool: reserve read failed". Frame A's `nginx-teg-a` has been on
+# `agentvault_identity_network` all along; the frame TEMPLATE simply never had
+# the service at all. This closes that.
+#
+# ⚠ CROSS-FRAME CLIENT VERIFICATION DEPENDS ON THE APPENDED FEDERATED ROOT.
+# `ssl_client_certificate /certs/bundle.0.pem` must contain the PEER frame's
+# SPIRE root as well as this frame's, or the peer registry's SVID is rejected at
+# the handshake and the caller sees a TLS error rather than a 403. cert-writer
+# appends `federated_bundle.*.pem` into `bundle.0.pem` for exactly this —
+# verified on both sandbox frames (bundle.0.pem carries 2 certs, the federated
+# bundle 1). If a peer is added later, the bundle must be re-exchanged BEFORE
+# this sidecar will accept it.
+#
+# ⚠ NOT host-exposed on purpose. Peers reach it by container DNS on the shared
+# identity network (`getaddrinfo(sidecar, 8443)` then `https://<sidecar>:8443`),
+# so a host port would add surface without adding reach.
+# =============================================================
+
+# Health check server (plain HTTP, no mTLS) — this is what compose healthchecks.
+server {
+    listen 127.0.0.1:8080;
+    server_name _;
+
+    location /health {
+        return 200 '{"status":"healthy","service":"nginx-teg-{{REGISTRY_NAME}}","mode":"mtls-sidecar"}\n';
+        add_header Content-Type application/json;
+    }
+}
+
+# Main server block — mTLS proxy for this frame's TEG.
+server {
+    listen 8443 ssl;
+    server_name {{REGISTRY_NAME}}-nginx-teg;
+
+    # --- Server certificate (SPIRE SVID, written by cert-writer) ---
+    ssl_certificate       /certs/svid.0.pem;
+    ssl_certificate_key   /certs/svid.0.key;
+
+    # --- Client certificate verification (mTLS) ---
+    # Local SPIRE CA + appended federated_bundle.*.pem (cross-frame). `on`, not
+    # `optional_no_ca`: this proxies the TEG's ADMIN surface, so an unverified
+    # caller must be refused at the handshake rather than reach a route.
+    ssl_client_certificate /certs/bundle.0.pem;
+    ssl_verify_client      on;
+    ssl_verify_depth       2;
+
+    ssl_protocols          TLSv1.3;
+    ssl_ciphers            HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache      shared:SSL:1m;
+    ssl_session_timeout    5m;
+
+    location /api/v1/ {
+        # §MTLSHOPS T2 (S4, 2026-09-15): the TEG's unix socket, shared with its terminators alone. A recreated TEG rebinds
+        # it and this proxy recovers by itself (measured on the S4 lab), so no resolver line is needed.
+        proxy_pass http://unix:/sock/teg/teg.sock:;
+
+        # Match the Host the TEG already accepts on its plaintext path, so
+        # TrustedHost does not reject the proxied call.
+        proxy_set_header Host              "teg-layer:8080";
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Client cert forwarding for SPIFFE extraction in resolve_internal_caller().
+        proxy_set_header X-SSL-Client-Cert   $ssl_client_escaped_cert;
+        proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
+        proxy_set_header X-SSL-Client-S-DN   $ssl_client_s_dn;
+        # §MTLSHOPS G1: the TEG counts the forwarded certificate only beside this marker and a SUCCESS verdict.
+        proxy_set_header X-TEG-Proxy-Auth    "${TEG_PROXY_TRUST_SECRET}";
+
+        proxy_connect_timeout 30s;
+        proxy_read_timeout    120s;
+        proxy_send_timeout    30s;
+    }
+
+    # Health over mTLS — proves the whole cert path, not just that nginx is up.
+    location /health {
+        proxy_pass http://unix:/sock/teg/teg.sock:;
+        proxy_set_header Host              "teg-layer:8080";
+        # §MTLSHOPS T2 (S4): over a socket the app has no peer address; V0378 reads the client from X-Real-IP
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
+        proxy_set_header X-TEG-Proxy-Auth    "${TEG_PROXY_TRUST_SECRET}";
+    }
+
+    # §MTLSHOPS T2 (2026-09-15): the kit's Prometheus scrapes the TEG here with the kit's certificate (the TEG's socket has no
+    # other door); the verdict and the marker as on every location that reaches the TEG.
+    location = /metrics {
+        proxy_pass http://unix:/sock/teg/teg.sock:;
+        proxy_set_header Host              "teg-layer:8080";
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
+        proxy_set_header X-TEG-Proxy-Auth    "${TEG_PROXY_TRUST_SECRET}";
+    }
+
+    location / {
+        return 404 '{"error":"Use /api/v1/ endpoints"}\n';
+        add_header Content-Type application/json;
+    }
+}

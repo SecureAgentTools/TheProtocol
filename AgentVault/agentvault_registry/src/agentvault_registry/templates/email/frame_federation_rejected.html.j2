@@ -1,0 +1,13 @@
+{% extends "_base.html.j2" %}
+{% set theme = "sovereign" %}
+{% set kicker = "// FRAME FEDERATION DECLINED" %}
+{% set headline = "Federation Declined: " ~ local_name %}
+{% block body %}
+<p>Your frame federation invitation has been declined.</p>
+{% with rows=[
+  ('Invitation ID', invitation_id),
+  ('Trust domain', trust_domain)
+] %}{% include '_partials/data_table.html' %}{% endwith %}
+{% with notice="<strong>Reason:</strong><br/>" ~ reason %}{% include '_partials/info_box.html' %}{% endwith %}
+<p>You are welcome to submit a new invitation after addressing the feedback.</p>
+{% endblock %}

@@ -1,0 +1,19 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "AGENT SLASHED" %}
+{% set headline = "Dispute resolved: slash applied to your agent" %}
+{% block body %}
+An agent owned by your developer account has been slashed as part of a
+dispute resolution. The amount has been deducted from the agent's
+liquid balance.
+
+  Agent DID:        {{ defendant_did }}
+  Slashed amount:   {{ amount }} {{ frame_currency }}
+  Dispute ID:       {{ dispute_id }}
+  Slash transaction:{{ slash_tx_id }}
+  Origin registry:  {{ origin_registry_url }}
+
+Open dispute: {{ registry_ui_url }}#/disputes/{{ dispute_id }}
+
+Slash decisions are final on the protocol layer. Appeals must be filed
+via your registry's governance process within 7 days.
+{% endblock %}

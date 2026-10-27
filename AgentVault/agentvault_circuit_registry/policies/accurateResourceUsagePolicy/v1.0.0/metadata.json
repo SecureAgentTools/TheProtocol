@@ -1,0 +1,48 @@
+{
+  "PolicyName": "Proof-of-Accurate-Resource-Usage",
+  "PolicyID": "PARU_V1",
+  "CircuitVersion": "1.0.0",
+  "DSL": "Noir",
+  "ProvingSystem": "PlonK with Barretenberg/Honk",
+  "PublicInputs": {
+    "policy_parameters_hash": {
+      "type": "Field",
+      "description": "SHA256 hash of the active Accurate Resource Usage Policy parameters"
+    },
+    "avtp_transaction_id": {
+      "type": "Field", 
+      "description": "The AVTP transaction ID for which resource usage is being attested"
+    },
+    "reported_resource_units_used": {
+      "type": "Field",
+      "description": "The number of resource units the agent claims to have used"
+    }
+  },
+  "PrivateInputs": {
+    "actual_resource_units_logged": {
+      "type": "Field",
+      "description": "The actual number of resource units recorded in the agent's internal logs"
+    },
+    "max_allowable_discrepancy_percentage_policy": {
+      "type": "Field",
+      "description": "The policy parameter for maximum allowed discrepancy (e.g., 1 for 1%)"
+    }
+  },
+  "PolicyDescription": "This circuit proves that an agent's reported resource usage for a specific AVTP transaction is within an acceptable discrepancy threshold of their actual logged usage, without revealing the exact actual usage.",
+  "ResourceTypes": [
+    "AV_ORACLE_CALLS_V1",
+    "AV_COMPUTE_UNITS_V1",
+    "AV_STORAGE_MB_V1"
+  ],
+  "ArtifactHashes": {
+    "circuit_source": "sha256:pending_calculation",
+    "compiled_acir": "sha256:pending_calculation",
+    "proving_key": "sha256:pending_calculation",
+    "verification_key": "sha256:pending_calculation"
+  },
+  "TrustedSetupMethod": "Solo Developer MVP Setup - NOT FOR PRODUCTION",
+  "TrustedSetupDate": "2025-05-29",
+  "TrustedSetupParticipants": ["AgentVault TEG Team (MVP Testing Only)"],
+  "CreatedAt": "2025-05-29T10:00:00Z",
+  "UpdatedAt": "2025-05-29T10:00:00Z"
+}

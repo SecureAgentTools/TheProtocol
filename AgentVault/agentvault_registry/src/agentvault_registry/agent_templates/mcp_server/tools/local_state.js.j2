@@ -1,0 +1,91 @@
+/**
+ * local_state.js — Read/write agent local data files
+ * Scoped strictly to the agent's data/ directory. No path traversal.
+ */
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const config = require('../lib/config');
+
+const ALLOWED_FILES = new Set(['listings', 'orders', 'disputes', 'events', 'config', 'state']);
+
+function resolveFile(filename) {
+  // Strip any path traversal attempts
+  const base = path.basename(filename.replace(/\.json$/, ''));
+  if (!ALLOWED_FILES.has(base)) {
+    throw new Error(`Unknown data file: ${filename}. Allowed: ${[...ALLOWED_FILES].join(', ')}`);
+  }
+  return path.join(config.dataDir, `${base}.json`);
+}
+
+const tools = [
+  {
+    name: 'read_local_state',
+    description: "Read a local data file from the agent's data/ directory.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          description: `File to read: ${[...ALLOWED_FILES].join(' | ')}`,
+        },
+      },
+      required: ['file'],
+    },
+    async handler({ file }) {
+      const filePath = resolveFile(file);
+      if (!fs.existsSync(filePath)) {
+        return { found: false, file, message: `${file}.json does not exist yet` };
+      }
+      try {
+        const raw = fs.readFileSync(filePath, 'utf-8');
+        return { found: true, file, data: JSON.parse(raw) };
+      } catch (err) {
+        return { found: true, file, error: err.message, raw: fs.readFileSync(filePath, 'utf-8').slice(0, 500) };
+      }
+    },
+  },
+  {
+    name: 'view_agent_logs',
+    description: "Tail the agent's log file, with optional level/search filter.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        lines: { type: 'integer', description: 'Number of lines to return (default 50)', default: 50 },
+        level: { type: 'string', description: 'Filter by log level: ERROR | WARN | INFO | DEBUG' },
+        search: { type: 'string', description: 'Filter lines containing this string' },
+      },
+    },
+    async handler({ lines = 50, level, search }) {
+      if (!fs.existsSync(config.logDir)) {
+        return { error: `Log directory not found: ${config.logDir}` };
+      }
+      const logFiles = fs.readdirSync(config.logDir)
+        .filter(f => f.endsWith('.log'))
+        .map(f => path.join(config.logDir, f));
+
+      if (logFiles.length === 0) {
+        return { message: 'No log files found yet', log_dir: config.logDir };
+      }
+
+      // Read most recent log file
+      const latestLog = logFiles.sort().reverse()[0];
+      const content = fs.readFileSync(latestLog, 'utf-8');
+      let logLines = content.split('\n').filter(Boolean);
+
+      if (level) logLines = logLines.filter(l => l.includes(level.toUpperCase()));
+      if (search) logLines = logLines.filter(l => l.includes(search));
+
+      const tail = logLines.slice(-lines);
+      return {
+        file: path.basename(latestLog),
+        total_lines: logLines.length,
+        returned: tail.length,
+        logs: tail,
+      };
+    },
+  },
+];
+
+module.exports = tools;

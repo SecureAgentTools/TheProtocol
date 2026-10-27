@@ -1,0 +1,8 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = type_label | default('NOTICE') %}
+{% set headline = title %}
+{% block body %}
+{{ body }}
+
+Open console: {{ registry_ui_url }}
+{% endblock %}

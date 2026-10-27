@@ -1,0 +1,226 @@
+-- Materialized Balance Table — Phase 1 Scaling
+-- Updated by trigger on every event INSERT, providing O(1) balance lookups
+-- Idempotent: safe to re-run on every startup (IF NOT EXISTS, ON CONFLICT DO NOTHING)
+
+CREATE TABLE IF NOT EXISTS materialized_balances (
+    agent_did VARCHAR(255) PRIMARY KEY,
+    liquid_balance NUMERIC(30, 6) NOT NULL DEFAULT 0,
+    staked_balance NUMERIC(30, 6) NOT NULL DEFAULT 0,
+    event_count INTEGER NOT NULL DEFAULT 0,
+    last_event_id UUID,
+    last_event_timestamp TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Supply tracking table (singleton row)
+CREATE TABLE IF NOT EXISTS supply_summary (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    tokens_issued NUMERIC(30, 6) NOT NULL DEFAULT 0,
+    tokens_destroyed NUMERIC(30, 6) NOT NULL DEFAULT 0,
+    tokens_fees_collected NUMERIC(30, 6) NOT NULL DEFAULT 0,
+    tokens_minted_compensation NUMERIC(30, 6) NOT NULL DEFAULT 0,
+    total_events INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CHECK (id = 1)
+);
+
+-- Initialize supply summary singleton
+INSERT INTO supply_summary (id) VALUES (1) ON CONFLICT DO NOTHING;
+
+-- Index for fast lookups by update time
+CREATE INDEX IF NOT EXISTS idx_materialized_balances_updated
+    ON materialized_balances(updated_at DESC);
+
+-- Trigger function that processes each new event and updates balances
+-- Handles: TokensIssued, TokensTransferred, TokensStaked, TokensUnstaked,
+--          RewardsAutoCompounded, TransactionFeeCollected, DisputeSlash,
+--          DisputeCompensationMinted, BalanceCorrected
+-- Skipped: RewardsDistributed, CrossRegistryTransferCompleted (skip_in_projection)
+CREATE OR REPLACE FUNCTION update_materialized_balances() RETURNS TRIGGER AS $$
+DECLARE
+    evt_type TEXT;
+    evt_data JSONB;
+    agent_id TEXT;
+    amount NUMERIC(30, 6);
+    from_agent TEXT;
+    to_agent TEXT;
+    fee_amount NUMERIC(30, 6);
+BEGIN
+    evt_type := NEW.event_type;
+    evt_data := NEW.data;
+    agent_id := NEW.aggregate_id;
+
+    CASE evt_type
+        WHEN 'TokensIssued' THEN
+            amount := COALESCE((evt_data->>'amount')::numeric, 0);
+            INSERT INTO materialized_balances (agent_did, liquid_balance, event_count, last_event_id, last_event_timestamp, updated_at)
+            VALUES (agent_id, amount, 1, NEW.id, NEW.timestamp, NOW())
+            ON CONFLICT (agent_did) DO UPDATE SET
+                liquid_balance = materialized_balances.liquid_balance + amount,
+                event_count = materialized_balances.event_count + 1,
+                last_event_id = NEW.id,
+                last_event_timestamp = NEW.timestamp,
+                updated_at = NOW();
+            -- Supply invariant: only TokensIssued updates tokens_issued (0.004% of events)
+            UPDATE supply_summary SET
+                tokens_issued = tokens_issued + amount,
+                updated_at = NOW()
+            WHERE id = 1;
+
+        WHEN 'TokensTransferred' THEN
+            amount := COALESCE((evt_data->>'amount')::numeric, 0);
+            from_agent := evt_data->>'from';
+            to_agent := evt_data->>'to';
+
+            -- Debit sender
+            IF from_agent IS NOT NULL THEN
+                INSERT INTO materialized_balances (agent_did, liquid_balance, event_count, last_event_id, last_event_timestamp, updated_at)
+                VALUES (from_agent, -amount, 1, NEW.id, NEW.timestamp, NOW())
+                ON CONFLICT (agent_did) DO UPDATE SET
+                    liquid_balance = materialized_balances.liquid_balance - amount,
+                    event_count = materialized_balances.event_count + 1,
+                    last_event_id = NEW.id,
+                    last_event_timestamp = NEW.timestamp,
+                    updated_at = NOW();
+            END IF;
+
+            -- Credit receiver
+            IF to_agent IS NOT NULL THEN
+                INSERT INTO materialized_balances (agent_did, liquid_balance, event_count, last_event_id, last_event_timestamp, updated_at)
+                VALUES (to_agent, amount, 1, NEW.id, NEW.timestamp, NOW())
+                ON CONFLICT (agent_did) DO UPDATE SET
+                    liquid_balance = materialized_balances.liquid_balance + amount,
+                    event_count = materialized_balances.event_count + 1,
+                    last_event_id = NEW.id,
+                    last_event_timestamp = NEW.timestamp,
+                    updated_at = NOW();
+            END IF;
+
+            -- No supply_summary update: transfers are zero-sum
+
+        WHEN 'TokensStaked' THEN
+            amount := COALESCE((evt_data->>'amount')::numeric, 0);
+            INSERT INTO materialized_balances (agent_did, liquid_balance, staked_balance, event_count, last_event_id, last_event_timestamp, updated_at)
+            VALUES (agent_id, -amount, amount, 1, NEW.id, NEW.timestamp, NOW())
+            ON CONFLICT (agent_did) DO UPDATE SET
+                liquid_balance = materialized_balances.liquid_balance - amount,
+                staked_balance = materialized_balances.staked_balance + amount,
+                event_count = materialized_balances.event_count + 1,
+                last_event_id = NEW.id,
+                last_event_timestamp = NEW.timestamp,
+                updated_at = NOW();
+
+        WHEN 'TokensUnstaked' THEN
+            amount := COALESCE((evt_data->>'amount')::numeric, 0);
+            INSERT INTO materialized_balances (agent_did, liquid_balance, staked_balance, event_count, last_event_id, last_event_timestamp, updated_at)
+            VALUES (agent_id, amount, -amount, 1, NEW.id, NEW.timestamp, NOW())
+            ON CONFLICT (agent_did) DO UPDATE SET
+                liquid_balance = materialized_balances.liquid_balance + amount,
+                staked_balance = materialized_balances.staked_balance - amount,
+                event_count = materialized_balances.event_count + 1,
+                last_event_id = NEW.id,
+                last_event_timestamp = NEW.timestamp,
+                updated_at = NOW();
+
+        WHEN 'RewardsAutoCompounded' THEN
+            amount := COALESCE((evt_data->>'amount')::numeric, 0);
+            -- f037 fix: the preceding TokensIssued event already added `amount` to liquid_balance.
+            -- Auto-compound MOVES that amount from liquid to staked, so we subtract from liquid.
+            -- Net effect: total_circulating += amount (matches tokens_issued increment). Delta stays 0.
+            INSERT INTO materialized_balances (agent_did, liquid_balance, staked_balance, event_count, last_event_id, last_event_timestamp, updated_at)
+            VALUES (agent_id, -amount, amount, 1, NEW.id, NEW.timestamp, NOW())
+            ON CONFLICT (agent_did) DO UPDATE SET
+                liquid_balance = materialized_balances.liquid_balance - amount,
+                staked_balance = materialized_balances.staked_balance + amount,
+                event_count = materialized_balances.event_count + 1,
+                last_event_id = NEW.id,
+                last_event_timestamp = NEW.timestamp,
+                updated_at = NOW();
+
+        WHEN 'TransactionFeeCollected' THEN
+            fee_amount := COALESCE((evt_data->>'fee_amount')::numeric, (evt_data->>'amount')::numeric, 0);
+            -- Debit fee from the aggregate (sender) — already reflected in TokensTransferred
+            -- but the fee itself goes to fee_collector as liquid balance
+            INSERT INTO materialized_balances (agent_did, liquid_balance, event_count, last_event_id, last_event_timestamp, updated_at)
+            VALUES (agent_id, -fee_amount, 1, NEW.id, NEW.timestamp, NOW())
+            ON CONFLICT (agent_did) DO UPDATE SET
+                liquid_balance = materialized_balances.liquid_balance - fee_amount,
+                event_count = materialized_balances.event_count + 1,
+                last_event_id = NEW.id,
+                last_event_timestamp = NEW.timestamp,
+                updated_at = NOW();
+            -- Credit fee collector
+            INSERT INTO materialized_balances (agent_did, liquid_balance, event_count, last_event_id, last_event_timestamp, updated_at)
+            VALUES ('teg:system:fee_collector', fee_amount, 1, NEW.id, NEW.timestamp, NOW())
+            ON CONFLICT (agent_did) DO UPDATE SET
+                liquid_balance = materialized_balances.liquid_balance + fee_amount,
+                event_count = materialized_balances.event_count + 1,
+                last_event_id = NEW.id,
+                last_event_timestamp = NEW.timestamp,
+                updated_at = NOW();
+            -- fees are zero-sum (deducted from sender, credited to fee_collector)
+            -- tokens_fees_collected tracked lazily, not in hot path
+
+        WHEN 'DisputeSlash' THEN
+            amount := COALESCE((evt_data->>'amount')::numeric, 0);
+            INSERT INTO materialized_balances (agent_did, liquid_balance, event_count, last_event_id, last_event_timestamp, updated_at)
+            VALUES (agent_id, -amount, 1, NEW.id, NEW.timestamp, NOW())
+            ON CONFLICT (agent_did) DO UPDATE SET
+                liquid_balance = materialized_balances.liquid_balance - amount,
+                event_count = materialized_balances.event_count + 1,
+                last_event_id = NEW.id,
+                last_event_timestamp = NEW.timestamp,
+                updated_at = NOW();
+            UPDATE supply_summary SET
+                tokens_destroyed = tokens_destroyed + amount,
+                updated_at = NOW()
+            WHERE id = 1;
+
+        WHEN 'DisputeCompensationMinted' THEN
+            amount := COALESCE((evt_data->>'amount')::numeric, 0);
+            INSERT INTO materialized_balances (agent_did, liquid_balance, event_count, last_event_id, last_event_timestamp, updated_at)
+            VALUES (agent_id, amount, 1, NEW.id, NEW.timestamp, NOW())
+            ON CONFLICT (agent_did) DO UPDATE SET
+                liquid_balance = materialized_balances.liquid_balance + amount,
+                event_count = materialized_balances.event_count + 1,
+                last_event_id = NEW.id,
+                last_event_timestamp = NEW.timestamp,
+                updated_at = NOW();
+            UPDATE supply_summary SET
+                tokens_minted_compensation = tokens_minted_compensation + amount,
+                updated_at = NOW()
+            WHERE id = 1;
+
+        WHEN 'BalanceCorrected' THEN
+            amount := COALESCE((evt_data->>'adjustment')::numeric, (evt_data->>'amount')::numeric, 0);
+            INSERT INTO materialized_balances (agent_did, liquid_balance, event_count, last_event_id, last_event_timestamp, updated_at)
+            VALUES (agent_id, amount, 1, NEW.id, NEW.timestamp, NOW())
+            ON CONFLICT (agent_did) DO UPDATE SET
+                liquid_balance = materialized_balances.liquid_balance + amount,
+                event_count = materialized_balances.event_count + 1,
+                last_event_id = NEW.id,
+                last_event_timestamp = NEW.timestamp,
+                updated_at = NOW();
+            -- Positive corrections count as issued; negative as destroyed
+            IF amount > 0 THEN
+                UPDATE supply_summary SET tokens_issued = tokens_issued + amount, updated_at = NOW() WHERE id = 1;
+            ELSE
+                UPDATE supply_summary SET tokens_destroyed = tokens_destroyed + ABS(amount), updated_at = NOW() WHERE id = 1;
+            END IF;
+
+        ELSE
+            -- Other event types (A2APayment*, CrossRegistryTransferCompleted, RewardsDistributed,
+            -- ReputationChanged, etc.): no balance or supply impact — skip entirely
+            NULL;
+    END CASE;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Attach trigger to events table (AFTER INSERT, row-level)
+DROP TRIGGER IF EXISTS trg_update_materialized_balances ON events;
+CREATE TRIGGER trg_update_materialized_balances
+    AFTER INSERT ON events
+    FOR EACH ROW
+    EXECUTE FUNCTION update_materialized_balances();

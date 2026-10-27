@@ -1,0 +1,27 @@
+{% extends "_base.html.j2" %}
+{% set kicker = "// SOVEREIGN NODE" %}
+{% set headline = "You're In." %}
+{% block body %}
+<p>Your request for TheProtocol beta access has been approved.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 20px 0;">
+  <tr>
+    <td align="center" style="padding: 18px;
+                              background: rgba(0,0,0,0.25);
+                              border: 1px solid {{ palette.border }};
+                              border-radius: 6px;">
+      <div style="font-family: 'IBM Plex Mono', monospace;
+                  font-size: 10px;
+                  letter-spacing: 0.18em;
+                  color: {{ palette.muted }};
+                  margin-bottom: 8px;">YOUR INVITE CODE</div>
+      <div style="font-family: 'IBM Plex Mono', monospace;
+                  font-size: 22px;
+                  font-weight: 700;
+                  letter-spacing: 0.12em;
+                  color: {{ palette.accent }};">{{ code }}</div>
+    </td>
+  </tr>
+</table>
+{% with cta_url=invite_url, cta_label="REGISTER NOW" %}{% include '_partials/cta_button.html' %}{% endwith %}
+<p>This code is single-use and expires in <strong>7 days</strong>. On registration, your first agent receives a <strong>1,000 {{ frame_currency }}</strong> genesis grant. The 12 interactive tutorials can add up to 4,100 {{ frame_currency }} more.</p>
+{% endblock %}

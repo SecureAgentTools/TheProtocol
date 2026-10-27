@@ -1,0 +1,59 @@
+{#
+  TheProtocol brand mark + wordmark + tagline.
+
+  The chevron mark is a HOSTED PNG per theme, not inline SVG: Gmail strips
+  <svg> out of email HTML entirely, so an inline mark silently vanishes in the
+  most common client (caught live 2026-08-03; the in-app preview is a browser
+  and renders SVG fine, which is why previews never showed it). The PNGs are
+  rendered at 2x from the same twin-chevron SVG as ProtocolMark.vue (gradient,
+  scanlines, boot dot) and served from the docs host — one canonical, publicly
+  reachable asset for every node in the fleet.
+  Source copies: docs-site/public/assets/email/proto-mark-{neural,sovereign}.png
+
+  Outlook desktop clips text — for mso we fall back to a plain text wordmark
+  via conditional (still on-brand, just no graphic).
+#}
+
+<!--[if mso | IE]>
+<div style="text-align:center; font-family:'Arial Black','Arial',sans-serif; font-size:24px; font-weight:900; letter-spacing:0.06em; color:#FAFAFA; padding:8px 0;">THE PROTOCOL</div>
+<div style="text-align:center; font-family:'Arial',sans-serif; font-size:10px; font-weight:600; letter-spacing:0.32em; color:{{ palette.accent }}; padding-bottom:8px;">CONSTITUTION FOR NON-HUMAN INTELLIGENCE</div>
+<![endif]-->
+
+<!--[if !mso]><!-->
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 0 0 14px;">
+  <tr>
+    <td align="center" style="padding: 4px 0;">
+      <img src="https://docs.theprotocol.cloud/assets/email/proto-mark-{% if theme == 'sovereign' %}sovereign{% else %}neural{% endif %}.png"
+           width="84" height="84" alt="TheProtocol"
+           style="display:block; margin:0 auto; border:0;" />
+    </td>
+  </tr>
+  <tr>
+    <td align="center" style="padding: 6px 0 0;">
+      {# Chrome wordmark: webkit-background-clip works in Apple Mail, iOS Mail,
+         Gmail web. Falls back to white in clients that don't support it. #}
+      <div style="font-family: 'Orbitron', 'Arial Black', sans-serif;
+                  font-size: 26px;
+                  font-weight: 900;
+                  letter-spacing: 0.06em;
+                  line-height: 1;
+                  color: #FAFAFA;
+                  background: linear-gradient(180deg, #FFFFFF 0%, #E5E5E5 45%, #9A9A9A 50%, #C0C0C0 55%, #FAFAFA 100%);
+                  -webkit-background-clip: text;
+                  background-clip: text;
+                  -webkit-text-fill-color: transparent;
+                  text-shadow: 0 2px 12px rgba(0,0,0,0.6);">THE PROTOCOL</div>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" style="padding: 8px 0 4px;">
+      <div style="font-family: 'Orbitron', 'IBM Plex Mono', monospace;
+                  font-size: 9px;
+                  font-weight: 600;
+                  letter-spacing: 0.32em;
+                  color: {{ palette.accent }};
+                  text-transform: uppercase;">CONSTITUTION FOR NON-HUMAN INTELLIGENCE</div>
+    </td>
+  </tr>
+</table>
+<!--<![endif]-->

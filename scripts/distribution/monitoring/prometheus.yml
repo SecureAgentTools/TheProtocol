@@ -1,0 +1,51 @@
+# §SOVKIT (2026-09-14) — Prometheus for the standalone compose (docker-compose.standalone.yml + docker-compose.monitoring.yml).
+# The same shape as the frame kit's rendered prometheus.yml (templates/frame-test/kit/prometheus/prometheus.yml.tmpl):
+# every application component scraped under its compose service name, the frame-generic labels the shipped rules
+# select on (component, frame), the Alertmanager beside it. The `frame` label is a fixed word here because this file is
+# mounted as-is (no renderer); change it to your registry's name if you run several stacks into one Prometheus.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+rule_files:
+  - /etc/prometheus/rules/*.yml
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+scrape_configs:
+  - job_name: 'registry'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['registry:8000']
+        labels: { component: 'registry', frame: 'operator' }
+  - job_name: 'teg-layer'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['teg-layer:8080']
+        labels: { component: 'teg', frame: 'operator' }
+  - job_name: 'event-store'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['event-store:8200']
+        labels: { component: 'event-store', frame: 'operator' }
+  # the sidecars themselves: a dead auditor reads exactly like a quiet one unless its age is scraped
+  - job_name: 'auditor'
+    scrape_interval: 30s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['auditor:8045']
+        labels: { component: 'auditor', frame: 'operator', tier: 'sidecar' }
+  - job_name: 'opa'
+    scrape_interval: 30s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['opa:8181']
+        labels: { component: 'opa', frame: 'operator', tier: 'sidecar' }
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alertmanager:9093']
+        labels: { component: 'alertmanager', frame: 'operator', tier: 'sidecar' }
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels: { component: 'prometheus', frame: 'operator', tier: 'sidecar' }

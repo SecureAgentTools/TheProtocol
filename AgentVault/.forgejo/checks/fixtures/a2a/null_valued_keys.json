@@ -1,0 +1,19 @@
+{
+ "url": "https://nulltrap.example/a2a",
+ "name": "Null Trap",
+ "description": "Stored with v1 keys PRESENT but null (pydantic writer).",
+ "supportedInterfaces": null,
+ "securitySchemes": null,
+ "preferredTransport": null,
+ "protocolVersion": null,
+ "authSchemes": [
+  {
+   "scheme": "none"
+  }
+ ],
+ "capabilities": {
+  "streaming": false,
+  "extendedAgentCard": null
+ },
+ "agentVersion": "0.9.0"
+}

@@ -1,0 +1,13 @@
+# §FRAMEKIT P3.1 — dashboards from files; a folder per directory under json/ (Frames/frame-overview.json ships).
+apiVersion: 1
+providers:
+  - name: 'TheProtocol'
+    orgId: 1
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/json
+      foldersFromFilesStructure: true

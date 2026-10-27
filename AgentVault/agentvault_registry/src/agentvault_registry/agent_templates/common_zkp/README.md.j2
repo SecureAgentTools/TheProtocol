@@ -1,0 +1,111 @@
+# {{ agent_name }}
+
+**Template:** {{ template_id }}
+**Agent DID:** `{{ agent_did }}`
+**Registry:** {{ registry_url }}
+
+---
+
+## Quick Start (3 steps)
+
+### Step 1 — Create your secret file
+```bash
+# In the agent root directory:
+echo "CLIENT_SECRET=YOUR_SECRET_HERE" > .env.secret
+```
+Replace `YOUR_SECRET_HERE` with the client secret from the OnboardingWizard.
+It was shown once — check your notes or the wizard's Step 3.
+
+### Step 2 — Start the agent
+```bash
+docker-compose up -d
+```
+
+### Step 3 — Connect Claude Desktop
+```bash
+cd mcp
+npm install
+# Then follow mcp/SETUP.md for Claude Desktop config
+```
+
+---
+
+## What This Agent Does
+
+This is a **{{ template_id }}** agent on TheProtocol network.
+
+- **DID:** `{{ agent_did }}`
+- **Client ID:** `{{ client_id }}`
+- **MCP Port:** {{ mcp_port }} (Claude Desktop)
+- **Agent API Port:** {{ agent_api_port }} (FastAPI + /health, /metrics, /agent-card.json)
+- **Metrics Port:** {{ agent_metrics_port }} (Prometheus)
+
+---
+
+## API Endpoints
+
+Once running:
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET http://localhost:{{ agent_api_port }}/health` | Health check |
+| `GET http://localhost:{{ agent_api_port }}/agent-card.json` | Agent card |
+| `GET http://localhost:{{ agent_api_port }}/metrics` | Prometheus metrics |
+
+---
+
+## MCP Tools Available in Claude Desktop
+
+After connecting Claude Desktop (see `mcp/SETUP.md`), you can use:
+
+- `agent_status` — Container state + balance + last log
+- `get_agent_card` — Current agent card JSON
+- `view_agent_logs` — Tail agent logs
+- `get_balance` — AVT token balance
+- `stake_tokens` — Lock units for governance weight
+- `get_staking_positions` — View lock positions
+- `get_governance_proposals` — Browse Agent Senate proposals
+- `cast_vote` — Vote on a proposal
+- `create_governance_proposal` — Create a new proposal
+- `submit_attestation` — Submit ZKP attestation
+- `list_circuits` — View bundled ZKP circuits
+- `read_local_state` — Read local data files
+- `view_transaction_history` — Past TEG transactions
+- `start_agent` / `stop_agent` / `restart_agent` — Container lifecycle
+- `get_container_logs` — Raw Docker logs
+
+---
+
+## ZKP Attestation
+
+This bundle includes pre-compiled ZKP circuits in `circuits/`.
+To submit an attestation:
+```
+In Claude: "Submit an attestation using the fairMarkupPolicy circuit"
+```
+Claude will call `submit_attestation` which runs nargo + bb inside your Docker container.
+
+To download newer circuits from the registry:
+```
+In Claude: "List available circuits and update any that are outdated"
+```
+
+---
+
+## Upgrading
+
+Pull the latest circuit list:
+```
+In Claude: "Update my circuits from the registry"
+```
+
+To update the agent software, re-download a fresh bundle from the OnboardingWizard
+or update manually by checking the registry release notes.
+
+---
+
+## Support
+
+- Registry UI: {{ registry_url }}/ui
+- Docs: {{ registry_url }}/docs
+- Agent DID: `{{ agent_did }}`

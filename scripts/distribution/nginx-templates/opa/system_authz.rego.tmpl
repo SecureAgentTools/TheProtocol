@@ -1,0 +1,61 @@
+# §OPA (2026-10-06, agentvault2-09): the operator's OPA authenticates every caller by TLS (--authentication=tls against
+# its own bundle.0.pem, which holds the frame's root alone: the opa entry is never federated) and this module authorizes
+# (--authorization=basic). The frame kit's module (templates/frame-test/kit/opa/system_authz.rego.tmpl, measured by
+# agentvault2-b5 on opa 0.61.0, loaded by 1.21.0) with an operator's identities: input.identity is the subject DN only,
+# which every SPIRE SVID shares, so the rules read the URI SAN from input.client_certificates.
+#
+# WHO MAY ASK: the operator's registry dials OPA on the svid-writer's SVID (it reads that writer's shared volume, the
+# F5 operator split not having happened), and on its own /registry SVID once it has one. The same volume serves the
+# operator's nginx sidecars and its TEG, so they hold the same identity: this module cannot tell them from the registry,
+# and they are the operator's own. Nobody outside the operator can present it.
+# The registry asks decisions, lists policies and checks health; its policy simulation may load and delete scratch
+# modules named __simulate_* (admin_opa refuses one in package system or system.*, which would OR itself into this
+# module). Nothing may write data or load any other policy.
+package system.authz
+
+import future.keywords
+
+default allow := false
+
+operator_ids contains id if {
+	some cert in input.client_certificates
+	some u in cert.URIs
+	u.Scheme == "spiffe"
+	u.Host == "{{TRUST_DOMAIN}}"
+	id := u.Path
+}
+
+registry if {
+	some id in operator_ids
+	id in {"/operator/{{OPERATOR}}/svid-writer", "/operator/{{OPERATOR}}/registry"}
+}
+
+# decisions and reads of documents
+allow if {
+	registry
+	input.method in {"GET", "POST"}
+	input.path[0] == "v1"
+	input.path[1] == "data"
+}
+
+allow if {
+	registry
+	input.method == "GET"
+	input.path == ["v1", "policies"]
+}
+
+# the policy simulation's scratch modules, and nothing else
+allow if {
+	registry
+	input.method in {"PUT", "DELETE"}
+	count(input.path) == 3
+	input.path[0] == "v1"
+	input.path[1] == "policies"
+	startswith(input.path[2], "__simulate_")
+}
+
+allow if {
+	registry
+	input.method == "GET"
+	input.path == ["health"]
+}

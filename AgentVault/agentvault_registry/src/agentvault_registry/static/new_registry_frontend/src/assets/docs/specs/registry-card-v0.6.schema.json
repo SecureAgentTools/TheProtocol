@@ -1,0 +1,1831 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.theprotocol.cloud/schemas/registry-card-v0.6.json",
+  "$comment": "This schema is licensed under the Creative Commons Attribution 4.0 International License (CC BY 4.0, https://creativecommons.org/licenses/by/4.0/). Copyright 2025-2026 Raphael Zbigniew Jeziorny.",
+  "title": "TheProtocol registry card, version 0.6",
+  "description": "A registry card: the self-describing, Ed25519-signed JSON document a federation registry serves about itself at /.well-known/registry-card.json. Version 0.6. Companion specification: registry-card-v0.6.md, which defines the signature, the digests and the entity tag.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "registry_card_version",
+    "identity",
+    "fees",
+    "federation",
+    "lifecycle"
+  ],
+  "properties": {
+    "registry_card_version": {
+      "const": "0.6"
+    },
+    "identity": {
+      "type": "object",
+      "description": "MUST. Who the registry is. Derived by the registry, except display_name, which the operator states. SIGNED leaves: spiffe_id, registry_name, trust_domain, did_namespace, tier, public_url, software_version.",
+      "additionalProperties": false,
+      "required": [
+        "spiffe_id",
+        "registry_name",
+        "display_name",
+        "trust_domain",
+        "public_url",
+        "founded_at",
+        "tier"
+      ],
+      "properties": {
+        "spiffe_id": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^spiffe://",
+          "description": "SIGNED. The registry's SPIFFE ID, spiffe://<trust_domain>/registry/<name>."
+        },
+        "registry_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "SIGNED. The registry's federation name."
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Human-readable name: the operator's stated name, or else registry_name."
+        },
+        "trust_domain": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 255,
+          "description": "SIGNED. The registry's SPIFFE trust domain."
+        },
+        "public_url": {
+          "type": "string",
+          "pattern": "^https?://",
+          "maxLength": 500,
+          "description": "SIGNED. The registry's browser-reachable public base URL."
+        },
+        "federation_base_url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://",
+          "maxLength": 500,
+          "description": "The public address peers dial for mutually authenticated federation calls."
+        },
+        "founded_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the registry came into being. The reference implementation publishes the creation time of the registry's first account."
+        },
+        "tier": {
+          "enum": [
+            "sovereign-mainframe",
+            "regional-mainframe",
+            "cloud-operator",
+            "sandbox",
+            "standalone"
+          ],
+          "description": "SIGNED. The registry's role: sovereign-mainframe (a central frame that issues its own unit), regional-mainframe (a frame that is not a central registry), cloud-operator (an operator registry hosted under a frame), sandbox (a test registry) or standalone (a registry running without federation)."
+        },
+        "software_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64,
+          "description": "SIGNED. The release tag the registry reports for the software it runs."
+        },
+        "did_namespace": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 63,
+          "description": "SIGNED. The issuer segment of the agent DIDs this registry mints (did:theprotocol:<did_namespace>:<uuid>). Equal to trust_domain and never a reserved system segment (see the specification, section 4.1). Absent when the registry mints DIDs without an issuer segment.",
+          "pattern": "^[a-z0-9]([a-z0-9.-]{0,61}[a-z0-9])?$"
+        }
+      }
+    },
+    "operator": {
+      "type": "object",
+      "description": "SHOULD. The operator's editable persona. Until the operator fills it, the reference implementation fills it from an administrator account of the registry. latitude and longitude are SIGNED.",
+      "additionalProperties": false,
+      "required": [
+        "display_name"
+      ],
+      "properties": {
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "bio": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 2000
+        },
+        "company": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 256
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://",
+          "maxLength": 500
+        },
+        "github_url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https://github\\.com/",
+          "maxLength": 500
+        },
+        "twitter_handle": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^@?[A-Za-z0-9_]{1,15}$"
+        },
+        "timezone": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64
+        },
+        "location_label": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128
+        },
+        "operator_since": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "operator_avatar_url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://|^/static/",
+          "maxLength": 500,
+          "description": "A same-origin path (/static/...). Registries do not publish external image links here."
+        },
+        "contact_email": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "email",
+          "description": "Opt-in: omitted unless the operator sets it. A role address is recommended."
+        },
+        "successor_contact": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 500
+        },
+        "support_contact": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "email": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "email"
+            },
+            "matrix": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 255
+            },
+            "signal": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 64
+            }
+          }
+        },
+        "latitude": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": -90,
+          "maximum": 90,
+          "description": "SIGNED. Latitude of the registry's location, for map placement."
+        },
+        "longitude": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": -180,
+          "maximum": 180,
+          "description": "SIGNED. Longitude of the registry's location."
+        }
+      }
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "SIGNED. Free-text description of the registry."
+    },
+    "tags": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "maxLength": 48
+      }
+    },
+    "visual": {
+      "type": "object",
+      "description": "SHOULD. Editable display styling. sovereign_variant is SIGNED. Styling is not identity.",
+      "additionalProperties": false,
+      "properties": {
+        "icon_url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://|^/static/",
+          "maxLength": 500
+        },
+        "orb_color": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "orb_glow_color": {
+          "type": "string",
+          "pattern": "^#[0-9a-fA-F]{6}$"
+        },
+        "orb_pulse_speed_hz": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 3.0
+        },
+        "orb_size_px": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 24
+        },
+        "halo_enabled": {
+          "type": "boolean"
+        },
+        "halo_thickness": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 2.5
+        },
+        "theme": {
+          "enum": [
+            "neural",
+            "sovereign",
+            "custom"
+          ]
+        },
+        "sovereign_variant": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64,
+          "description": "SIGNED. Name of a known display style, or null. A receiver may drop a style it cannot render and use the operator default."
+        },
+        "flare_corner_variant": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64
+        },
+        "flare_encirclement_variant": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64
+        },
+        "flare_encirclement_overlay": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "description": "SHOULD. Derived capabilities that matter to peers and buyers; no internal configuration toggles. SIGNED as a whole block.",
+      "additionalProperties": false,
+      "properties": {
+        "federation_enabled": {
+          "type": "boolean"
+        },
+        "fiat_onramp_enabled": {
+          "type": "boolean",
+          "description": "Whether the registry's fiat on-ramp is switched on."
+        },
+        "fiat_providers": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "stripe",
+              "mollie"
+            ]
+          }
+        },
+        "minting_capability": {
+          "enum": [
+            "sovereign",
+            "genesis_only",
+            "disabled",
+            "limited"
+          ],
+          "description": "'sovereign' for a central registry, which issues its own unit; 'disabled' otherwise. 'genesis_only' and 'limited' are older values that remain valid."
+        },
+        "bridge_capability": {
+          "enum": [
+            "none",
+            "frame_to_frame",
+            "multi_frame"
+          ]
+        },
+        "a2a_versions_supported": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "registry_card_versions_served": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "A version 0.6 registry includes \"0.6\"."
+        },
+        "supports_payment_protocol": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "zkp_phases_enabled": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "fees": {
+      "type": "object",
+      "description": "MUST. Derived fee commitments. SIGNED leaves: cross_registry.base_rate_percent, hosting.enabled, hosting.rate_percent_of_agent_service_fee, settlement_currency, exchange.enabled, exchange.stock_card.digest, fx.enabled.",
+      "additionalProperties": false,
+      "required": [
+        "intra_registry",
+        "cross_registry",
+        "hosting",
+        "fee_collector_address",
+        "settlement_currency"
+      ],
+      "properties": {
+        "intra_registry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "base_rate_percent": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "max_rate_percent": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "velocity_scaling_factor": {
+              "type": "number",
+              "minimum": 0
+            },
+            "destination": {
+              "type": "string"
+            },
+            "customizable": {
+              "type": "boolean"
+            },
+            "locked_by_network": {
+              "type": "boolean"
+            }
+          }
+        },
+        "cross_registry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "base_rate_percent": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "SIGNED. Fee on cross-registry transfers, in percent."
+            },
+            "fee_recipient": {
+              "type": "string"
+            },
+            "customizable": {
+              "type": "boolean"
+            },
+            "locked_by_network": {
+              "type": "boolean"
+            },
+            "future_customization_in_bounded_params": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "number"
+              },
+              "description": "The [min, max] range the rate may move within if operators may customize it."
+            }
+          }
+        },
+        "hosting": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "SIGNED. Whether the registry charges a hosting fee on agent service fees (false in the reference implementation)."
+            },
+            "rate_percent_of_agent_service_fee": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "SIGNED. The hosting fee as a percentage of an agent's service fee."
+            },
+            "min_avt": {
+              "type": "string"
+            },
+            "applies_to_agent_dids": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 500
+            }
+          }
+        },
+        "fee_collector_address": {
+          "type": "string",
+          "maxLength": 255,
+          "description": "The ledger account that collects fees."
+        },
+        "fee_waterfall_policy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 255
+        },
+        "settlement_currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{2,8}$",
+          "maxLength": 8,
+          "description": "SIGNED. The code of the unit this registry settles in: its frame's unit."
+        },
+        "economic_disclosure": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "spec_version": {
+              "type": "string"
+            },
+            "fee_floor_avt": {
+              "type": "string"
+            },
+            "rounding": {
+              "enum": [
+                "ROUND_HALF_EVEN",
+                "ROUND_HALF_UP",
+                "ROUND_DOWN"
+              ]
+            },
+            "fees_emit_event_types": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "fx": {
+          "type": "object",
+          "description": "Conversion of units between frames (FX). Only enabled is SIGNED; the other fields are informative and apply to conversions this registry hosts as the destination.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "SIGNED. Whether this registry converts units between frames."
+            },
+            "currency": {
+              "type": "string",
+              "pattern": "^[A-Z]{2,8}$"
+            },
+            "rate_mode": {
+              "enum": [
+                "fixed",
+                "pool"
+              ]
+            },
+            "fee_pct": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "fee_split": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "pool_retained_pct": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "fee_collector_pct": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                }
+              }
+            },
+            "route_enabled": {
+              "type": "boolean"
+            },
+            "route_gateway_registry_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 128
+            },
+            "size_cap": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number",
+                "minimum": 0
+              },
+              "description": "Maximum amount per conversion, by unit code; 0 means uncapped. The specification, section 4.6, says which entries the reference implementation publishes."
+            },
+            "slippage_max": {
+              "type": "number",
+              "minimum": 0
+            },
+            "breaker_pct": {
+              "type": "number",
+              "minimum": 0
+            },
+            "reserve_floor": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "number",
+                "minimum": 0
+              },
+              "description": "Reserve floor by unit code. The specification, section 4.6, says which entries the reference implementation publishes."
+            },
+            "note": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 1000
+            }
+          }
+        },
+        "exchange": {
+          "type": "object",
+          "description": "The registry's AGORA market of organisation points. SIGNED leaves: enabled and stock_card.digest. Every transfer of units in a trade settles through an escrow account on the registry's ledger.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "SIGNED. Whether this registry hosts an AGORA market."
+            },
+            "currency": {
+              "type": "string",
+              "pattern": "^[A-Z]{2,8}$"
+            },
+            "passport_enabled": {
+              "type": "boolean",
+              "description": "Whether the registry takes part in the passport: it relays its own agents' orders to markets on other registries and, when it hosts a market, accepts the orders other registries relay for their agents. Published also when the registry hosts no market."
+            },
+            "endpoints": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "listings": {
+                  "type": "string"
+                },
+                "order": {
+                  "type": "string"
+                },
+                "passport_inbound": {
+                  "type": "string"
+                }
+              }
+            },
+            "fee_bps_default": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10000
+            },
+            "note": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 1000
+            },
+            "stock_card": {
+              "type": "object",
+              "description": "Pointer to /.well-known/stock-card.json (an older name of /.well-known/agora-card.json; both serve the same document) and a digest of its catalog. digest is SIGNED.",
+              "additionalProperties": false,
+              "properties": {
+                "url": {
+                  "type": "string"
+                },
+                "digest": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^sha256:[0-9a-f]{64}$",
+                  "description": "SIGNED. Digest of the catalog, excluding live market fields, so trades do not change it."
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "updated_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "market_epoch": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "market_freshness": {
+                  "type": "string",
+                  "maxLength": 32
+                }
+              }
+            },
+            "solvency_card": {
+              "type": "object",
+              "description": "Pointer to /.well-known/solvency-card.json. UNSIGNED. epoch is a coarse five-minute bucket.",
+              "additionalProperties": false,
+              "properties": {
+                "url": {
+                  "type": "string"
+                },
+                "digest": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "as_of": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "epoch": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "freshness": {
+                  "type": "string",
+                  "maxLength": 32
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "federation": {
+      "type": "object",
+      "description": "MUST. Derived federation facts. SIGNED leaves: policy_hash, is_genesis_registry, is_sovereign_frame, licence.state, licence.hash, licence.operator.hash. Lists are sorted.",
+      "additionalProperties": false,
+      "required": [
+        "protocol_version",
+        "supported_auth_methods",
+        "policy_hash",
+        "is_genesis_registry",
+        "is_sovereign_frame",
+        "active_peer_count"
+      ],
+      "properties": {
+        "protocol_version": {
+          "type": "string"
+        },
+        "supported_auth_methods": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "trust_domains_accepted": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "spire_bundle_endpoint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://",
+          "maxLength": 500,
+          "description": "Where the registry's SPIFFE trust bundle can be read, as configured; null when none is configured."
+        },
+        "policy_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 80,
+          "description": "SIGNED. 'sha256:' followed by the lowercase hex SHA-256 of the canonical JSON of the registry's resolved policy document (its stored policy merged onto the shipped defaults). The policy compliance endpoint publishes the same hash, without the prefix, to peer registries."
+        },
+        "policy_version": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Version of the registry's policy document. 0 means never amended (see policy_source)."
+        },
+        "policy_updated_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "is_genesis_registry": {
+          "type": "boolean",
+          "description": "SIGNED. True when the registry is a central registry with authority to issue its unit."
+        },
+        "is_sovereign_frame": {
+          "type": "boolean",
+          "description": "SIGNED. True when identity.tier is sovereign-mainframe."
+        },
+        "uptime_started_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "A start date the registry is configured with. When none is configured the reference implementation publishes when the registry came into being (as identity.founded_at), or null; it is not a measurement."
+        },
+        "active_peer_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of active peers. Volatile, so unsigned and excluded from the entity tag."
+        },
+        "trusted_peer_spiffe_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The peer roster, published only when the operator opts in; omitted by default. Sorted; the reference implementation lists at most 64."
+        },
+        "license_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128,
+          "description": "Identifier of a legacy admission licence, if any. Not the signed network licence."
+        },
+        "license_status": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 32,
+          "description": "Status of a legacy admission licence, if any."
+        },
+        "policy_source": {
+          "type": "string",
+          "enum": [
+            "factory_default",
+            "amended"
+          ],
+          "description": "'factory_default' when the registry runs the shipped defaults (never amended, not unknown), 'amended' when it runs an amended policy document."
+        },
+        "licence": {
+          "type": "object",
+          "description": "The signed network licence, derived from the licence certificates the registry holds (see federation-licence-certificate-v1.md). SIGNED leaves: state, hash, operator.hash. state is this registry's own reading of its licence; a verifier checks the certificate itself. A frame adds key and operator_policy; an operator registry adds operator, its own licence. Absent when the registry has no network configured, its licensing is off and it holds no licence.",
+          "additionalProperties": true,
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "genesis",
+                "licensed",
+                "unlicensed",
+                "expired",
+                "revoked",
+                "suspended",
+                "unverified",
+                "invalid"
+              ],
+              "description": "SIGNED. This registry's own reading of the licence it holds."
+            },
+            "hash": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{64}$",
+              "description": "SIGNED. Lowercase hex SHA-256 of the certificate."
+            },
+            "network": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 255,
+              "description": "The trust domain of the network's genesis."
+            },
+            "issuer": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 255,
+              "description": "The trust domain of the certificate's issuer."
+            },
+            "plan": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 40
+            },
+            "expires_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time",
+              "description": "When the certificate expires, or null when it does not."
+            },
+            "certificate": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 2048,
+              "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+              "description": "The licence certificate, a compact JWS."
+            },
+            "chain": {
+              "type": "array",
+              "maxItems": 2,
+              "items": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 2048,
+                "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+              },
+              "description": "The certificates above this one, up to the network's genesis certificate. Empty for the genesis itself."
+            },
+            "checked_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time",
+              "description": "When the registry last evaluated the certificate, or null."
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 240
+            },
+            "key": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Frames only: the frame's licence-signing public key (an Ed25519 JWK), or null when it has none.",
+              "properties": {
+                "kty": {
+                  "const": "OKP"
+                },
+                "crv": {
+                  "const": "Ed25519"
+                },
+                "x": {
+                  "type": "string"
+                }
+              }
+            },
+            "operator_policy": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Frames only: the plan and term under which the frame licenses its operators. days null means perpetual.",
+              "properties": {
+                "plan": {
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "days": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1
+                }
+              }
+            },
+            "operator": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true,
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "genesis",
+                    "licensed",
+                    "unlicensed",
+                    "expired",
+                    "revoked",
+                    "suspended",
+                    "unverified",
+                    "invalid"
+                  ]
+                },
+                "hash": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[0-9a-f]{64}$",
+                  "description": "SIGNED. Lowercase hex SHA-256 of the operator's own certificate."
+                },
+                "issuer": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "plan": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "expires_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time",
+                  "description": "When the operator's certificate expires, or null when it does not."
+                },
+                "certificate": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 2048,
+                  "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+                },
+                "checked_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time",
+                  "description": "When the registry last evaluated its operator certificate, or null."
+                }
+              },
+              "description": "Operator registries only: the operator registry's own licence, issued by its frame, or null when it holds none."
+            }
+          }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "description": "SHOULD. Derived. The registry's declared policy posture and the network constants it is pinned to. drift_status and consul_compliance_state are present only when truthfully derived; the reference implementation publishes neither, nor policy_modified_at.",
+      "additionalProperties": false,
+      "properties": {
+        "locked_params_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 80,
+          "description": "'sha256:' followed by the hex SHA-256 of the canonical JSON of the network's locked parameters."
+        },
+        "bounded_params": {
+          "type": "object",
+          "description": "The keys of declared_params flattened to {key: value}, kept for readers of earlier card versions."
+        },
+        "policy_version": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Version of the registry's policy document; equal to federation.policy_version. 0 means never amended."
+        },
+        "policy_modified_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "Optional. When the policy document was last modified."
+        },
+        "drift_status": {
+          "enum": [
+            "compliant",
+            "drift_detected",
+            "quarantined",
+            "unknown"
+          ]
+        },
+        "consul_compliance_state": {
+          "enum": [
+            "active",
+            "stale",
+            "quarantined",
+            "unknown"
+          ]
+        },
+        "declared_params": {
+          "type": "object",
+          "description": "Per bounded parameter: the value the registry applies, whether the registry set it or it is the shipped default, and, when the network bounds it, the permitted range. Parameter names contain dots but are single keys.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "value",
+              "source"
+            ],
+            "properties": {
+              "value": {
+                "type": [
+                  "number",
+                  "string",
+                  "boolean"
+                ]
+              },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "policy",
+                  "default"
+                ],
+                "description": "'policy' when the registry set the value, 'default' when it is the shipped default."
+              },
+              "allowed": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "min": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "max": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "policy_source": {
+          "type": "string",
+          "enum": [
+            "factory_default",
+            "amended"
+          ],
+          "description": "'factory_default' means never amended, not unknown."
+        }
+      }
+    },
+    "economic": {
+      "type": "object",
+      "description": "MAY. Derived supply-invariant facts. UNSIGNED and excluded from the entity tag. Values are measured or omitted, never fabricated. When the reference implementation cannot read its supply on a registry other than a federated operator registry, it publishes the block as UNKNOWN, with null in each term and no delta.",
+      "additionalProperties": false,
+      "properties": {
+        "supply_invariant_status": {
+          "enum": [
+            "OK",
+            "BREACH",
+            "FEDERATED",
+            "UNKNOWN"
+          ]
+        },
+        "supply_invariant_delta": {
+          "type": "string"
+        },
+        "supply_last_audited_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "Time of the verdict, when the source states one."
+        },
+        "tokens_issued": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "total_circulating": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tokens_destroyed": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tokens_fees_collected": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "supply_source": {
+          "enum": [
+            "auditor",
+            "eventstore"
+          ],
+          "description": "'auditor' = an external auditor's verdict; 'eventstore' = the registry's own ledger read. Absent on FEDERATED blocks and when no source answered."
+        },
+        "supply_note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 500,
+          "description": "Explanation, present on FEDERATED blocks (a registry that does not mint and whose supply is issued and audited at its frame)."
+        },
+        "external_auditor_endpoint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://",
+          "maxLength": 500
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "description": "MAY. Derived counts. UNSIGNED and excluded from the entity tag. Only counts the registry actually computes. agent_count counts the registry's agent records; native_agent_count and federated_agent_count split the agent cards it holds, so their sum need not equal agent_count.",
+      "additionalProperties": false,
+      "properties": {
+        "agent_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "native_agent_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "federated_agent_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sovereign_agent_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "developer_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "active_peers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "computed_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    },
+    "endpoints": {
+      "type": "object",
+      "description": "SHOULD. Catalog of paths the registry serves to readers and peers; no administrative paths. Open shape.",
+      "additionalProperties": true,
+      "properties": {
+        "openapi_spec": {
+          "type": "string"
+        },
+        "agent_discovery": {
+          "type": "string"
+        },
+        "agent_card_well_known": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Null in the reference implementation: a registry serves no agent card of its own; agents publish theirs on their own hosts."
+        },
+        "topology": {
+          "type": "string"
+        },
+        "network_stats": {
+          "type": "string"
+        },
+        "federation_info": {
+          "type": "string"
+        },
+        "policy_compliance": {
+          "type": "string",
+          "description": "Answers only authenticated peer registries."
+        },
+        "health_check": {
+          "type": "string"
+        },
+        "registry_card": {
+          "type": "string"
+        },
+        "registry_jwks": {
+          "type": "string"
+        },
+        "spire_bundle": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The configured address of the registry's SPIFFE bundle endpoint, or null when none is configured."
+        },
+        "fee_config": {
+          "type": "string"
+        },
+        "external_auditor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "public_status_page": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "links": {
+      "type": "object",
+      "description": "SHOULD. Optional URLs stated by the operator.",
+      "additionalProperties": false,
+      "properties": {
+        "whitepaper": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://"
+        },
+        "docs": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://"
+        },
+        "github_source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://"
+        },
+        "status_page": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://"
+        },
+        "blog": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://"
+        },
+        "rss": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://"
+        },
+        "terms_of_service": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://"
+        },
+        "privacy_policy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://"
+        },
+        "code_of_conduct": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://"
+        },
+        "support_url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://"
+        },
+        "discord": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://"
+        },
+        "matrix": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://"
+        },
+        "incident_log": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https?://"
+        }
+      }
+    },
+    "commitments": {
+      "type": "object",
+      "description": "SHOULD. Service levels and legal statements declared by the operator. When the operator has declared none, the reference implementation publishes a default set the operator did not state.",
+      "additionalProperties": false,
+      "properties": {
+        "data_residency": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 32
+        },
+        "gdpr_compliant": {
+          "type": "boolean"
+        },
+        "incident_disclosure_sla_hours": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 720
+        },
+        "uptime_sla_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "support_response_hours": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 720
+        },
+        "deprecation_notice_days": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 365
+        },
+        "open_source_license": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64
+        },
+        "breach_disclosure_policy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 500
+        },
+        "key_rotation_max_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365
+        },
+        "card_refresh_max_minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "legally_binding_disclaimer": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1000
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "description": "MUST. Derived lifecycle facts. card_etag is SIGNED.",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "card_updated_at",
+        "card_etag",
+        "served_at"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "active",
+            "degraded",
+            "quarantined",
+            "retiring"
+          ],
+          "description": "The reference implementation always publishes active."
+        },
+        "quarantine_reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 500
+        },
+        "card_updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "card_etag": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "SIGNED. The card's entity tag; the HTTP ETag header carries the same value in double quotes."
+        },
+        "served_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "next_card_refresh": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    },
+    "compliance": {
+      "type": "object",
+      "description": "MAY. Derived. Absent entirely when the registry declares no jurisdiction profile and holds no live regulatory authorization; never an empty object. digest is SIGNED.",
+      "additionalProperties": false,
+      "required": [
+        "digest"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "jurisdiction_profile"
+          ]
+        },
+        {
+          "required": [
+            "regulatory_authorizations"
+          ]
+        }
+      ],
+      "properties": {
+        "jurisdiction_profile": {
+          "type": "object",
+          "description": "The operator's own declaration of which feature surfaces the law applicable to it permits.",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version",
+            "features_denied",
+            "profile_hash",
+            "declared_by"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "features_denied": {
+              "type": "array",
+              "uniqueItems": true,
+              "description": "Sorted list of denied features. An absent profile allows everything; a feature a declared profile does not name stays allowed.",
+              "items": {
+                "enum": [
+                  "exchange",
+                  "fx",
+                  "guild",
+                  "forge",
+                  "fiat",
+                  "cross_transfer"
+                ]
+              }
+            },
+            "declared_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "profile_hash": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "description": "'sha256:' followed by the hex SHA-256 of the canonical JSON of the full profile document (which may carry private fields)."
+            },
+            "declared_by": {
+              "const": "operator"
+            },
+            "regulated_actions": {
+              "type": "object",
+              "description": "Which acts the operator declares as requiring a state authorization. Keys sorted. Private notes are never published.",
+              "propertyNames": {
+                "enum": [
+                  "exchange.listing",
+                  "exchange.ipo",
+                  "fiat.lane",
+                  "registry.operation"
+                ]
+              },
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "authority",
+                  "scope",
+                  "mode"
+                ],
+                "properties": {
+                  "authority": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "scope": {
+                    "enum": [
+                      "registry",
+                      "per_subject"
+                    ],
+                    "description": "Defaults the gate applies: exchange.listing and exchange.ipo default to per_subject; fiat.lane and registry.operation default to registry. The reference implementation publishes registry for an entry declared without a scope."
+                  },
+                  "mode": {
+                    "enum": [
+                      "shadow",
+                      "enforce"
+                    ],
+                    "description": "Default shadow: the registry records a missing authorization and proceeds. enforce: the registry refuses the act until a live authorization covers it, even when its global jurisdiction mode is shadow. registry.operation is never gated."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "regulatory_authorizations": {
+          "type": "array",
+          "description": "Every live authorization (active and within its validity window) in its public shape, sorted by (action, subject_ref or the empty string, reference_id). Published even when no profile is declared. The registry does not verify a state's stamp: the operator attests it.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "action",
+              "subject_ref",
+              "authority",
+              "jurisdiction",
+              "reference_id",
+              "valid_from",
+              "valid_until",
+              "evidence_hash",
+              "contract_ref"
+            ],
+            "properties": {
+              "action": {
+                "enum": [
+                  "exchange.listing",
+                  "exchange.ipo",
+                  "fiat.lane",
+                  "registry.operation"
+                ]
+              },
+              "subject_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 255,
+                "description": "null means registry-wide scope."
+              },
+              "authority": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "jurisdiction": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "reference_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "description": "The authority's own reference. Public on purpose: a false reference is provable misrepresentation."
+              },
+              "valid_from": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "valid_until": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time",
+                "description": "null means open-ended."
+              },
+              "evidence_hash": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "contract_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 255,
+                "description": "Identifier of a countersigned attestation contract. Proof: GET /api/v1/jurisdiction/contracts/{cid}."
+              },
+              "contract_digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$",
+                "description": "Present only when contract_ref resolves to an attestation-grade contract (exists, agreed, zero value); otherwise the key is omitted."
+              }
+            }
+          }
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "SIGNED. 'sha256:' followed by the lowercase hex SHA-256 of the canonical JSON of this block without its digest key. Recomputable from the card itself."
+        }
+      }
+    },
+    "signature": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "MUST when a signing key exists; null when none is available (a legal wire shape, but an unusable trust artifact). Ed25519 signature over the declared paths plus the freshness window.",
+      "additionalProperties": false,
+      "required": [
+        "alg",
+        "kid",
+        "value",
+        "signed_canonical",
+        "signed_at",
+        "expires_at"
+      ],
+      "properties": {
+        "alg": {
+          "const": "EdDSA"
+        },
+        "kid": {
+          "type": "string",
+          "maxLength": 255,
+          "description": "\"<identity.spiffe_id>#<rotation_seq>\". Selects the key in /.well-known/registry-jwks.json, which must be an Ed25519 key."
+        },
+        "jwks_url": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Always /.well-known/registry-jwks.json."
+        },
+        "signed_canonical": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The dotted paths this signature covers. Verifiers use this list, never one of their own."
+        },
+        "signed_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Signing time. Part of the signed payload as _signed_at."
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "signed_at plus 3600 seconds. Part of the signed payload as _expires_at. Verifiers reject an expired signature."
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "description": "Base64url (no padding) Ed25519 signature over the canonical JSON of the signed payload."
+        }
+      }
+    }
+  }
+}

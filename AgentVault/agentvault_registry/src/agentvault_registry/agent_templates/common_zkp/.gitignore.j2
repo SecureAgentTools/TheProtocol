@@ -1,0 +1,29 @@
+# Agent bundle — gitignore
+# CRITICAL: .env.secret contains your client_secret — NEVER commit it
+.env.secret
+
+# Runtime data (gitignored — rebuilt by agent)
+data/
+logs/
+
+# Node dependencies
+mcp/node_modules/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Docker
+.dockerignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

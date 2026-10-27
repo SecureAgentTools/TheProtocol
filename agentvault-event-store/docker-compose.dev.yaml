@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  event-store:
+    build: .
+    ports:
+      - "8200:8200"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@event-store-db:5432/event_store
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:?set INTERNAL_API_KEY in your shell or a .env beside this file (a dev compose carried a literal key for months; it matched no live store on 2026-09-13)}
+    depends_on:
+      - event-store-db
+    volumes:
+      - ./src:/app/src  # Hot reload
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8200 --reload
+
+  event-store-db:
+    image: postgres:15-alpine
+    ports:
+      - "5435:5432"
+    environment:
+      - POSTGRES_DB=event_store
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - event_store_data:/var/lib/postgresql/data
+
+volumes:
+  event_store_data:

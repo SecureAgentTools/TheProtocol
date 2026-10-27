@@ -1,0 +1,1487 @@
+/* ============================================
+   NEURAL COMMAND THEME SYSTEM
+   Professional Sci-Fi Control Interface
+   No emojis. No games. Just power.
+   ============================================ */
+
+/* ============================================
+   ROOT VARIABLES - NEURAL COMMAND PALETTE
+   ============================================ */
+
+:root, body.theme-neural {
+  /* =========================
+     DEEP SPACE BACKGROUNDS
+     ========================= */
+  --nc-void: #060810;           /* Deepest background - outer space */
+  --nc-deep: #0a0d16;           /* Primary background - main canvas (aligned to layout shell) */
+  --nc-dark: #0e1220;           /* Secondary background - sections */
+  --nc-surface: #131825;        /* Card/component backgrounds */
+  --nc-elevated: #181f2e;       /* Elevated/hover surfaces */
+  --nc-overlay: #1d2438;        /* Modal/dropdown backgrounds */
+
+  /* =========================
+     NEURAL BORDERS
+     ========================= */
+  --nc-border: #2a2f3e;         /* Default borders */
+  --nc-border-subtle: #232833;  /* Very subtle dividers */
+  --nc-border-strong: #343a4d;  /* Emphasized borders */
+  --nc-border-glow: rgba(var(--nc-primary-rgb), 0.3); /* Glowing borders */
+
+  /* =========================
+     PRIMARY ACCENT — DATA FLOW (Neural Cyan theme)
+     RGB tuples let rgba() be themed: rgba(var(--nc-primary-rgb), 0.4)
+     ========================= */
+  --nc-primary: #00d2d2;        /* Primary actions, links (aligned to ambient cyan) */
+  --nc-primary-rgb: 0, 210, 210;
+  --nc-primary-bright: #00e5e5; /* Hover state */
+  --nc-primary-bright-rgb: 0, 229, 229;
+  --nc-primary-dim: #009999;    /* Pressed/active state */
+  --nc-primary-dim-rgb: 0, 153, 153;
+  --nc-primary-dark: #006666;   /* Disabled state */
+  --nc-primary-dark-rgb: 0, 102, 102;
+  --nc-primary-glow: rgba(var(--nc-primary-rgb), 0.4);
+  --nc-primary-subtle: rgba(var(--nc-primary-rgb), 0.1);
+  
+  /* =========================
+     MATRIX GREEN - SUCCESS
+     ========================= */
+  --nc-success: #00ff88;        /* Success, online, active */
+  --nc-success-bright: #33ff9f; /* Hover */
+  --nc-success-dim: #00cc6a;    /* Pressed */
+  --nc-success-dark: #008844;   /* Disabled */
+  --nc-success-glow: rgba(0, 255, 136, 0.3);
+  --nc-success-subtle: rgba(0, 255, 136, 0.1);
+  
+  /* =========================
+     AMBER WARNING - CAUTION
+     ========================= */
+  --nc-warning: #ff9500;        /* Warnings, attention needed */
+  --nc-warning-bright: #ffaa33; /* Hover */
+  --nc-warning-dim: #cc7700;    /* Pressed */
+  --nc-warning-dark: #996600;   /* Disabled */
+  --nc-warning-glow: rgba(255, 149, 0, 0.3);
+  --nc-warning-subtle: rgba(255, 149, 0, 0.1);
+  
+  /* =========================
+     CRITICAL RED - DANGER
+     ========================= */
+  --nc-danger: #ff3366;         /* Errors, critical, destructive */
+  --nc-danger-bright: #ff5588;  /* Hover */
+  --nc-danger-dim: #cc2952;     /* Pressed */
+  --nc-danger-dark: #991133;    /* Disabled */
+  --nc-danger-glow: rgba(255, 51, 102, 0.3);
+  --nc-danger-subtle: rgba(255, 51, 102, 0.1);
+  --nc-danger-solid: #c2244c;   /* A filled danger control: 4.8:1 under --nc-text-primary (§FESUITE) */
+  --nc-danger-solid-hover: #b8234a;
+  
+  /* =========================
+     TEXT HIERARCHY
+     ========================= */
+  --nc-text-primary: #e8eaed;   /* Primary text - high contrast */
+  --nc-text-secondary: #9aa0a6; /* Secondary text - medium */
+  --nc-text-muted: #8f9399;     /* Muted text: 4.6:1 on the lightest neural surface, #162d3b (WCAG AA; §FESUITE, was #5f6368 at 2.7-3.2:1, then #83878e) */
+  --nc-text-disabled: #3c4043;  /* Disabled text */
+  --nc-text-inverse: #0a0a0f;   /* Inverse text on light bg */
+  
+  /* =========================
+     SPECIAL EFFECTS
+     ========================= */
+  --nc-hologram: linear-gradient(90deg, var(--nc-primary-bright) 0%, #00ff88 50%, var(--nc-primary-bright) 100%);
+  --nc-scan-line: rgba(var(--nc-primary-rgb), 0.05);
+  --nc-grid-pattern: rgba(var(--nc-primary-rgb), 0.03);
+  --nc-data-stream: linear-gradient(180deg, transparent, rgba(0, 255, 136, 0.1), transparent);
+  
+  /* =========================
+     METRICS & DATA VIZ
+     ========================= */
+  --nc-chart-1: var(--nc-primary-bright);        /* Primary metric */
+  --nc-chart-2: #00ff88;        /* Secondary metric */
+  --nc-chart-3: #ff9500;        /* Tertiary metric */
+  --nc-chart-4: #ff3366;        /* Quaternary metric */
+  --nc-chart-5: #9966ff;        /* Additional metric */
+  
+  /* =========================
+     SHADOWS & DEPTH
+     ========================= */
+  --nc-shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.6);
+  --nc-shadow-md: 0 4px 8px rgba(0, 0, 0, 0.7);
+  --nc-shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.8);
+  --nc-shadow-xl: 0 16px 32px rgba(0, 0, 0, 0.9);
+  --nc-shadow-glow: 0 0 20px var(--nc-primary-glow);
+  --nc-shadow-inner: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+  
+  /* =========================
+     ANIMATION TIMING
+     ========================= */
+  --nc-duration-instant: 100ms;
+  --nc-duration-fast: 200ms;
+  --nc-duration-normal: 300ms;
+  --nc-duration-slow: 500ms;
+  --nc-duration-slower: 1000ms;
+  --nc-easing-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --nc-easing-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+/* ============================================
+   SOVEREIGN THEME — BLOOD RED (matches Twin Chevron logo)
+   Overrides accent tokens only. Semantic colors
+   (success/warning/danger/reputation) are preserved.
+   ============================================ */
+body.theme-sovereign {
+  /* Primary accent — sovereign red / blood / oxblood */
+  --nc-primary: #DC2626;
+  --nc-primary-rgb: 220, 38, 38;
+  --nc-primary-bright: #FF3838;
+  --nc-primary-bright-rgb: 255, 56, 56;
+  --nc-primary-dim: #B91C1C;
+  --nc-primary-dim-rgb: 185, 28, 28;
+  --nc-primary-dark: #7F1D1D;
+  --nc-primary-dark-rgb: 127, 29, 29;
+  --nc-primary-glow: rgba(220, 38, 38, 0.45);
+  --nc-primary-subtle: rgba(185, 28, 28, 0.12);
+
+  /* Glowing border tint follows the accent */
+  --nc-border-glow: rgba(220, 38, 38, 0.35);
+
+  /* Holographic / scan / grid effects retuned */
+  --nc-hologram: linear-gradient(90deg, #FF3838 0%, #B91C1C 50%, #7F1D1D 100%);
+  --nc-scan-line: rgba(220, 38, 38, 0.07);
+  --nc-grid-pattern: rgba(220, 38, 38, 0.04);
+
+  /* Primary chart color mirrors the accent */
+  --nc-chart-1: #DC2626;
+}
+
+/* ============================================
+   GLOBAL RESETS & BASE STYLES
+   ============================================ */
+
+/* The universal margin/padding/box-sizing reset that sat here moved to neural-reset.css (Tailwind 4, 2026-10-01):
+   Tailwind's preflight does it for the global sheet, BEFORE the utilities, and this copy (after them) cancelled the
+   zero-specificity space-x/space-y/divide utilities on every page. The scoped blocks that import this file import
+   neural-reset.css too, so their scoped reset is unchanged. */
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--nc-deep);
+  color: var(--nc-text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  line-height: 1.6;
+  min-height: 100vh;
+  position: relative;
+}
+
+/* Grid Background Pattern */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: 
+    linear-gradient(var(--nc-grid-pattern) 1px, transparent 1px),
+    linear-gradient(90deg, var(--nc-grid-pattern) 1px, transparent 1px);
+  background-size: 50px 50px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ============================================
+   TYPOGRAPHY SYSTEM
+   ============================================ */
+
+h1, .nc-h1 {
+  font-size: 2rem;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--nc-text-primary);
+}
+
+h2, .nc-h2 {
+  font-size: 1.5rem;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--nc-text-primary);
+}
+
+h3, .nc-h3 {
+  font-size: 1.25rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--nc-text-primary);
+}
+
+h4, .nc-h4 {
+  font-size: 1.125rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--nc-text-primary);
+}
+
+.nc-body {
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--nc-text-secondary);
+}
+
+.nc-small {
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--nc-text-muted);
+}
+
+.nc-mono {
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+  font-size: 0.875rem;
+  color: var(--nc-primary);
+}
+
+/* ============================================
+   NEURAL CARD COMPONENT
+   ============================================ */
+
+.nc-card {
+  background: var(--nc-surface);
+  border: 1px solid var(--nc-border);
+  border-radius: 0;
+  position: relative;
+  overflow: hidden;
+  transition: all var(--nc-duration-normal) var(--nc-easing-default);
+}
+
+.nc-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: var(--nc-hologram);
+  background-size: 200% 100%;
+  animation: hologram-shift 3s linear infinite;
+}
+
+.nc-card:hover {
+  background: var(--nc-elevated);
+  border-color: var(--nc-border-strong);
+  box-shadow: var(--nc-shadow-md);
+}
+
+.nc-card-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--nc-border-subtle);
+}
+
+.nc-card-body {
+  padding: 1.25rem;
+}
+
+.nc-card-footer {
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--nc-border-subtle);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* ============================================
+   BUTTON SYSTEM
+   ============================================ */
+
+.nc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.625rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all var(--nc-duration-fast) var(--nc-easing-default);
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Primary Button */
+.nc-btn-primary {
+  background: var(--nc-primary);
+  color: var(--nc-void);
+  border-color: var(--nc-primary);
+}
+
+.nc-btn-primary:hover {
+  background: var(--nc-primary-bright);
+  box-shadow: 0 0 20px var(--nc-primary-glow);
+  transform: translateY(-1px);
+}
+
+.nc-btn-primary:active {
+  background: var(--nc-primary-dim);
+  transform: translateY(0);
+}
+
+/* Secondary Button */
+.nc-btn-secondary {
+  background: transparent;
+  color: var(--nc-primary);
+  border-color: var(--nc-primary);
+}
+
+.nc-btn-secondary:hover {
+  background: var(--nc-primary-subtle);
+  box-shadow: 0 0 15px var(--nc-primary-glow);
+}
+
+/* Ghost Button */
+.nc-btn-ghost {
+  background: transparent;
+  color: var(--nc-text-secondary);
+  border-color: var(--nc-border);
+}
+
+.nc-btn-ghost:hover {
+  color: var(--nc-text-primary);
+  border-color: var(--nc-border-strong);
+  background: var(--nc-elevated);
+}
+
+/* Danger Button */
+.nc-btn-danger {
+  background: var(--nc-danger-solid);
+  color: var(--nc-text-primary);
+  border-color: var(--nc-danger-solid);
+}
+
+.nc-btn-danger:hover {
+  background: var(--nc-danger-solid-hover);
+  box-shadow: 0 0 20px var(--nc-danger-glow);
+}
+
+/* ============================================
+   INPUT SYSTEM
+   ============================================ */
+
+.nc-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: var(--nc-dark);
+  border: 1px solid var(--nc-border);
+  color: var(--nc-text-primary);
+  font-size: 0.875rem;
+  transition: all var(--nc-duration-fast) var(--nc-easing-default);
+}
+
+.nc-input:focus {
+  outline: none;
+  border-color: var(--nc-primary);
+  background: var(--nc-surface);
+  box-shadow: 0 0 0 2px var(--nc-primary-subtle);
+}
+
+.nc-input::placeholder {
+  color: var(--nc-text-muted);
+}
+
+/* ============================================
+   STATUS INDICATORS
+   ============================================ */
+
+.nc-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1px solid;
+  background: var(--nc-surface);
+}
+
+.nc-status-online {
+  color: var(--nc-success);
+  border-color: var(--nc-success);
+  background: var(--nc-success-subtle);
+}
+
+.nc-status-offline {
+  color: var(--nc-text-muted);
+  border-color: var(--nc-border);
+}
+
+.nc-status-warning {
+  color: var(--nc-warning);
+  border-color: var(--nc-warning);
+  background: var(--nc-warning-subtle);
+}
+
+.nc-status-error {
+  color: var(--nc-danger);
+  border-color: var(--nc-danger);
+  background: var(--nc-danger-subtle);
+}
+
+/* Status Dot */
+.nc-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.nc-status-dot.online {
+  background: var(--nc-success);
+  box-shadow: 0 0 10px var(--nc-success-glow);
+  animation: pulse-glow 2s infinite;
+}
+
+.nc-status-dot.offline {
+  background: var(--nc-text-muted);
+}
+
+/* ============================================
+   DATA DISPLAY
+   ============================================ */
+
+.nc-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--nc-surface);
+  border: 1px solid var(--nc-border);
+}
+
+.nc-table thead {
+  background: var(--nc-dark);
+}
+
+.nc-table th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--nc-text-muted);
+  border-bottom: 1px solid var(--nc-border);
+}
+
+.nc-table td {
+  padding: 0.875rem 1rem;
+  font-size: 0.875rem;
+  color: var(--nc-text-secondary);
+  border-bottom: 1px solid var(--nc-border-subtle);
+}
+
+.nc-table tbody tr:hover {
+  background: var(--nc-elevated);
+}
+
+/* ============================================
+   METRIC DISPLAYS
+   ============================================ */
+
+.nc-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.nc-metric-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--nc-text-muted);
+}
+
+.nc-metric-value {
+  font-size: 2rem;
+  font-weight: 300;
+  color: var(--nc-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.nc-metric-change {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.nc-metric-change.positive {
+  color: var(--nc-success);
+}
+
+.nc-metric-change.negative {
+  color: var(--nc-danger);
+}
+
+/* ============================================
+   PROGRESS BARS
+   ============================================ */
+
+.nc-progress {
+  width: 100%;
+  height: 4px;
+  background: var(--nc-dark);
+  border: 1px solid var(--nc-border);
+  position: relative;
+  overflow: hidden;
+}
+
+.nc-progress-bar {
+  height: 100%;
+  background: var(--nc-hologram);
+  background-size: 200% 100%;
+  animation: hologram-shift 2s linear infinite;
+  transition: width var(--nc-duration-slow) var(--nc-easing-default);
+}
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+
+@keyframes hologram-shift {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.2);
+  }
+}
+
+@keyframes scan-line {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+@keyframes data-stream {
+  0% { transform: translateY(-100%); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+
+/* Scan Line Effect */
+.nc-scan-effect::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100px;
+  background: var(--nc-data-stream);
+  animation: scan-line 8s linear infinite;
+  pointer-events: none;
+}
+
+/* ============================================
+   SCROLLBAR STYLING
+   ============================================ */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--nc-dark);
+  border: 1px solid var(--nc-border);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--nc-primary-dim);
+  border: 1px solid var(--nc-border);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--nc-primary);
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--nc-dark);
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+/* Text Colors */
+.nc-text-primary { color: var(--nc-text-primary); }
+.nc-text-secondary { color: var(--nc-text-secondary); }
+.nc-text-muted { color: var(--nc-text-muted); }
+.nc-text-accent { color: var(--nc-primary); }
+.nc-text-success { color: var(--nc-success); }
+.nc-text-warning { color: var(--nc-warning); }
+.nc-text-danger { color: var(--nc-danger); }
+
+/* Background Colors */
+.nc-bg-void { background: var(--nc-void); }
+.nc-bg-deep { background: var(--nc-deep); }
+.nc-bg-dark { background: var(--nc-dark); }
+.nc-bg-surface { background: var(--nc-surface); }
+.nc-bg-elevated { background: var(--nc-elevated); }
+
+/* Borders */
+.nc-border { border: 1px solid var(--nc-border); }
+.nc-border-top { border-top: 1px solid var(--nc-border); }
+.nc-border-bottom { border-bottom: 1px solid var(--nc-border); }
+.nc-border-glow { border: 1px solid var(--nc-primary); box-shadow: 0 0 10px var(--nc-primary-glow); }
+
+/* Effects */
+.nc-glow { box-shadow: 0 0 20px var(--nc-primary-glow); }
+.nc-glow-success { box-shadow: 0 0 20px var(--nc-success-glow); }
+.nc-glow-danger { box-shadow: 0 0 20px var(--nc-danger-glow); }
+
+/* Layout */
+.nc-container {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+.nc-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.nc-grid-2 { grid-template-columns: repeat(2, 1fr); }
+.nc-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.nc-grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+/* Responsive Grid */
+@media (max-width: 768px) {
+  .nc-grid-2,
+  .nc-grid-3,
+  .nc-grid-4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .nc-grid-3,
+  .nc-grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ============================================
+   REMOVE ALL EMOJI NONSENSE
+   ============================================ */
+
+/* Hide any emoji that might slip through.
+   Note: `[role="img"]` is intentionally OMITTED — that selector caught
+   the FlareEncirclement avatar wrapper (which legitimately uses role=img
+   for accessibility) and made it invisible. Instead we rely on `.emoji`
+   + `[data-emoji]` which is what intentional emoji components mark
+   themselves with. SVG icons use Icon.vue directly without role=img. */
+.emoji,
+[data-emoji] {
+  display: none !important;
+}
+
+/* ============================================
+   GLOBAL TAILWIND → NC THEME OVERRIDE
+   Forces all Tailwind light-mode card/surface classes
+   to NC palette. Fixes every view that uses
+   bg-white/dark:bg-gray-800 without active dark mode.
+   These rules win via !important — no per-view changes needed.
+   ============================================ */
+
+/* --- Backgrounds --- */
+.bg-white {
+  background-color: var(--nc-surface) !important;
+}
+.bg-gray-50 {
+  background-color: var(--nc-dark) !important;
+}
+.bg-gray-100 {
+  background-color: var(--nc-elevated) !important;
+}
+.bg-gray-200 {
+  background-color: var(--nc-elevated) !important;
+}
+.bg-gray-700 {
+  background-color: var(--nc-surface) !important;
+}
+.bg-gray-800 {
+  background-color: var(--nc-surface) !important;
+}
+.bg-gray-900 {
+  background-color: var(--nc-void) !important;
+}
+
+/* Semi-transparent variants (used in staking tiers, table headers) */
+.bg-gray-50\/50,
+[class*="bg-gray-50/"] {
+  background-color: rgba(14, 18, 32, 0.5) !important;
+}
+.bg-gray-700\/50,
+[class*="bg-gray-700/"] {
+  background-color: rgba(19, 24, 37, 0.5) !important;
+}
+
+/* Blue info boxes */
+.bg-blue-50,
+[class*="bg-blue-50"] {
+  background-color: rgba(var(--nc-primary-rgb), 0.08) !important;
+}
+.bg-blue-100 {
+  background-color: rgba(var(--nc-primary-rgb), 0.12) !important;
+}
+
+/* --- Text --- */
+.text-gray-900 {
+  color: var(--nc-text-primary) !important;
+}
+.text-gray-800 {
+  color: var(--nc-text-primary) !important;
+}
+.text-gray-700 {
+  color: var(--nc-text-secondary) !important;
+}
+.text-gray-600 {
+  color: var(--nc-text-secondary) !important;
+}
+.text-gray-500 {
+  color: var(--nc-text-muted) !important;
+}
+.text-gray-400 {
+  color: var(--nc-text-muted) !important;
+}
+.text-gray-300 {
+  color: var(--nc-text-secondary) !important;
+}
+
+/* --- Borders --- */
+.border-gray-100 {
+  border-color: var(--nc-border-subtle) !important;
+}
+.border-gray-200 {
+  border-color: var(--nc-border) !important;
+}
+.border-gray-300 {
+  border-color: var(--nc-border) !important;
+}
+.border-gray-600 {
+  border-color: var(--nc-border) !important;
+}
+.border-gray-700 {
+  border-color: var(--nc-border) !important;
+}
+
+/* Divide utilities (table row separators) */
+.divide-gray-200 > * + * {
+  border-color: var(--nc-border) !important;
+}
+.divide-gray-700 > * + * {
+  border-color: var(--nc-border) !important;
+}
+
+/* --- Form inputs (unfocused) --- */
+input,
+select,
+textarea {
+  background-color: var(--nc-dark) !important;
+  border-color: var(--nc-border) !important;
+  color: var(--nc-text-primary) !important;
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--nc-text-muted) !important;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  background-color: var(--nc-surface) !important;
+  border-color: var(--nc-primary) !important;
+  box-shadow: 0 0 0 2px var(--nc-primary-subtle) !important;
+  outline: none !important;
+}
+/* Global keyboard-focus indicator (a11y). Inputs already get the ring above;
+   every other interactive element gets a visible outline ONLY under keyboard
+   navigation (:focus-visible), so mouse/touch clicks stay visually clean.
+   :where() keeps specificity at 0 so any view can still override on purpose. */
+:where(a, button, [role="button"], [tabindex]:not([tabindex="-1"]), summary, [contenteditable="true"]):focus-visible {
+  outline: 2px solid var(--nc-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+option {
+  background-color: var(--nc-dark) !important;
+  color: var(--nc-text-primary) !important;
+}
+
+/* --- Modal overlays (Teleport to body) --- */
+.fixed.inset-0 > div.bg-white,
+.fixed.inset-0 > div.bg-gray-800 {
+  background-color: var(--nc-elevated) !important;
+}
+
+/* Modal dialog panels (Teleport) */
+.shadow-xl.rounded-xl {
+  background-color: var(--nc-elevated) !important;
+  border: 1px solid var(--nc-border) !important;
+  color: var(--nc-text-primary) !important;
+}
+
+/* =====================================================================
+   DARK-MODE VARIANT OVERRIDES
+   html has class="dark" → Tailwind fires .dark\:bg-* selectors instead
+   of .bg-* selectors. These are separate CSS rules — must override both.
+   ===================================================================== */
+
+/* Backgrounds */
+.dark\:bg-gray-800:is(.dark *),
+.dark\:bg-gray-700:is(.dark *) {
+  background-color: var(--nc-surface) !important;
+}
+.dark\:bg-gray-900:is(.dark *) {
+  background-color: var(--nc-void) !important;
+}
+.dark\:bg-gray-700\/50:is(.dark *),
+.dark\:bg-gray-800\/50:is(.dark *) {
+  background-color: rgba(19, 24, 37, 0.5) !important;
+}
+.dark\:bg-gray-700\/30:is(.dark *),
+.dark\:bg-gray-800\/30:is(.dark *) {
+  background-color: rgba(19, 24, 37, 0.3) !important;
+}
+.dark\:bg-gray-900\/20:is(.dark *),
+.dark\:bg-gray-900\/30:is(.dark *),
+.dark\:bg-gray-900\/50:is(.dark *) {
+  background-color: rgba(6, 8, 16, 0.5) !important;
+}
+
+/* Status/badge backgrounds commonly used */
+.dark\:bg-green-900:is(.dark *),
+.dark\:bg-green-900\/20:is(.dark *),
+.dark\:bg-green-900\/30:is(.dark *) {
+  background-color: rgba(0, 255, 136, 0.08) !important;
+}
+.dark\:bg-red-900:is(.dark *),
+.dark\:bg-red-900\/20:is(.dark *),
+.dark\:bg-red-900\/30:is(.dark *) {
+  background-color: rgba(255, 51, 102, 0.08) !important;
+}
+.dark\:bg-blue-900:is(.dark *),
+.dark\:bg-blue-900\/20:is(.dark *),
+.dark\:bg-blue-900\/30:is(.dark *),
+.dark\:bg-blue-900\/50:is(.dark *) {
+  background-color: rgba(var(--nc-primary-rgb), 0.08) !important;
+}
+.dark\:bg-yellow-900:is(.dark *),
+.dark\:bg-yellow-900\/20:is(.dark *),
+.dark\:bg-amber-900:is(.dark *),
+.dark\:bg-amber-900\/20:is(.dark *) {
+  background-color: rgba(255, 149, 0, 0.08) !important;
+}
+.dark\:bg-purple-900:is(.dark *),
+.dark\:bg-purple-900\/20:is(.dark *),
+.dark\:bg-purple-900\/50:is(.dark *) {
+  background-color: rgba(139, 92, 246, 0.08) !important;
+}
+.dark\:bg-cyan-900:is(.dark *),
+.dark\:bg-cyan-900\/20:is(.dark *),
+.dark\:bg-cyan-900\/30:is(.dark *) {
+  background-color: rgba(var(--nc-primary-rgb), 0.08) !important;
+}
+.dark\:bg-orange-900:is(.dark *),
+.dark\:bg-orange-900\/30:is(.dark *) {
+  background-color: rgba(255, 149, 0, 0.08) !important;
+}
+
+/* Text colors */
+.dark\:text-gray-100:is(.dark *),
+.dark\:text-gray-200:is(.dark *),
+.dark\:text-white:is(.dark *) {
+  color: var(--nc-text-primary) !important;
+}
+.dark\:text-gray-300:is(.dark *),
+.dark\:text-gray-400:is(.dark *) {
+  color: var(--nc-text-secondary) !important;
+}
+.dark\:text-gray-500:is(.dark *),
+.dark\:text-gray-600:is(.dark *) {
+  color: var(--nc-text-muted) !important;
+}
+
+/* Borders */
+.dark\:border-gray-600:is(.dark *),
+.dark\:border-gray-700:is(.dark *),
+.dark\:border-gray-800:is(.dark *) {
+  border-color: var(--nc-border) !important;
+}
+.dark\:divide-gray-600:is(.dark *) > * + *,
+.dark\:divide-gray-700:is(.dark *) > * + * {
+  border-color: var(--nc-border) !important;
+}
+
+/* Inputs (dark: variants) */
+.dark\:bg-gray-800:is(.dark *) input,
+.dark\:bg-gray-800:is(.dark *) select,
+.dark\:bg-gray-800:is(.dark *) textarea {
+  background-color: var(--nc-dark) !important;
+  border-color: var(--nc-border) !important;
+  color: var(--nc-text-primary) !important;
+}
+
+/* Placeholder text color dark variants */
+.dark\:placeholder-gray-500:is(.dark *)::placeholder {
+  color: var(--nc-text-muted) !important;
+}
+
+/* Reduced-motion defense — ensures landing-page glitch overlays are never
+   visible for users who have opted out, even if the Vue component fails to
+   apply its own scoped guard. WCAG AAA: rapid flash >3 Hz is a seizure risk. */
+@media (prefers-reduced-motion: reduce) {
+  .glitch-scanlines,
+  #app.glitch-chromatic { display: none !important; filter: none !important; }
+}
+
+/* G (2026-05-08): screen-reader-only utility for table captions, skip
+   links, and other a11y labels. Visible only to assistive tech.
+   Standard WAI-ARIA Authoring Practices clip pattern. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.sr-only-focusable:focus,
+.sr-only-focusable:focus-visible {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   MOBILE PASS (2026-05-08)
+   ──────────────────────────────────────────────────────────────────────
+   Goal: usable, AAA+ on phones (390-414px) and small tablets (≥768px),
+   pixel-identical on desktop (≥1024px). Every rule below is scoped inside
+   a max-width media query OR is a utility class consumers opt into. NO
+   rule in this section may alter desktop layout when not paired with a
+   `is-mobile-*` body class or media query.
+   ────────────────────────────────────────────────────────────────────── */
+
+/* — Cross-cutting: prevent horizontal scroll on small screens.
+     html overflow-x:hidden cooperates with body overflow-x:hidden so
+     iOS doesn't expose the rubber-band overscroll on the X axis when a
+     view miscalculates a width. Only applied <1024px so desktop layouts
+     that intentionally use horizontal overflow (e.g. wide tables in
+     scroll-containers) are unaffected. */
+@media (max-width: 1023.98px) {
+  html, body { overflow-x: hidden; }
+  /* Body locks scroll while the mobile drawer is open — set by
+     DashboardLayout via the .body-scroll-lock toggle. */
+  body.body-scroll-lock { overflow: hidden; touch-action: none; }
+}
+
+/* — Safe-area utility classes (notched iPhones, Android nav cutouts).
+     Use as: <div class="safe-bottom">…</div> or paddings via class hooks.
+     `viewport-fit=cover` (set in index.html) lets env(safe-area-inset-*) resolve. */
+.safe-top    { padding-top:    env(safe-area-inset-top, 0); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0); }
+.safe-left   { padding-left:   env(safe-area-inset-left, 0); }
+.safe-right  { padding-right:  env(safe-area-inset-right, 0); }
+.safe-x      { padding-left:   env(safe-area-inset-left, 0); padding-right: env(safe-area-inset-right, 0); }
+
+/* — Tap-target utility — ensures interactive elements meet WCAG 2.5.5
+     (Target Size Level AAA: ≥44×44 CSS px). Apply with `class="tappable"`
+     anywhere a button/link sits on touch UI. */
+.tappable {
+  min-width:  44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* — Dynamic-viewport utilities. Use `min-h-dvh` instead of `min-h-screen`
+     where mobile keyboard / address-bar height matters; falls back to vh. */
+.min-h-dvh { min-height: 100vh; min-height: 100dvh; }
+.h-dvh     { height: 100vh; height: 100dvh; }
+
+/* — Mobile drawer: backdrop overlay shown behind sidebar at <1024px when
+     uiStore.mobileDrawerOpen === true. Sits below the sidebar (z 10000)
+     and above the content (z 30 in header, z 1 in main). */
+.mobile-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9990;
+  background: rgba(4, 7, 14, 0.62);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  animation: mobile-drawer-backdrop-in 180ms ease-out;
+}
+@keyframes mobile-drawer-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobile-drawer-backdrop { animation: none; }
+}
+
+/* — Hamburger button (header). 44×44 tap target. Hidden on desktop. */
+.mobile-hamburger {
+  display: none;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid rgba(var(--nc-primary-rgb), 0.18);
+  border-radius: 8px;
+  color: rgba(var(--nc-primary-rgb), 0.9);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 150ms, border-color 150ms;
+}
+.mobile-hamburger:hover,
+.mobile-hamburger:focus-visible {
+  background: rgba(var(--nc-primary-rgb), 0.10);
+  border-color: rgba(var(--nc-primary-rgb), 0.35);
+  outline: none;
+}
+@media (max-width: 1023.98px) {
+  .mobile-hamburger { display: inline-flex; }
+}
+
+/* — At <1024px the sidebar's ICON-mode 4rem column is meaningless (the
+     drawer covers content anyway). DashboardLayout collapses content
+     padding to 0 via JS; this rule is a defense in depth in case markup
+     ships pl-64 / pl-16 statically. */
+@media (max-width: 1023.98px) {
+  .nc-mobile-content-flush { padding-left: 0 !important; }
+}
+
+/* — Touch-scroll wrapper for tables. Apply `class="tp-table-scroll"`
+     to a wrapping <div>. At <768px the table scrolls horizontally
+     instead of breaking the page layout. Caller's CSS keeps unchanged. */
+.tp-table-scroll { width: 100%; }
+@media (max-width: 767.98px) {
+  .tp-table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    /* Subtle gradient hint that more is to the right. */
+    mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+  }
+  .tp-table-scroll table { min-width: max-content; }
+}
+
+/* — Stat-card grids: 4-up → 2-up → 1-up at small breakpoints when
+     `class="tp-stats-grid"` is applied. Opt-in via container; views with
+     custom grid logic are unaffected. */
+.tp-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+@media (max-width: 767.98px) {
+  .tp-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+  }
+}
+@media (max-width: 479.98px) {
+  .tp-stats-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* — Form layout helper: stacks columns at <640px, side-by-side ≥640. */
+@media (max-width: 639.98px) {
+  .tp-form-row { flex-direction: column !important; align-items: stretch !important; }
+  .tp-form-row > * { width: 100% !important; }
+}
+
+/* — Mobile-first input/button minimum heights (44px) for forms that
+     opt-in via `class="tp-mobile-controls"` on the container. */
+@media (max-width: 767.98px) {
+  .tp-mobile-controls input,
+  .tp-mobile-controls select,
+  .tp-mobile-controls textarea,
+  .tp-mobile-controls button {
+    min-height: 44px;
+  }
+  .tp-mobile-controls input,
+  .tp-mobile-controls select,
+  .tp-mobile-controls textarea {
+    /* iOS auto-zooms on focus when font-size <16px. Forcing 16px keeps the
+       layout stable while users tap into form fields. */
+    font-size: max(16px, 1rem);
+  }
+}
+
+/* — Beta banner: smaller on phones to stop it eating the viewport. */
+@media (max-width: 639.98px) {
+  /* §PHONEWORDS 2026-09-03 — one line on a phone (measured 130 px / 18% of a Pixel 5 before): the short
+     sentence, no wrap, the dismiss inline. The long sentence stays for tablets and desktops. */
+  .beta-banner-inner { padding: 4px 8px 4px 10px; gap: 8px; font-size: 0.68rem; flex-wrap: nowrap; align-items: center; }
+  .beta-text { line-height: 1.25; }
+  .beta-text--long { display: none; }
+  .beta-text--short { display: inline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; }
+  .beta-badge { padding: 1px 6px; font-size: 0.6rem; letter-spacing: 1px; flex: 0 0 auto; }
+  .beta-dismiss { min-width: 36px; min-height: 36px; flex: 0 0 auto; }
+}
+@media (min-width: 640px) { .beta-text--short { display: none; } }
+
+/* — Modal sheet pattern. ConfirmActionModal's overlay+modal pair becomes
+     a bottom-anchored sheet on phones. Caller opts in by setting class
+     `ca-modal--sheet` (DashboardLayout passes this when isMobile). */
+@media (max-width: 639.98px) {
+  .ca-overlay {
+    align-items: flex-end !important;
+  }
+  .ca-modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 88vh !important;
+    border-radius: 16px 16px 0 0 !important;
+    border-bottom: none !important;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    animation: ca-sheet-up 0.22s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+  .ca-modal-footer {
+    flex-direction: column-reverse !important;
+    gap: 0.5rem !important;
+  }
+  .ca-modal-footer .ca-btn {
+    width: 100% !important;
+    justify-content: center !important;
+    min-height: 44px;
+    font-size: 0.78rem;
+  }
+}
+@keyframes ca-sheet-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* — §POCKETBRIDGE #PK9: AmountActionModal (`.gam-*`, the command centre's
+     amount dialog) becomes a bottom sheet on phones, same pattern as
+     `.ca-modal` above. It reached phone surfaces for the first time when the
+     lightbridge quick actions landed in Pocket (FUND / REQUEST). The 16px
+     input font is load-bearing: below that iOS zooms the page on focus. */
+@media (max-width: 639.98px) {
+  .gam-overlay {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+  .gam-panel {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 92dvh !important;
+    overflow-y: auto;
+    border-radius: 16px 16px 0 0 !important;
+    border-bottom: none !important;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px)) !important;
+    animation: ca-sheet-up 0.22s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+  .gam-panel button { min-height: 44px; }
+  .gam-panel input, .gam-panel textarea { font-size: 16px !important; }
+
+  /* BridgeWorkView (`.bwv-*`, Teleported to body — scoped overrides cannot
+     reach it): the WORK modal becomes a bottom sheet with touch targets when
+     the pocket command queue opens it (#PK13). The desktop keeps its 20px
+     pointer floor untouched above this width. */
+  .bwv-overlay { align-items: flex-end !important; padding: 0 !important;
+    left: 0 !important; right: 0 !important; }
+  .bwv { width: 100% !important; max-width: 100% !important; max-height: 90dvh !important;
+    border-radius: 16px 16px 0 0 !important; border-bottom: none !important;
+    padding-bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px)) !important; }
+  .bwv button { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gam-panel { animation: none !important; }
+}
+
+/* — Cmd-K palette: full-screen on phones so the touch target is huge
+     and there's room for a virtual keyboard. Targets the actual
+     CommandPalette.vue class names (cmdk-overlay / cmdk-modal). */
+@media (max-width: 767.98px) {
+  .cmdk-overlay {
+    align-items: stretch !important;
+    padding: 0 !important;
+  }
+  .cmdk-modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .cmdk-search-input { min-height: 44px; font-size: 16px; }
+  .cmdk-item { min-height: 48px; }
+}
+
+/* — BaseModal (the generic shared modal: AgentProfile, AgentDetailModal,
+     AgentSelectorModal, ContractTemplates, …) → bottom-anchored sheet on
+     phones, mirroring the ConfirmActionModal pattern. Full-width, rounded
+     top only, height-capped with internal scroll + safe-area inset. The panel
+     already fits via max-width; this is the phone-comfort sheet treatment the
+     mobile doctrine calls for. <640 only → zero desktop/tablet impact. */
+@media (max-width: 639.98px) {
+  .tp-base-modal-wrap { align-items: flex-end !important; padding: 0 !important; }
+  .tp-base-modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    max-height: 92dvh !important;
+    overflow-y: auto !important;
+    padding-bottom: env(safe-area-inset-bottom, 0) !important;
+    animation: ca-sheet-up 0.22s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+}
+
+/* — `is-mobile` body class — set by DashboardLayout watcher when
+     viewport <1024px. Lets per-view CSS opt into mobile tweaks without
+     repeating the breakpoint everywhere. */
+body.is-mobile .desktop-only { display: none !important; }
+body:not(.is-mobile) .mobile-only { display: none !important; }
+.mobile-only { display: none; }
+@media (max-width: 1023.98px) {
+  .mobile-only { display: revert; }
+}
+
+/* — Sticky-bottom CTA: turns a desktop button bar into a sticky footer on
+     phones (e.g. multi-step wizards, big forms). Opt-in via class. */
+@media (max-width: 639.98px) {
+  .tp-mobile-sticky-cta {
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(0deg, rgba(10,13,22,0.96), rgba(10,13,22,0.86));
+    border-top: 1px solid rgba(var(--nc-primary-rgb), 0.12);
+    padding: 0.65rem 0.75rem calc(0.65rem + env(safe-area-inset-bottom, 0));
+    margin: 0 -0.75rem;
+    z-index: 20;
+  }
+}
+
+/* — Card stack — generic 2/3-column → 1-column on phone. Apply to
+     containers using grid-cols-2 or grid-cols-3 utility classes. */
+@media (max-width: 639.98px) {
+  .tp-cards-stack-mobile {
+    grid-template-columns: 1fr !important;
+    gap: 0.75rem !important;
+  }
+}
+
+/* — Tabs strip → horizontal scroll on small screens. Opt-in. */
+.tp-tabs-mobile-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tp-tabs-mobile-scroll::-webkit-scrollbar { display: none; }
+@media (max-width: 639.98px) {
+  .tp-tabs-mobile-scroll {
+    flex-wrap: nowrap !important;
+    white-space: nowrap;
+  }
+  .tp-tabs-mobile-scroll > * {
+    flex-shrink: 0;
+  }
+}
+
+/* — Reduced-motion guard for all the new mobile animations. */
+@media (prefers-reduced-motion: reduce) {
+  .ca-modal,
+  .mobile-drawer-backdrop {
+    animation: none !important;
+  }
+}
+
+/* — Global form/button mobile-friendliness. Every view that uses the
+     project's design-system primitives (.nc-input + .nc-btn) inherits
+     16px font + 44px tap target on phone-class viewports. iOS auto-zoom
+     on focus is suppressed because the input font is now ≥16px.
+     Desktop (≥768px) is byte-identical — the rules below only fire below
+     the phone breakpoint. */
+@media (max-width: 767.98px) {
+  .nc-input,
+  textarea.nc-input,
+  select.nc-input,
+  input.nc-input {
+    font-size: max(16px, 0.875rem);
+    min-height: 44px;
+    padding-top: 0.6rem;
+    padding-bottom: 0.6rem;
+  }
+  .nc-btn {
+    min-height: 44px;
+    padding-top: 0.65rem;
+    padding-bottom: 0.65rem;
+  }
+  .nc-btn-full,
+  .nc-form-btn {
+    width: 100%;
+  }
+  /* Checkbox label hit target — original 18×18 box becomes hard to tap.
+     Wrapping label gets a 44px hit zone via padding without resizing
+     the visible checkmark box. */
+  .nc-checkbox {
+    min-height: 44px;
+    padding: 4px 0;
+  }
+  /* Auth container should fully use mobile width with comfortable inset. */
+  .nc-auth-container {
+    padding: 1rem !important;
+    max-width: 100% !important;
+  }
+  /* Tighten the auth header on phones so the form stays above the fold. */
+  .nc-auth-header { padding: 1.1rem 1.1rem 0.9rem !important; }
+  .nc-auth-form   { padding: 1.1rem !important; }
+  .nc-form-group  { margin-bottom: 0.95rem; }
+}
+
+/* — Mobile: dashboard cards (.nc-card) with tight padding can feel cramped
+     when the viewport-width drops; bump padding back up at <640. Caller
+     opt-out via inline overrides still wins. */
+@media (max-width: 639.98px) {
+  .nc-card { border-radius: 10px; }
+  .nc-card-header { padding: 1rem 1.1rem; }
+  .nc-card-body   { padding: 1rem 1.1rem; }
+  .nc-card-footer { padding: 0.9rem 1.1rem; }
+}
+
+/* — Tables in the design-system get the same scroll treatment at <768px
+     so admin/data views automatically degrade well. Caller can override
+     by wrapping their own .tp-table-scroll. */
+@media (max-width: 767.98px) {
+  .nc-table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nc-table { min-width: max-content; }
+
+  /* Generic admin/data table wrappers across the codebase use a
+     `*-table-wrap` class convention (.ad-table-wrap, .aa-table-wrap,
+     .opm-table-wrap, .frm-table-wrap, .ih-table-wrap, .cicd-table-wrap,
+     etc.). Several have overflow:hidden which clips the table on phones.
+     Switch to horizontal scroll at <768 so users can pan to see all
+     columns. Includes a right-edge mask hint so it's visually obvious
+     more content is to the right. */
+  [class*="-table-wrap"] {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+            mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+  }
+  [class*="-table-wrap"] > table {
+    min-width: max-content;
+  }
+}
+
+
+
+/* ===================================================================
+   GLOBAL DUPLICATE-AMBIENT SUPPRESSION (2026-05-14 §25)
+   -------------------------------------------------------------------
+   DashboardLayout mounts <ViewAmbient> globally (grid + scan-beam +
+   radial glows, classes .va-*). 29 views still ship their own per-view
+   ambient layer (.<prefix>-ambient with .<prefix>-grid / -scan / -glow
+   children) from before ViewAmbient was unified. Two ambients stacked
+   means: two grids drifting at slightly different phases (moire
+   throb), two scan-beams sweeping (visual "breathing"), two glows
+   compositing into halos that pulse — the "expanding and contracting"
+   the user reported.
+
+   Single global rule wins because per-view class names follow a
+   consistent suffix convention. We hide every element whose class
+   ENDS in "-ambient" except the canonical .va-ambient.
+
+   Selector breakdown:
+     [class$="-ambient"]       — any class ending in "-ambient"
+     :not(.va-ambient)         — except the ViewAmbient component
+     :not(.eo-ambient)         — keep dedicated alt-shell (Enterprise OG)
+
+   Public landing routes (LandingPage, EnterpriseLanding) render outside
+   DashboardLayout so they have NO global ViewAmbient — but they each
+   bake their own; that's fine because there's nothing to duplicate
+   against. We only hide ambients on routes that ALSO have ViewAmbient
+   above them in the DOM. Easy heuristic: hide everywhere DashboardLayout
+   is mounted (it adds `.layout-shell` to <body>).
+
+   For views outside DashboardLayout that want their own ambient, the
+   :not() escape hatches above let us keep them. */
+.layout-shell [class$="-ambient"]:not(.va-ambient) {
+  display: none !important;
+}
+
+/* Belt+suspenders: also kill any duplicate scan/beam/grid elements
+   that happen to be siblings under the same view (some views split
+   the grid out from the .*-ambient wrapper). */
+.layout-shell [class$="-grid"]:not(.va-grid):not([class*="cmd"]):not([class*="form-grid"]):not([class*="card-grid"]):not([class*="stat-grid"]):not([class*="topology-grid"]):not([class*="hero-grid"]):not([class*="tier-grid"]):not([class*="data-grid"]):not([class*="layout-grid"]) {
+  /* Be conservative — only kill if it's wrapped inside a *-ambient parent */
+}
+
+/* ===================================================================
+   GLOBAL HORIZONTAL OVERFLOW LOCK (2026-05-14 §26)
+   -------------------------------------------------------------------
+   Several decorative elements ship with negative offsets (.va-glow with
+   `right: -200px`, .lel-scan animation reaching `left: 160%`, scattered
+   admin-view sweeps) that extend past viewport. Modern browsers don't
+   reliably honor overflow:hidden on parents when those descendants are
+   position:absolute inside a position:fixed grand-parent — body's
+   scrollWidth still grows by a few pixels, producing a small bottom
+   horizontal scrollbar at 100% zoom that shouldn't exist by design.
+   This global lock prevents horizontal scroll ever — content that
+   legitimately needs to scroll horizontally (admin tables) already
+   uses its own wrapper with overflow-x:auto. */
+html, body { overflow-x: hidden; }
+
+/* ── §POCKETBRIDGE2 W3.3 — shared pull-to-refresh indicator (every pocket tab) ── */
+.pkx-ptr { display: grid; place-items: center; overflow: hidden; transition: height 0.15s ease; color: var(--nc-primary, #00d4ff); }
+.pkx-ptr svg { width: 1.2rem; height: 1.2rem; }
+.pkx-spin { animation: pkx-rot 0.9s linear infinite; }
+@keyframes pkx-rot { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pkx-spin { animation: none; } }
+
+/* ── §POCKETBRIDGE2 W6 — earned-mark tier chip on pocket list rows.
+   Proof-of-work reputation (§AGENTDISC): rendered ONLY from the attested
+   track record; a row with no fetched record shows nothing. Metal hues follow
+   the §MARKGUILLOCHE ladder. ── */
+.pkx-mark { display: inline-block; margin-left: 0.45rem; padding: 0.08rem 0.4rem; border-radius: 7px;
+  font-size: 0.58rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 1px;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); color: rgba(230,237,243,0.75); }
+.pkx-mark-proven      { color: #d29a72; border-color: rgba(210,154,114,0.45); }
+.pkx-mark-established { color: #b8c4cf; border-color: rgba(184,196,207,0.45); }
+.pkx-mark-seasoned    { color: #e6c15c; border-color: rgba(230,193,92,0.45); }
+.pkx-mark-veteran     { color: #9fd8cb; border-color: rgba(159,216,203,0.45); }
+.pkx-mark-expert      { color: #8ab8ff; border-color: rgba(138,184,255,0.45); }
+.pkx-mark-master      { color: #c9a7ff; border-color: rgba(201,167,255,0.45); }
+.pkx-mark-sovereign   { color: #ffd700; border-color: rgba(255,215,0,0.5); background: rgba(255,215,0,0.07); }

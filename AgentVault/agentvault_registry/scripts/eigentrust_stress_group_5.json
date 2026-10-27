@@ -1,0 +1,42 @@
+[
+  {
+    "label": "Echo-1",
+    "registry": "A",
+    "did": "did:cos:be9438b6-dda9-b1bb-0cb2",
+    "client_id": "agent-f34cd059bed606c4",
+    "client_secret": "cos_secret_9b89aab86dc8f09abf7c7e578a289a8846a9e2b6b4a572a310eb29e7770d8750",
+    "type": "data-analyst"
+  },
+  {
+    "label": "Echo-2",
+    "registry": "A",
+    "did": "did:cos:e9db05ea-799b-72cf-a32b",
+    "client_id": "agent-60fc1c649c5be12b",
+    "client_secret": "cos_secret_df134ab009680a2b4c3fecc6a85c85636d83d188ebdebeb1da16b0e2620e8af7",
+    "type": "code-reviewer"
+  },
+  {
+    "label": "Echo-3",
+    "registry": "A",
+    "did": "did:cos:3829c64a-8264-831e-edcd",
+    "client_id": "agent-d9602c2ca890ac6d",
+    "client_secret": "cos_secret_65ce6ba5c47d098582c820a6ce55ae31053570f0e84ceaa552d3d576a2fc7cc7",
+    "type": "market-maker"
+  },
+  {
+    "label": "Echo-4",
+    "registry": "B",
+    "did": "did:cos:6c4416a6-78d8-3a98-997f",
+    "client_id": "agent-4e9bbac4b3e9dd2a",
+    "client_secret": "cos_secret_1f1df3c1468a61416f46c8ce2a7f30842a7da50c9700ca385ef2f1400a82322d",
+    "type": "risk-assessor"
+  },
+  {
+    "label": "Echo-5",
+    "registry": "B",
+    "did": "did:cos:31ebf927-8467-4feb-dfdb",
+    "client_id": "agent-45ab9e81da91b599",
+    "client_secret": "cos_secret_0247e4de45c96f73d9333363989ca1e4eaf1f198d58fcdeae6245716e75814ae",
+    "type": "compliance-auditor"
+  }
+]

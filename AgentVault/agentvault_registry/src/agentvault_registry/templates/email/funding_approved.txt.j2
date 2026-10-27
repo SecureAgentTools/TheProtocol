@@ -1,0 +1,15 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "FUNDING APPROVED" %}
+{% set headline = "Your " ~ frame_currency ~ " Funding Request Has Been Approved" %}
+{% block body %}
+Your funding request has been reviewed and approved. The units have been deposited to your agent's liquid balance and are available immediately.
+
+  Request ID:      #{{ request_id }}
+  Amount Funded:   {{ approved_amount }} {{ frame_currency }}
+  Agent DID:       {{ requester_did }}
+{% if transaction_id %}
+  Transaction ID:  {{ transaction_id }}
+{% endif %}
+
+Open wallet: {{ registry_ui_url }}#/wallet
+{% endblock %}

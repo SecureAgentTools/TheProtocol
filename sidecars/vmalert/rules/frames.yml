@@ -1,0 +1,101 @@
+# §FRAMEKIT P3.1 (2026-09-12) — THE ALERTS A FRAME SHIPS WITH. Every rule is label-generic (the target
+# labels sidecars.py writes: component / frame / env / job) and every metric named here is one the
+# registry, TEG, EventStore or the auditor actually exports — checked against a live frame the day this
+# was written. The P2 starter carried `eventstore_supply_delta` (exported by nothing) and `job="frames"`
+# (a label the per-target job override removes): two rules that could never fire, which is the
+# gate-that-cannot-fail class. Thresholds are from measurement (eu/asia/sbx, 2026-09-12): card-pull
+# cadence 6h (age seen 5.9h), balance outbox 7-day max 36, ledger freshness on a quiet frame 5.7h (so
+# NO freshness rule: a quiet network is not a defect).
+# Route order matters on the receiving alertmanager: `page|critical` FIRST, continue false (§PAGEROUTE).
+groups:
+  - name: frames
+    rules:
+      - alert: FrameComponentDown
+        expr: up{component=~"registry|teg|event-store"} == 0
+        for: 3m
+        labels: { severity: warning, domain: frames }
+        annotations:
+          summary: "{{ $labels.frame }} {{ $labels.component }} is down ({{ $labels.instance }} unreachable for 3m)"
+          description: "The scrape target has failed for 3 minutes. A registry that cannot be scraped is usually a registry that cannot be reached; a TEG or EventStore down means the registry's money and ledger writes are failing behind a healthy /health."
+      - alert: FrameRegistryDown
+        expr: up{component="registry"} == 0
+        for: 10m
+        labels: { severity: critical, domain: frames }
+        annotations:
+          summary: "{{ $labels.frame }} registry has been unreachable for 10m"
+          description: "Ten minutes without a scrape of the registry. Peers park their pulls for 33 minutes on a refused dial (registry:federation:cardpull_*), so a short outage becomes a longer federation gap."
+      - alert: FrameSupplyInvariantBreach
+        expr: auditor_status == 0
+        for: 5m
+        labels: { severity: critical, domain: money }
+        annotations:
+          summary: "Supply invariant BREACH on {{ $labels.frame }} (the auditor's atomic delta is not 0)"
+          description: "issued - destroyed + transit_net != circulating for 5 minutes, read by the independent auditor from the ledger. The prime directive. Read auditor.../api/auditor/breaches before touching anything; never a direct write on TEG balances."
+      - alert: FrameAuditorStale
+        expr: auditor_last_cycle_age_seconds > 4 * 3600
+        for: 10m
+        labels: { severity: warning, domain: money }
+        annotations:
+          summary: "The auditor has not completed a cycle for {{ $labels.frame }} in 4h — Δ is UNMEASURED, not OK"
+          description: "A quiet auditor reads exactly like a healthy one. The auditor completes a cycle every AUDIT_INTERVAL seconds (60 by default and in the kit); four hours without one means its read of this frame's ledger is failing (DSN, network, or the frame's EventStore)."
+      - alert: FrameCardPullSyncStale
+        expr: time() - max by (frame) (agent_card_pullsync_last_cycle_unixtime{component="registry"}) > 28800
+        for: 10m
+        labels: { severity: warning, domain: federation }
+        annotations:
+          summary: "{{ $labels.frame }}: no completed agent-card pull cycle in 8h (cadence 6h)"
+          description: "increase() cannot see a counter that reboots; the age of the last completed cycle can. Either the leader-elected worker is wedged or its Redis lease is lost."
+      - alert: FrameBalanceOutboxBacklog
+        expr: max by (frame) (teg_balance_outbox_backlog{component="teg"}) > 50
+        for: 15m
+        labels: { severity: warning, domain: money }
+        annotations:
+          summary: "{{ $labels.frame }} TEG cannot deliver {{ $value }} balance events to the ledger"
+          description: "The TEG's outbox to the EventStore has been above 50 for 15 minutes (7-day maximum on a busy frame: 36). Δ is being measured on a lagging book; the EventStore or its mTLS sidecar is refusing the writer."
+      - alert: FrameTreasuryLow
+        expr: max by (frame, scope) (registry_treasury_low_active{component="registry"}) == 1
+        for: 10m
+        labels: { severity: page, domain: money }
+        annotations:
+          summary: "{{ $labels.frame }} treasury below its notify floor (scope {{ $labels.scope }})"
+          description: "Below the genesis floor new grants defer and operator seeds refuse. The only sanctioned top-up is an operator mint through the registry proxy (one TokensIssued), never the TEG's /admin/token/issue."
+      - alert: FrameWorkerFailingPersistently
+        expr: |
+          (time() - worker_last_success_unixtime{component="registry"} > 3 * 3600)
+          and on(frame, worker) (increase(worker_cycles_total{component="registry", outcome="error"}[1h]) > 0)
+        for: 10m
+        labels: { severity: warning, domain: workers }
+        annotations:
+          summary: "{{ $labels.frame }} worker {{ $labels.worker }} has not succeeded in {{ $value | humanizeDuration }} and is still erroring"
+          description: "The loop turns and every cycle fails — the shape of a failure that logs like a quiet healthy cycle. Read last_error at GET /api/v1/admin/workers/vitals."
+      - alert: FrameFederationPeersUnreachable
+        expr: federation_peers_reachable_ratio{component="registry"} < 0.9
+        for: 30m
+        labels: { severity: warning, domain: federation }
+        annotations:
+          summary: "{{ $labels.frame }} reaches fewer than 90% of its federation peers"
+          description: "Derived from the peer rows the fan-out stamps; a peer parked after a refused dial stays unreachable for 33 minutes, so this waits 30m before speaking."
+      # §OPAKIT (2026-10-07, his words "prepare a new frame kit including opa metrics"): OPA is scraped (job opa,
+      # component opa) and the registry counts every shadow decision (opa_decisions_total{policy, decision,
+      # source=python|opa|mismatch}); nothing turned either into a signal. Replayed over 7 days of the production cluster
+      # and the sandbox the day this was written: the two registry-side rules silent (every OPA answer agreed, none erred).
+      - alert: FrameOpaDown
+        expr: up{component="opa"} == 0
+        for: 5m
+        labels: { severity: warning, domain: frames }
+        annotations:
+          summary: "{{ $labels.frame }} OPA is down ({{ $labels.instance }} unreachable for 5m)"
+          description: "In shadow (OPA_ENFORCE=false) nothing is refused while OPA is down, but no decision is mirrored either: the record an enforce decision would rest on has a gap. Under enforce too, a decision OPA does not answer falls back to the registry's own (Python) answer: OPA then tightens nothing."
+      - alert: FrameOpaShadowMismatch
+        expr: sum by (frame, policy) (increase(opa_decisions_total{source="mismatch"}[30m])) > 0
+        labels: { severity: warning, domain: frames }
+        annotations:
+          summary: "{{ $labels.frame }}: OPA disagreed with the registry on {{ $labels.policy }} in the last 30m"
+          description: "OPA's answer differed from the registry's own decision. In shadow the registry's answer stands; read the divergence record (the [OPA-SHADOW] log lines with match=false) before turning OPA_ENFORCE on."
+      - alert: FrameOpaQueryErrors
+        expr: sum by (frame) (increase(opa_decisions_total{source="opa", decision="error"}[15m])) / clamp_min(sum by (frame) (increase(opa_decisions_total{source="opa"}[15m])), 1) > 0.05
+        for: 15m
+        labels: { severity: warning, domain: frames }
+        annotations:
+          summary: "{{ $labels.frame }}: {{ $value | humanizePercentage }} of the registry's OPA queries got no decision"
+          description: "The registry asked OPA and got no boolean back (unreachable, TLS refused, or a policy with no result). In shadow nothing is refused; under enforce these decisions fall back to the registry's own (Python) answer, so OPA tightens none of them."

@@ -1,0 +1,122 @@
+# {{NAME}}-theprotocol — the console of frame {{NAME}} (§BATCH10, rendered by standup_driver --render-vhosts).
+# Ledger sockets: ONLY this frame's own (/ws/events and its apex-style alias /ws/events-{{NAME}}). The FE streams other
+# frames' ledgers only where a registry publishes them through /api/v1/public/fresh-network (data, not vhost edits).
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{NAME}}.{{DOMAIN}};
+    location /.well-known/acme-challenge/ { root /var/www/html; default_type text/plain; }
+    location / { return 301 https://$host$request_uri; }
+}
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name {{NAME}}.{{DOMAIN}};
+    ssl_certificate     /etc/letsencrypt/live/{{NAME}}.{{DOMAIN}}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{NAME}}.{{DOMAIN}}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    # 🔴 findings row 196 — THE FULL SET, FROM THE ONE SOURCE OF TRUTH. This template shipped four
+    # headers inline and registry-a served ten; the six a fresh frame never got were CSP,
+    # X-XSS-Protection, Permissions-Policy and the three Cross-Origin-* policies. Same shape as
+    # rows 194 and 170: a protection that lived on the old nodes and in no template.
+    # ⚠ add_header ACCUMULATES rather than supersedes, so the four inline copies are GONE — keeping
+    # them alongside the include served each one twice (measured on the first reload).
+    # ⚠ SERVER level, deliberately: an add_header inside a location wipes every inherited one,
+    # which is why the /ws/ block below carries a comment saying it must not set any.
+    # Verified in a real browser before shipping: 0 CSP violations across 5 authenticated routes
+    # on EU, 6 cross-origin peer logos still decoding.
+    include snippets/theprotocol-security-headers.conf;
+    client_max_body_size 50M;
+    location /.well-known/acme-challenge/ { root /var/www/html; default_type text/plain; }
+    location /api/v1/ws {
+        proxy_pass http://127.0.0.1:{{PORT_REGISTRY}}/api/v1/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400s;
+    }
+    location /ws/events {
+        proxy_pass http://127.0.0.1:{{PORT_ES}}/ws/events;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400s;
+    }
+    location /ws/events-{{NAME}} {
+        proxy_pass http://127.0.0.1:{{PORT_ES}}/ws/events;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 86400s;
+    }
+{{PEER_LEDGER_BLOCK}}
+    location /ws/ {
+        proxy_pass http://127.0.0.1:{{PORT_REGISTRY}}/api/v1/ws/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400s;
+    }
+{{DIRECTORY_BLOCK}}
+    # §EXTREACH 2026-10-14: the exact /mcp, so POST /mcp is served instead of redirected (nginx 301s it to /mcp/ when
+    # only the prefix block below exists, and the app 307s /mcp/ back to /mcp: a loop). A copy of that block.
+    location = /mcp {
+        proxy_pass http://127.0.0.1:{{PORT_REGISTRY}}/mcp;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+    location /mcp/ {
+        proxy_pass http://127.0.0.1:{{PORT_REGISTRY}}/mcp/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+    location / {
+        proxy_pass http://127.0.0.1:{{PORT_REGISTRY}};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # 🔴 findings row 194 — PIN EVERY HEADER THE APP TREATS AS PROOF OF IDENTITY.
+        # `mtls_auth.get_client_spiffe_id` parses X-SSL-Client-Cert OUT OF THE REQUEST HEADERS
+        # and trusts the SPIFFE ID inside it — there is no CA verification on that path. That is
+        # safe only while the edge guarantees a client cannot supply the header. This template
+        # set none of them, so every frame it stood up accepted a SELF-SIGNED certificate in a
+        # plain header as proof of identity, on public 443. PROVEN on EU 2026-09-07 with an
+        # UNTRUSTED trust domain: the app answered "Client SPIFFE ID from untrusted domain",
+        # i.e. it had already accepted the header as a client certificate — a trusted domain in
+        # the SAN would have authenticated. The exploit was not completed.
+        # registry-a's vhost has pinned these since it was written; the fresh cluster was born
+        # without it, which is the §FRAMELIC class exactly: a protection that lived on the old
+        # nodes and in no template. $ssl_client_* are EMPTY on a vhost that requests no client
+        # certificate, which is what we want — the only way to present one is the mTLS lane.
+        proxy_set_header X-SSL-Client-Cert   $ssl_client_escaped_cert;
+        proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
+        proxy_set_header X-SSL-Client-S-DN   $ssl_client_s_dn;
+        # and the shared-secret rail: one bearer token whose identity the caller declares has no
+        # business being presentable from the public console host (findings row 195 gates it in
+        # the app as well, so a future vhost that forgets this line is not the only thing left).
+        proxy_set_header X-Federation-Secret    "";
+        proxy_set_header X-Federation-SPIFFE-ID "";
+        proxy_set_header X-Federation-License   "";
+        proxy_read_timeout 300s;
+    }
+}

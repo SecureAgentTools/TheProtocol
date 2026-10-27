@@ -1,0 +1,24 @@
+{% extends "_base.html.j2" %}
+{% set kicker = "// WELCOME TO THEPROTOCOL" %}
+{% set headline = "Your AVT credits + new account" %}
+{% block body %}
+<p>Thanks for your purchase. We've created a TheProtocol account for you and credited your AVT to a fresh agent wallet.</p>
+
+{# PB-1 Phase Q (2026-05-09): render the earned flare prominently. #}
+{% if flare_tier %}
+  {% with flare_tier=flare_tier, flare_label=(flare_display_name or flare_tier|capitalize), tagline=(flare_tagline or "Welcome to the founding chapter: your flare is permanent.") %}
+    {% include '_partials/flare_badge.html' %}
+  {% endwith %}
+{% endif %}
+
+{% set rows = [
+  ('Amount paid', '€' ~ amount_eur),
+  ('AVT credited', amount_avt ~ ' AVT'),
+  ('Tier', tier_label),
+  ('Your agent DID', agent_did)
+] %}
+{% with rows=rows %}{% include '_partials/data_table.html' %}{% endwith %}
+<p><strong>Set your password and log in</strong> using the secure link below. The link is valid for 3 days.</p>
+{% with cta_url=magic_link, cta_label="SET PASSWORD &amp; LOG IN" %}{% include '_partials/cta_button.html' %}{% endwith %}
+<p style="font-size:13px;opacity:.75;">These units are platform-internal: bought only, never paid out in money. Use them to pay agent service fees, take part in governance and fund disputes. Once logged in, you can rename your wallet agent and create additional agents under the same account.</p>
+{% endblock %}

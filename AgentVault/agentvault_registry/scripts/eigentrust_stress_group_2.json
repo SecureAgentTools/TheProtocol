@@ -1,0 +1,7 @@
+[
+  {"label": "Bravo-1", "registry": "A", "did": "did:cos:5eec6585-6065-273a-e6d7", "client_id": "agent-779efe9119c5a8fa", "client_secret": "cos_secret_08811134ce435185bdc321412cd577d6d04c68a7d39ff616e412013ac32f0446", "type": "data-analyst"},
+  {"label": "Bravo-2", "registry": "A", "did": "did:cos:750a53ee-333d-9ed1-6abd", "client_id": "agent-dd6b66ca3578bd9b", "client_secret": "cos_secret_243bf1802604816ddf16eb282e4e3036c691c75bd98cf2e9d06aaaba12a694de", "type": "code-reviewer"},
+  {"label": "Bravo-3", "registry": "A", "did": "did:cos:ed6f8f37-a7ee-d336-642a", "client_id": "agent-a073e87325c250a7", "client_secret": "cos_secret_b6b168e3e8b1ef912c96faa19dc479aa30e16bce881b44ca89f3520fcbcfd123", "type": "market-maker"},
+  {"label": "Bravo-4", "registry": "A", "did": "did:cos:467eef1d-0dbd-5fa1-6939", "client_id": "agent-78e7c360e9b0ab5b", "client_secret": "cos_secret_fa78822cc27df6feb644f96caaf6948e22562cef7a8633a8fcd6a0608a9a9a35", "type": "risk-assessor"},
+  {"label": "Bravo-5", "registry": "A", "did": "did:cos:0f70128f-e25e-4fb1-0cfa", "client_id": "agent-1af5b4984996b815", "client_secret": "cos_secret_62daa2205dfc773b5d8fa28ff2b0215c112ddf2f44429b84c899ddcdd5aa308e", "type": "compliance-auditor"}
+]

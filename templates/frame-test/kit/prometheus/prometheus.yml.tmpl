@@ -1,0 +1,70 @@
+# §SOVKIT (2026-09-14) — THE FRAME'S OWN PROMETHEUS. A sovereign frame scrapes itself: its registry, TEG, event
+# store, auditor and OPA, plus the sidecars that watch it. Every target carries its own `job` label (the names the
+# registry's status page keys history on: <name>-registry / -teg / -event-store) and the frame-generic labels the
+# shipped rules select on (component, frame). Rendered per frame; nothing here is edited by hand afterwards.
+# §MTLSHOPS T2 (2026-09-15): the kit's own services (OPA, Alertmanager, this Prometheus) are scraped over TLS with the kit's
+# certificate from the kit cert-writer's volume, verified under each server's own name; the apps' jobs move with S4.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+rule_files:
+  - /etc/prometheus/rules/*.yml
+alerting:
+  alertmanagers:
+    # Alertmanager requires the kit's client certificate (its web.config.file, client_allowed_sans).
+    - scheme: https
+      tls_config: { ca_file: /certs/bundle.0.pem, cert_file: /certs/svid.0.pem, key_file: /certs/svid.0.key, server_name: '{{REGISTRY_NAME}}-alertmanager' }
+      static_configs:
+        - targets: ['{{REGISTRY_NAME}}-alertmanager:9093']
+scrape_configs:
+  - job_name: '{{REGISTRY_NAME}}-registry'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['{{REGISTRY_NAME}}-registry:8000']
+        labels: { component: 'registry', frame: '{{REGISTRY_NAME}}' }
+  - job_name: '{{REGISTRY_NAME}}-teg'
+    metrics_path: '/metrics'
+    # §MTLSHOPS T2 (S4): through the TEG's terminator with the kit's certificate (the TEG listens only on its socket)
+    scheme: https
+    tls_config: { ca_file: /certs/bundle.0.pem, cert_file: /certs/svid.0.pem, key_file: /certs/svid.0.key, server_name: '{{REGISTRY_NAME}}-nginx-teg' }
+    static_configs:
+      - targets: ['{{REGISTRY_NAME}}-nginx-teg:8443']
+        labels: { component: 'teg', frame: '{{REGISTRY_NAME}}' }
+  - job_name: '{{REGISTRY_NAME}}-event-store'
+    metrics_path: '/metrics'
+    # §MTLSHOPS T2 (S4, 2026-09-15): the store listens on a socket; its scrape lane is nginx-event-store, on the kit's certificate
+    scheme: https
+    tls_config: { ca_file: /certs/bundle.0.pem, cert_file: /certs/svid.0.pem, key_file: /certs/svid.0.key, server_name: '{{REGISTRY_NAME}}-nginx-event-store' }
+    static_configs:
+      - targets: ['{{REGISTRY_NAME}}-nginx-event-store:8443']
+        labels: { component: 'event-store', frame: '{{REGISTRY_NAME}}' }
+  # the sidecars themselves: a dead auditor reads exactly like a quiet one unless its age is scraped
+  - job_name: '{{REGISTRY_NAME}}-auditor'
+    scrape_interval: 30s
+    metrics_path: '/metrics'
+    # §MTLSHOPS T2 (S4, 2026-09-15): the auditor listens on a socket; its scrape lane is nginx-auditor, on the kit's certificate
+    scheme: https
+    tls_config: { ca_file: /certs/bundle.0.pem, cert_file: /certs/svid.0.pem, key_file: /certs/svid.0.key, server_name: '{{REGISTRY_NAME}}-nginx-auditor' }
+    static_configs:
+      - targets: ['{{REGISTRY_NAME}}-nginx-auditor:8443']
+        labels: { component: 'auditor', frame: '{{REGISTRY_NAME}}', tier: 'sidecar' }
+  - job_name: '{{REGISTRY_NAME}}-opa'
+    scrape_interval: 30s
+    metrics_path: '/metrics'
+    scheme: https
+    tls_config: { ca_file: /certs/bundle.0.pem, cert_file: /certs/svid.0.pem, key_file: /certs/svid.0.key, server_name: '{{REGISTRY_NAME}}-opa' }
+    static_configs:
+      - targets: ['{{REGISTRY_NAME}}-opa:8181']
+        labels: { component: 'opa', frame: '{{REGISTRY_NAME}}', tier: 'sidecar' }
+  - job_name: '{{REGISTRY_NAME}}-alertmanager'
+    scheme: https
+    tls_config: { ca_file: /certs/bundle.0.pem, cert_file: /certs/svid.0.pem, key_file: /certs/svid.0.key, server_name: '{{REGISTRY_NAME}}-alertmanager' }
+    static_configs:
+      - targets: ['{{REGISTRY_NAME}}-alertmanager:9093']
+        labels: { component: 'alertmanager', frame: '{{REGISTRY_NAME}}', tier: 'sidecar' }
+  - job_name: '{{REGISTRY_NAME}}-prometheus'
+    scheme: https
+    tls_config: { ca_file: /certs/bundle.0.pem, cert_file: /certs/svid.0.pem, key_file: /certs/svid.0.key, server_name: '{{REGISTRY_NAME}}-prometheus' }
+    static_configs:
+      - targets: ['localhost:9090']
+        labels: { component: 'prometheus', frame: '{{REGISTRY_NAME}}', tier: 'sidecar' }

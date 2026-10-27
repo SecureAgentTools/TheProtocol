@@ -1,0 +1,74 @@
+[tool.poetry]
+name = "agentvault-monorepo"
+version = "1.0.0" # Overall project version
+description = "AgentVault Monorepo - Core Libraries, CLI, Registry, SDK, and Testing Utilities"
+authors = ["Raphael Zbigniew Jeziorny <r.jeziorny@theprotocol.cloud>"]
+license = "AGPL-3.0-or-later"
+readme = "README.md"
+package-mode = false # Tell Poetry this root file doesn't define an installable package
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.12" # Consistent Python version
+
+# --- Aggregate CORE dependencies from ALL sub-packages ---
+# Library & CLI Conflict Resolution: httpx 0.28 (§DEPS 2026-09-27, the version every image runs)
+httpx = { version = ">=0.28.1,<0.29", extras = ["http2", "brotli"] }
+pydantic = ">=2.0,<3.0"
+python-dotenv = ">=1.0,<2.0"
+keyring = { version = ">=25.7,<26", optional = true } # Keep optional
+asyncclick = ">=8.0,<9.0"
+rich = ">=13.0,<15.0" # Use broader range compatible with both CLI & Registry
+
+# Registry API
+fastapi = ">=0.141.1,<0.142"
+python-multipart = ">=0.0.32,<0.1"   # FastAPI stopped installing it at 0.112
+uvicorn = { version = ">=0.54,<0.55", extras = ["standard"] }
+sqlalchemy = ">=2.0.54,<2.1"   # 2.1 defaults postgresql:// to psycopg 3
+asyncpg = ">=0.31,<0.32"
+alembic = ">=1.20,<1.21"
+pydantic-settings = ">=2.15,<2.16"
+slowapi = ">=0.1.10,<0.2.0"
+psycopg2-binary = ">=2.9.13,<3.0.0" # For Alembic offline
+fastapi-mail = ">=1.6.8,<2.0"
+pyjwt = ">=2.13,<2.14" # the registry's JWTs since §DEPS (python-jose is gone); spiffe 0.3.1 declares pyjwt<2.14
+bcrypt = ">=5.0.0,<6" # the registry calls it directly (core/secret_hash.py); passlib is gone
+structlog = ">=26.1,<27.0" # the version the registry and the TEG run
+cryptography = ">=50.0.1,<51.0.0" # the version the registry and the TEG run
+
+# Server SDK
+typer = ">=0.27" # Needed for SDK packager script
+
+# TEG Layer MVP
+requests = ">=2.34.2,<3.0.0"
+spiffe = ">=0.3.1,<0.4" # the registry's (the TEG no longer installs it)
+# --- Path Dependencies for Sub-Packages ---
+# These tell Poetry where to find the local packages
+agentvault = { path = "./agentvault_library", develop = true }
+agentvault-cli = { path = "./agentvault_cli", develop = true }
+agentvault-registry-api = { path = "./agentvault_registry", develop = true }
+agentvault-server-sdk = { path = "./agentvault_server_sdk", develop = true }
+agentvault-testing-utils = { path = "./agentvault_testing_utils", develop = true }
+agentvault-teg-layer-mvp = { path = "./agentvault_teg_layer_mvp", develop = true }
+
+[tool.poetry.group.dev.dependencies]
+# --- Aggregate DEV dependencies from ALL sub-packages ---
+pytest = ">=9.1,<10" # Consistent range
+pytest-asyncio = ">=1.4,<2" # Needed by library, registry, server-sdk
+pytest-mock = ">=3.16,<4.0" # Needed by library, cli
+respx = ">=0.23,<0.24" # Needed by library, testing-utils (httpx 0.28)
+pytest-httpx = ">=0.36,<0.37" # compatible with httpx 0.28
+freezegun = ">=1.1.0" # Needed by server-sdk
+pathspec = ">=1.1,<2.0" # For .gitignore parsing in compile script
+# --- ADDED: MkDocs Dependencies ---
+mkdocs = ">=1.5.0,<2.0.0"
+mkdocs-material = ">=9.0.0,<10.0.0" # --- END ADDED ---
+
+
+# --- Extras (Keep keyring optionality) ---
+[tool.poetry.extras]
+os-keyring = ["keyring"]
+
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

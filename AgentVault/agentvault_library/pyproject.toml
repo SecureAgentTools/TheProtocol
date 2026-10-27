@@ -1,0 +1,70 @@
+# agentvault_library/pyproject.toml
+[project]
+    name = "agentvault"
+    version = "1.0.0"
+    description = "Core Python client library for A2A protocol, MCP, and secure local key management."
+    authors = [{ name = "Raphael Zbigniew Jeziorny", email = "r.jeziorny@theprotocol.cloud" }]
+    license = { text = "Apache-2.0" }
+    readme = "README.md"
+    requires-python = ">=3.10"
+    keywords = ["ai", "agent", "a2a", "mcp", "security", "api", "llm", "interoperability", "key-management", "python", "library", "client", "sdk"]
+    classifiers = [
+        "Development Status :: 3 - Alpha",
+        "Intended Audience :: Developers",
+        "License :: OSI Approved :: Apache Software License",
+        "Operating System :: OS Independent",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
+        "Topic :: Security",
+        "Topic :: Software Development :: Libraries :: Python Modules",
+        "Topic :: Communications",
+        "Topic :: Scientific/Engineering :: Artificial Intelligence",
+        "Typing :: Typed",
+    ]
+    dependencies = [
+        "httpx[http2,brotli]>=0.27,<1.0",
+        "pydantic>=2.0,<3.0",
+        "python-dotenv>=1.0,<2.0",
+    ]
+    [project.optional-dependencies]
+    os_keyring = ["keyring>=24,<26"]
+    dev = [
+        "pytest>=9.1,<10",
+        "pytest-asyncio>=1.4,<2",
+        "pytest-mock>=3.16,<4.0",
+        "respx>=0.23,<0.24",   # §DEPS: 0.22+ is the line that supports httpx 0.28
+    ]
+    [project.urls]
+    Homepage = "https://theprotocol.cloud"
+    Documentation = "https://theprotocol.cloud"
+    Repository = "https://github.com/SecureAgentTools/TheProtocol"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "agentvault"
+version = "1.0.0"
+description = "Core Python client library for A2A protocol, MCP, and secure local key management."
+authors = ["Raphael Zbigniew Jeziorny <r.jeziorny@theprotocol.cloud>"]
+packages = [{include = "agentvault", from = "src"}]
+
+[tool.poetry.dependencies]
+python = ">=3.10"
+httpx = {version = ">=0.27,<1.0", extras = ["http2", "brotli"]}
+pydantic = ">=2.0,<3.0"
+python-dotenv = ">=1.0,<2.0"
+keyring = {version = ">=24,<26", optional = true}
+
+[tool.poetry.extras]
+os_keyring = ["keyring"]
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=9.1,<10"
+pytest-asyncio = ">=1.4,<2"
+pytest-mock = ">=3.16,<4.0"
+respx = ">=0.23,<0.24"

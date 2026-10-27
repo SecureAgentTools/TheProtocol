@@ -1,0 +1,1979 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# docker-compose.frame-test.yml — Frame Test (ephemeral sovereign frame)
+# Trust domain: spiffe://{{TRUST_DOMAIN}}
+# Generated at: {{TS}}
+# REGISTRY_NAME={{REGISTRY_NAME}}
+# frame-template-generation: f5-per-service
+#   A resume refuses a stack rendered under another generation or with another service set (template_shape.py, R31):
+#   bump this line whenever a template change makes resuming an older stack unsafe.
+#
+# Usage (invoked by frame_test_provisioner.py via docker:cli container):
+#   docker compose -f docker-compose.frame-test.yml --env-file .env.frame-test up -d
+#
+# Image pins reuse the sandbox images (identical code path to frame-b images)
+# to avoid 3-minute rebuilds every test run.
+# ═══════════════════════════════════════════════════════════════════════════
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# D12 (2026-09-05): this compose carries TOPOLOGY ONLY. Every value under an
+# `environment:` block is `${FT_...}`, read from the frame's own env file
+# (rendered from templates/frame-test/frame-test.env.tmpl, passed as --env-file).
+# `.forgejo/checks/frame_template_contract.py` R6 refuses an inline literal here.
+services:
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # DATABASES
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # §MTLSHOPS T3 (2026-09-15, agentvault2-b5): the data identity. Its own SPIFFE ID (spiffe://<td>/service/data), its DNS
+  # names ({{REGISTRY_NAME}}-db, -teg-db, -es-db, -redis), never federated, so its bundle holds the frame's own root only; its own
+  # selector label (the provisioner's data entry keys on it) and its own volume, mounted by the four data services alone.
+  # The databases never hold the registry's SVID, which the TEG and the store accept as an internal service. It needs no
+  # network: the SPIRE agent's socket is a volume.
+  {{REGISTRY_NAME}}-data-cert-writer:
+    image: ${FT_CERT_WRITER_IMAGE:-agentvault2-cert-writer-test-a:spire1153}
+    container_name: {{REGISTRY_NAME}}-data-cert-writer
+    restart: unless-stopped
+    environment:
+      SPIRE_SOCKET: ${FT_CW_SPIRE_SOCKET}
+      CERT_DIR: ${FT_CERT_DIR}
+      REFRESH_SEC: ${FT_CW_REFRESH_SEC}
+      SERVICE_NAME: ${FT_DATACW_SERVICE_NAME}
+    volumes:
+      - {{VOL_PREFIX}}_spire_socket_{{TS}}:/opt/spire/sockets:ro
+      - {{VOL_PREFIX}}_data_certs_{{TS}}:/certs
+    network_mode: none
+    labels:
+      # the SPIRE selector keys on THIS label (the provisioner's data entry); change it and the databases get no SVID
+      - "com.agentvault.service=svid-writer-data-{{REGISTRY_NAME}}"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /certs/.ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    depends_on:
+      {{REGISTRY_NAME}}-spire-agent:
+        condition: service_started
+    logging: *default-logging
+
+  {{REGISTRY_NAME}}-db:
+    image: postgres:18.6-alpine
+    container_name: {{REGISTRY_NAME}}-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${FT_DB_POSTGRES_DB}
+      POSTGRES_USER: ${FT_DB_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${PG_PASS_REGISTRY}
+    # §MTLSHOPS T3 (2026-09-15, agentvault2-b5): TLS only over TCP, on the data identity's SVID. kit/data-tls/pg-tls-sync.sh
+    # keeps the server's 0600 copy on the tmpfs and reloads it on rotation; kit/data-tls/pg_hba.conf rejects plain TCP and
+    # asks every TLS client for a certificate the frame's root signed plus the role's password. Local connections stay
+    # trusted: pg_isready, the entrypoint's first-boot init and every `docker exec psql` use the socket.
+    entrypoint: ["sh", "/opt/data-tls/pg-tls-sync.sh"]
+    command: postgres -c shared_buffers=128MB -c effective_cache_size=512MB -c work_mem=4MB -c ssl=on -c ssl_cert_file=/run/pgtls/server/svid.0.pem -c ssl_key_file=/run/pgtls/server/svid.0.key -c ssl_ca_file=/run/pgtls/server/bundle.0.pem -c ssl_min_protocol_version=TLSv1.2 -c hba_file=/opt/data-tls/pg_hba.conf
+    tmpfs:
+      - /run/pgtls:size=1m,mode=0755
+    volumes:
+      - {{VOL_PREFIX}}_pg_registry_{{TS}}:/var/lib/postgresql
+      - {{VOL_PREFIX}}_data_certs_{{TS}}:/certs:ro
+      - {{STACK_DIR}}/kit/data-tls:/opt/data-tls:ro
+    networks:
+      - {{NET_NAME}}
+    depends_on:
+      {{REGISTRY_NAME}}-data-cert-writer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U registry -d frame_test_registry"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    logging: *default-logging
+
+  {{REGISTRY_NAME}}-teg-db:
+    image: postgres:18.6-alpine
+    container_name: {{REGISTRY_NAME}}-teg-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${FT_TEGDB_POSTGRES_DB}
+      POSTGRES_USER: ${FT_TEGDB_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${PG_PASS_TEG}
+    # §MTLSHOPS T3: TLS only over TCP, as {{REGISTRY_NAME}}-db above
+    entrypoint: ["sh", "/opt/data-tls/pg-tls-sync.sh"]
+    command: postgres -c shared_buffers=128MB -c effective_cache_size=512MB -c work_mem=4MB -c ssl=on -c ssl_cert_file=/run/pgtls/server/svid.0.pem -c ssl_key_file=/run/pgtls/server/svid.0.key -c ssl_ca_file=/run/pgtls/server/bundle.0.pem -c ssl_min_protocol_version=TLSv1.2 -c hba_file=/opt/data-tls/pg_hba.conf
+    tmpfs:
+      - /run/pgtls:size=1m,mode=0755
+    volumes:
+      - {{VOL_PREFIX}}_pg_teg_{{TS}}:/var/lib/postgresql
+      - {{VOL_PREFIX}}_data_certs_{{TS}}:/certs:ro
+      - {{STACK_DIR}}/kit/data-tls:/opt/data-tls:ro
+    networks:
+      - {{NET_NAME}}
+    depends_on:
+      {{REGISTRY_NAME}}-data-cert-writer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teg -d frame_test_teg"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    logging: *default-logging
+
+  {{REGISTRY_NAME}}-es-db:
+    image: postgres:18.6-alpine
+    container_name: {{REGISTRY_NAME}}-es-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${FT_ESDB_POSTGRES_DB}
+      POSTGRES_USER: ${FT_ESDB_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${PG_PASS_EVENT_STORE}
+    # §MTLSHOPS T3: TLS only over TCP, as {{REGISTRY_NAME}}-db above
+    entrypoint: ["sh", "/opt/data-tls/pg-tls-sync.sh"]
+    command: postgres -c shared_buffers=256MB -c effective_cache_size=1GB -c work_mem=8MB -c ssl=on -c ssl_cert_file=/run/pgtls/server/svid.0.pem -c ssl_key_file=/run/pgtls/server/svid.0.key -c ssl_ca_file=/run/pgtls/server/bundle.0.pem -c ssl_min_protocol_version=TLSv1.2 -c hba_file=/opt/data-tls/pg_hba.conf
+    tmpfs:
+      - /run/pgtls:size=1m,mode=0755
+    volumes:
+      - {{VOL_PREFIX}}_pg_events_{{TS}}:/var/lib/postgresql
+      - {{VOL_PREFIX}}_data_certs_{{TS}}:/certs:ro
+      - {{STACK_DIR}}/kit/data-tls:/opt/data-tls:ro
+    networks:
+      - {{NET_NAME}}
+    depends_on:
+      {{REGISTRY_NAME}}-data-cert-writer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eventstore -d frame_test_events"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    logging: *default-logging
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # INFRASTRUCTURE
+  # ═══════════════════════════════════════════════════════════════════════
+
+  {{REGISTRY_NAME}}-redis:
+    image: redis:8.10.2-alpine
+    container_name: {{REGISTRY_NAME}}-redis
+    restart: unless-stopped
+    # §MTLSHOPS G3 (2026-09-15): only the frame's three clients authenticate (ACL users registry, store, teg); the default
+    # user answers PING and nothing else, which keeps the healthcheck below. The provisioner renders the file: SHA-256
+    # hashes only, 0600, owned by the image's redis uid (999).
+    # §MTLSHOPS T3 (2026-09-15, agentvault2-b5): TLS only (--port 0) on the data identity's SVID, and every client needs a
+    # certificate the frame's root signed (--tls-auth-clients yes) as well as its ACL user. kit/data-tls/redis-tls-reload.sh
+    # copies the ACL file into the tmpfs with a reload user only this container knows, and reloads the TLS files over the
+    # unix socket, which the healthcheck and the host's tooling use too.
+    entrypoint: ["sh", "/opt/data-tls/redis-tls-reload.sh"]
+    command: ["--port", "0", "--tls-port", "6379", "--tls-cert-file", "/certs/svid.0.pem", "--tls-key-file", "/certs/svid.0.key", "--tls-ca-cert-file", "/certs/bundle.0.pem", "--tls-auth-clients", "yes", "--unixsocket", "/run/redis/redis.sock", "--unixsocketperm", "700", "--aclfile", "/run/redis/users.acl", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no", "--protected-mode", "no", "--bind", "0.0.0.0"]
+    tmpfs:
+      - /run/redis:size=1m,mode=0700,uid=999,gid=999
+    volumes:
+      - {{STACK_DIR}}/redis/users.acl:/usr/local/etc/redis/users.acl:ro
+      - {{VOL_PREFIX}}_data_certs_{{TS}}:/certs:ro
+      - {{STACK_DIR}}/kit/data-tls:/opt/data-tls:ro
+    networks:
+      - {{NET_NAME}}
+    depends_on:
+      {{REGISTRY_NAME}}-data-cert-writer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-s", "/run/redis/redis.sock", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging: *default-logging
+
+  {{REGISTRY_NAME}}-redpanda:
+    # §SOVKIT K1 (his word 2026-09-14 "2 yes": Kafka is PRIVATE to the event store; "fix kafka scalable and secure").
+    # agentvault2-85 measured the store's consumer writing whatever arrived on :9092 with none of the HTTP route's
+    # checks, reachable by every container on the frame network. Now the broker sits on the ledger-only network with
+    # the store as its ONLY client: SASL/SCRAM-SHA-256 over TLS on the frame's own SVID (§MTLSHOPS S5: from its own volume,
+    # which redpanda-tls below rewrites in place, because the broker follows the files by inotify); the superuser created at
+    # bootstrap (RP_BOOTSTRAP_USER, the
+    # password the provisioner creates); the admin API and both HTTP proxies on the container's loopback; developer_mode
+    # off (fsync on: a ledger bus that acks what it has not written is the wrong bus; needs --memory 1G); auto-create
+    # off, the topics created with explicit partitions by {{REGISTRY_NAME}}-redpanda-init before the store starts.
+    # The RPK_* lines make `docker exec ... rpk` inside the container authenticate as the store's user (the driver's
+    # gate, the consumer-lag check). No port reaches the host. Every value is env-interpolated (D12).
+    image: redpandadata/redpanda:v26.2.3
+    container_name: {{REGISTRY_NAME}}-redpanda
+    restart: unless-stopped
+    environment:
+      RP_BOOTSTRAP_USER: ${FT_ES_KAFKA_SASL_USERNAME}:${FT_ES_KAFKA_SASL_PASSWORD}:${FT_ES_KAFKA_SASL_MECHANISM}
+      RPK_BROKERS: ${FT_KAFKA_BOOTSTRAP_SERVERS}
+      RPK_USER: ${FT_ES_KAFKA_SASL_USERNAME}
+      RPK_PASS: ${FT_ES_KAFKA_SASL_PASSWORD}
+      RPK_SASL_MECHANISM: ${FT_ES_KAFKA_SASL_MECHANISM}
+      RPK_TLS_ENABLED: ${FT_KAFKA_RPK_TLS_ENABLED}
+      RPK_TLS_CA: ${FT_ES_KAFKA_SSL_CAFILE}
+    command:
+      - redpanda start
+      - --smp 1
+      - --memory 1G
+      - --reserve-memory 0M
+      - --overprovisioned
+      - --node-id 0
+      - --kafka-addr internal://0.0.0.0:9092
+      - --advertise-kafka-addr internal://{{REGISTRY_NAME}}-redpanda:9092
+      - --rpc-addr 127.0.0.1:33145
+      - --advertise-rpc-addr 127.0.0.1:33145
+      - --set redpanda.admin=[{"address":"127.0.0.1","port":9644}]
+      - --set redpanda.enable_sasl=true
+      - --set redpanda.superusers=["${FT_ES_KAFKA_SASL_USERNAME}"]
+      - --set redpanda.developer_mode=false
+      - --set redpanda.auto_create_topics_enabled=false
+      - --set redpanda.kafka_api=[{"address":"0.0.0.0","port":9092,"name":"internal","authentication_method":"sasl"}]
+      - --set redpanda.kafka_api_tls=[{"name":"internal","enabled":true,"cert_file":"/redpanda-tls/svid.0.pem","key_file":"/redpanda-tls/svid.0.key","truststore_file":"/redpanda-tls/bundle.0.pem","require_client_auth":false}]
+      - --set pandaproxy.pandaproxy_api=[{"address":"127.0.0.1","port":8082}]
+      - --set schema_registry.schema_registry_api=[{"address":"127.0.0.1","port":8081}]
+    volumes:
+      # /certs for rpk's own CA inside the container (RPK_TLS_CA); the listener's files come from redpanda-tls
+      - {{VOL_PREFIX}}_redpanda_certs_{{TS}}:/certs:ro
+      - {{VOL_PREFIX}}_redpanda_tls_{{TS}}:/redpanda-tls:ro
+      # §SOVKIT K1: the topics on a NAMED volume. Without one every recreate made a fresh anonymous volume, and a record the
+      # store's HTTP route had already answered 202 for but the consumer had not yet read was gone with it.
+      - {{VOL_PREFIX}}_redpanda_data_{{TS}}:/var/lib/redpanda/data
+    networks:
+      - {{NET_NAME}}_ledger
+    depends_on:
+      # the SVID it serves, once redpanda-tls has written a certificate and key that match (after a host reboot the broker
+      # still exits and restarts until then: unless-stopped)
+      {{REGISTRY_NAME}}-redpanda-tls:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+
+  # §MTLSHOPS S5 (2026-09-15, agentvault2-85's finding, measured by b5): Redpanda reloads kafka_api_tls by inotify, and the
+  # cert-writer replaces its files (busybox cp: DELETE then CREATE, all three within 3 ms). Every live broker re-watched the
+  # new certificate and bundle by name and never the key again, so from the first SVID rotation after its start each reload
+  # failed "certificate and key do not match" and it served its old SVID until that expired. This copies the frame's SVID
+  # into a broker-only volume IN PLACE (the same inodes, so the broker's watches never go away), only when the certificate's
+  # public key equals the key's, and only the files whose content changed. A named volume on purpose: after a host reboot
+  # docker starts the broker by its restart policy, before this sidecar, and the broker finds the last pair there.
+  # Healthy = the broker volume holds a matching pair, the last successful sync is under 35 s old, and the copy is not within
+  # a quarter of its own lifetime of expiry (agentvault2-85: a dead cert-writer leaves every sync succeeding on an ageing pair).
+  # Not half: a half margin holds only while every rotation's copy (up to REFRESH_SEC plus 10 s after it) lands before
+  # half-life; sbx-alpha's 13:59Z rotation came 11 minutes before half-life (85), and a quarter does not depend on that lead.
+  {{REGISTRY_NAME}}-redpanda-tls:
+    image: ${FT_CERT_WRITER_IMAGE:-agentvault2-cert-writer-test-a:spire1153}
+    container_name: {{REGISTRY_NAME}}-redpanda-tls
+    restart: unless-stopped
+    network_mode: none
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mkdir -p /tmp/in
+        while true; do
+          if cp /certs/svid.0.pem /tmp/in/c && cp /certs/svid.0.key /tmp/in/k && cp /certs/bundle.0.pem /tmp/in/b \
+             && c=$$(openssl x509 -in /tmp/in/c -noout -pubkey 2>/dev/null) && [ -n "$$c" ] \
+             && k=$$(openssl pkey -in /tmp/in/k -pubout 2>/dev/null) && [ "$$c" = "$$k" ] \
+             && grep -q 'BEGIN CERTIFICATE' /tmp/in/b; then
+            cmp -s /tmp/in/k /redpanda-tls/svid.0.key || cat /tmp/in/k > /redpanda-tls/svid.0.key
+            cmp -s /tmp/in/c /redpanda-tls/svid.0.pem || cat /tmp/in/c > /redpanda-tls/svid.0.pem
+            cmp -s /tmp/in/b /redpanda-tls/bundle.0.pem || cat /tmp/in/b > /redpanda-tls/bundle.0.pem
+            nb=$$(openssl x509 -in /tmp/in/c -noout -dateopt iso_8601 -startdate | cut -d= -f2 | tr -d Z) \
+              && na=$$(openssl x509 -in /tmp/in/c -noout -dateopt iso_8601 -enddate | cut -d= -f2 | tr -d Z) \
+              && echo $$(( ($$(date -u -d "$$na" +%s) - $$(date -u -d "$$nb" +%s)) / 4 )) > /tmp/in/margin \
+              && touch /tmp/in/synced
+          fi
+          sleep 10
+        done
+    volumes:
+      - {{VOL_PREFIX}}_redpanda_certs_{{TS}}:/certs:ro
+      - {{VOL_PREFIX}}_redpanda_tls_{{TS}}:/redpanda-tls
+    depends_on:
+      {{REGISTRY_NAME}}-cert-writer:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "c=$$(openssl x509 -in /redpanda-tls/svid.0.pem -noout -pubkey) && k=$$(openssl pkey -in /redpanda-tls/svid.0.key -pubout) && [ -n \"$$c\" ] && [ \"$$c\" = \"$$k\" ] && [ $$(( $$(date +%s) - $$(stat -c %Y /tmp/in/synced) )) -lt 35 ] && openssl x509 -in /redpanda-tls/svid.0.pem -noout -checkend $$(cat /tmp/in/margin) >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      # a fresh frame's first SVID waits for SPIRE and its entries; the first passing check ends this period at once
+      start_period: 300s
+    logging: *default-logging
+
+  {{REGISTRY_NAME}}-redpanda-init:
+    # §SOVKIT K1: the ledger topics with explicit partitions (auto-create is off), before the store's first connect.
+    # One-shot and idempotent (describe, else create); the store waits for it to complete successfully; a later
+    # `compose up` runs it again and it changes nothing. It authenticates as the store's user over SASL/TLS.
+    image: redpandadata/redpanda:v26.2.3
+    container_name: {{REGISTRY_NAME}}-redpanda-init
+    restart: "no"
+    environment:
+      RPK_BROKERS: ${FT_KAFKA_BOOTSTRAP_SERVERS}
+      RPK_USER: ${FT_ES_KAFKA_SASL_USERNAME}
+      RPK_PASS: ${FT_ES_KAFKA_SASL_PASSWORD}
+      RPK_SASL_MECHANISM: ${FT_ES_KAFKA_SASL_MECHANISM}
+      RPK_TLS_ENABLED: ${FT_KAFKA_RPK_TLS_ENABLED}
+      RPK_TLS_CA: ${FT_ES_KAFKA_SSL_CAFILE}
+      LEDGER_TOPICS: ${FT_KAFKA_TOPICS}
+      LEDGER_PARTITIONS: ${FT_KAFKA_PARTITIONS}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        i=0
+        until rpk cluster info >/dev/null 2>&1; do
+          i=$$((i+1)); [ "$$i" -ge 60 ] && { echo "redpanda-init: the broker never answered over SASL/TLS"; exit 1; }
+          sleep 2
+        done
+        for t in $$(echo "$$LEDGER_TOPICS" | tr ',' ' '); do
+          rpk topic describe "$$t" >/dev/null 2>&1 || rpk topic create "$$t" -p "$$LEDGER_PARTITIONS" -r 1 || exit 1
+        done
+        rpk topic list
+    volumes:
+      - {{VOL_PREFIX}}_redpanda_certs_{{TS}}:/certs:ro
+    networks:
+      - {{NET_NAME}}_ledger
+    depends_on:
+      {{REGISTRY_NAME}}-redpanda:
+        condition: service_healthy
+    logging: *default-logging
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # SPIRE (trust domain: {{TRUST_DOMAIN}})
+  # ═══════════════════════════════════════════════════════════════════════
+
+  {{REGISTRY_NAME}}-spire-server:
+    image: ghcr.io/spiffe/spire-server:1.15.3
+    container_name: {{REGISTRY_NAME}}-spire-server
+    restart: unless-stopped
+    user: "0:0"
+    command: ["-config", "/opt/spire/conf/server.conf"]
+    volumes:
+      - {{STACK_DIR}}/server.conf:/opt/spire/conf/server.conf:ro
+      - {{STACK_DIR}}/x509pop-certs:/opt/spire/conf/x509pop-certs:ro
+      - {{VOL_PREFIX}}_spire_data_{{TS}}:/opt/spire/data
+    ports:
+      # gRPC: chained operator's spire-agent reaches us via host.docker.internal:8191.
+      # Bundle: remote peers fetch the trust bundle during federation.
+      - "{{PORT_SPIRE_GRPC}}:8081"
+      - "{{PORT_SPIRE_BUNDLE}}:8443"
+    networks:
+      - {{NET_NAME}}
+      - {{IDENTITY_NET_NAME}}
+    healthcheck:
+      test: ["CMD", "/opt/spire/bin/spire-server", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging: *default-logging
+
+  {{REGISTRY_NAME}}-spire-agent:
+    image: ghcr.io/spiffe/spire-agent:1.15.3
+    container_name: {{REGISTRY_NAME}}-spire-agent
+    restart: unless-stopped
+    user: "0:0"
+    pid: "host"
+    command: ["-config", "/opt/spire/conf/agent.conf"]
+    volumes:
+      - {{STACK_DIR}}/agent.conf:/opt/spire/conf/agent.conf:ro
+      - {{STACK_DIR}}/x509pop-certs:/opt/spire/conf/x509pop-certs:ro
+      - {{VOL_PREFIX}}_spire_socket_{{TS}}:/opt/spire/sockets
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - {{NET_NAME}}
+      - {{IDENTITY_NET_NAME}}
+    depends_on:
+      {{REGISTRY_NAME}}-spire-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/opt/spire/bin/spire-agent", "healthcheck", "-socketPath", "/opt/spire/sockets/agent.sock"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging: *default-logging
+
+  {{REGISTRY_NAME}}-cert-writer:
+    image: ${FT_CERT_WRITER_IMAGE:-agentvault2-cert-writer-test-a:spire1153}
+    container_name: {{REGISTRY_NAME}}-cert-writer
+    restart: unless-stopped
+    environment:
+      SPIRE_SOCKET: ${FT_CW_SPIRE_SOCKET}
+      CERT_DIR: ${FT_CERT_DIR}
+      REFRESH_SEC: ${FT_CW_REFRESH_SEC}
+      SERVICE_NAME: ${FT_CW_SERVICE_NAME}
+      KEY_MODE: ${FT_CW_KEY_MODE}
+      KEY_OWNER: ${FT_CW_KEY_OWNER}
+    volumes:
+      - {{VOL_PREFIX}}_spire_socket_{{TS}}:/opt/spire/sockets:ro
+      - {{VOL_PREFIX}}_svid_certs_{{TS}}:/certs
+    networks:
+      - {{NET_NAME}}
+      - {{IDENTITY_NET_NAME}}
+    labels:
+      - "com.agentvault.service=svid-writer-{{REGISTRY_NAME}}"
+    depends_on:
+      {{REGISTRY_NAME}}-spire-agent:
+        condition: service_started
+    logging: *default-logging
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # NGINX FEDERATION (mTLS)
+  # ═══════════════════════════════════════════════════════════════════════
+
+  {{REGISTRY_NAME}}-teg-cert-writer:
+    # §F5 (2026-09-26): this identity's own writer; only the service(s) named in its volume's consumers mount it
+    image: ${FT_CERT_WRITER_IMAGE:-agentvault2-cert-writer-test-a:spire1153}
+    container_name: {{REGISTRY_NAME}}-teg-cert-writer
+    restart: unless-stopped
+    environment:
+      SPIRE_SOCKET: ${FT_CW_SPIRE_SOCKET}
+      CERT_DIR: ${FT_CERT_DIR}
+      REFRESH_SEC: ${FT_CW_REFRESH_SEC}
+      SERVICE_NAME: ${FT_TEGCW_SERVICE_NAME}
+      KEY_MODE: ${FT_CW_KEY_MODE}
+      KEY_OWNER: ${FT_TEGCW_KEY_OWNER}
+    volumes:
+      - {{VOL_PREFIX}}_spire_socket_{{TS}}:/opt/spire/sockets:ro
+      - {{VOL_PREFIX}}_teg_certs_{{TS}}:/certs
+    networks:
+      - {{NET_NAME}}
+    labels:
+      - "com.agentvault.service=svid-writer-teg-{{REGISTRY_NAME}}"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /certs/.ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    depends_on:
+      {{REGISTRY_NAME}}-spire-agent:
+        condition: service_started
+    logging: *default-logging
+
+  {{REGISTRY_NAME}}-es-cert-writer:
+    # §F5 (2026-09-26): this identity's own writer; only the service(s) named in its volume's consumers mount it
+    image: ${FT_CERT_WRITER_IMAGE:-agentvault2-cert-writer-test-a:spire1153}
+    container_name: {{REGISTRY_NAME}}-es-cert-writer
+    restart: unless-stopped
+    environment:
+      SPIRE_SOCKET: ${FT_CW_SPIRE_SOCKET}
+      CERT_DIR: ${FT_CERT_DIR}
+      REFRESH_SEC: ${FT_CW_REFRESH_SEC}
+      SERVICE_NAME: ${FT_ESCW_SERVICE_NAME}
+      KEY_MODE: ${FT_CW_KEY_MODE}
+      KEY_OWNER: ${FT_ESCW_KEY_OWNER}
+    volumes:
+      - {{VOL_PREFIX}}_spire_socket_{{TS}}:/opt/spire/sockets:ro
+      - {{VOL_PREFIX}}_es_certs_{{TS}}:/certs
+    networks:
+      - {{NET_NAME}}
+    labels:
+      - "com.agentvault.service=svid-writer-es-{{REGISTRY_NAME}}"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /certs/.ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    depends_on:
+      {{REGISTRY_NAME}}-spire-agent:
+        condition: service_started
+    logging: *default-logging
+
+  {{REGISTRY_NAME}}-nginx-event-store-cert-writer:
+    # §F5 (2026-09-26): this identity's own writer; only the service(s) named in its volume's consumers mount it
+    image: ${FT_CERT_WRITER_IMAGE:-agentvault2-cert-writer-test-a:spire1153}
+    container_name: {{REGISTRY_NAME}}-nginx-event-store-cert-writer
+    restart: unless-stopped
+    environment:
+      SPIRE_SOCKET: ${FT_CW_SPIRE_SOCKET}
+      CERT_DIR: ${FT_CERT_DIR}
+      REFRESH_SEC: ${FT_CW_REFRESH_SEC}
+      SERVICE_NAME: ${FT_NGESCW_SERVICE_NAME}
+      KEY_MODE: ${FT_CW_KEY_MODE}
+      KEY_OWNER: ${FT_NGESCW_KEY_OWNER}
+    volumes:
+      - {{VOL_PREFIX}}_spire_socket_{{TS}}:/opt/spire/sockets:ro
+      - {{VOL_PREFIX}}_nginx_event_store_certs_{{TS}}:/certs
+    networks:
+      - {{NET_NAME}}
+    labels:
+      - "com.agentvault.service=svid-writer-nginx-event-store-{{REGISTRY_NAME}}"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /certs/.ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    depends_on:
+      {{REGISTRY_NAME}}-spire-agent:
+        condition: service_started
+    logging: *default-logging
+
+  {{REGISTRY_NAME}}-nginx-teg-cert-writer:
+    # §F5 (2026-09-26): this identity's own writer; only the service(s) named in its volume's consumers mount it
+    image: ${FT_CERT_WRITER_IMAGE:-agentvault2-cert-writer-test-a:spire1153}
+    container_name: {{REGISTRY_NAME}}-nginx-teg-cert-writer
+    restart: unless-stopped
+    environment:
+      SPIRE_SOCKET: ${FT_CW_SPIRE_SOCKET}
+      CERT_DIR: ${FT_CERT_DIR}
+      REFRESH_SEC: ${FT_CW_REFRESH_SEC}
+      SERVICE_NAME: ${FT_NGTEGCW_SERVICE_NAME}
+      KEY_MODE: ${FT_CW_KEY_MODE}
+      KEY_OWNER: ${FT_NGTEGCW_KEY_OWNER}
+    volumes:
+      - {{VOL_PREFIX}}_spire_socket_{{TS}}:/opt/spire/sockets:ro
+      - {{VOL_PREFIX}}_nginx_teg_certs_{{TS}}:/certs
+    networks:
+      - {{NET_NAME}}
+    labels:
+      - "com.agentvault.service=svid-writer-nginx-teg-{{REGISTRY_NAME}}"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /certs/.ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    depends_on:
+      {{REGISTRY_NAME}}-spire-agent:
+        condition: service_started
+    logging: *default-logging
+
+  {{REGISTRY_NAME}}-nginx-federation-cert-writer:
+    # §F5 (2026-09-26): this identity's own writer; only the service(s) named in its volume's consumers mount it
+    image: ${FT_CERT_WRITER_IMAGE:-agentvault2-cert-writer-test-a:spire1153}
+    container_name: {{REGISTRY_NAME}}-nginx-federation-cert-writer
+    restart: unless-stopped
+    environment:
+      SPIRE_SOCKET: ${FT_CW_SPIRE_SOCKET}
+      CERT_DIR: ${FT_CERT_DIR}
+      REFRESH_SEC: ${FT_CW_REFRESH_SEC}
+      SERVICE_NAME: ${FT_NGFEDCW_SERVICE_NAME}
+      KEY_MODE: ${FT_CW_KEY_MODE}
+      KEY_OWNER: ${FT_NGFEDCW_KEY_OWNER}
+    volumes:
+      - {{VOL_PREFIX}}_spire_socket_{{TS}}:/opt/spire/sockets:ro
+      - {{VOL_PREFIX}}_nginx_federation_certs_{{TS}}:/certs
+    networks:
+      - {{NET_NAME}}
+    labels:
+      - "com.agentvault.service=svid-writer-nginx-federation-{{REGISTRY_NAME}}"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /certs/.ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    depends_on:
+      {{REGISTRY_NAME}}-spire-agent:
+        condition: service_started
+    logging: *default-logging
+
+  {{REGISTRY_NAME}}-redpanda-cert-writer:
+    # §F5 (2026-09-26): this identity's own writer; only the service(s) named in its volume's consumers mount it
+    image: ${FT_CERT_WRITER_IMAGE:-agentvault2-cert-writer-test-a:spire1153}
+    container_name: {{REGISTRY_NAME}}-redpanda-cert-writer
+    restart: unless-stopped
+    environment:
+      SPIRE_SOCKET: ${FT_CW_SPIRE_SOCKET}
+      CERT_DIR: ${FT_CERT_DIR}
+      REFRESH_SEC: ${FT_CW_REFRESH_SEC}
+      SERVICE_NAME: ${FT_RPCW_SERVICE_NAME}
+      KEY_MODE: ${FT_CW_KEY_MODE}
+      KEY_OWNER: ${FT_RPCW_KEY_OWNER}
+    volumes:
+      - {{VOL_PREFIX}}_spire_socket_{{TS}}:/opt/spire/sockets:ro
+      - {{VOL_PREFIX}}_redpanda_certs_{{TS}}:/certs
+    networks:
+      - {{NET_NAME}}
+    labels:
+      - "com.agentvault.service=svid-writer-redpanda-{{REGISTRY_NAME}}"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /certs/.ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    depends_on:
+      {{REGISTRY_NAME}}-spire-agent:
+        condition: service_started
+    logging: *default-logging
+
+  {{REGISTRY_NAME}}-nginx-federation:
+    image: nginx:1.30.5-alpine
+    container_name: {{REGISTRY_NAME}}-nginx-federation
+    restart: unless-stopped
+    volumes:
+      # §MTLSHOPS G1/G2 (2026-09-15): mounted as a TEMPLATE; the entrypoint substitutes the two proxy markers into conf.d at
+      # start (the secrets stay in the env file and the container env, never in a rendered file in the stack dir).
+      - {{STACK_DIR}}/nginx-federation-frame-test.conf:/etc/nginx/templates/federation.conf.template:ro
+      - {{STACK_DIR}}/nginx-entrypoint.sh:/opt/nginx-entrypoint.sh:ro
+      - {{VOL_PREFIX}}_nginx_federation_certs_{{TS}}:/certs:ro
+      # §MTLSHOPS T2 (S4): its cross-teg location reaches the TEG's socket
+      - {{VOL_PREFIX}}_sock_teg_{{TS}}:/sock/teg
+    environment:
+      TEG_PROXY_TRUST_SECRET: ${FT_NGF_TEG_PROXY_TRUST_SECRET}
+      REGISTRY_PROXY_TRUST_SECRET: ${FT_NGF_REGISTRY_PROXY_TRUST_SECRET}
+    entrypoint: ["/bin/sh", "-c", "envsubst '$$TEG_PROXY_TRUST_SECRET $$REGISTRY_PROXY_TRUST_SECRET' < /etc/nginx/templates/federation.conf.template > /etc/nginx/conf.d/default.conf && exec /bin/sh /opt/nginx-entrypoint.sh"]
+    ports:
+      - "{{PORT_NGINX_FED}}:8443"
+    networks:
+      - {{NET_NAME}}
+      - {{IDENTITY_NET_NAME}}
+    depends_on:
+      {{REGISTRY_NAME}}-cert-writer:
+        condition: service_started
+    logging: *default-logging
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # TEG mTLS SIDECAR (§XFRAMETEG 2026-09-04)
+  # ═══════════════════════════════════════════════════════════════════════
+  # A PEER FRAME's registry dials this directly. `FX_RATE_MODE=pool` prices a
+  # cross-frame move off BOTH frames' `fx_reserve`, so the source frame reads
+  # `/api/v1/admin/fx/reserve` on the DESTINATION frame's TEG over mTLS. Without
+  # this service that read had nowhere to land — `_resolve_dest_teg_mtls_base`
+  # fell through to the peer's REGISTRY vhost, which 404s a TEG route, and every
+  # cross-registry transfer between two fresh frames answered 503 "FX pool:
+  # reserve read failed". Frame A has had `nginx-teg-a` on the identity network
+  # all along; this template simply never carried the service.
+  #
+  # ⚠ ON BOTH NETWORKS, unlike the cloud-operator sidecar, which is deliberately
+  # frame-local. A frame's TEG sidecar is peer-facing by design.
+  # ⚠ NOT host-exposed: peers reach it by container DNS on the shared identity
+  # net, so a host port would add surface without adding reach.
+  {{REGISTRY_NAME}}-nginx-teg:
+    image: nginx:1.30.5-alpine
+    container_name: {{REGISTRY_NAME}}-nginx-teg
+    restart: unless-stopped
+    volumes:
+      # §MTLSHOPS G1 (2026-09-15): mounted as a TEMPLATE; the entrypoint substitutes the TEG's proxy marker at start.
+      - {{STACK_DIR}}/nginx-teg-frame-test.conf:/etc/nginx/templates/teg.conf.template:ro
+      - {{STACK_DIR}}/nginx-entrypoint.sh:/opt/nginx-entrypoint.sh:ro
+      - {{VOL_PREFIX}}_nginx_teg_certs_{{TS}}:/certs:ro
+      - {{VOL_PREFIX}}_sock_teg_{{TS}}:/sock/teg
+    environment:
+      CERT_DIR: ${FT_CERT_DIR}
+      RELOAD_SEC: ${FT_NGT_RELOAD_SEC}
+      SERVICE_NAME: ${FT_NGT_SERVICE_NAME}
+      TEG_PROXY_TRUST_SECRET: ${FT_NGT_PROXY_TRUST_SECRET}
+    entrypoint: ["/bin/sh", "-c", "envsubst '$$TEG_PROXY_TRUST_SECRET' < /etc/nginx/templates/teg.conf.template > /etc/nginx/conf.d/default.conf && exec /bin/sh /opt/nginx-entrypoint.sh"]
+    networks:
+      - {{NET_NAME}}
+      - {{IDENTITY_NET_NAME}}
+    depends_on:
+      {{REGISTRY_NAME}}-cert-writer:
+        condition: service_started
+      {{REGISTRY_NAME}}-teg:
+        condition: service_healthy
+    healthcheck:
+      # Plain-HTTP :8080 health server inside the conf. Deliberately NOT the
+      # mTLS port: a healthcheck that needs a client cert reports the CERT's
+      # state, not the proxy's, and would mark a working sidecar unhealthy.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    labels:
+      - "com.agentvault.service=nginx-teg-{{REGISTRY_NAME}}"
+    logging: *default-logging
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # EVENTSTORE mTLS SIDECAR (§MTLSGAP 2026-09-08)
+  # ═══════════════════════════════════════════════════════════════════════
+  # His word: *"everything is mtls enforced … not acceptable for sandbox, it should be a
+  # realistic env."* Measured, the sandbox was exactly as realistic as production: this template
+  # rendered `-nginx-federation` and `-nginx-teg` and NO ES equivalent, so no frame ever stood up
+  # from it has had one, and every registry writes to its own ledger over plain http. The only ES
+  # gateway in the fleet is Frame A's — on the frame being retired.
+  #
+  # ⚠ ALONGSIDE plain http, not instead of it. `FT_EVENT_STORE_URL` is unchanged by this service;
+  # moving the writers onto the gateway is a separate deliberate step (§BATCH7: a bundle
+  # snapshotted at boot is the trust set of that boot).
+  # ⚠ NOT host-exposed. Callers reach it by container DNS on the frame's networks, so a host port
+  # would add surface without adding reach — the same reasoning as the TEG sidecar above.
+  {{REGISTRY_NAME}}-nginx-event-store:
+    image: nginx:1.30.5-alpine
+    container_name: {{REGISTRY_NAME}}-nginx-event-store
+    restart: unless-stopped
+    volumes:
+      # Mounted as a TEMPLATE: the entrypoint wrapper substitutes the ONE proxy-marker variable into conf.d at start
+      # (the secret stays in the env file and the container env, never in a rendered file at rest in the stack dir).
+      - {{STACK_DIR}}/nginx-event-store-frame-test.conf:/etc/nginx/templates/event-store.conf.template:ro
+      - {{STACK_DIR}}/nginx-entrypoint.sh:/opt/nginx-entrypoint.sh:ro
+      - {{VOL_PREFIX}}_nginx_event_store_certs_{{TS}}:/certs:ro
+      - {{VOL_PREFIX}}_sock_event-store_{{TS}}:/sock/event-store
+    environment:
+      CERT_DIR: ${FT_CERT_DIR}
+      RELOAD_SEC: ${FT_NGES_RELOAD_SEC}
+      SERVICE_NAME: ${FT_NGES_SERVICE_NAME}
+      ES_PROXY_TRUST_SECRET: ${FT_NGES_PROXY_TRUST_SECRET}
+    entrypoint: ["/bin/sh", "-c", "envsubst '$$ES_PROXY_TRUST_SECRET' < /etc/nginx/templates/event-store.conf.template > /etc/nginx/conf.d/default.conf && exec /bin/sh /opt/nginx-entrypoint.sh"]
+    networks:
+      - {{NET_NAME}}
+      - {{IDENTITY_NET_NAME}}
+    depends_on:
+      {{REGISTRY_NAME}}-cert-writer:
+        condition: service_started
+      {{REGISTRY_NAME}}-event-store:
+        condition: service_started
+    healthcheck:
+      # Plain-HTTP :8080 health server inside the conf, deliberately NOT the mTLS port: a
+      # healthcheck that needs a client cert reports the CERT's state, not the proxy's.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    labels:
+      - "com.agentvault.service=nginx-event-store-{{REGISTRY_NAME}}"
+    logging: *default-logging
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # EVENTSTORE
+  # ═══════════════════════════════════════════════════════════════════════
+
+  {{REGISTRY_NAME}}-event-store:
+    # §SOVKIT: the driver names the store's image (--es-image, the runner's images.event_store allowlist), the same
+    # shape as FT_REG_IMAGE / FT_TEG_IMAGE; the default is the last local build, for a hand-run standup only.
+    image: ${FT_ES_IMAGE:-agentvault2-event-store-test:latest}
+    container_name: {{REGISTRY_NAME}}-event-store
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://eventstore:${PG_PASS_EVENT_STORE}@{{REGISTRY_NAME}}-es-db:5432/frame_test_events
+      DATABASE_URL_SYNC: postgresql://eventstore:${PG_PASS_EVENT_STORE}@{{REGISTRY_NAME}}-es-db:5432/frame_test_events
+      # §MTLSHOPS T3: asyncpg reads these four (verify-full against the data SVID's names); it reads the key as the
+      # cert-writer writes it, so no private copy
+      PGSSLMODE: ${FT_PGSSLMODE}
+      PGSSLROOTCERT: ${FT_PGTLS_CERTS_ROOTCERT}
+      PGSSLCERT: ${FT_PGTLS_CERTS_CERT}
+      PGSSLKEY: ${FT_PGTLS_CERTS_KEY}
+      INTERNAL_API_KEY: ${EVENT_STORE_INTERNAL_API_KEY}
+      REDIS_URL: ${FT_ES_REDIS_URL}
+      UVICORN_WORKERS: ${FT_ES_UVICORN_WORKERS}
+      TRUSTED_SPIFFE_DOMAINS: ${FT_TRUSTED_SPIFFE_DOMAINS}
+      CROSS_FRAME_REPLICATION_ENABLED: ${FT_ES_CROSS_FRAME_REPLICATION_ENABLED}
+      CROSS_FRAME_PEERS: ${FT_ES_CROSS_FRAME_PEERS}
+      KAFKA_ENABLED: ${FT_KAFKA_ENABLED}
+      KAFKA_BOOTSTRAP_SERVERS: ${FT_KAFKA_BOOTSTRAP_SERVERS}
+      EVENTSTORE_HTTP_VIA_KAFKA: ${FT_ES_EVENTSTORE_HTTP_VIA_KAFKA}
+      # ── Fleet baseline (2026-09-04) ─────────────────────────────────────
+      # WS clients present a SPIRE JWT-SVID; the ES validates it against the
+      # registry's JWKS. Absent, the audience/JWKS are unset and the socket
+      # cannot authenticate anyone — both live sandbox frames hand-added these.
+      EVENTSTORE_JWT_AUDIENCE: ${FT_ES_EVENTSTORE_JWT_AUDIENCE}
+      EVENTSTORE_JWT_JWKS_URL: ${FT_ES_EVENTSTORE_JWT_JWKS_URL}
+      EVENTSTORE_WS_AUTH_REQUIRED: ${FT_ES_EVENTSTORE_WS_AUTH_REQUIRED}
+      KNOWN_INTERNAL_SERVICES: ${FT_ES_KNOWN_INTERNAL_SERVICES}
+      # §SOVKIT T2 (agentvault2-85): mTLS required from birth; the proxy marker its terminators must carry; its own td.
+      ES_PROXY_TRUST_SECRET: ${FT_ES_ES_PROXY_TRUST_SECRET}
+      EVENTSTORE_MTLS_REQUIRED: ${FT_ES_EVENTSTORE_MTLS_REQUIRED}
+      ES_OWN_TRUST_DOMAIN: ${FT_ES_ES_OWN_TRUST_DOMAIN}
+      KAFKA_CONSUMER_BATCH_SIZE: ${FT_ES_KAFKA_CONSUMER_BATCH_SIZE}
+      KAFKA_CONSUMER_BATCH_TIMEOUT_MS: ${FT_ES_KAFKA_CONSUMER_BATCH_TIMEOUT_MS}
+      # §SOVKIT K1 (2026-09-14, his word "2 yes"): the ONLY client of the ledger broker. SCRAM over TLS verified against
+      # the frame's bundle (the broker serves the frame's SVID), and every record signed: the consumer takes a record only
+      # when this store signed it (agentvault2-85's R1, ES_KAFKA_RECORD_AUTH=enforce from birth).
+      KAFKA_SECURITY_PROTOCOL: ${FT_ES_KAFKA_SECURITY_PROTOCOL}
+      KAFKA_SASL_MECHANISM: ${FT_ES_KAFKA_SASL_MECHANISM}
+      KAFKA_SASL_USERNAME: ${FT_ES_KAFKA_SASL_USERNAME}
+      KAFKA_SASL_PASSWORD: ${FT_ES_KAFKA_SASL_PASSWORD}
+      KAFKA_SSL_CAFILE: ${FT_ES_KAFKA_SSL_CAFILE}
+      ES_KAFKA_RECORD_AUTH: ${FT_ES_KAFKA_RECORD_AUTH}
+      FRAME_CURRENCY: ${FT_FRAME_CURRENCY}
+      PROMETHEUS_MULTIPROC_DIR: ${FT_ES_PROMETHEUS_MULTIPROC_DIR}
+    volumes:
+      - {{VOL_PREFIX}}_es_certs_{{TS}}:/certs:ro
+      - {{VOL_PREFIX}}_sock_event-store_{{TS}}:/sock/event-store
+    tmpfs:
+      - /tmp/prom_multiproc_es:size=16m,mode=1777
+    # §MTLSHOPS T2 (S4, 2026-09-15): the store listens on a unix socket shared with nginx-event-store (the in-frame mTLS
+    # lane) and nginx-edge (the host's door) alone; a multi-worker parent refuses a socket file a killed run left, so the
+    # command removes it first. Its health is asked over that socket.
+    networks:
+      - {{NET_NAME}}
+      - {{IDENTITY_NET_NAME}}
+      - {{NET_NAME}}_ledger   # §SOVKIT K1: the broker's network; the store and the broker are its only members
+    depends_on:
+      {{REGISTRY_NAME}}-es-db:
+        condition: service_healthy
+      {{REGISTRY_NAME}}-redis:
+        condition: service_healthy
+      # §SOVKIT K1: the topics exist (explicit partitions, auto-create is off) before the store's first connect
+      {{REGISTRY_NAME}}-redpanda-init:
+        condition: service_completed_successfully
+    command: ["sh", "-c", "umask 000 && rm -f /sock/event-store/event-store.sock && exec uvicorn src.main:app --uds /sock/event-store/event-store.sock --workers {{WORKERS_ES}}"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import http.client, socket, sys\nclass C(http.client.HTTPConnection):\n    def connect(self):\n        self.sock = socket.socket(socket.AF_UNIX); self.sock.settimeout(4); self.sock.connect('/sock/event-store/event-store.sock')\nc = C('localhost'); c.request('GET', '/health'); sys.exit(0 if c.getresponse().status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging: *default-logging
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # TEG LAYER
+  # ═══════════════════════════════════════════════════════════════════════
+
+  {{REGISTRY_NAME}}-teg:
+    image: ${FT_TEG_IMAGE:-agentvault2-teg-layer-test:latest}
+    container_name: {{REGISTRY_NAME}}-teg
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://teg:${PG_PASS_TEG}@{{REGISTRY_NAME}}-teg-db:5432/frame_test_teg
+      DATABASE_URL_SYNC: postgresql://teg:${PG_PASS_TEG}@{{REGISTRY_NAME}}-teg-db:5432/frame_test_teg
+      # §MTLSHOPS T3: libpq and asyncpg read these four (verify-full against the data SVID's names), from the private copy
+      # kit/data-tls/tls-client-sync.sh keeps, because libpq refuses the 0644 key the cert-writer writes
+      PGSSLMODE: ${FT_PGSSLMODE}
+      PGSSLROOTCERT: ${FT_PGTLS_COPY_ROOTCERT}
+      PGSSLCERT: ${FT_PGTLS_COPY_CERT}
+      PGSSLKEY: ${FT_PGTLS_COPY_KEY}
+      ADMIN_API_KEY: ${TEG_ADMIN_API_KEY}
+      # CB-049: the TEG checks the registry's exchange JWT with this key; the registry signs with its API_KEY_SECRET
+      REGISTRY_JWT_SECRET: ${API_KEY_SECRET}
+      # §MONEY-M3a (R26/R32, 2026-09-03): the TEG now REQUIRES these two with no default.
+      # Missing ⇒ Settings() raises at import, the TEG never binds :8080, and the registry —
+      # gated on `teg: service_healthy` — stays in `Created` forever.
+      # ⚠ These come from the PROVISIONER (generated per run), not from
+      # .env.frame-test — that file is .gitignore'd (`.env.*`), so it is NOT in
+      # the repo and drifted out of step with this template: the two refs below
+      # were added as ${...} by 0b097d8 and the env template never defined them.
+      # A fresh provision therefore rendered them EMPTY, and secure_config.py
+      # declares both `Field(..., min_length=32)` — pydantic raises at import,
+      # the TEG never binds :8080, and the registry (gated on `teg:
+      # service_healthy`) sits in `Created` for ever. Tracked placeholders make
+      # the contract reproducible from the repo alone.
+      TEG_TOKEN_SIGNING_KEY: ${FT_TEG_TEG_TOKEN_SIGNING_KEY}
+      AVTP_SYSTEM_API_KEY: ${FT_TEG_AVTP_SYSTEM_API_KEY}
+      EVENT_STORE_URL: ${FT_EVENT_STORE_MTLS_URL}  # §SOVKIT T5: the store's mTLS sidecar (the auditor keeps the plain hop)
+      EVENT_STORE_API_KEY: ${EVENT_STORE_INTERNAL_API_KEY}
+      REGISTRY_URL: ${FT_TEG_REGISTRY_URL}
+      TEG_ID: ${FT_TEG_TEG_ID}
+      # §MTLSHOPS G1: X-SSL-Client-* count only beside X-TEG-Proxy-Auth equal to this and a SUCCESS verdict.
+      TEG_PROXY_TRUST_SECRET: ${FT_TEG_TEG_PROXY_TRUST_SECRET}
+      # §SECFIX-2 (2026-09-25): the shared admin key no longer authenticates; every internal caller presents its SVID
+      TEG_MTLS_REQUIRED: ${FT_TEG_MTLS_REQUIRED}
+      MINTING_AUTHORITY: ${FT_MINTING_AUTHORITY}
+      REDIS_URL: ${FT_TEG_REDIS_URL}
+      PARTNER_TEGS: ${PARTNER_TEGS:-[]}
+      CROSS_TEG_ENABLED: ${FT_TEG_CROSS_TEG_ENABLED}
+      SPIFFE_ENDPOINT_SOCKET: ${FT_SPIFFE_ENDPOINT_SOCKET}
+      SPIRE_TRUST_DOMAIN: ${FT_SPIRE_TRUST_DOMAIN}
+      TRUSTED_SPIFFE_DOMAINS: ${FT_TRUSTED_SPIFFE_DOMAINS}
+      # ── Money baseline (§MONEY-NS, 2026-09-04) ──────────────────────────
+      # THE BALANCE OUTBOX IS THE ONLY WRITER OF THE ES BALANCE PROJECTION, and
+      # its source default is "false". Absent, balance_ledger_journal fills and
+      # NOTHING reaches the EventStore: the first issuance raises tokens_issued while
+      # total_circulating stays 0 ⇒ Δ BREACH on a brand-new frame. It is also what
+      # stamps `frame: <TEG_ID>` on every LedgerBalanceChanged — the key the ES
+      # projection namespaces system accounts by — so without it this frame's
+      # treasury/fee_collector rows never form at all. Both live sandbox frames
+      # had to hand-add it at standup; that is what this line ends.
+      TEG_BALANCE_OUTBOX_ENABLED: ${FT_TEG_TEG_BALANCE_OUTBOX_ENABLED}
+      # §LEDGERGATE (2026-10-12, contract R40): the ledger gate refuses a money movement while the outbox above
+      # cannot reach the store (off | shadow | enforce; the code default off). A TEG image without the gate ignores it.
+      TEG_LEDGER_GATE_MODE: ${FT_TEG_TEG_LEDGER_GATE_MODE}
+      # the TEG-to-TEG partner rule (enforce | shadow | off; the code default enforce, a frame born here shadow until its
+      # trust with its peers is proven). A TEG image without the rule ignores it.
+      CROSS_TEG_PARTNER_RULE_MODE: ${FT_TEG_CROSS_TEG_PARTNER_RULE_MODE}
+      # ── the fresh posture, TEG side (D8 + the profile's TEG knobs) ──
+      TEG_ONBOARDING_MINT_ENABLED: ${FT_TEG_TEG_ONBOARDING_MINT_ENABLED}
+      TEG_STAKING_REWARD_CYCLE_ENABLED: ${FT_TEG_TEG_STAKING_REWARD_CYCLE_ENABLED}
+      TEG_TRANSFER_MAX_AVT: ${FT_TEG_TEG_TRANSFER_MAX_AVT}
+      TEG_MINT_MAX_AVT: ${FT_TEG_TEG_MINT_MAX_AVT}
+      # Issuance is Registry-native (§MINTSECRET): the TEG accepts an issuance ONLY
+      # behind the registry's issuance proxy. BOTH sides must carry the SAME secret —
+      # the registry sends X-Mint-Proxy-Secret, the TEG compares it — so the
+      # placeholder is rendered into this service AND the registry service.
+      TEG_MINT_REQUIRE_PROXY: ${FT_TEG_TEG_MINT_REQUIRE_PROXY}
+      MINT_PROXY_SECRET: ${FT_MINT_PROXY_SECRET}
+      # §MONEY-R50 (2026-09-04): CROSS_TEG_FUND_ORIGIN_ALLOWLIST used to sit HERE — and the
+      # TEG never reads it. Its only reader is the registry's origin guard
+      # (routers/teg_integration.py), so it is rendered on the registry service below.
+      TEG_HOME_FRAME_GUARD_ENABLED: ${FT_TEG_TEG_HOME_FRAME_GUARD_ENABLED}
+      TEG_BULK_USE_ASYNC_DB: ${FT_TEG_TEG_BULK_USE_ASYNC_DB}
+      ESCROW_RECONCILER_ENABLED: ${FT_TEG_ESCROW_RECONCILER_ENABLED}
+      ESCROW_RECONCILER_DRY_RUN: ${FT_TEG_ESCROW_RECONCILER_DRY_RUN}
+      FRAME_CURRENCY: ${FT_FRAME_CURRENCY}
+      TEG_BATCH_WRITES: ${FT_TEG_TEG_BATCH_WRITES}
+      TEG_BATCH_FLUSH_INTERVAL_MS: ${FT_TEG_TEG_BATCH_FLUSH_INTERVAL_MS}
+      TEG_BATCH_MAX_SIZE: ${FT_TEG_TEG_BATCH_MAX_SIZE}
+      PROMETHEUS_MULTIPROC_DIR: ${FT_TEG_PROMETHEUS_MULTIPROC_DIR}
+    tmpfs:
+      - /tmp/prom_multiproc_teg:size=16m,mode=1777
+      - /run/pgtls:size=1m,mode=1777   # §MTLSHOPS T3: tls-client-sync's 0700 directory
+    command: >
+      sh -c "sh /opt/data-tls/tls-client-sync.sh & until [ -s /run/pgtls/client/bundle.0.pem ]; do sleep 1; done;
+             echo 'Waiting for PostgreSQL...' &&
+             cd /app &&
+             python -m src.teg_core_service.migration_bridge &&
+             alembic upgrade head &&
+             echo 'DB migration complete, starting {{REGISTRY_NAME}}-teg...' &&
+             umask 000 && rm -f /sock/teg/teg.sock && exec uvicorn src.teg_core_service.main:app --uds /sock/teg/teg.sock --workers {{WORKERS_TEG}}"
+    volumes:
+      - {{VOL_PREFIX}}_spire_socket_{{TS}}:/opt/spire/sockets:ro
+      - {{VOL_PREFIX}}_teg_certs_{{TS}}:/certs:ro
+      - {{STACK_DIR}}/kit/data-tls:/opt/data-tls:ro   # §MTLSHOPS T3
+      - {{VOL_PREFIX}}_sock_teg_{{TS}}:/sock/teg
+    # §MTLSHOPS T2 (S4, 2026-09-15): the TEG listens on a unix socket shared with its terminators alone (nginx-teg, and
+    # nginx-federation's cross-teg location), not on the frame or identity network: its port 8080 answered every member
+    # in plain. It stays on both networks for its OUTBOUND calls (its database, Redis, the store, peers' terminators),
+    # with no alias: agentvault2-85 measured 24 h of access logs on four frames and nothing dialled teg-layer-<frame>.
+    # The command removes the socket file before exec: uvicorn's --workers supervisor binds the path in its parent and
+    # refuses one that exists, so a TEG killed before its own cleanup (SIGKILL, a stop past the grace period) left the file
+    # and every restart exited 1 on Errno 98 while the terminators kept the volume mounted (measured). One container owns it.
+    labels:
+      - "com.agentvault.service=teg-core-{{REGISTRY_NAME}}"
+    networks:
+      {{NET_NAME}}: {}
+      {{IDENTITY_NET_NAME}}: {}
+    depends_on:
+      {{REGISTRY_NAME}}-teg-db:
+        condition: service_healthy
+      {{REGISTRY_NAME}}-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "-o", "/dev/null", "--unix-socket", "/sock/teg/teg.sock", "http://localhost/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging: *default-logging
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # REGISTRY
+  # ═══════════════════════════════════════════════════════════════════════
+
+  {{REGISTRY_NAME}}-registry:
+    # §FRAMELIC row 52 / D12 — topology only: the image is a VALUE and lives in .env.frame-test
+    # (FT_REG_IMAGE). Pinning it here made a version move on a frame a compose edit PLUS two env
+    # keys, and the DID-widening session hit exactly that.
+    image: ${FT_REG_IMAGE:-agentvault2-registry-test:latest}
+    container_name: {{REGISTRY_NAME}}-registry
+    restart: unless-stopped
+    # Internal only — registry-test reaches us via docker exec; no need for
+    # a host port mapping. Strips a major source of Docker port-reservation
+    # contention across rapid test runs.
+    env_file: {{STACK_DIR}}/.env.frame-test
+    environment:
+      DATABASE_URL: postgresql+asyncpg://registry:${PG_PASS_REGISTRY}@{{REGISTRY_NAME}}-db:5432/frame_test_registry
+      DATABASE_URL_SYNC: postgresql://registry:${PG_PASS_REGISTRY}@{{REGISTRY_NAME}}-db:5432/frame_test_registry
+      # §MTLSHOPS T3: libpq and asyncpg read these four (verify-full against the data SVID's names), from the private copy
+      # kit/data-tls/tls-client-sync.sh keeps, because libpq refuses the 0644 key the cert-writer writes
+      PGSSLMODE: ${FT_PGSSLMODE}
+      PGSSLROOTCERT: ${FT_PGTLS_COPY_ROOTCERT}
+      PGSSLCERT: ${FT_PGTLS_COPY_CERT}
+      PGSSLKEY: ${FT_PGTLS_COPY_KEY}
+      TEG_LAYER_URL: ${FT_REG_TEG_LAYER_URL}
+      TEG_API_BASE_URL: ${FT_REG_TEG_API_BASE_URL}
+      EVENT_STORE_URL: ${FT_EVENT_STORE_MTLS_URL}  # §SOVKIT T5 (V0370, proven on orchard): every store caller on es_ssl_helper; the store's mTLS sidecar
+      EVENT_STORE_API_KEY: ${EVENT_STORE_INTERNAL_API_KEY}
+      REDIS_URL: ${FT_REG_REDIS_URL}
+      REGISTRY_NAME: ${FT_REG_REGISTRY_NAME}
+      MINTING_AUTHORITY: ${FT_MINTING_AUTHORITY}
+      # §SOVKIT K1 (2026-09-14): no KAFKA_* here. The registry writes over HTTP through the store's mTLS sidecar; the
+      # broker is the store's alone (V0371 holds no producer; the env_file's bare KAFKA_ENABLED is false for older images).
+      SPIFFE_ENDPOINT_SOCKET: ${FT_SPIFFE_ENDPOINT_SOCKET}
+      ALLOWED_ORIGINS: ${FT_REG_ALLOWED_ORIGINS}
+      TEG_BULK_PROXY: ${FT_REG_TEG_BULK_PROXY}
+      # ── Fleet baseline (2026-09-04) ─────────────────────────────────────
+      # A freshly-provisioned frame must boot PRODUCTION-SHAPED, not as a stub.
+      # Measured: 114 env keys that BOTH live sandbox frames needed were absent
+      # from this template and hand-added at standup. This block carries the
+      # subset that changes BEHAVIOUR (money, authority, identity); per-site
+      # values (MAIL_*, API_TEST_*, SANDBOX_*) stay out on purpose.
+      # NOTE: when a future feature adds registry env, add it HERE too — do not
+      # rely on a later rollout script to backfill fresh frames.
+      #
+      # Same secret as the TEG's: the registry SENDS X-Mint-Proxy-Secret and the
+      # TEG compares it. Rendering only one side silently refuses every issuance.
+      MINT_PROXY_SECRET: ${FT_MINT_PROXY_SECRET}
+      # `mainframe_gate.py` reads this; absent ⇒ issuance and operator
+      # provisioning answer 503 on a frame that is in fact a mainframe.
+      MAINFRAME_REGISTRY_NAMES: ${FT_REG_MAINFRAME_REGISTRY_NAMES}
+      # ⚠ A frame absent from its OWN allowlist cannot fund its satellites and
+      # answers a genesis-class 403 — measured on frame-b, which had to gain
+      # itself. §MONEY-R50: the READER is this registry's origin guard
+      # (routers/teg_integration.py), which compares the slug of REGISTRY_NAME
+      # against these tokens; the value is rendered through that same slug rule
+      # (core/registry_slug.py) under both the container name and the display
+      # name. Own slug always first; the dual-frame orchestrator appends the peer.
+      CROSS_TEG_FUND_ORIGIN_ALLOWLIST: ${FT_REG_CROSS_TEG_FUND_ORIGIN_ALLOWLIST}
+      IS_CENTRAL_REGISTRY: ${FT_REG_IS_CENTRAL_REGISTRY}
+      FRAME_CURRENCY: ${FT_FRAME_CURRENCY}
+      FEDERATION_SYNC_INTERVAL_SECONDS: ${FT_REG_FEDERATION_SYNC_INTERVAL_SECONDS}
+      # ⚠ THE PAIRING RULE (PART 14): AGENT_RBAC_MODE and AGENT_DELEGATION_MODE
+      # must ALWAYS move together. With enforce+off, resolve_capability is never
+      # consulted, so any agent whose authority rides an `att_` capability token
+      # keeps only its (correctly empty) role set and is DENIED. Never flip one.
+      AGENT_RBAC_MODE: ${FT_REG_AGENT_RBAC_MODE}
+      AGENT_DELEGATION_MODE: ${FT_REG_AGENT_DELEGATION_MODE}
+      AGENT_XREG_DELEGATION_ENABLED: ${FT_REG_AGENT_XREG_DELEGATION_ENABLED}
+      SPAWN_WALLET_ANCHOR_MODE: ${FT_REG_SPAWN_WALLET_ANCHOR_MODE}
+      IRONHAND_INLINE_SVID_ENABLED: ${FT_REG_IRONHAND_INLINE_SVID_ENABLED}
+      CAPABILITY_CIRCUIT_BREAKER_ENABLED: ${FT_REG_CAPABILITY_CIRCUIT_BREAKER_ENABLED}
+      FEDERATION_INGEST_FAIL_CLOSED: ${FT_REG_FEDERATION_INGEST_FAIL_CLOSED}
+      MCP_AUDIT_LOGGING_ENABLED: ${FT_REG_MCP_AUDIT_LOGGING_ENABLED}
+      REGISTRY_SIGNING_KEY_REQUIRE_ENCRYPTION: ${FT_REG_REGISTRY_SIGNING_KEY_REQUIRE_ENCRYPTION}
+      REGISTRY_SIGNING_KEY_PASSPHRASE: ${FT_REG_REGISTRY_SIGNING_KEY_PASSPHRASE}
+      # Fernet key (44 chars) — TOTP secrets are stored as Fernet tokens.
+      TWO_FACTOR_ENCRYPTION_KEY: ${FT_REG_TWO_FACTOR_ENCRYPTION_KEY}
+      FEDERATION_HEALTH_CHECK_SECRET: ${FT_REG_FEDERATION_HEALTH_CHECK_SECRET}
+      EVENT_STORE_ENABLED: ${FT_REG_EVENT_STORE_ENABLED}
+      FEDERATION_ENABLED: ${FT_REG_FEDERATION_ENABLED}
+      EXCHANGE_ENABLED: ${FT_REG_EXCHANGE_ENABLED}
+      ZKP_PHASE_6_ENABLED: ${FT_REG_ZKP_PHASE_6_ENABLED}
+      ZKP_PHASE_5_ENABLED: ${FT_REG_ZKP_PHASE_5_ENABLED}
+      ZKP_PHASE_4_ENABLED: ${FT_REG_ZKP_PHASE_4_ENABLED}
+      ZKP_PHASE_3_ENABLED: ${FT_REG_ZKP_PHASE_3_ENABLED}
+      ZKP_PHASE_2_ENABLED: ${FT_REG_ZKP_PHASE_2_ENABLED}
+      ZKP_PHASE_1_ENABLED: ${FT_REG_ZKP_PHASE_1_ENABLED}
+      STOCK_CARD_SYNC_ENABLED: ${FT_REG_STOCK_CARD_SYNC_ENABLED}
+      REVOCATION_DRILL_ENABLED: ${FT_REG_REVOCATION_DRILL_ENABLED}
+      GUILD_ZK_CREDENTIAL_ENABLED: ${FT_REG_GUILD_ZK_CREDENTIAL_ENABLED}
+      GUILD_ORG_BID_MODE: ${FT_REG_GUILD_ORG_BID_MODE}
+      GATEWAY_SUBDUST_SWEEP_ENABLED: ${FT_REG_GATEWAY_SUBDUST_SWEEP_ENABLED}
+      GATEWAY_RECON_ENABLED: ${FT_REG_GATEWAY_RECON_ENABLED}
+      GATEWAY_KEEPER_ENABLED: ${FT_REG_GATEWAY_KEEPER_ENABLED}
+      FX_ROUTER_KEEPER_ENABLED: ${FT_REG_FX_ROUTER_KEEPER_ENABLED}
+      FX_ROUTE_ENABLED: ${FT_REG_FX_ROUTE_ENABLED}
+      # §FXSTRAND — the FX route engine's in-transit identity; empty until the standup creates it
+      FX_ROUTER_DID: ${FT_REG_FX_ROUTER_DID}
+      FX_REMOTE_RECOVERY_MODE: ${FT_REG_FX_REMOTE_RECOVERY_MODE}
+      FORGE_ROYALTY_ENABLED: ${FT_REG_FORGE_ROYALTY_ENABLED}
+      FORGE_ENABLED: ${FT_REG_FORGE_ENABLED}
+      FORENSIC_SCANNER_ENABLED: ${FT_REG_FORENSIC_SCANNER_ENABLED}
+      FLARE_LOCAL_PURCHASE_ENABLED: ${FT_REG_FLARE_LOCAL_PURCHASE_ENABLED}
+      EXCHANGE_SOLVENCY_CARD_ENABLED: ${FT_REG_EXCHANGE_SOLVENCY_CARD_ENABLED}
+      EXCHANGE_MARKET_CARD_ENABLED: ${FT_REG_EXCHANGE_MARKET_CARD_ENABLED}
+      EXCHANGE_MAKER_REBATE_ENABLED: ${FT_REG_EXCHANGE_MAKER_REBATE_ENABLED}
+      EXCHANGE_CROSSFRAME_VOTE_ENABLED: ${FT_REG_EXCHANGE_CROSSFRAME_VOTE_ENABLED}
+      EVALS_AGENT_TRIGGER_ENABLED: ${FT_REG_EVALS_AGENT_TRIGGER_ENABLED}
+      EVALS_ENABLED: ${FT_REG_EVALS_ENABLED}
+      EQUITY_PEG_KEEPER_ENABLED: ${FT_REG_EQUITY_PEG_KEEPER_ENABLED}
+      CONTRACTS_XFRAME_MODE: ${FT_REG_CONTRACTS_XFRAME_MODE}
+      COCKPIT_DESK_ENABLED: ${FT_REG_COCKPIT_DESK_ENABLED}
+      CONTRACTS_V2_ENABLED: ${FT_REG_CONTRACTS_V2_ENABLED}
+      CONTRACT_TEMPLATES_ENABLED: ${FT_REG_CONTRACT_TEMPLATES_ENABLED}
+      GUILD_ENABLED: ${FT_REG_GUILD_ENABLED}
+      GUILD_MINTS_CONTRACTS: ${FT_REG_GUILD_MINTS_CONTRACTS}
+      AGENT_SPAWN_ENABLED: ${FT_REG_AGENT_SPAWN_ENABLED}
+      NOTIFY_V2_MODE: ${FT_REG_NOTIFY_V2_MODE}
+      LIABILITY_MODE: ${FT_REG_LIABILITY_MODE}
+      # ── the fresh posture (see frame-test.env.tmpl for the why; contract gate R3 pins each) ──
+      REPUTATION_BOND_MODE: ${FT_REG_REPUTATION_BOND_MODE}
+      REPUTATION_BOND_TREASURY_BACKSTOP: ${FT_REG_REPUTATION_BOND_TREASURY_BACKSTOP}
+      ENFORCEMENT_SLASH_MODE: ${FT_REG_ENFORCEMENT_SLASH_MODE}
+      ENFORCEMENT_PROPAGATION_MODE: ${FT_REG_ENFORCEMENT_PROPAGATION_MODE}
+      DID_ISSUER_NAMESPACE: ${FT_REG_DID_ISSUER_NAMESPACE}
+      FRESH_NETWORK_JSON: ${FT_REG_FRESH_NETWORK_JSON}
+      DIRECTORY_PUBLIC_URL: ${FT_REG_DIRECTORY_PUBLIC_URL}
+      DISCOVERY_VIA_DIRECTORY: ${FT_REG_DISCOVERY_VIA_DIRECTORY}
+      # §MTLSGAP 2026-09-08 — what the REGISTRY dials (presenting its own SVID); the key above is
+      # what the CONSOLE asks for. Two different addresses for one capability, which is why one
+      # flag writes both.
+      DIRECTORY_MTLS_URL: ${FT_REG_DIRECTORY_MTLS_URL}
+      # §SOVKIT (2026-09-14) — OPA ships WITH the frame now (shadow: decisions recorded, nothing refused;
+      # OPA_ENFORCE is the frame operator's decision). The console's OPA tile lights when OPA_URL is set.
+      OPA_ENABLED: ${FT_REG_OPA_ENABLED}
+      OPA_ENFORCE: ${FT_REG_OPA_ENFORCE}
+      OPA_URL: ${FT_REG_OPA_URL}
+      # §BATCH6 — cross-frame FX is federation state, filled at federation time (runbook §9): all six are env-carried, none inline
+      FX_ENABLED: ${FT_REG_FX_ENABLED}
+      FX_RATE_MODE: ${FT_REG_FX_RATE_MODE}
+      FX_ROUTE_PEERS: ${FT_REG_FX_ROUTE_PEERS}
+      TEG_SIDECAR_MAP: ${FT_REG_TEG_SIDECAR_MAP}
+      FX_RESERVE_KEEPER_ENABLED: ${FT_REG_FX_RESERVE_KEEPER_ENABLED}
+      EVENT_STORE_B_URL: ${FT_REG_EVENT_STORE_B_URL}
+      GATEWAY_REARM_ABANDONED_BATCH: ${FT_REG_GATEWAY_REARM_ABANDONED_BATCH}
+      CANARY_ENABLED: ${FT_REG_CANARY_ENABLED}
+      CANARY_RUNNER_ENABLED: ${FT_REG_CANARY_RUNNER_ENABLED}
+      CANARY_JUDGE_ENABLED: ${FT_REG_CANARY_JUDGE_ENABLED}
+      CANARY_REBALANCER_ENABLED: ${FT_REG_CANARY_REBALANCER_ENABLED}
+      CANARY_REFILL_ENABLED: ${FT_REG_CANARY_REFILL_ENABLED}
+      CANARY_VALIDATOR_ENABLED: ${FT_REG_CANARY_VALIDATOR_ENABLED}
+      NETWORK_PROFILE: ${FT_REG_NETWORK_PROFILE}
+      API_TEST_EXECUTION_ENABLED: ${FT_REG_API_TEST_EXECUTION_ENABLED}
+      TREASURY_MM_ENABLED: ${FT_REG_TREASURY_MM_ENABLED}
+      LEGACY_CONTRACTS_ENABLED: ${FT_REG_LEGACY_CONTRACTS_ENABLED}
+      TOKEN_BRIDGE_ENABLED: ${FT_REG_TOKEN_BRIDGE_ENABLED}
+      ARENA_BETTING_ENABLED: ${FT_REG_ARENA_BETTING_ENABLED}
+      REGISTRY_STAKING_CLAIM_REWARDS_ENABLED: ${FT_REG_REGISTRY_STAKING_CLAIM_REWARDS_ENABLED}
+      PUBLIC_UI_URL: ${FT_REG_PUBLIC_UI_URL}
+      JURISDICTION_MODE: ${FT_REG_JURISDICTION_MODE}
+      AUTO_TALLY_ENABLED: ${FT_REG_AUTO_TALLY_ENABLED}
+      AUTO_TALLY_INTERVAL_SECONDS: ${FT_REG_AUTO_TALLY_INTERVAL_SECONDS}
+      # §ONESHOT R13 — code-default postures, declared (values in the env template, each with its reason)
+      LISTING_PROPAGATION_MODE: ${FT_REG_LISTING_PROPAGATION_MODE}
+      EIGENTRUST_PROJECTION: ${FT_REG_EIGENTRUST_PROJECTION}
+      REACTOR_PROPOSAL_OUTCOME_ENABLED: ${FT_REG_REACTOR_PROPOSAL_OUTCOME_ENABLED}
+      FEDERATION_ENFORCEMENT_ACTIVE: ${FT_REG_FEDERATION_ENFORCEMENT_ACTIVE}
+      BASE_URL: ${FT_REG_BASE_URL}
+      # ── Pocket push (2026-08-01) ────────────────────────────────────────
+      # PUSH_NTFY_URL is the INTERNAL publish path (docker network only).
+      # PUSH_NTFY_PUBLIC_URL is deliberately ABSENT: empty means "not publicly
+      # exposed on this frame", which is also how frame-b and frame-c run.
+      # apply_frame_push.sh adds it once DNS + certificate exist.
+      # PUSH_APP_BASE_URL must match BASE_URL/ALLOWED_ORIGINS — it is one of
+      # the WebAuthn rp-id candidates (§V0163), and a mismatched host there
+      # fails signing FOREVER, silently, at use time.
+      # Set from the provisioning inputs. True REQUIRES a working relay
+      # (validate_provisioning_inputs refuses the combination otherwise):
+      # a frame that cannot send mail locks every self-registered account out.
+      REQUIRE_EMAIL_VERIFICATION: ${FT_REG_REQUIRE_EMAIL_VERIFICATION}
+      PUSH_NOTIFY_ENABLED: ${FT_REG_PUSH_NOTIFY_ENABLED}
+      PUSH_NTFY_URL: ${FT_REG_PUSH_NTFY_URL}
+      PUSH_APP_BASE_URL: ${FT_REG_PUSH_APP_BASE_URL}
+      PUSH_NTFY_PUBLIC_URL: ${FT_REG_PUSH_NTFY_PUBLIC_URL:-}
+      # Cloud provisioner: used by the chained operator provisioning (stage 9)
+      CLOUD_DOMAIN_SUFFIX: ${FT_REG_CLOUD_DOMAIN_SUFFIX}
+      FEDERATION_BASE_URL: ${FT_REG_FEDERATION_BASE_URL}
+      # §MTLSHOPS G2: X-SSL-Client-* count only beside X-Registry-Proxy-Auth equal to this and a SUCCESS verdict.
+      REGISTRY_PROXY_TRUST_SECRET: ${FT_REG_REGISTRY_PROXY_TRUST_SECRET}
+      LOCAL_TEG_ID: ${FT_REG_LOCAL_TEG_ID}
+      SPIRE_CONTAINER: ${FT_REG_SPIRE_CONTAINER}
+      SPIRE_TRUST_DOMAIN: ${FT_SPIRE_TRUST_DOMAIN}
+      TRUSTED_SPIFFE_DOMAINS: ${FT_TRUSTED_SPIFFE_DOMAINS}
+      SPIRE_SERVER_ADDRESS: ${FT_REG_SPIRE_SERVER_ADDRESS}
+      SPIRE_SERVER_PORT: ${FT_REG_SPIRE_SERVER_PORT}
+      IDENTITY_NETWORK: ${FT_REG_IDENTITY_NETWORK}
+      BILATERAL_PEER_NAME: ${FT_REG_BILATERAL_PEER_NAME}
+      BILATERAL_PEER_URL: ${FT_REG_BILATERAL_PEER_URL}
+      PARTNER_TEG_ID: ${FT_REG_PARTNER_TEG_ID}
+      PARTNER_REGISTRY_ID: ${FT_REG_PARTNER_REGISTRY_ID}
+      PARTNER_TEG_URL: ${FT_REG_PARTNER_TEG_URL}
+      PARTNER_FRAME_TRUST_DOMAIN: ${FT_REG_PARTNER_FRAME_TRUST_DOMAIN}
+      SKIP_NGINX_VHOST: ${FT_REG_SKIP_NGINX_VHOST}
+      PROD_REGISTRY_DB: ${FT_REG_PROD_REGISTRY_DB}
+      # B10 — handed to every operator this frame provisions as its
+      # EVENT_STORE_URL (cloud_provisioner.py:217). MUST be publicly
+      # resolvable: an operator sits on its own isolated operator-net and
+      # cannot resolve a docker-internal name, so an internal value here
+      # makes every provisioned operator come up with 0 reactor
+      # subscriptions — silently, since provisioning still reports success.
+      EVENT_STORE_PUBLIC_URL: ${FT_REG_EVENT_STORE_PUBLIC_URL}
+      EVENT_STORE_DB_CONTAINER: ${FT_REG_EVENT_STORE_DB_CONTAINER}
+      EVENT_STORE_DB_NAME: ${FT_REG_EVENT_STORE_DB_NAME}
+      EVENT_STORE_DB_USER: ${FT_REG_EVENT_STORE_DB_USER}
+      CLOUD_PORT_MIN: ${FT_REG_CLOUD_PORT_MIN}
+      CLOUD_PORT_MAX: ${FT_REG_CLOUD_PORT_MAX}
+      # Test C: make the API tester treat this frame as its test target.
+      # The string "registry-test" gates get_sandbox_tokens() + sandbox mode
+      # in admin_api_test.py:96,2609. We add `registry-test` as a network
+      # alias on this registry (see networks: section below) so the URL resolves.
+      API_TEST_TARGET_URL: ${FT_REG_API_TEST_TARGET_URL}
+      SANDBOX_RESET_SECRET: ${FT_REG_SANDBOX_RESET_SECRET}
+      # Sandbox proxy paths — point at ourselves (no external sandbox-a/b)
+      SANDBOX_A_INTERNAL_URL: ${FT_REG_SANDBOX_A_INTERNAL_URL}
+      SANDBOX_B_INTERNAL_URL: ${FT_REG_SANDBOX_B_INTERNAL_URL}
+      REGISTRY_A_CONTAINER: ${FT_REG_REGISTRY_A_CONTAINER}
+      CENTRAL_REGISTRY_URL_FOR_OPERATORS: ${FT_REG_CENTRAL_REGISTRY_URL_FOR_OPERATORS}
+      WS_EVENTS_PROXY_HOST: ${FT_REG_WS_EVENTS_PROXY_HOST}
+      PROMETHEUS_MULTIPROC_DIR: ${FT_REG_PROMETHEUS_MULTIPROC_DIR}
+      PYTHONPATH: ${FT_REG_PYTHONPATH}
+      # WS3 federation handshake — what we advertise to peers in invitations.
+      # Read by frame_invitations.py:_local_bundle_endpoint_url() / _local_name().
+      # Single-frame defaults to per-frame DNS; dual-frame orchestrator overrides
+      # to use the shared identity network's DNS names so alpha/beta resolve
+      # each other.
+      FRAME_LOCAL_BUNDLE_ENDPOINT_URL: ${FT_REG_FRAME_LOCAL_BUNDLE_ENDPOINT_URL}
+      FRAME_LOCAL_FEDERATION_ENDPOINT_URL: ${FT_REG_FRAME_LOCAL_FEDERATION_ENDPOINT_URL}
+      # §F6 stage 5 (2026-09-27, his words "finish f6 with the parallel session"): EVERY host job of this registry goes
+      # to the frame runner. The registry holds no docker socket, no host stack, no nginx sites and no CA (R38), so each
+      # switch's default ("local", docker exec on a socket it does not have; IRONHAND's "proxy" to a central registry)
+      # would fail. HOST_REACH_PREFER=runner also closes the route on a frame rendered WITH host reach: the runner or a
+      # refusal, never the socket by accident. Proven on sbx-beta: stage 3 (17:49:14Z) and the b1opb proof through it.
+      HOST_REACH_PREFER: ${FT_REG_HOST_REACH_PREFER}
+      FRAME_TRUST_SPIRE_VIA: ${FT_REG_FRAME_TRUST_SPIRE_VIA}
+      IRONHAND_SPIRE_MODE: ${FT_REG_IRONHAND_SPIRE_MODE}
+      OPERATOR_LIFECYCLE_VIA: ${FT_REG_OPERATOR_LIFECYCLE_VIA}
+      CONTAINER_OBSERVE_VIA: ${FT_REG_CONTAINER_OBSERVE_VIA}
+    tmpfs:
+      - /tmp/prom_multiproc_reg:size=16m,mode=1777
+      - /run/pgtls:size=1m,mode=1777   # §MTLSHOPS T3: tls-client-sync's 0700 directory
+    volumes:
+      # §PEERKEYROT (2026-09-05) — durable signer identity, the §AGENTDISC/V0183 shape
+      # registry-a has carried since 08-16 and this template never had. /app/data holds
+      # the Ed25519 bundle-signing key that guild work credentials, track-record receipts
+      # and cross-registry IronKey credentials are signed with. Without a named volume the
+      # key is container-local and EVERY recreate rotates it: measured on Sandbox Alpha,
+      # three signer ids in one morning, and every peer worker that had cached the old one
+      # answered 422 "could not be verified against the issuer-home pubkey" for good.
+      - {{VOL_PREFIX}}_registry_data_{{TS}}:/app/data
+      - {{VOL_PREFIX}}_spire_socket_{{TS}}:/opt/spire/sockets:ro
+      # §XFRAMEMTLS (2026-09-04) — THE REGISTRY HAD NO SVID AND COULD NOT DO mTLS.
+      # cert-writer, nginx-federation, event-store and teg all mounted this volume;
+      # the registry did not, so `/certs` did not exist in it at all. Two failures
+      # follow, and only the second is visible: with no bundle,
+      # `es_ssl_helper.get_httpx_verify()` returns True (system CAs) and every dial
+      # to a peer's SPIRE-served endpoint dies CERTIFICATE_VERIFY_FAILED; and with
+      # no svid.0.pem there is no client cert to present to a sidecar running
+      # `ssl_verify_client on` either. Measured: a cross-registry transfer between
+      # the two sandbox frames answered 503 "FX pool: reserve read failed:
+      # [SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate",
+      # i.e. the federation's core money rail was dead on every fresh frame.
+      # registry-a and every cloud operator mount it; this was the odd one out.
+      - {{VOL_PREFIX}}_svid_certs_{{TS}}:/certs:ro
+      - {{STACK_DIR}}/kit/data-tls:/opt/data-tls:ro   # §MTLSHOPS T3
+      {{REGISTRY_HOST_MOUNTS}}
+      # operator-bundles: bind-mounted (not named volume) so we can
+      # pre-chmod 777 the host dir to avoid root-owned volume blocking
+      # uid=1000 writes (docker named volumes inherit root:root).
+      - {{STACK_DIR}}/operator-bundles:/app/operator-bundles
+      # §F6 stage 5 (2026-09-27): NO x509pop CA here any more (it was `{{STACK_DIR}}/x509pop-certs:/opt/spire-ca:ro`, for
+      # operator_provisioner's in-registry signing, the direct route). The runner's operator one-shot signs an operator's
+      # attestation cert itself and takes the CA from this frame's own SPIRE server (its server.conf ca_bundle_path, the
+      # key beside it in the stack dir; runner stack 01555e3), so the registry no longer holds the key that makes nodes.
+      # nginx-templates — operator_provisioner.package_bundle reads
+      # docker-compose.operator.yml, generate-operator-env.sh, pgbouncer.ini
+      # from here when packaging a chained operator bundle.
+      - {{NGINX_TEMPLATES_DIR}}:/app/nginx-templates:ro
+      # §LANTERNT3 (2026-09-16, his decision "route it through the frame runner"): the OPERATOR socket, and
+      # only that one. A frame's registry cannot provision its own cloud operator itself — the bundle is built
+      # through the host Docker API and this template withholds that socket on purpose, because a docker socket
+      # is unrestricted root on the host. The runner does that work instead, and this mount is how the frame
+      # asks. What it is NOT is /run/theprotocol: the full socket serves standup, resume and TEARDOWN, and a
+      # frame has no business tearing down frames. The runner binds the operator socket in a directory of its
+      # own and serves only OPERATOR_OPS on it, so the grant is bounded by WHICH FILE THIS CONTAINER CAN SEE
+      # rather than by a notion of caller identity nobody has to invent. ⚠ The DIRECTORY is mounted, never the
+      # socket file: the runner removes and re-binds the socket on restart, and a file bind-mount would leave
+      # this container holding a deleted inode.
+      - {{RUNNER_OPERATOR_SOCKET_DIR}}:/run/theprotocol:ro
+    group_add:
+      # the runner's socket group (0660 root:<group>): this host's is 988; a foreign host renders its own
+      - "{{RUNNER_SOCKET_GID}}"
+      {{REGISTRY_DOCKER_GROUP}}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      {{NET_NAME}}:
+        aliases:
+          # Test C: the API tester's sandbox-mode gate uses this string
+          # literally. Having `registry-test` resolve to this container
+          # inside frame_test_network lets the tester self-target.
+          - registry-test
+      {{IDENTITY_NET_NAME}}:
+      # §MTLSHOPS T2 (S4): the publish lane to nginx-ntfy, which only the registry shares
+      {{NET_NAME}}_ntfy:
+    depends_on:
+      {{REGISTRY_NAME}}-db:
+        condition: service_healthy
+      {{REGISTRY_NAME}}-redis:
+        condition: service_healthy
+      {{REGISTRY_NAME}}-teg:
+        condition: service_healthy
+    labels:
+      - "com.agentvault.service=registry-{{REGISTRY_NAME}}"
+    # §EXCISION-11 (2026-07-30): test_seed is now OPT-IN via SEED_TEST_ACCOUNTS=true.
+    # It used to run unconditionally on EVERY start of every provisioned frame,
+    # re-creating admin@test.sandbox (an ADMIN), developer@test.sandbox,
+    # non_admin_dev@test.sandbox and tutorial-admin@theprotocol.cloud — and printing
+    # their generated passwords into the container log, which that frame's own admin
+    # can read. A frame handed to a third party must not do that, and deleting the
+    # rows does not help: they return on the next restart, and frames have a Start
+    # button. Sandbox/CI frames that need the fixtures set SEED_TEST_ACCOUNTS=true.
+    # NOTE: with seeding off, operator_seed's admin becomes id 1 — which is what a
+    # real operator frame wants; only the nested sandbox_provisioner_test cares.
+    # ORIGINAL COMMENT BELOW:
+    # test_seed is included because the nested sandbox_provisioner_test
+    # (stage 9 of the chained test) queries `admin@test.sandbox` + expects
+    # TestAdmin123! — see routers/sandbox_provisioner_test.py:327.
+    # Test C: test_seed MUST run BEFORE operator_seed so admin@test.sandbox = id 1
+    # (matches sandbox-a's ordering). Otherwise the admin_developers prereq
+    # fallback (target_dev_id=2) collides with admin, causing "Cannot suspend yourself".
+    # §BATCH5 (2026-09-05): the GUNICORN supervisor, as production (V0041+). The template ran uvicorn with
+    # `--forwarded-allow-ips '*'`, which takes the FIRST X-Forwarded-For element — the caller's own — so the JUICE
+    # rehearsal frame logged the forged 203.0.113.77 and not the appended peer (the §XFFTRUST class V0204 closed on
+    # the fleet). gunicorn_worker.py names the real proxies (FORWARDED_ALLOW_IPS, default loopback + RFC1918).
+    # CB-193: operator_seed's `|| true` is grouped to operator_seed. Ungrouped it closed the whole && chain before it, so
+    # a failed migration_bridge or alembic upgrade went on to gunicorn and the registry served an unmigrated schema.
+    command: ["sh", "-c", "sh /opt/data-tls/tls-client-sync.sh & until [ -s /run/pgtls/client/bundle.0.pem ]; do sleep 1; done; cd /app && PYTHONPATH=/app/src python -m agentvault_registry.migration_bridge && alembic upgrade head && { [ x${SEED_TEST_ACCOUNTS:-false} = xtrue ] && PYTHONPATH=/app/src python -m agentvault_registry.test_seed || true; } && { PYTHONPATH=/app/src python -m agentvault_registry.operator_seed || true; } && (PYTHONPATH=/app/src python -m agentvault_registry.sandbox_bootstrap || echo 'sandbox_bootstrap skipped (non-fatal)') && PYTHONPATH=/app/src gunicorn agentvault_registry.main:app --workers {{WORKERS_REG}} -c /app/gunicorn_conf.py"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    logging: *default-logging
+
+  # ════════════════════════════════════════════════════════════════
+  # POCKET PUSH — ntfy sidecar (added 2026-08-01)
+  # Every frame creates its own, so the mobile experience is not a manual
+  # retrofit. LOOPBACK-bound on purpose.
+  #
+  # W3C Web Push (VAPID, browser) works from this alone — the keypair
+  # lives in THIS frame's registry_signing_keys (mig 0133) and delivery
+  # goes to the browser vendor, so no hostname is involved.
+  #
+  # PUBLIC exposure (phone pairing) is a SEPARATE deliberate step:
+  #   scripts/hetzner_demo/apply_frame_push.sh --host push.<frame>.theprotocol.cloud
+  # It needs DNS + a certificate, which stay on our side and are never the
+  # frame operator's to provision (CLAUDE.md PART 11b). Publishing must never
+  # be publicly reachable, or anyone who learns a topic name could push to a
+  # paired device.
+  # Doc: PRODUCTION_DOCS/08_SECURITY/Frame_Outbound_Mail_And_Push.md
+  #
+  # §MTLSHOPS T2 (S4, 2026-09-15): ntfy has no network. It listens on a unix socket shared with its two terminators alone:
+  # nginx-ntfy, the registry's publish lane (below), and nginx-edge, the phones' subscribe door. That door is a PATH
+  # allowlist, because a method limit was never subscribe-only: ntfy also publishes on GET (/<topic>/publish?message=,
+  # /<topic>/send, /<topic>/trigger), and b5 measured each form publishing through `limit_except GET` on v2.11.0, where
+  # the host vhosts' backends run with no auth file. Its HTTP listener is its own loopback, for the healthcheck (the image
+  # has no unix-socket client), which also requires the socket file. ntfy removes a socket file a killed run left
+  # (measured), so no rm before exec. It exits when its unix listener cannot bind (measured: a read-only socket directory,
+  # exit 1), and `test -S` fails once the file is gone under a running server (measured).
+  # ════════════════════════════════════════════════════════════════
+  {{REGISTRY_NAME}}-ntfy:
+    image: binwiederhier/ntfy:v2.28.0
+    container_name: {{REGISTRY_NAME}}-ntfy
+    restart: unless-stopped
+    command: ["serve", "--listen-http", "127.0.0.1:2586", "--listen-unix", "/sock/ntfy/ntfy.sock", "--listen-unix-mode", "0666"]
+    network_mode: none
+    environment:
+      NTFY_CACHE_FILE: ${FT_NTFY_NTFY_CACHE_FILE}
+      NTFY_BEHIND_PROXY: ${FT_NTFY_NTFY_BEHIND_PROXY}
+    volumes:
+      - {{VOL_PREFIX}}_ntfy_cache_{{TS}}:/var/cache/ntfy
+      - {{VOL_PREFIX}}_sock_ntfy_{{TS}}:/sock/ntfy
+    healthcheck:
+      test: ["CMD-SHELL", "test -S /sock/ntfy/ntfy.sock && wget -q -O /dev/null http://127.0.0.1:2586/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *default-logging
+
+  # §MTLSHOPS T2 (S4, 2026-09-15): the registry's publish lane to ntfy. TLS on the kit's SVID under the name
+  # {{REGISTRY_NAME}}-nginx-ntfy (the registry verifies it), a client certificate the frame's bundle chains, and an
+  # internal network whose only other member is the registry: nginx cannot read which identity a certificate names, so
+  # the network is what keeps the frame's other identities (the kit, the Directory, the terminators on the registry's
+  # SVID) from publishing. No port and no host door: phones subscribe through nginx-edge.
+  {{REGISTRY_NAME}}-nginx-ntfy:
+    image: nginx:1.30.5-alpine
+    container_name: {{REGISTRY_NAME}}-nginx-ntfy
+    restart: unless-stopped
+    volumes:
+      - {{STACK_DIR}}/nginx-ntfy-frame-test.conf:/etc/nginx/conf.d/default.conf:ro
+      - {{STACK_DIR}}/nginx-entrypoint.sh:/opt/nginx-entrypoint.sh:ro
+      - {{VOL_PREFIX}}_kit_certs_{{TS}}:/certs:ro
+      - {{VOL_PREFIX}}_sock_ntfy_{{TS}}:/sock/ntfy
+    environment:
+      CERT_DIR: ${FT_CERT_DIR}
+      RELOAD_SEC: ${FT_NGNTFY_RELOAD_SEC}
+      SERVICE_NAME: ${FT_NGNTFY_SERVICE_NAME}
+    entrypoint: ["/bin/sh", "/opt/nginx-entrypoint.sh"]
+    networks:
+      - {{NET_NAME}}_ntfy
+    depends_on:
+      {{REGISTRY_NAME}}-kit-cert-writer:
+        condition: service_healthy
+      {{REGISTRY_NAME}}-ntfy:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    labels:
+      - "com.agentvault.service=nginx-ntfy-{{REGISTRY_NAME}}"
+    logging: *default-logging
+
+  # ════════════════════════════════════════════════════════════════
+  # §SOVKIT (2026-09-14, his word "frames will be completely sovereign"): THE KIT A FRAME SHIPS
+  # WITH. Before this a runner-built frame carried ONE sidecar of its own (ntfy); its metrics, its
+  # alerts, its auditor, its policy engine and its index all lived on THIS host's sidecars, so a
+  # frame run anywhere else had none of them. Every image is an env value (the operator pins it),
+  # every value rides the env file (R6), every rendered file is under {{STACK_DIR}}/kit/.
+  # ════════════════════════════════════════════════════════════════
+
+  # §MTLSHOPS T2 (2026-09-15): the kit's own identity, spiffe://<td>/service/kit. OPA, Prometheus and Alertmanager serve with
+  # it; Prometheus and the Grafana egress dial with it. None of them holds the registry's key (the shared SVID volume) or
+  # passes for the registry at the store or the TEG. Its own SPIRE entry (the provisioner keys the selector on the label
+  # below) and its own volume; the kit's services wait for its .ready marker.
+  {{REGISTRY_NAME}}-kit-cert-writer:
+    image: ${FT_CERT_WRITER_IMAGE:-agentvault2-cert-writer-test-a:spire1153}
+    container_name: {{REGISTRY_NAME}}-kit-cert-writer
+    restart: unless-stopped
+    environment:
+      SPIRE_SOCKET: ${FT_CW_SPIRE_SOCKET}
+      CERT_DIR: ${FT_CERT_DIR}
+      REFRESH_SEC: ${FT_CW_REFRESH_SEC}
+      SERVICE_NAME: ${FT_KITCW_SERVICE_NAME}
+    volumes:
+      - {{VOL_PREFIX}}_spire_socket_{{TS}}:/opt/spire/sockets:ro
+      - {{VOL_PREFIX}}_kit_certs_{{TS}}:/certs
+    networks:
+      - {{NET_NAME}}
+    labels:
+      # the SPIRE selector keys on THIS label (the provisioner's kit entry); change it and the kit silently gets no SVID
+      - "com.agentvault.service=svid-writer-kit-{{REGISTRY_NAME}}"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /certs/.ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    depends_on:
+      {{REGISTRY_NAME}}-spire-agent:
+        condition: service_started
+    logging: *default-logging
+
+  # OPA — the policy engine the registry shadows every authz decision to (opa_client.py). The image is
+  # distroless (no shell), so no compose healthcheck: the standup driver probes /health through the
+  # registry container. `opa run` does not watch its directory: a policy change is a container restart.
+  {{REGISTRY_NAME}}-opa:
+    image: ${FT_OPA_IMAGE}
+    container_name: {{REGISTRY_NAME}}-opa
+    restart: unless-stopped
+    # §MTLSHOPS T2 (2026-09-15): TLS on the kit's SVID. Every caller presents a certificate (--authentication=tls against the
+    # frame's bundle) and kit/opa/policies/system_authz.rego authorizes: the registry's decisions, policy list, scratch
+    # simulation modules and health, and the kit's metrics. The certificate and the bundle are re-read every
+    # FT_OPA_TLS_REFRESH (measured on 0.61.0: a rotated certificate and a bundle that gained a root, both with no restart).
+    command: ["run", "--server", "--addr", ":8181", "--log-level", "${FT_OPA_LOG_LEVEL}",
+              "--authentication=tls", "--authorization=basic",
+              "--tls-cert-file", "/certs/svid.0.pem", "--tls-private-key-file", "/certs/svid.0.key",
+              "--tls-ca-cert-file", "/certs/bundle.0.pem", "--tls-cert-refresh-period", "${FT_OPA_TLS_REFRESH}",
+              "/policies"]
+    volumes:
+      - {{STACK_DIR}}/kit/opa/policies:/policies:ro
+      - {{VOL_PREFIX}}_kit_certs_{{TS}}:/certs:ro
+    networks:
+      - {{NET_NAME}}
+    depends_on:
+      {{REGISTRY_NAME}}-kit-cert-writer:
+        condition: service_healthy
+    logging: *default-logging
+
+  # Prometheus — the frame scrapes ITSELF (kit/prometheus/prometheus.yml, rendered per frame) and
+  # evaluates the shipped frame rules. The registry's status page reads its history from here
+  # (PROMETHEUS_URL rides the env file, never this compose: contract R15).
+  {{REGISTRY_NAME}}-prometheus:
+    image: ${FT_PROM_IMAGE}
+    container_name: {{REGISTRY_NAME}}-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.config.file=/etc/prometheus/web.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=${FT_PROM_RETENTION}'
+      - '--web.enable-lifecycle'
+    volumes:
+      - {{STACK_DIR}}/kit/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - {{STACK_DIR}}/kit/prometheus/rules:/etc/prometheus/rules:ro
+      # §MTLSHOPS T2 (2026-09-15): TLS on the kit's SVID, a client certificate from the kit or the registry required
+      # (web.yml); client.yml is the healthcheck's own client.
+      - {{STACK_DIR}}/kit/prometheus/web.yml:/etc/prometheus/web.yml:ro
+      - {{STACK_DIR}}/kit/prometheus/client.yml:/etc/prometheus/client.yml:ro
+      - {{VOL_PREFIX}}_kit_certs_{{TS}}:/certs:ro
+      - {{VOL_PREFIX}}_prom_data_{{TS}}:/prometheus
+    networks:
+      - {{NET_NAME}}
+      - {{NET_NAME}}_grafana_egress
+      # §MTLSHOPS T2 (S4): its scrape lane to nginx-auditor
+      - {{NET_NAME}}_auditor
+    healthcheck:
+      # fails on a closed port and on a missing certificate (measured on v2.45.0: rc 1 when the certificate file is absent)
+      test: ["CMD", "promtool", "check", "healthy", "--url=https://localhost:9090", "--http.config.file=/etc/prometheus/client.yml"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      {{REGISTRY_NAME}}-kit-cert-writer:
+        condition: service_healthy
+    logging: *default-logging
+
+  # Alertmanager — the routes ship (page|critical first, §PAGEROUTE); the receivers' integrations are the
+  # operator's to name in kit/alertmanager/alertmanager.yml. A receiver with none drops what reaches it,
+  # deliberately, so this boots on any host.
+  {{REGISTRY_NAME}}-alertmanager:
+    image: ${FT_AM_IMAGE}
+    container_name: {{REGISTRY_NAME}}-alertmanager
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--web.config.file=/etc/alertmanager/web.yml'
+      - '--storage.path=/alertmanager'
+      - '--cluster.listen-address='
+    volumes:
+      - {{STACK_DIR}}/kit/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # §MTLSHOPS T2 (2026-09-15): TLS on the kit's SVID, a client certificate from the kit or the registry required.
+      - {{STACK_DIR}}/kit/alertmanager/web.yml:/etc/alertmanager/web.yml:ro
+      - {{STACK_DIR}}/kit/alertmanager/client.yml:/etc/alertmanager/client.yml:ro
+      - {{VOL_PREFIX}}_kit_certs_{{TS}}:/certs:ro
+      - {{VOL_PREFIX}}_am_data_{{TS}}:/alertmanager
+    networks:
+      - {{NET_NAME}}
+    healthcheck:
+      # fails on a closed port and on a missing certificate (measured on v0.26.0: rc 1 when the certificate file is absent)
+      test: ["CMD", "amtool", "--alertmanager.url=https://localhost:9093", "--http.config.file=/etc/alertmanager/client.yml", "config", "show"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      {{REGISTRY_NAME}}-kit-cert-writer:
+        condition: service_healthy
+    logging: *default-logging
+
+  # Grafana — provisioned datasource (uid DS_PROMETHEUS, the frame's own Prometheus) and the frame
+  # overview dashboard. LOOPBACK-bound like ntfy; a public door is a separate, deliberate step.
+  {{REGISTRY_NAME}}-grafana:
+    image: ${FT_GRAFANA_IMAGE}
+    container_name: {{REGISTRY_NAME}}-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${FT_GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${FT_GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: ${FT_GRAFANA_ALLOW_SIGN_UP}
+      GF_ANALYTICS_REPORTING_ENABLED: ${FT_GRAFANA_ANALYTICS}
+      GF_ANALYTICS_CHECK_FOR_UPDATES: ${FT_GRAFANA_ANALYTICS}
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: ${FT_GRAFANA_ANALYTICS}
+      GF_NEWS_NEWS_FEED_ENABLED: ${FT_GRAFANA_ANALYTICS}
+    # §MTLSHOPS T2 (S4, 2026-09-15): Grafana serves on a unix socket shared with the host edge alone, with no TCP listener.
+    # The socket file goes first: a Grafana killed before its own cleanup leaves it, and the next start exits on "bind:
+    # address already in use" (measured); one container owns the path.
+    entrypoint: ["sh", "-c", "rm -f /sock/grafana/grafana.sock && exec /run.sh cfg:default.server.protocol=socket cfg:default.server.socket=/sock/grafana/grafana.sock cfg:default.server.socket_mode=0666"]
+    volumes:
+      - {{STACK_DIR}}/kit/grafana/provisioning:/etc/grafana/provisioning:ro
+      - {{VOL_PREFIX}}_grafana_data_{{TS}}:/var/lib/grafana
+      - {{VOL_PREFIX}}_sock_grafana_{{TS}}:/sock/grafana
+    depends_on:
+      {{REGISTRY_NAME}}-prometheus:
+        condition: service_healthy
+      {{REGISTRY_NAME}}-grafana-egress:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "-o", "/dev/null", "--unix-socket", "/sock/grafana/grafana.sock", "http://localhost/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # §MTLSHOPS T2 (2026-09-15): off the frame network. Its operator door is the host edge (nginx-edge, over the socket);
+    # its datasource is the kit's egress on the private internal network Grafana, the egress and Prometheus share
+    # (measured: a frame member reached neither Grafana nor the egress, by name or by address).
+    networks:
+      - {{NET_NAME}}_grafana_egress
+    logging: *default-logging
+
+  # §MTLSHOPS T2 (2026-09-15, agentvault2-85's spec): Grafana's egress to the frame's Prometheus (kit/grafana/egress.conf): a
+  # plain listener on the private internal network alone, mutual TLS out with the kit's certificate, re-read by the
+  # entrypoint's reload loop (Grafana's own datasource reload does not pick up a rotated file certificate).
+  {{REGISTRY_NAME}}-grafana-egress:
+    image: nginx:1.30.5-alpine
+    container_name: {{REGISTRY_NAME}}-grafana-egress
+    restart: unless-stopped
+    volumes:
+      - {{STACK_DIR}}/kit/grafana/egress.conf:/etc/nginx/conf.d/default.conf:ro
+      - {{STACK_DIR}}/nginx-entrypoint.sh:/opt/nginx-entrypoint.sh:ro
+      - {{VOL_PREFIX}}_kit_certs_{{TS}}:/certs:ro
+    environment:
+      CERT_DIR: ${FT_CERT_DIR}
+      RELOAD_SEC: ${FT_NGGE_RELOAD_SEC}
+      SERVICE_NAME: ${FT_NGGE_SERVICE_NAME}
+    entrypoint: ["/bin/sh", "/opt/nginx-entrypoint.sh"]
+    networks:
+      - {{NET_NAME}}_grafana_egress
+    depends_on:
+      {{REGISTRY_NAME}}-kit-cert-writer:
+        condition: service_healthy
+    labels:
+      - "com.agentvault.service=grafana-egress-{{REGISTRY_NAME}}"
+    logging: *default-logging
+
+  # §MTLSHOPS T2 (S4, 2026-09-15, adopted with agentvault2-85): the frame's host edge. The only member of its own network
+  # and the only container that publishes a loopback port for an app: each port goes to that app's unix socket, with the
+  # host vhost's X-Real-IP and X-Forwarded-For passed through as they arrived (agentvault2-85 measured that a host request
+  # enters from the gateway of whichever network docker picks for the port; alone on its network, the edge makes that one
+  # address). Grafana, ntfy's subscribe door, the auditor's page and the store's lanes are behind it; the console follows.
+  {{REGISTRY_NAME}}-nginx-edge:
+    image: nginx:1.30.5-alpine
+    container_name: {{REGISTRY_NAME}}-nginx-edge
+    restart: unless-stopped
+    volumes:
+      - {{STACK_DIR}}/nginx-edge-frame-test.conf:/etc/nginx/conf.d/default.conf:ro
+      - {{VOL_PREFIX}}_sock_grafana_{{TS}}:/sock/grafana
+      - {{VOL_PREFIX}}_sock_ntfy_{{TS}}:/sock/ntfy
+      - {{VOL_PREFIX}}_sock_auditor_{{TS}}:/sock/auditor
+      - {{VOL_PREFIX}}_sock_event-store_{{TS}}:/sock/event-store
+    ports:
+      - "127.0.0.1:{{PORT_GRAFANA}}:3000"
+      - "127.0.0.1:{{PORT_NTFY}}:80"
+      - "127.0.0.1:{{PORT_AUDITOR}}:8045"
+      - "127.0.0.1:{{PORT_EVENTSTORE}}:8200"
+    depends_on:
+      {{REGISTRY_NAME}}-grafana:
+        condition: service_started
+      {{REGISTRY_NAME}}-ntfy:
+        condition: service_started
+      {{REGISTRY_NAME}}-auditor:
+        condition: service_started
+      {{REGISTRY_NAME}}-event-store:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - {{NET_NAME}}_edge
+    labels:
+      - "com.agentvault.service=nginx-edge-{{REGISTRY_NAME}}"
+    logging: *default-logging
+
+  # The solo auditor — this frame's OWN independent witness (Agents/TheAuditor, AUDITOR_SOLO): it reads the
+  # ledger's Postgres directly with a READ-ONLY role the standup creates (kit/auditor/frames/frames.json, 600,
+  # written by the driver), computes Δ in one statement, and serves its own page on loopback. Less independent
+  # than a witness on another host, and the host that stands the frame up keeps its own slot as well.
+  # §MTLSHOPS T2 (S4, 2026-09-15): the auditor on its own identity (spiffe://<td>/service/auditor, its own cert-writer and
+  # volume). Its one store read, GET /api/v1/projections/supply-audit, goes through nginx-event-store with that SVID: the
+  # route has no auth dependency and the gateway verifies the certificate (agentvault2-85, measured), so it carries no store
+  # key and is never one of the store's KNOWN_INTERNAL_SERVICES; the frames file the driver writes names the gateway (in
+  # solo mode EVENT_STORE_URL was never its store address, and REGISTRY_URL was read and used nowhere). It listens on a unix
+  # socket shared with nginx-edge (the host's door to its page) and nginx-auditor (Prometheus's scrape lane) alone; its
+  # frame-network membership is for its outbound reads (the three read-only DSNs and the gateway).
+  {{REGISTRY_NAME}}-auditor-cert-writer:
+    image: ${FT_CERT_WRITER_IMAGE:-agentvault2-cert-writer-test-a:spire1153}
+    container_name: {{REGISTRY_NAME}}-auditor-cert-writer
+    restart: unless-stopped
+    environment:
+      SPIRE_SOCKET: ${FT_CW_SPIRE_SOCKET}
+      CERT_DIR: ${FT_CERT_DIR}
+      REFRESH_SEC: ${FT_CW_REFRESH_SEC}
+      SERVICE_NAME: ${FT_AUDCW_SERVICE_NAME}
+    volumes:
+      - {{VOL_PREFIX}}_spire_socket_{{TS}}:/opt/spire/sockets:ro
+      - {{VOL_PREFIX}}_auditor_certs_{{TS}}:/certs
+    networks:
+      - {{NET_NAME}}
+    labels:
+      # the SPIRE selector keys on THIS label (the provisioner's auditor entry); change it and the auditor silently gets no SVID
+      - "com.agentvault.service=svid-writer-auditor-{{REGISTRY_NAME}}"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /certs/.ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    depends_on:
+      {{REGISTRY_NAME}}-spire-agent:
+        condition: service_started
+    logging: *default-logging
+
+  {{REGISTRY_NAME}}-auditor:
+    image: ${FT_AUDITOR_IMAGE}
+    container_name: {{REGISTRY_NAME}}-auditor
+    restart: unless-stopped
+    command: ["sh", "-c", "umask 000 && exec uvicorn src.auditor.main:app --uds /sock/auditor/auditor.sock --log-level info"]
+    environment:
+      AUDITOR_SOLO: ${FT_AUDITOR_AUDITOR_SOLO}
+      AUDITOR_EXTRA_FRAMES_FILE: ${FT_AUDITOR_AUDITOR_EXTRA_FRAMES_FILE}
+      AUDIT_INTERVAL: ${FT_AUDITOR_AUDIT_INTERVAL}
+      AGENT_NAME: ${FT_AUDITOR_AGENT_NAME}
+      AUDITOR_ADMIN_TOKEN: ${FT_AUDITOR_AUDITOR_ADMIN_TOKEN}
+      MAINTENANCE_ACTIVE: ${FT_AUDITOR_MAINTENANCE_ACTIVE}
+      AUDITOR_TLS_CERT: ${FT_AUDITOR_TLS_CERT}
+      AUDITOR_TLS_KEY: ${FT_AUDITOR_TLS_KEY}
+      AUDITOR_TLS_CA: ${FT_AUDITOR_TLS_CA}
+      # §MTLSHOPS T3: asyncpg reads these four (verify-full against the data SVID's names); it reads the key as the
+      # cert-writer writes it, so no private copy
+      PGSSLMODE: ${FT_PGSSLMODE}
+      PGSSLROOTCERT: ${FT_PGTLS_CERTS_ROOTCERT}
+      PGSSLCERT: ${FT_PGTLS_CERTS_CERT}
+      PGSSLKEY: ${FT_PGTLS_CERTS_KEY}
+    volumes:
+      - {{STACK_DIR}}/kit/auditor/frames:/app/frames:ro
+      - {{VOL_PREFIX}}_auditor_data_{{TS}}:/app/data
+      - {{VOL_PREFIX}}_auditor_certs_{{TS}}:/certs:ro
+      - {{VOL_PREFIX}}_sock_auditor_{{TS}}:/sock/auditor
+    depends_on:
+      {{REGISTRY_NAME}}-es-db:
+        condition: service_healthy
+      {{REGISTRY_NAME}}-auditor-cert-writer:
+        condition: service_healthy
+    networks:
+      - {{NET_NAME}}
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "--unix-socket", "/sock/auditor/auditor.sock", "http://auditor/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging: *default-logging
+
+  # §MTLSHOPS T2 (S4, 2026-09-15): Prometheus's scrape lane to the auditor's /metrics. TLS on the auditor's SVID under the
+  # name {{REGISTRY_NAME}}-nginx-auditor, a client certificate the frame's bundle chains, GET /metrics only, on an internal
+  # network whose only other member is Prometheus (nginx cannot read which identity a certificate names). The kit's breach
+  # rule (auditor_status == 0) reads what this lane serves.
+  {{REGISTRY_NAME}}-nginx-auditor:
+    image: nginx:1.30.5-alpine
+    container_name: {{REGISTRY_NAME}}-nginx-auditor
+    restart: unless-stopped
+    volumes:
+      - {{STACK_DIR}}/nginx-auditor-frame-test.conf:/etc/nginx/conf.d/default.conf:ro
+      - {{STACK_DIR}}/nginx-entrypoint.sh:/opt/nginx-entrypoint.sh:ro
+      - {{VOL_PREFIX}}_auditor_certs_{{TS}}:/certs:ro
+      - {{VOL_PREFIX}}_sock_auditor_{{TS}}:/sock/auditor
+    environment:
+      CERT_DIR: ${FT_CERT_DIR}
+      RELOAD_SEC: ${FT_NGAUD_RELOAD_SEC}
+      SERVICE_NAME: ${FT_NGAUD_SERVICE_NAME}
+    entrypoint: ["/bin/sh", "/opt/nginx-entrypoint.sh"]
+    networks:
+      - {{NET_NAME}}_auditor
+    depends_on:
+      {{REGISTRY_NAME}}-auditor-cert-writer:
+        condition: service_healthy
+      {{REGISTRY_NAME}}-auditor:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    labels:
+      - "com.agentvault.service=nginx-auditor-{{REGISTRY_NAME}}"
+    logging: *default-logging
+
+  # THE DIRECTORY (the frame's own federated index, §DIRFEED/§MTLSGAP) — three containers, the EU shape:
+  # its identity (a cert-writer on the frame's SPIRE socket; the entry is registered by the provisioner
+  # beside the registry's), the index itself (frame network ONLY: on the identity network the operators'
+  # aliases hijack its crawl), and the mTLS read leg the registry dials with its SVID.
+  {{REGISTRY_NAME}}-directory-cert-writer:
+    image: ${FT_CERT_WRITER_IMAGE:-agentvault2-cert-writer-test-a:spire1153}
+    container_name: {{REGISTRY_NAME}}-directory-cert-writer
+    restart: unless-stopped
+    environment:
+      SPIRE_SOCKET: ${FT_CW_SPIRE_SOCKET}
+      CERT_DIR: ${FT_CERT_DIR}
+      REFRESH_SEC: ${FT_CW_REFRESH_SEC}
+      SERVICE_NAME: ${FT_DIRCW_SERVICE_NAME}
+    volumes:
+      - {{VOL_PREFIX}}_spire_socket_{{TS}}:/opt/spire/sockets:ro
+      - {{VOL_PREFIX}}_directory_certs_{{TS}}:/certs
+    networks:
+      - {{NET_NAME}}
+      - {{IDENTITY_NET_NAME}}
+    labels:
+      # the SPIRE selector keys on THIS label (register_test_frame_spire_entries); change it and the index silently gets no SVID
+      - "com.agentvault.service=svid-writer-directory-{{REGISTRY_NAME}}"
+    depends_on:
+      {{REGISTRY_NAME}}-spire-agent:
+        condition: service_started
+    logging: *default-logging
+
+  {{REGISTRY_NAME}}-directory:
+    image: ${FT_DIRECTORY_IMAGE}
+    container_name: {{REGISTRY_NAME}}-directory
+    restart: unless-stopped
+    environment:
+      DIRECTORY_ANCHORS: ${FT_DIR_DIRECTORY_ANCHORS}
+      DIRECTORY_SYNC_SECONDS: ${FT_DIR_DIRECTORY_SYNC_SECONDS}
+      DIRECTORY_MAX_HOPS: ${FT_DIR_DIRECTORY_MAX_HOPS}
+      DIRECTORY_FULL_EVERY: ${FT_DIR_DIRECTORY_FULL_EVERY}
+      DIRECTORY_HOPS_BY_REGISTRY: ${FT_DIR_DIRECTORY_HOPS_BY_REGISTRY}
+      DIRECTORY_DB: ${FT_DIR_DIRECTORY_DB}
+      DIRECTORY_CERT_DIR: ${FT_DIR_DIRECTORY_CERT_DIR}
+      DIRECTORY_READERS: ${FT_DIR_DIRECTORY_READERS}
+      # The proxy marker (agentvault2-85's T4 contract): the index trusts X-SSL-Client-* ONLY when the request also
+      # carries X-Directory-Proxy-Auth equal to this secret. Only its own nginx sidecar sets that header, so a
+      # neighbour on the frame network cannot forge a verified reader.
+      DIRECTORY_PROXY_TRUST_SECRET: ${FT_DIR_DIRECTORY_PROXY_TRUST_SECRET}
+      DATABASE_URL: ${FT_DIR_DATABASE_URL}
+      API_KEY_SECRET: ${FT_DIR_API_KEY_SECRET}
+    # §MTLSHOPS T2 (S4, 2026-09-15): the index listens on a unix socket shared with its terminator alone, not on the frame
+    # network (its port 8600 answered every member in plain). --uds only: behind a socket, --proxy-headers with '*' makes the
+    # caller's forged first X-Forwarded-For element the client (measured on this image's uvicorn 0.34.3); the terminator sets
+    # X-Real-IP and V0378's middleware reads it. umask 000 lets the terminator's nginx user connect.
+    command: ["sh", "-c", "umask 000 && exec uvicorn directory.app:app --uds /sock/directory/directory.sock"]
+    volumes:
+      - {{VOL_PREFIX}}_directory_data_{{TS}}:/data
+      - {{VOL_PREFIX}}_directory_certs_{{TS}}:/certs:ro
+      - {{VOL_PREFIX}}_sock_directory_{{TS}}:/sock/directory
+    depends_on:
+      {{REGISTRY_NAME}}-directory-cert-writer:
+        condition: service_started
+      {{REGISTRY_NAME}}-registry:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "-o", "/dev/null", "--unix-socket", "/sock/directory/directory.sock", "http://localhost/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - {{NET_NAME}}
+    logging: *default-logging
+
+  {{REGISTRY_NAME}}-directory-nginx:
+    image: nginx:1.30.5-alpine
+    container_name: {{REGISTRY_NAME}}-directory-nginx
+    restart: unless-stopped
+    volumes:
+      # Mounted as a TEMPLATE, not the live conf: the entrypoint wrapper below substitutes the ONE proxy-marker
+      # variable into conf.d at start, so the secret lives in the env file and the container env, never in a
+      # rendered file at rest in the stack dir. nginx's own $variables are untouched (envsubst takes a list).
+      - {{STACK_DIR}}/nginx-directory-frame-test.conf:/etc/nginx/templates/directory.conf.template:ro
+      - {{STACK_DIR}}/nginx-entrypoint.sh:/opt/nginx-entrypoint.sh:ro
+      - {{VOL_PREFIX}}_directory_certs_{{TS}}:/certs:ro
+      - {{VOL_PREFIX}}_sock_directory_{{TS}}:/sock/directory
+    environment:
+      CERT_DIR: ${FT_CERT_DIR}
+      RELOAD_SEC: ${FT_NGDIR_RELOAD_SEC}
+      SERVICE_NAME: ${FT_NGDIR_SERVICE_NAME}
+      DIRECTORY_PROXY_TRUST_SECRET: ${FT_NGDIR_PROXY_TRUST_SECRET}
+    entrypoint: ["/bin/sh", "-c", "envsubst '$$DIRECTORY_PROXY_TRUST_SECRET' < /etc/nginx/templates/directory.conf.template > /etc/nginx/conf.d/default.conf && exec /bin/sh /opt/nginx-entrypoint.sh"]
+    depends_on:
+      {{REGISTRY_NAME}}-directory-cert-writer:
+        condition: service_started
+      {{REGISTRY_NAME}}-directory:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - {{NET_NAME}}
+      - {{IDENTITY_NET_NAME}}
+    logging: *default-logging
+
+# ════════════════════════════════════════════════════════════════
+# VOLUMES (timestamped — destroyed per test run)
+# ════════════════════════════════════════════════════════════════
+
+volumes:
+  {{VOL_PREFIX}}_ntfy_cache_{{TS}}:
+    name: {{VOL_PREFIX}}_ntfy_cache_{{TS}}
+  {{VOL_PREFIX}}_redpanda_data_{{TS}}:
+    name: {{VOL_PREFIX}}_redpanda_data_{{TS}}
+  # §MTLSHOPS S5: the broker's TLS files, rewritten in place by redpanda-tls. Named, not tmpfs: after a host reboot the broker
+  # starts before redpanda-tls and serves the last pair it finds until the sidecar's first sync.
+  {{VOL_PREFIX}}_redpanda_tls_{{TS}}:
+    name: {{VOL_PREFIX}}_redpanda_tls_{{TS}}
+  {{VOL_PREFIX}}_pg_registry_{{TS}}:
+    name: {{VOL_PREFIX}}_pg_registry_{{TS}}
+  {{VOL_PREFIX}}_pg_teg_{{TS}}:
+    name: {{VOL_PREFIX}}_pg_teg_{{TS}}
+  {{VOL_PREFIX}}_pg_events_{{TS}}:
+    name: {{VOL_PREFIX}}_pg_events_{{TS}}
+  {{VOL_PREFIX}}_spire_data_{{TS}}:
+    name: {{VOL_PREFIX}}_spire_data_{{TS}}
+  {{VOL_PREFIX}}_spire_socket_{{TS}}:
+    name: {{VOL_PREFIX}}_spire_socket_{{TS}}
+  {{VOL_PREFIX}}_svid_certs_{{TS}}:
+    name: {{VOL_PREFIX}}_svid_certs_{{TS}}
+  {{VOL_PREFIX}}_teg_certs_{{TS}}:
+    name: {{VOL_PREFIX}}_teg_certs_{{TS}}
+  {{VOL_PREFIX}}_es_certs_{{TS}}:
+    name: {{VOL_PREFIX}}_es_certs_{{TS}}
+  {{VOL_PREFIX}}_nginx_event_store_certs_{{TS}}:
+    name: {{VOL_PREFIX}}_nginx_event_store_certs_{{TS}}
+  {{VOL_PREFIX}}_nginx_teg_certs_{{TS}}:
+    name: {{VOL_PREFIX}}_nginx_teg_certs_{{TS}}
+  {{VOL_PREFIX}}_nginx_federation_certs_{{TS}}:
+    name: {{VOL_PREFIX}}_nginx_federation_certs_{{TS}}
+  {{VOL_PREFIX}}_redpanda_certs_{{TS}}:
+    name: {{VOL_PREFIX}}_redpanda_certs_{{TS}}
+  {{VOL_PREFIX}}_registry_data_{{TS}}:
+    name: {{VOL_PREFIX}}_registry_data_{{TS}}
+  # §SOVKIT — the kit's state
+  {{VOL_PREFIX}}_prom_data_{{TS}}:
+    name: {{VOL_PREFIX}}_prom_data_{{TS}}
+  {{VOL_PREFIX}}_am_data_{{TS}}:
+    name: {{VOL_PREFIX}}_am_data_{{TS}}
+  {{VOL_PREFIX}}_grafana_data_{{TS}}:
+    name: {{VOL_PREFIX}}_grafana_data_{{TS}}
+  {{VOL_PREFIX}}_auditor_data_{{TS}}:
+    name: {{VOL_PREFIX}}_auditor_data_{{TS}}
+  {{VOL_PREFIX}}_auditor_certs_{{TS}}:
+    name: {{VOL_PREFIX}}_auditor_certs_{{TS}}
+  # §MTLSHOPS T3: the data identity's SVID, mounted by its cert-writer and the four data services alone
+  {{VOL_PREFIX}}_data_certs_{{TS}}:
+    name: {{VOL_PREFIX}}_data_certs_{{TS}}
+  {{VOL_PREFIX}}_directory_data_{{TS}}:
+    name: {{VOL_PREFIX}}_directory_data_{{TS}}
+  {{VOL_PREFIX}}_directory_certs_{{TS}}:
+    name: {{VOL_PREFIX}}_directory_certs_{{TS}}
+  {{VOL_PREFIX}}_kit_certs_{{TS}}:
+    name: {{VOL_PREFIX}}_kit_certs_{{TS}}
+  # §MTLSHOPS T2 (S4): the apps' unix sockets, each a tmpfs shared with its terminator(s) alone (mode 1777: a root app, a
+  # uid-1000 app and nginx's user measured working together; a recreated app rebinds and its terminator recovers).
+  {{VOL_PREFIX}}_sock_directory_{{TS}}:
+    name: {{VOL_PREFIX}}_sock_directory_{{TS}}
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "mode=1777"
+  {{VOL_PREFIX}}_sock_teg_{{TS}}:
+    name: {{VOL_PREFIX}}_sock_teg_{{TS}}
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "mode=1777"
+  {{VOL_PREFIX}}_sock_grafana_{{TS}}:
+    name: {{VOL_PREFIX}}_sock_grafana_{{TS}}
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "mode=1777"
+  {{VOL_PREFIX}}_sock_ntfy_{{TS}}:
+    name: {{VOL_PREFIX}}_sock_ntfy_{{TS}}
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "mode=1777"
+  {{VOL_PREFIX}}_sock_auditor_{{TS}}:
+    name: {{VOL_PREFIX}}_sock_auditor_{{TS}}
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "mode=1777"
+  {{VOL_PREFIX}}_sock_event-store_{{TS}}:
+    name: {{VOL_PREFIX}}_sock_event-store_{{TS}}
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "mode=1777"
+
+# ════════════════════════════════════════════════════════════════
+# NETWORKS (isolated per test run — plus optional identity net
+# that will get aliases added for sandbox-a federation)
+# ════════════════════════════════════════════════════════════════
+
+networks:
+  {{NET_NAME}}:
+    driver: bridge
+    name: {{NET_NAME}}
+  {{IDENTITY_NET_NAME}}:
+    {{IDENTITY_NET_DEFINITION}}
+    name: {{IDENTITY_NET_NAME}}
+  # §SOVKIT K1 (2026-09-14): the ledger bus. The broker and the store are its only members; internal: no route out.
+  {{NET_NAME}}_ledger:
+    driver: bridge
+    internal: true
+    name: {{NET_NAME}}_ledger
+  # §MTLSHOPS T2 (2026-09-15): Grafana's egress network is internal (Grafana, the kit's egress and Prometheus only).
+  {{NET_NAME}}_grafana_egress:
+    driver: bridge
+    internal: true
+    name: {{NET_NAME}}_grafana_egress
+  # §MTLSHOPS T2 (S4, 2026-09-15): the host edge's network, nginx-edge its only member. Not internal: docker publishes no
+  # port from a container whose only network is internal.
+  {{NET_NAME}}_edge:
+    driver: bridge
+    name: {{NET_NAME}}_edge
+  # §MTLSHOPS T2 (S4, 2026-09-15): the registry's publish lane to ntfy. nginx-ntfy and the registry its only members;
+  # internal: no route out. nginx cannot read a URI SAN, so membership is what refuses the frame's other identities.
+  {{NET_NAME}}_ntfy:
+    driver: bridge
+    internal: true
+    name: {{NET_NAME}}_ntfy
+  # §MTLSHOPS T2 (S4, 2026-09-15): Prometheus's scrape lane to the auditor. nginx-auditor and Prometheus its only members.
+  {{NET_NAME}}_auditor:
+    driver: bridge
+    internal: true
+    name: {{NET_NAME}}_auditor

@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  {{ container_name }}:
+    build: .
+    container_name: {{ container_name }}
+    restart: unless-stopped
+    env_file:
+      - .env
+      - .env.secret
+    ports:
+      - "{{ agent_api_port }}:{{ agent_api_port }}"
+      - "{{ agent_metrics_port }}:{{ agent_metrics_port }}"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./circuits:/app/circuits
+    networks:
+      - agent_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:{{ agent_api_port }}/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  agent_net:
+    driver: bridge

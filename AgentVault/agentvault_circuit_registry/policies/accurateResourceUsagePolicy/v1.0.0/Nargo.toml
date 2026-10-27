@@ -1,0 +1,7 @@
+[package]
+name = "accurate_resource_usage"
+type = "bin"
+authors = ["TheProtocol"]
+compiler_version = ">=0.1.0"
+
+[dependencies]

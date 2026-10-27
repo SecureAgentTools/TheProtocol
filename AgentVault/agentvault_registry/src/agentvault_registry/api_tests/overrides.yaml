@@ -1,0 +1,140 @@
+# API tester catalog overrides
+# Loaded by api_tests/core/catalog_sync.py at runtime.
+# Edit this file to:
+#   1) Exclude entire path prefixes (games, deprecated routes)
+#   2) Override category/auth/description for specific endpoints
+#   3) Mark endpoints as `hidden` to omit from the test catalog
+#
+# Precedence: contract class > overrides.yaml > OpenAPI introspection > heuristic fallback
+
+# ── Globs to exclude from the catalog entirely ───────────────────────────
+# Uses fnmatch-style globs against the FULL path (with /api/v1 prefix stripped).
+paths_to_exclude:
+  # MCP games + entire root-mounted MCP/OAuth surface
+  # (Commander directive 2026-05-21: games platform + MCP root routes are
+  # mounted WITHOUT /api/v1 prefix, so they 404 when the test runner re-prefixes.
+  # MCP integration is tested via dedicated mcp-smoke flow, not the catalog.)
+  - "/mcp/*"
+  - "/mcp"
+  - "/mcp/"
+  # Root-mounted OAuth + .well-known (no /api/v1 prefix in actual mount)
+  - "/oauth/register"
+  - "/oauth/authorize"
+  - "/oauth/token"
+  - "/.well-known/oauth-authorization-server"
+  - "/.well-known/oauth-protected-resource"
+
+  # Heavy slow endpoints — tested via dedicated UI tabs / Grafana, not the catalog
+  - "/admin/api-test/run-all"                            # legacy SmartTestRunner, 15-30 min, self-test
+  - "/admin/cloud-operators/{application_id}/provision"  # provisioning lifecycle, 5-15 min destructive
+  - "/admin/cloud-operators/{application_id}/teardown"   # same
+
+  # Astraeus (Commander directive 2026-05-21: marked for removal)
+  - "/astraeus/*"
+  - "/astraeus"
+
+  # Sandbox wildcard proxies — these match any sub-path, untestable as catalog entries
+  - "/sandbox/a/*"
+  - "/sandbox/b/*"
+
+# ── Per-endpoint overrides ──────────────────────────────────────────────
+# Key = "METHOD /path/with/{placeholders}"
+# Fields: category, auth, description, hidden, slow_timeout_sec
+endpoints:   # §MCPTEST30 (V0545): a mapping, never null
+  # §SUITES1018 batch 7: a peer-only read (require_peer_registry_identity) whose OpenAPI security names the federation
+  # licence first, so the catalog took it for a developer route and the sweep sent a developer token: 401 on every run.
+  # As "mtls" it carries the internal rail's peer identity (auth_manager.federation_spiffe_id); it reads the TEG ledger
+  # gate and changes nothing.
+  "GET /teg/fx/ledger":
+    auth: mtls
+  # Example shapes (these are no-ops until matching endpoints are added)
+  # "POST /teg/transfer":
+  #   category: teg_integration
+  #   auth: agent
+  #   slow_timeout_sec: 60
+
+# ── Auth heuristics fallback ────────────────────────────────────────────
+# Path-prefix → default auth when OpenAPI security is ambiguous
+auth_prefix_defaults:
+  "/admin/": developer
+  "/developers/me": developer
+  "/onboard/": developer
+  "/governance/proposals": agent
+  "/governance/votes": agent
+  "/teg/transfer": agent
+  "/teg/balance": agent
+  "/staking/": agent
+  "/agents/me": agent
+  "/bundles/": developer
+  "/fiat/": developer
+  "/.well-known/": none
+  "/health": none
+  "/metrics": none
+  "/public/": none
+
+# ── Tag-to-category mapping ──────────────────────────────────────────────
+# When OpenAPI tag doesn't match a sensible category, remap here.
+# Default behaviour: tag.lower().replace(" ", "_").replace("-", "_")
+tag_remap:
+  "Admin Health": admin_health
+  "Admin Federation": admin_federation
+  "Admin Agents": admin_agents
+  "Admin Developers": admin_developers
+  "Admin Diagnostics": admin_diagnostics
+  "Admin API Test": admin_api_test
+  "Admin": admin
+  "Agent Builder": agent_builder
+  "Agent Cards": agent_cards
+  "Agent CI/CD": agent_cicd
+  "Agent Discovery": agent_discovery
+  "Agent Logs": agent_logs
+  "Agents Export/Import": agents_export_import
+  "Agents": agents
+  "Attestations": attestations
+  "Auth": auth
+  "Auth 2FA": auth_2fa
+  "Auth Secure": auth_secure
+  "Contracts": contracts
+  "Developers": developers
+  "Disputes": disputes
+  "Disputes Enhanced": disputes_enhanced
+  "Enforcement Admin": enforcement_admin
+  "Enforcement Agent": enforcement_agent
+  "Enhanced Tokenomics": enhanced_tokenomics
+  "Federation Disputes": federation_disputes
+  "Federation Peers": federation_peers
+  "Federation Public": federation_public
+  "Federation Query": federation_query
+  "Federation Sync": federation_sync
+  "Federation Topology": federation_topology
+  "Frame Invitations": frame_invitations
+  "Funding Requests": funding_requests
+  "Governance": governance
+  "Metrics": metrics
+  "MCP Health": mcp_health
+  "Onboarding": onboarding
+  "Operator Lifecycle": operator_lifecycle
+  "OAuth Federation": oauth_federation
+  "Organizations": organizations
+  "Reputation": reputation
+  "Reputation Signal": reputation_signal
+  "Staking Enhanced": staking_enhanced
+  "Staking Rewards": staking_rewards
+  "System": system
+  "TEG Integration": teg_integration
+  "TEG Integration JWT-SVID": teg_integration_jwt_svid
+  "TEG Integration mTLS": teg_integration_mtls
+  "TEG Integration OAuth": teg_integration_oauth
+  "TEG Summary Enhanced": teg_summary_enhanced
+  "TEG Transactions": teg_transactions
+  "Token Bridge": token_bridge
+  "Utils": utils
+  "Websocket": websocket
+  "WebSocket": websocket
+  "Consul Admin": consul_admin
+  "Consul Admin Mutations": consul_admin_mutations
+  "Fiat Onramp": fiat_onramp
+  "Agent Bundles": agent_bundles
+  "Agent Signing Keys": agent_signing_keys
+  "Agent Card Pullsync": agent_card_pullsync
+  "Agent Card Drift": agent_card_drift

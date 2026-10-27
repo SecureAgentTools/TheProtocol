@@ -1,0 +1,487 @@
+# docker-compose.operator.yml — TheProtocol Sovereign Registry (Federated)
+# Connects to the TheProtocol mainframe EventStore via federation license.
+# SPIRE agent connects to mainframe for mTLS identity (spire.theprotocol.cloud:8444).
+# 10 containers. 2.5GB RAM. Sovereign economy with cryptographic federation.
+#
+# Prerequisites:
+#   - Run onboard-operator.sh on mainframe to get spire/ and nginx/ directories
+#   - Copy spire/ and nginx/ into this deployment directory
+#   - Generate .env.operator with federation license key
+#
+# Usage:
+#   docker compose -f docker-compose.operator.yml --env-file .env.operator up -d
+
+x-common-env: &common-env
+  TZ: UTC
+
+services:
+  # ────────────────────────────────────────────────────────────
+  # SPIRE Agent — Remote attestation to TheProtocol mainframe
+  # ────────────────────────────────────────────────────────────
+  spire-agent:
+    image: ghcr.io/spiffe/spire-agent:1.15.3
+    container_name: ${REGISTRY_NAME:-operator}-spire-agent
+    hostname: spire-agent
+    user: "0:0"
+    pid: "host"
+    volumes:
+      - ./spire/agent.conf:/opt/spire/conf/agent.conf:ro
+      - ./spire/agent-attestation.crt:/opt/spire/conf/agent-attestation.crt:ro
+      - ./spire/agent-attestation.key:/opt/spire/conf/agent-attestation.key:ro
+      - ./spire/trust-bundle.crt:/opt/spire/conf/trust-bundle.crt:ro
+      - spire-agent-socket:/opt/spire/sockets
+      - spire-agent-data:/opt/spire/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    entrypoint: ["/opt/spire/bin/spire-agent"]
+    command: ["run", "-config", "/opt/spire/conf/agent.conf"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/opt/spire/bin/spire-agent", "healthcheck", "-socketPath", "/opt/spire/sockets/agent.sock"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - operator-net
+
+  # ────────────────────────────────────────────────────────────
+  # Cert Writer — Fetches SVIDs from SPIRE agent for nginx mTLS
+  # ────────────────────────────────────────────────────────────
+  cert-writer:
+    image: ${IMAGES_PREFIX:-images.theprotocol.cloud}/cert-writer:${VERSION:-stable}
+    container_name: ${REGISTRY_NAME:-operator}-cert-writer
+    depends_on:
+      spire-agent:
+        condition: service_healthy
+    volumes:
+      - spire-agent-socket:/opt/spire/sockets:ro
+      - svid-certs:/certs
+    environment:
+      SPIRE_SOCKET: /opt/spire/sockets/agent.sock
+      CERT_DIR: /certs
+      REFRESH_SEC: "300"
+      SERVICE_NAME: ${REGISTRY_NAME:-operator}-registry
+    user: "0:0"
+    pid: "host"
+    restart: unless-stopped
+    labels:
+      - "com.agentvault.service=svid-writer-operator"
+    networks:
+      - operator-net
+
+  # ────────────────────────────────────────────────────────────
+  # nginx Federation — mTLS sidecar for federation sync
+  # ────────────────────────────────────────────────────────────
+  nginx-federation:
+    image: nginx:1.30.5-alpine
+    container_name: ${REGISTRY_NAME:-operator}-nginx-federation
+    ports:
+      - "12443:8443"
+    depends_on:
+      cert-writer:
+        condition: service_started
+      registry:
+        condition: service_started
+    volumes:
+      - ./nginx/nginx-federation.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/nginx-entrypoint.sh:/opt/nginx-entrypoint.sh:ro
+      - svid-certs:/certs:ro
+      # §pass51 — Bundles feature storage volume (paris pattern)
+      - ./bundle-storage:/app/bundle-storage
+    environment:
+      CERT_DIR: /certs
+      RELOAD_SEC: "300"
+      SERVICE_NAME: ${REGISTRY_NAME:-operator}-nginx
+    entrypoint: ["/bin/sh", "/opt/nginx-entrypoint.sh"]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    labels:
+      - "com.agentvault.service=nginx-operator"
+    networks:
+      - operator-net
+
+  # ────────────────────────────────────────────────────────────
+  # nginx TEG — mTLS sidecar in front of the local TEG (§2026-06-16 Phase 3)
+  # Internal-only (operator-net); forwards registry SVID so the TEG resolver authenticates Mode-1.
+  # ────────────────────────────────────────────────────────────
+  nginx-teg:
+    image: nginx:1.30.5-alpine
+    container_name: ${REGISTRY_NAME:-operator}-nginx-teg
+    depends_on:
+      cert-writer:
+        condition: service_started
+      teg-layer:
+        condition: service_healthy
+    volumes:
+      - ./nginx/nginx-teg.conf:/etc/nginx/templates/nginx-teg.conf:ro
+      - ./nginx/nginx-entrypoint.sh:/opt/nginx-entrypoint.sh:ro
+      - svid-certs:/certs:ro
+    environment:
+      CERT_DIR: /certs
+      RELOAD_SEC: "300"
+      SERVICE_NAME: ${REGISTRY_NAME:-operator}-nginx-teg
+      TEG_UPSTREAM_HOST: ${REGISTRY_NAME:-operator}-teg
+    entrypoint: ["/bin/sh", "/opt/nginx-entrypoint.sh"]
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    labels:
+      - "com.agentvault.service=nginx-teg-operator"
+    networks:
+      - operator-net
+
+  # ────────────────────────────────────────────────────────────
+  # Registry — FastAPI backend + Vue frontend
+  # ────────────────────────────────────────────────────────────
+  registry:
+    image: ${IMAGES_PREFIX:-images.theprotocol.cloud}/registry:${VERSION:-stable}
+    container_name: ${REGISTRY_NAME:-operator}-registry
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:12000:8000"
+    env_file: .env.operator
+    volumes:
+      - spire-agent-socket:/opt/spire/sockets:ro
+      - svid-certs:/certs:ro
+      # §pass51 — Bundles feature storage volume
+      - ./bundle-storage:/app/bundle-storage
+      # 🔴 §PEERKEYROT, on the OPERATOR side (2026-09-08). The registry generates its Ed25519
+      # BUNDLE SIGNING KEY lazily on the first call to /attestations/signing-pubkey and persists
+      # it to /app/data. `ZKP_PHASE_4_ENABLED` defaults to TRUE, so that rail is live here — and
+      # with no volume the key landed in the CONTAINER LAYER and rotated on every recreate, which
+      # is precisely the defect R7 fixed for the frame template and never for this one. A peer
+      # that cached the pubkey trust-on-first-use would pin one this node can no longer produce.
+      # ⚠ NOT `registry-data` — that name is already taken by this file for the registry's raw
+      # PGDATA. Two different things, and reusing the word is how the wrong one gets picked.
+      - registry-appdata:/app/data
+    environment:
+      # §SECFIX-4 (2026-09-25): a federation caller must be bound to an ACTIVE peer row
+      FEDERATION_REQUIRE_PEER_SPIFFE_BIND: "true"
+      <<: *common-env
+      DATABASE_URL: postgresql+asyncpg://registry:${PG_PASS_REGISTRY}@pgbouncer:6432/agentvault_registry
+      DATABASE_URL_SYNC: postgresql://registry:${PG_PASS_REGISTRY}@pgbouncer:6432/agentvault_registry
+      TEG_LAYER_URL: http://teg-layer:8080
+      # §2026-06-16 TEG-mTLS Phase 3 — admin/treasury/bulk dials via nginx-teg mTLS sidecar.
+      TEG_API_BASE_URL: https://nginx-teg:8443
+      EVENT_STORE_URL: https://events.theprotocol.cloud
+      REDIS_URL: redis://registry:${REDIS_PASSWORD_REGISTRY}@redis:6379/0
+      # §MTLSHOPS G2 (2026-09-16): the registry counts a forwarded certificate ONLY beside its own terminator's
+      # marker. Unset or under 32 characters and the header path is off, which refuses rather than trusts.
+      REGISTRY_PROXY_TRUST_SECRET: ${REGISTRY_PROXY_TRUST_SECRET}
+      SECRET_KEY: ${SECRET_KEY}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      API_KEY_SECRET: ${API_KEY_SECRET}
+      TEG_ADMIN_API_KEY: ${TEG_ADMIN_API_KEY}
+      # §SOVKIT-2 R2 (2026-09-14): no store key. An operator writes to its parent frame's store by SVID through the
+      # parent's mTLS edge, where nginx clears X-Internal-Key; a key here only ever opened a second, unused origin path.
+      SPIFFE_ENDPOINT_SOCKET: unix:///opt/spire/sockets/agent.sock
+      FEDERATION_BASE_URL: https://nginx-federation:8443
+      # §FRAMELIC row 154 — the PUBLIC federation address, for the signed card.
+      BILATERAL_PEER_URL: ${BILATERAL_PEER_URL:-}
+      MINTING_AUTHORITY: disabled
+      FEDERATION_LICENSE_KEY: ${FEDERATION_LICENSE_KEY:-}
+      FEDERATION_OPERATOR_ID: ${FEDERATION_OPERATOR_ID:-}
+      GENESIS_GRANT_ENABLED: ${GENESIS_GRANT_ENABLED:-true}
+      GENESIS_GRANT_AMOUNT: ${GENESIS_GRANT_AMOUNT:-5000.0}
+      BETA_INVITE_REQUIRED: ${BETA_INVITE_REQUIRED:-false}
+      AUDITED_BALANCE_ENABLED: ${AUDITED_BALANCE_ENABLED:-true}
+      MAIL_SERVER: ${MAIL_SERVER:-smtp.example.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-noreply@example.com}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-TheProtocol}
+      MAIL_STARTTLS: ${MAIL_STARTTLS:-True}
+      MAIL_SSL_TLS: ${MAIL_SSL_TLS:-False}
+      UVICORN_WORKERS: 8
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prom_multiproc
+      # §pass66 (2026-05-22) — performance + reactor envs from paris's
+      # working config. Without these, cloud-ops run on the legacy direct-
+      # httpx path (slower) AND reactor handler concurrency falls back to
+      # defaults (saga refunds queue up under cross-frame transfer load).
+      # 2026-05-03: async cross-frame transfer backend (default 2pc, opt-in async).
+      TEG_CROSS_FRAME_BACKEND: async
+      # 2026-05-01: enable TEGBulkProxy. Without these the /teg/transfer
+      # handler runs the legacy direct-httpx path. With them, requests are
+      # batched into TEG's /transfer/bulk endpoint.
+      TEG_BULK_PROXY: "true"
+      TEG_BULK_PROXY_BATCH_SIZE: "200"
+      TEG_BULK_PROXY_FLUSH_MS: "10"
+      # LIGHTNING-2 (2026-05-01): cross-worker shared-buffer batching via Redis
+      # Streams + leader-elected flusher.
+      TEG_BULK_PROXY_BACKEND: stream
+      TEG_STREAM_LINGER_MIN_BATCH: "1"
+      TEG_STREAM_BLOCK_MS: "500"
+      # §RATEFIX 2026-08-27 — removed. It used to monkey-patch
+      # slowapi.Limiter.limit into a no-op at import, which made all 65
+      # per-route limits inert. It now means "disable this process's
+      # limiter" and belongs only on the sandbox/API-tester registries.
+      # 2026-05-03 Round 7: saga tuning + reactor concurrency for cross-frame load.
+      SAGA_CROSS_FRAME_TIMEOUT_MIN: "30"
+      SAGA_REFUND_CONCURRENCY: "5"
+      SAGA_REFUND_BATCH: "100"
+      REACTOR_HANDLER_CONCURRENCY: "100"
+      REACTOR_POLLING_BACKSTOP_LOOKBACK_SEC: "1800"
+      # 2026-05-04 Vector A+B: adaptive saga concurrency + bulk credit-async dispatch
+      SAGA_ADAPTIVE_CONC_ENABLED: "true"
+      REACTOR_CREDIT_ASYNC_BULK_ENABLED: "true"
+      REACTOR_CREDIT_ASYNC_FLUSH_MS: "200"
+    # §pass66 (2026-05-22) — Bug B + Bug C structural fix. The bundle template
+    # now SHIPS with `migration_bridge → alembic upgrade head → operator_seed →
+    # uvicorn` natively. Previously this command was `create_all + stamp heads`
+    # and cloud_provisioner.py patched it at runtime; if the runtime patch
+    # silently no-op'd (as happened on op-qatest6 / §pass65), the operator ran
+    # `stamp heads` against a SQLAlchemy-created schema, missing every ALTER
+    # TABLE migration since the squash → schema drift on every image jump.
+    #
+    # The cloud_provisioner.py `_legacy_registry_cmd → _new_registry_cmd_prefix`
+    # replace remains in place as a safety net for any OLD bundles still cached
+    # on disk; for newly-built bundles it's a no-op (logs "template already
+    # updated").
+    #
+    # Workers raised from 4→8 to match production capacity (cloud_provisioner
+    # used to runtime-patch this too; same defense-in-depth reasoning).
+    # §pass66 (2026-05-22) — `mkdir prom_multiproc` prefix added to set up the
+    # Prometheus multi-process directory before uvicorn workers start. Without
+    # it, each worker writes a stray metric file that collides → metric scrape
+    # fails. Matches paris's command exactly.
+    # CB-193: a failed migration stops here, in the log. It was `alembic upgrade head 2>/dev/null;`, so gunicorn served
+    # on a schema missing its columns and nothing said why; operator_seed alone stays non-fatal, as it was.
+    command: ["sh", "-c", "mkdir -p /tmp/prom_multiproc && rm -f /tmp/prom_multiproc/* && cd /app && PYTHONPATH=/app/src python -m agentvault_registry.migration_bridge && cd /app && PYTHONPATH=/app/src alembic upgrade head && { PYTHONPATH=/app/src python -m agentvault_registry.operator_seed || true; } && PYTHONPATH=/app/src gunicorn agentvault_registry.main:app --workers 8 -c /app/gunicorn_conf.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+      teg-layer:
+        condition: service_healthy
+      nginx-teg:
+        condition: service_healthy
+      spire-agent:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    labels:
+      - "com.agentvault.service=registry"
+    networks:
+      - operator-net
+
+  # ────────────────────────────────────────────────────────────
+  # TEG Layer — Token Exchange Gateway
+  # ────────────────────────────────────────────────────────────
+  teg-layer:
+    # §2026-06-16 TEG-mTLS Phase 3: resolver image (resolve_internal_caller + gate; head 0006 = pure code).
+    # §2026-07-17: was hardcoded `:mtls` (a non-existent tag → fresh provisions 401'd on pull);
+    # restored to the VERSION-pinned form the live ops + cloud_provisioner (VERSION written to
+    # .env.operator) already use, so a new L3 operator boots on the same image the fleet runs.
+    image: ${IMAGES_PREFIX:-images.theprotocol.cloud}/teg-layer:${VERSION:-stable}
+    container_name: ${REGISTRY_NAME:-operator}-teg
+    restart: unless-stopped
+    # §pass66 (2026-05-22) — `ports:` placeholder added so cloud_provisioner's
+    # literal `"127.0.0.1:12080:8080" → "<bind>:<teg_port>:8080"` replace can find a match.
+    # Previously the template had no placeholder, and the regex-based ports-
+    # block injection fallback didn't match the modern template layout (which
+    # has `command:` after `container_name:`, not `restart: unless-stopped`).
+    # Result: TEG was unreachable from host (Prometheus scrape failed silently
+    # since 2026-04-30). Operator-internal traffic worked via Docker DNS so
+    # the gap was invisible to functional probes.
+    ports:
+      - "127.0.0.1:12080:8080"
+    # §pass66 (2026-05-22) — workers 4→8 baked into template for parity with
+    # the registry command. cloud_provisioner used to runtime-replace this;
+    # the replace stays in place as safety net for old cached bundles.
+    # §pass66 (2026-05-22) — `mkdir prom_multiproc` prefix + DB via pgbouncer.
+    # Matches paris's command exactly so cross-TEG transfers + metric scrape
+    # work consistently.
+    # §LEDGERGATE (2026-10-12, contract R40): `exec`, so gunicorn is PID 1 and a stop is graceful. dash as PID 1
+    # ignores SIGTERM: without it every stop is docker's SIGKILL after 10 s and the balance outbox's lease is never
+    # released (the TEG's ledger gate then reads the ledger behind). Proven on sbxalphaop and sbxbetaop 2026-10-11.
+    command: ["sh", "-c", "mkdir -p /tmp/prom_multiproc && rm -f /tmp/prom_multiproc/* && cd /app && python -m src.teg_core_service.migration_bridge && alembic upgrade head && exec gunicorn src.teg_core_service.main:app --workers 8 -c /app/gunicorn_conf.py"]
+    env_file: .env.operator
+    environment:
+      <<: *common-env
+      # §pass66 — DB via pgbouncer for connection pooling (paris pattern).
+      DATABASE_URL: postgresql://teg:${PG_PASS_TEG}@pgbouncer:6432/teg_layer
+      DATABASE_URL_SYNC: postgresql://teg:${PG_PASS_TEG}@pgbouncer:6432/teg_layer
+      REGISTRY_URL: http://registry:8000
+      EVENT_STORE_URL: https://events.theprotocol.cloud
+      ADMIN_API_KEY: ${TEG_ADMIN_API_KEY}
+      # §2026-06-16 TEG-mTLS Phase 3 — full A/B/C triangle trust + gate (true=enforce) + INFO telemetry.
+      # 2026-07-29: was hardcoded to the three original mainframes, and a compose
+      # `environment:` value BEATS `env_file`, so it silently overrode the list
+      # cloud_provisioner.py computes (which correctly leads with the PROVISIONING
+      # frame's own trust domain). An operator born to a NEW sovereign frame —
+      # exactly the L3 story — therefore did not trust its own parent, and every
+      # cross-TEG call from that frame was denied `cert_present=False`. The three
+      # mainframes stay as the default so nothing narrows for existing operators.
+      # §SECFIX (2026-09-25): the TEG trusts its own frame's domain only (empty = its SPIRE_TRUST_DOMAIN); only its frame
+      # calls it (measured on every operator: 10 days, one domain). TRUSTED_SPIFFE_DOMAINS in .env.operator stays the
+      # REGISTRY's, which federates with every frame. TEG_TRUSTED_SPIFFE_DOMAINS widens the TEG's on purpose.
+      TRUSTED_SPIFFE_DOMAINS: ${TEG_TRUSTED_SPIFFE_DOMAINS:-}
+      TEG_MTLS_REQUIRED: "true"
+      LOG_LEVEL: INFO
+      AVTP_SYSTEM_API_KEY: ${TEG_AVTP_SYSTEM_API_KEY}
+      TEG_TOKEN_SIGNING_KEY: ${TEG_TOKEN_SIGNING_KEY}
+      REGISTRY_SERVICE_TOKEN: ${TEG_REGISTRY_JWT_SECRET}
+      # CB-049: the TEG checks the registry's exchange JWT with this key; the registry signs with its API_KEY_SECRET
+      REGISTRY_JWT_SECRET: ${TEG_REGISTRY_JWT_SECRET}
+      # §SOVKIT-2 R2 (2026-09-14): no store key. An operator writes to its parent frame's store by SVID through the
+      # parent's mTLS edge, where nginx clears X-Internal-Key; a key here only ever opened a second, unused origin path.
+      MINTING_AUTHORITY: disabled
+      FEDERATION_LICENSE_KEY: ${FEDERATION_LICENSE_KEY:-}
+      FEDERATION_OPERATOR_ID: ${FEDERATION_OPERATOR_ID:-}
+      UVICORN_WORKERS: 8
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prom_multiproc
+      # §pass66 (2026-05-22) — TEG-internal BatchWriter (paris pattern). Without
+      # these the bulk path on the registry side has no receiver counterpart.
+      TEG_BATCH_WRITES: "true"
+      TEG_BATCH_FLUSH_INTERVAL_MS: "100"
+      TEG_BATCH_MAX_SIZE: "200"
+      TEG_BULK_USE_ASYNC_DB: "true"
+      # §pass26 (2026-05-17) — Redis for sweeper leader election.
+      REDIS_URL: redis://teg:${REDIS_PASSWORD_TEG}@redis:6379/0
+      # §MTLSHOPS G1 (2026-09-16): the TEG counts a forwarded certificate ONLY beside nginx-teg's marker.
+      TEG_PROXY_TRUST_SECRET: ${TEG_PROXY_TRUST_SECRET}
+    volumes:
+      - svid-certs:/certs:ro
+    # §OPDIST (2026-09-16): the TEG dials pgbouncer (DATABASE_URL, pgbouncer:6432/teg_layer) and redis, so it waits for
+    # both. Without it a slower pgbouncer (jelgava's db waiting on its TLS certificate) left the TEG crash-looping on
+    # "could not translate host name pgbouncer" until compose gave up. registry stays out: it depends on the TEG (a cycle).
+    depends_on:
+      teg-db:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    labels:
+      - "com.agentvault.service=teg-layer"
+    networks:
+      - operator-net
+
+  # ────────────────────────────────────────────────────────────
+  # PostgreSQL — Registry database
+  # ────────────────────────────────────────────────────────────
+  db:
+    image: postgres:18.6-alpine
+    container_name: ${REGISTRY_NAME:-operator}-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agentvault_registry
+      POSTGRES_USER: registry
+      POSTGRES_PASSWORD: ${PG_PASS_REGISTRY}
+    volumes:
+      - registry-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U registry -d agentvault_registry"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - operator-net
+
+  # ────────────────────────────────────────────────────────────
+  # PostgreSQL — TEG database
+  # ────────────────────────────────────────────────────────────
+  teg-db:
+    image: postgres:18.6-alpine
+    container_name: ${REGISTRY_NAME:-operator}-teg-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: teg_layer
+      POSTGRES_USER: teg
+      POSTGRES_PASSWORD: ${PG_PASS_TEG}
+    volumes:
+      - teg-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teg -d teg_layer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - operator-net
+
+  # ────────────────────────────────────────────────────────────
+  # Redis — Shared state, leader election, rate limiting
+  # ────────────────────────────────────────────────────────────
+  redis:
+    image: redis:8.10.2-alpine
+    container_name: ${REGISTRY_NAME:-operator}-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru --aclfile /usr/local/etc/redis/users.acl
+    volumes:
+      - redis-data:/data
+      # §MTLSHOPS G3 (2026-09-16): one ACL user per client, sha256 hashes only, rendered by the provisioner beside this
+      # compose. The default user keeps PING so the healthcheck below still answers, and nothing else.
+      - ./redis-users.acl:/usr/local/etc/redis/users.acl:ro
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - operator-net
+
+  # ────────────────────────────────────────────────────────────
+  # PgBouncer — Connection pooling for registry DB
+  # ────────────────────────────────────────────────────────────
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.25.2-p0
+    container_name: ${REGISTRY_NAME:-operator}-pgbouncer
+    # §SECFIX 2026-09-25: the stack's own uid, so pgbouncer.ini and userlist.txt (both carry database passwords) can
+    # be 0600. The pooler checks client passwords (auth_type = scram-sha-256) against userlist.txt.
+    user: "1000:1000"
+    restart: unless-stopped
+    volumes:
+      - ./pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ./userlist.txt:/etc/pgbouncer/userlist.txt:ro
+    environment:
+      LISTEN_PORT: 6432
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 6432 -U registry"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - operator-net
+
+volumes:
+  registry-appdata:      # the registry's /app/data — the bundle SIGNING KEY (§PEERKEYROT)
+  registry-data:
+  teg-data:
+  redis-data:
+  spire-agent-socket:
+  spire-agent-data:
+  svid-certs:
+
+networks:
+  operator-net:
+    driver: bridge

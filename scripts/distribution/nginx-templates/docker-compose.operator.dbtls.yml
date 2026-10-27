@@ -1,0 +1,73 @@
+# §OPDIST (2026-09-16, agentvault2-6a with agentvault2-b5): the operator's registry database serves TLS on its own
+# data identity, so the frame's kit auditor, which connects PGSSLMODE=verify-full with a client certificate, can read
+# the share register. Measured on beacon/jelgava: without it the auditor answered `rejected SSL upgrade`.
+#
+# ⚠ AN OVERRIDE, NEVER THE BASE. eu, asia, sbx-alpha and sbx-beta mount this same live directory on images that
+# register no data entry; a data-cert-writer in the base file would leave their operators' databases waiting on a
+# `.ready` nobody writes. Only an image that registers the entry (V0391+, host_work._db_tls_steps) copies this file
+# into the stack and passes it with `-f`, after the base.
+#
+# The data entry (registered at stack time, never federated): spiffe://<td>/operator/<slug>/data, selector
+# docker:label:com.agentvault.service:svid-writer-data-operator, DNS SAN ${REGISTRY_NAME}-db (the name the auditor
+# verifies). pg-tls-sync.sh and pg_hba_operator.conf are copied beside this file by the same step.
+services:
+  data-cert-writer:
+    image: ${IMAGES_PREFIX:-images.theprotocol.cloud}/cert-writer:${VERSION:-stable}
+    container_name: ${REGISTRY_NAME:-operator}-data-cert-writer
+    depends_on:
+      spire-agent:
+        condition: service_healthy
+    volumes:
+      - spire-agent-socket:/opt/spire/sockets:ro
+      - data-certs:/certs
+    environment:
+      SPIRE_SOCKET: /opt/spire/sockets/agent.sock
+      CERT_DIR: /certs
+      REFRESH_SEC: "300"
+      SERVICE_NAME: ${REGISTRY_NAME:-operator}-db
+    user: "0:0"
+    pid: "host"
+    restart: unless-stopped
+    labels:
+      - "com.agentvault.service=svid-writer-data-operator"
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /certs/.ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    networks:
+      - operator-net
+
+  db:
+    # Runs as root before the image's own entrypoint: copies the SVID to a postgres-owned 0600 key on a tmpfs path,
+    # waits for the data writer first (the server never starts without TLS), and SIGHUPs the postmaster on a rotation.
+    entrypoint: ["sh", "/opt/data-tls/pg-tls-sync.sh"]
+    command: >-
+      postgres -c ssl=on
+      -c ssl_cert_file=/run/pgtls/server/svid.0.pem
+      -c ssl_key_file=/run/pgtls/server/svid.0.key
+      -c ssl_ca_file=/run/pgtls/server/bundle.0.pem
+      -c ssl_min_protocol_version=TLSv1.2
+      -c hba_file=/opt/data-tls/pg_hba.conf
+    depends_on:
+      data-cert-writer:
+        condition: service_healthy
+    volumes:
+      - data-certs:/certs:ro
+      - ./pg_hba_operator.conf:/opt/data-tls/pg_hba.conf:ro
+      - ./pg-tls-sync.sh:/opt/data-tls/pg-tls-sync.sh:ro
+
+  # ⚠ THIS FILE DELAYS THE DATABASE (it waits for its certificate), and with it pgbouncer, which waits for the database.
+  # teg-layer dials pgbouncer:6432/teg_layer, so it must wait too. The base compose now says so as well, but a bundle
+  # freezes the base at activation (jelgava's tar predates the fix: its TEG crash-looped on "could not translate host
+  # name pgbouncer" twice, 2026-09-16), while this file is read LIVE at stack time. So the ordering the delay needs is
+  # declared where the delay is. Merged with the base's own depends_on.
+  teg-layer:
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  data-certs:

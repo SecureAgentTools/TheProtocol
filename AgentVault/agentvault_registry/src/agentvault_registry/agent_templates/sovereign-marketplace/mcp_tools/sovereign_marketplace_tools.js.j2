@@ -1,0 +1,84 @@
+/**
+ * sovereign_marketplace_tools.js — Marketplace-specific MCP tools
+ */
+'use strict';
+
+const { get, post } = require('../lib/http_client');
+
+const tools = [
+  {
+    name: 'marketplace_stats',
+    description: 'Get marketplace statistics: active listings, completed orders, escrow volume.',
+    inputSchema: { type: 'object', properties: {} },
+    async handler() {
+      try { return await get('/api/v1/agents/marketplace/stats'); }
+      catch (e) { return { error: e.message, note: 'Stats endpoint may not be available in this registry version' }; }
+    },
+  },
+  {
+    name: 'list_marketplace_listings',
+    description: 'List service listings on this marketplace.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', default: 'active', description: 'Filter: active | completed | all' },
+        limit: { type: 'integer', default: 20 },
+      },
+    },
+    async handler({ status = 'active', limit = 20 }) {
+      const fs = require('fs'); const path = require('path');
+      const config = require('../lib/config');
+      const file = path.join(config.dataDir, 'listings.json');
+      if (!fs.existsSync(file)) return { listings: [], message: 'No listings yet. Create listings via your agent API.' };
+      const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      const listings = (data.listings || data || []);
+      const filtered = status === 'all' ? listings : listings.filter(l => l.status === status);
+      return { listings: filtered.slice(0, limit), total: filtered.length };
+    },
+  },
+  {
+    name: 'list_active_orders',
+    description: 'List orders currently in escrow or awaiting delivery.',
+    inputSchema: { type: 'object', properties: { limit: { type: 'integer', default: 20 } } },
+    async handler({ limit = 20 }) {
+      const fs = require('fs'); const path = require('path');
+      const config = require('../lib/config');
+      const file = path.join(config.dataDir, 'orders.json');
+      if (!fs.existsSync(file)) return { orders: [], message: 'No orders yet' };
+      const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      const orders = (data.orders || data || []).filter(o => ['pending', 'in_escrow', 'delivered'].includes(o.status));
+      return { orders: orders.slice(0, limit), total: orders.length };
+    },
+  },
+  {
+    name: 'get_escrow_balance',
+    description: 'Get total AVT currently held in escrow for pending orders.',
+    inputSchema: { type: 'object', properties: {} },
+    async handler() {
+      const fs = require('fs'); const path = require('path');
+      const config = require('../lib/config');
+      const file = path.join(config.dataDir, 'orders.json');
+      if (!fs.existsSync(file)) return { escrow_total: '0', order_count: 0 };
+      const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      const orders = data.orders || data || [];
+      const total = orders.filter(o => o.status === 'in_escrow')
+        .reduce((s, o) => s + parseFloat(o.amount || 0), 0);
+      return { escrow_total: total.toFixed(2), order_count: orders.filter(o => o.status === 'in_escrow').length };
+    },
+  },
+  {
+    name: 'list_disputes',
+    description: 'List active disputes on this marketplace.',
+    inputSchema: { type: 'object', properties: {} },
+    async handler() {
+      const fs = require('fs'); const path = require('path');
+      const config = require('../lib/config');
+      const file = path.join(config.dataDir, 'disputes.json');
+      if (!fs.existsSync(file)) return { disputes: [] };
+      const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      return { disputes: data.disputes || data || [] };
+    },
+  },
+];
+
+module.exports = tools;

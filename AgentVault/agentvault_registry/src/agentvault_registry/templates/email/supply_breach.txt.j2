@@ -1,0 +1,19 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "SUPPLY INVARIANT BREACH" %}
+{% set headline = "Token Supply Audit Failed" %}
+{% block body %}
+The supply auditor detected a divergence between issued units and total circulating supply. This is a critical correctness signal and warrants immediate investigation.
+
+  Delta:          {{ delta }}
+  Net supply:     {{ net_supply }}
+  Circulating:    {{ circulating }}
+  Detected at:    {{ detected_at }}
+  Audit type:     {{ audit_type }}
+  Auto-lockdown:  {{ auto_lockdown }}
+
+Investigate: {{ registry_ui_url }}#/admin
+CLI (Frame A; substitute your node's registry container): docker logs agentvault_registry_a | grep SUPPLY-BREACH
+
+The supply auditor will continue logging at 60s intervals while the breach persists.
+This email is throttled (min 5min between repeats).
+{% endblock %}

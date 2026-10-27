@@ -1,0 +1,294 @@
+# Dockerfile.registry.dist: TheProtocol Registry Distribution Image
+# Multi-stage build. Since 2026-09-30 the application keeps its Python source (REVIEW_2026-09-30_LICENSING.md): the
+# code is AGPL-3.0-or-later and public, so an image that shipped bytecode only hid nothing and made debugging and the
+# AGPL's network clause harder for whoever runs a modified frame. The source is pre-compiled into __pycache__ so start-up
+# does not pay for it.
+#
+#   - src/agentvault_registry/**/*.py          (the FastAPI application, with its __pycache__)
+#   - alembic/env.py + alembic/versions/*.py  (migrations)
+#   - prod_seed.py, test_seed.py              (invoked via python -m at startup)
+#
+# Non-Python assets preserved as-is:
+#   - static/new_registry_frontend/dist/       (the Vue.js frontend, BUILT FROM SOURCE in stage `frontend`)
+#   - templates/                               (Jinja2 email templates)
+#   - agent_templates/                         (Jinja2 agent scaffold templates)
+#   - agentvault_circuit_registry/             (ZKP circuits, keys, metadata)
+
+# ============================================================
+# Stage 0: the frontend, built from source
+# ============================================================
+# §OSSRC 2026-09-14: a repository carries no dist/ (it is a build artifact), and the 09-13 export dry run built the
+# frontend on the host before this Dockerfile could run. Building it here makes Docker the only requirement. The
+# context keeps the frontend source through Dockerfile.registry.dist.dockerignore; the builder stage drops the
+# source again, so the runtime image carries dist/ only.
+# §DEPS FE 2026-09-28: node 24 LTS (node 20 reached end of life 2026-04-30; the frontend toolchain needs >= 22.12).
+FROM node:24-bookworm AS frontend
+WORKDIR /fe
+COPY agentvault_registry/src/agentvault_registry/static/new_registry_frontend/package.json \
+     agentvault_registry/src/agentvault_registry/static/new_registry_frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY agentvault_registry/src/agentvault_registry/static/new_registry_frontend/ ./
+RUN NODE_OPTIONS=--max-old-space-size=4096 npm run build-only \
+    && test -f dist/index.html \
+    && n=$(find dist/assets -type f | wc -l) && echo "frontend dist assets: $n" && test "$n" -ge 50
+
+# ============================================================
+# Stage 1: Builder — install deps, compile bytecode
+# ============================================================
+# §HELLOFRAME 2026-09-18: the docker CLIENT and the compose plugin, exactly as the production image carries them
+# (AgentVault/agentvault_registry/Dockerfile). host_work.py, the runner's one-shot that provisions a frame's cloud
+# operator, shells out to `docker` and `docker compose` at twelve sites, and the operator health route runs `docker ps`;
+# an image without them can bundle an operator and never bring its stack up. Client binary only: it drives the socket the
+# runner mounts into the one-shot, never a daemon of its own.
+FROM docker:29-cli AS dockercli
+
+FROM python:3.14-slim AS builder
+
+# Install system dependencies needed for building Python packages
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    libpq-dev \
+    postgresql-client \
+    curl \
+    build-essential \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── ZKP: Nargo (Noir compiler) + Barretenberg (bb) for ZKP verification ──
+#
+# Versions: nargo 1.0.0-beta.3 / bb 0.82.2
+# Confirmed compatible pair from bb-versions.json:
+#   https://raw.githubusercontent.com/AztecProtocol/aztec-packages/next/barretenberg/bbup/bb-versions.json
+#
+# URL format (>=0.77.0): v{VERSION}/barretenberg-{amd64|arm64}-{linux|darwin}.tar.gz
+# URL format (>=1.0.0-beta.3 nargo): v{VERSION}/nargo-{x86_64|aarch64}-unknown-linux-gnu.tar.gz
+#
+# Circuits in agentvault_circuit_registry use Noir 1.0.0-beta.3 syntax (updated 2026-03-07).
+# If you upgrade these versions, run generate_zkp_keys.sh again to regenerate keys.
+
+ARG NARGO_VERSION=1.0.0-beta.3
+ARG BB_VERSION=0.82.2
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
+    \
+    # ── Install nargo ────────────────────────────────────────────────────
+    ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then NARGO_ARCH="x86_64-unknown-linux-gnu"; \
+    elif [ "$ARCH" = "aarch64" ]; then NARGO_ARCH="aarch64-unknown-linux-gnu"; \
+    else echo "Unsupported arch: $ARCH" && exit 1; fi && \
+    NARGO_URL="https://github.com/noir-lang/noir/releases/download/v${NARGO_VERSION}/nargo-${NARGO_ARCH}.tar.gz" && \
+    echo "Installing nargo ${NARGO_VERSION} from ${NARGO_URL}" && \
+    curl -fsSL --retry 3 "${NARGO_URL}" | tar -xz -C /usr/local/bin && \
+    chmod +x /usr/local/bin/nargo && \
+    nargo --version && \
+    \
+    # ── Install bb ───────────────────────────────────────────────────────
+    # >=0.77.0 uses: v{VERSION} tag, amd64/arm64, linux/darwin naming
+    BBARCH=$(uname -m) && \
+    if [ "$BBARCH" = "x86_64" ]; then BB_ARCH="amd64"; \
+    elif [ "$BBARCH" = "aarch64" ]; then BB_ARCH="arm64"; \
+    else echo "Unsupported arch: $BBARCH" && exit 1; fi && \
+    BB_URL="https://github.com/AztecProtocol/aztec-packages/releases/download/v${BB_VERSION}/barretenberg-${BB_ARCH}-linux.tar.gz" && \
+    echo "Installing bb ${BB_VERSION} from ${BB_URL}" && \
+    curl -fsSL --retry 3 "${BB_URL}" | tar -xz -C /usr/local/bin && \
+    chmod +x /usr/local/bin/bb && \
+    bb --version && \
+    \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy the agentvault_library from the build context
+COPY ./agentvault_library ./agentvault_library
+
+# Copy project files
+COPY ./agentvault_registry/pyproject.toml ./
+COPY ./agentvault_registry/src/ ./src/
+
+# Upgrade pip and setuptools first, to the versions the constraints name (pip, setuptools and wheel are pinned there too)
+COPY ./agentvault_registry/constraints-dist.txt /tmp/constraints.txt
+RUN pip install --no-cache-dir -c /tmp/constraints.txt --upgrade pip setuptools wheel
+
+# Install critical dependencies first
+# OWL24: bumped grpcio to satisfy spiffe>=1.78.0 requirement
+# §TESTBED P0 b (2026-09-19): every install below resolves against the image's own pip freeze, so a rebuild
+# installs exactly what the last one did. The version specs are QUOTED: a bare `pkg>=1.2` in a RUN is a shell
+# redirect (the package went in unpinned and pip's output landed in files named /app/=1.2).
+RUN pip install --no-cache-dir -c /tmp/constraints.txt \
+    "grpcio>=1.78.0" \
+    "grpcio-tools>=1.78.0"
+
+# Install spiffe for mTLS support.
+# §DEPS (2026-09-27): spiffe 0.3.1 declares cryptography>=46 and pyjwt<2.14; the registry now runs cryptography 50 and
+# PyJWT 2.13, so spiffe installs WITH its dependency check. (Until then it went in with --no-deps because the registry
+# held cryptography at 41.0.7, and every image carried that one known conflict; the pip checks below now allow none.)
+RUN pip install --no-cache-dir -c /tmp/constraints.txt spiffe cryptography PyJWT
+
+# Install remaining dependencies (§OSSDRY 2026-09-13: + gunicorn and uvicorn-worker, the supervisor production and the
+# standalone compose launch the registry with; the dist image had neither)
+# §DEPS (2026-09-27): the network image's V0474 versions (AgentVault agentvault_registry/Dockerfile says what is held back
+# and why; SQLAlchemy 2.1 since §DEPS sqla21, 2026-09-29: every sync engine names psycopg2 itself, core/dsn.py; since V0479 the images run Python 3.14 and numpy/scipy/networkx
+# their newest (they had been held at the newest for 3.11); since V0477,
+# 2026-09-28, passlib is gone and bcrypt 5 is called directly, in core/secret_hash.py, with passlib's rules). FastAPI
+# stopped installing python-multipart at 0.112: without it every Form(...) route, the login among them, refuses to
+# register, so it is named here.
+RUN pip install --no-cache-dir -c /tmp/constraints.txt \
+    fastapi==0.141.1 \
+    python-multipart==0.0.32 \
+    "uvicorn[standard]==0.54.0" \
+    "sqlalchemy[asyncio]==2.1.1" \
+    asyncpg==0.31.0 \
+    alembic==1.20.0 \
+    pydantic==2.13.5 \
+    pydantic-settings==2.15.0 \
+    python-dotenv==1.2.3 \
+    slowapi==0.1.10 \
+    "psycopg[binary]==3.3.6" \
+    psycopg2-binary==2.9.13 \
+    fastapi-mail==1.6.8 \
+    aiosmtplib==5.1.3 \
+    bcrypt==5.0.0 \
+    "redis[hiredis]==8.1.0" \
+    cryptography==50.0.1 \
+    structlog==26.1.0 \
+    prometheus-client==0.26.0 \
+    prometheus-fastapi-instrumentator==8.1.0 \
+    httpx==0.28.1 \
+    aiohttp==3.14.3 \
+    aiokafka==0.14.0 \
+    pyotp==2.10.0 \
+    "qrcode[pil]==8.2" \
+    Pillow==12.3.0 \
+    docker==7.2.0 \
+    psutil==7.2.2 \
+    "numpy>=1.24.0" \
+    "scipy>=1.10.0" \
+    "networkx>=3.0.0" \
+    gunicorn==26.2.0 \
+    uvicorn-worker==0.4.0
+
+# Install the agentvault_library in editable mode
+RUN pip install -c /tmp/constraints.txt -e ./agentvault_library
+
+# Install test dependencies (needed for API tester in production)
+RUN pip install --no-cache-dir -c /tmp/constraints.txt \
+    pytest==9.1.1 \
+    pytest-asyncio==1.4.0 \
+    pytest-cov==7.1.0 \
+    pytest-mock==3.16.0 \
+    pytest-json-report==1.5.0 \
+    pytest-metadata==3.1.1 \
+    Faker==40.40.0 \
+    factory-boy==3.3.3
+
+# §TESTBED P0 b (2026-09-19, the gate agentvault2-f5 proposed), tightened by §DEPS (2026-09-27): pip check must be CLEAN.
+# The one conflict every image used to carry (spiffe 0.3.1 over cryptography 41.0.7) is gone with cryptography 50, so
+# any line other than "No broken requirements found." fails the build the day a constraint drifts.
+RUN pip check > /tmp/pipcheck.txt 2>&1; \
+    if grep -vxF -e "No broken requirements found." /tmp/pipcheck.txt; then \
+      echo "pip check reports a conflict (above)"; exit 1; fi; \
+    rm -f /tmp/pipcheck.txt
+
+# Copy the rest of the application (alembic, config, scripts, etc.)
+COPY ./agentvault_registry/ .
+# Remove stale __pycache__ from host to ensure .py source is authoritative
+RUN find /app -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+
+# The frontend: drop the source the context carried for stage `frontend` (the same set a production image excludes)
+# and take the dist that stage built.
+RUN cd /app/src/agentvault_registry/static/new_registry_frontend \
+    && rm -rf src e2e node_modules test-results playwright-report dist \
+    && find . -maxdepth 1 -name "*.mjs" -delete
+COPY --from=frontend /fe/dist /app/src/agentvault_registry/static/new_registry_frontend/dist
+
+# ── ZKP: Bake circuit registry into image ───────────────────────────
+# This gives every registry container access to circuits even without a volume mount.
+# The docker-compose volume mount (./AgentVault/agentvault_circuit_registry) will
+# OVERRIDE this at runtime, enabling key updates without a rebuild.
+# Note: .bin keys are PLACEHOLDERS until generate_zkp_keys.sh is run inside container.
+COPY ./agentvault_circuit_registry /app/agentvault_circuit_registry
+
+# ── Distribution: pre-compile the application, keep its source ───────
+# compileall writes __pycache__/*.pyc beside the sources, which Python uses as long as the .py is unchanged.
+RUN python -m compileall -q /app/src/agentvault_registry/
+
+# ============================================================
+# Stage 2: Runtime: minimal image with the pre-compiled source
+# ============================================================
+FROM python:3.14-slim AS runtime
+
+# Install runtime-only system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    postgresql-client \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user (matching builder UID)
+RUN useradd -m -u 1000 agentvault
+
+WORKDIR /app
+
+# Copy installed Python packages from builder.
+# §DEPS (2026-09-27): the builder's site-packages REPLACE the base image's own instead of being copied over them. The
+# builder is FROM the same base, so its site-packages already hold everything the base's did, at the versions the
+# constraints name; a merge instead leaves the base's own pip/setuptools/wheel beside the builder's whenever the two
+# differ (a fresh python base ships its own pip, the constraints name the network image's; seen first on python:3.11-slim).
+RUN rm -rf /usr/local/lib/python3.14/site-packages
+COPY --from=builder /usr/local/lib/python3.14/site-packages/ /usr/local/lib/python3.14/site-packages/
+COPY --from=builder /usr/local/bin/ /usr/local/bin/
+
+# Copy the compiled application
+COPY --from=builder /app/ /app/
+
+# Copy ZKP toolchain binaries (nargo + bb)
+COPY --from=builder /usr/local/bin/nargo /usr/local/bin/nargo
+COPY --from=builder /usr/local/bin/bb /usr/local/bin/bb
+COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=dockercli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
+
+# §TESTBED P0 b (2026-09-19, agentvault2-f5's placement): the builder's gate again, on what SHIPS. This stage is the
+# builder's site-packages copied over the base image's own, and that merge gave the dev3 image two copies each of pip,
+# setuptools and wheel, which a check in the builder cannot see. So: one dist-info each (counted, never named: a re-pulled
+# base that no longer matches the constraints' pins fails here, loudly), and pip check as in the builder. Proven on real
+# images: the dev3 image fails it (6), the v0409 network image passes.
+RUN n=$(ls -d /usr/local/lib/python3.14/site-packages/pip-*.dist-info /usr/local/lib/python3.14/site-packages/setuptools-*.dist-info \
+          /usr/local/lib/python3.14/site-packages/wheel-*.dist-info | wc -l); \
+    if [ "$n" -ne 3 ]; then echo "pip, setuptools and wheel: $n dist-info directories, expected 3 (the site-packages merge left a second copy)"; exit 1; fi; \
+    pip check > /tmp/pipcheck.txt 2>&1; \
+    if grep -vxF -e "No broken requirements found." /tmp/pipcheck.txt; then \
+      echo "pip check reports a conflict (above)"; exit 1; fi; \
+    rm -f /tmp/pipcheck.txt
+
+# §AGENTDISC (2026-08-16), carried here by §TESTBED (2026-09-19): /app/data must EXIST in the image with app ownership.
+# It is the durable home of the Ed25519 signing key (attestation_signer), and a named volume mounted over a path ABSENT
+# from the image gets a root-owned mountpoint the uid-1000 app cannot write: the key then lives per worker, so what one
+# worker signs another publishes a different key for (measured in a kit sandbox: a cross-registry delegation credential
+# answered 422 "could not be verified against the issuer-home pubkey"). The network's Dockerfile has carried this line
+# since August; this one had not. build.sh gates it.
+RUN mkdir -p /app/data
+
+# Change ownership to non-root user
+RUN chown -R agentvault:agentvault /app
+
+# Switch to non-root user
+USER agentvault
+
+# §TESTBED P5 (2026-09-19): what this image was built FROM (build.sh's kit_provenance.py: the tree's digest, whether it
+# differs from the release), shown by /health. Last and tiny, so a new build-info re-runs only this layer.
+ARG KIT_BUILD_INFO_B64=""
+RUN if [ -n "$KIT_BUILD_INFO_B64" ]; then echo "$KIT_BUILD_INFO_B64" | base64 -d > /app/BUILD_INFO.json; fi
+
+# Add label for SPIRE workload attestation
+LABEL com.agentvault.service="registry-backend"
+LABEL com.theprotocol.distribution="source"
+
+# Expose port
+EXPOSE 8000
+
+# Default command. The distribution composes override it with migrations + the gunicorn supervisor
+# (docker-compose.standalone.yml). §OSSRC 2026-09-14: the forwarded-for allowlist is the production image's
+# (loopback + RFC 1918), never '*', which trusted the element the CALLER writes into X-Forwarded-For (§XFFTRUST).
+CMD ["uvicorn", "agentvault_registry.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"]

@@ -1,0 +1,10 @@
+{% extends "_base.html.j2" %}
+{% set theme = "sovereign" %}
+{% set kicker = "// FRAME FEDERATION REVOKED" %}
+{% set headline = "Federation Revoked: " ~ local_name %}
+{% block body %}
+<p>Federation with <strong>{{ local_name }}</strong> has been revoked.</p>
+{% with rows=[('Trust domain', trust_domain)] %}{% include '_partials/data_table.html' %}{% endwith %}
+{% with notice="<strong>Reason:</strong><br/>" ~ reason %}{% include '_partials/info_box.html' %}{% endwith %}
+<p>Our SPIRE no longer trusts your bundle. You may still have us in your own bundle; consider removing us on your side to complete the bilateral teardown.</p>
+{% endblock %}

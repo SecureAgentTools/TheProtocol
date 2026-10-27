@@ -1,0 +1,110 @@
+services:
+  auditor-agent:
+    build:
+      context: .
+      additional_contexts:
+        constraints: ../_constraints
+    container_name: auditor-agent
+    restart: unless-stopped
+    environment:
+      # ── TIERED (2026-06-02, third tier §LEGACYTIER 2026-09-09): ONE auditor audits
+      # every tier. The frontend toggles which tier is shown (default from the subdomain:
+      # auditor.* → prod, sandbox-auditor.* → sandbox). Both subdomains proxy here.
+      #   prod    = the live EU/ASIA cluster (arrives via AUDITOR_EXTRA_FRAMES_JSON)
+      #   legacy  = registry-a / frame-b / frame-c, retiring, operators off, still attested
+      #   sandbox = sbx-alpha / sbx-beta
+      # ── LEGACY frames (mode='legacy'; the env var names are unchanged) ──
+      # §LEGACYSTOP 2026-09-25 (his word): frame-b/frame-c are stopped, so their slots and networks are gone, and
+      # VENUE_REG_DSNS_JSON with them (its 13 venues were the operators stopped on 09-09). Frame A stays: registry-a stays up.
+      FRAME_A_EVENT_STORE_URL: http://agentvault_event_store:8200
+      EVENT_STORE_INTERNAL_KEY: ${EVENT_STORE_INTERNAL_KEY}  # §KEYROT 2026-09-05: the code default was a live literal; env-only now
+      FRAME_A_ES_DSN: ${FRAME_A_ES_DSN:-}
+      # §2026-06-14 — Frame-B re-denominated AVT → JDAY. config.py reads FRAME_B_CURRENCY
+      # (defaults AVT when unset); the Vue FE renders frame.currency dynamically → JDAY.
+      # FRAME_C (prod, BVT) WIRED 2026-06-05 §pass78b — the 3rd prod frame. ES reached
+      # over frame_c_network (added to networks below); DSN value in .env (FRAME_C_ES_DSN).
+      # Currency defaults to BVT in config.py:66; the frame appears once these are set.
+      # ── AGORA share registry (read-only registry-DB pool, 2026-06-17) ──
+      # The org-stock cap table lives in each frame's REGISTRY DB (not the ES).
+      # Read-only; unset → the Share Registry panel is simply absent for that frame.
+      # Values live in .env (FRAME_<X>_REG_DSN). Reachable: auditor is already on
+      # agentvault_main_network + frame_b_network + frame_c_network.
+      FRAME_A_REG_DSN: ${FRAME_A_REG_DSN:-}
+      # ── V6 currency attribution (read-only TEG-DB pool, 2026-06-19) ──
+      # cross_teg_transfers is the ONLY currency-aware money table (ES ledger is
+      # currency-blind). Read-only; unset → currency attribution omitted. Values in
+      # .env (FRAME_<X>_TEG_DSN). Reachable: the teg DBs sit on the same networks the
+      # auditor already joins (agentvault_main_network / frame_b_network / frame_c_network).
+      FRAME_A_TEG_DSN: ${FRAME_A_TEG_DSN:-}
+      # ── SANDBOX frames (mode='sandbox') — sandbox A/B/C EventStores ──
+      # §BATCH9 retired tier (2026-09-03), unset so the slot is skipped:  # SBX_FRAME_A_EVENT_STORE_URL: (retired)
+      # §BATCH9 retired tier (2026-09-03), unset so the slot is skipped:  # SBX_FRAME_A_ES_DSN: (value dropped; git history has it)
+      # §BATCH9 retired tier (2026-09-03), unset so the slot is skipped:  # SBX_FRAME_B_EVENT_STORE_URL: (retired)
+      # §BATCH9 retired tier (2026-09-03), unset so the slot is skipped:  # SBX_FRAME_B_ES_DSN: (value dropped; git history has it)
+      # §BATCH9 retired tier (2026-09-03), unset so the slot is skipped:  # SBX_FRAME_C_EVENT_STORE_URL: (retired)
+      # §BATCH9 retired tier (2026-09-03), unset so the slot is skipped:  # SBX_FRAME_C_ES_DSN: (value dropped; git history has it)
+      AUDITOR_EXTRA_FRAMES_JSON: ${AUDITOR_EXTRA_FRAMES_JSON:-[]}
+      # §FRAMEKIT P3.1 (2026-09-12): the same list as a FILE the host rewrites (frames/frames.json, 600), applied
+      # in place by POST /api/auditor/admin/reload-frames; a directory mount so a replaced inode is seen.
+      AUDITOR_EXTRA_FRAMES_FILE: /app/frames/frames.json
+      SBX_EVENT_STORE_KEY: ${SBX_EVENT_STORE_KEY:-}  # §SOVKIT K0 (2026-09-14): env-only; the literal was the RETIRED sandbox tier's key (the live sandbox frames carry their own SBX_<FRAME>_EVENT_STORE_KEY)
+      # §BATCH9 — the four live sandbox frames (DSNs + keys in .env, mode 600)
+      SBX_ALPHA_EVENT_STORE_URL: http://sbx-alpha-event-store:8200
+      SBX_ALPHA_ES_DSN: ${SBX_ALPHA_ES_DSN:-}
+      SBX_ALPHA_EVENT_STORE_KEY: ${SBX_ALPHA_EVENT_STORE_KEY:-}
+      SBX_BETA_EVENT_STORE_URL: http://sbx-beta-event-store:8200
+      SBX_BETA_ES_DSN: ${SBX_BETA_ES_DSN:-}
+      SBX_BETA_EVENT_STORE_KEY: ${SBX_BETA_EVENT_STORE_KEY:-}
+      # AGORA share registry — sandbox registry-DB pools (read-only; unset → absent).
+      SBX_FRAME_A_REG_DSN: ${SBX_FRAME_A_REG_DSN:-}
+      SBX_FRAME_B_REG_DSN: ${SBX_FRAME_B_REG_DSN:-}
+      SBX_FRAME_C_REG_DSN: ${SBX_FRAME_C_REG_DSN:-}
+      # ── Common ──
+      REGISTRY_URL: http://agentvault_registry_a:8000
+      AGENT_NAME: The Auditor
+      AUDIT_INTERVAL: "60"
+      # §GLOBALSTD 2026-08-22: full-history transit-by-kind measured at 56-126s/frame —
+      # 6h cadence instead of the 30min default (the remainder line keeps the breakdown
+      # exact-summing between refreshes; the drift figure itself updates every cycle).
+      TRANSIT_REFRESH_SEC: "21600"
+      # §LEDGERGATE S6 (2026-10-12): 2.5.0 = I3 tells BEHIND from a breach through the TEG's balance journal, and the
+      # TEG's own census of negative rows is a named check (the attestation format is unchanged).
+      AUDITOR_VERSION: "2.6.0-tpsa1"
+      # Maintenance seeds on a fresh DB; runtime-togglable via the API. Both envs
+      # are live now (CQRS cutover long done) → default off.
+      MAINTENANCE_ACTIVE: "${MAINTENANCE_ACTIVE:-false}"
+      AUDITOR_ADMIN_TOKEN: ${AUDITOR_ADMIN_TOKEN:-}
+    ports:
+      - "8045:8045"
+    volumes:
+      - ./data:/app/data
+      - ./frontend:/app/frontend
+      - ./frames:/app/frames:ro
+    networks:
+      - agentvault_main_network
+      - sbx_alpha_network
+      - sbx_beta_network
+      - eu_network
+      - asia_network
+      # §VENUESHARES 2026-08-27 — the 13 cloud-op venues each keep their share
+      # register in their OWN registry Postgres, on their OWN network. The auditor
+      # reads registers DIRECTLY (independent witness), so it must be able to reach
+      # them; asking each op's API instead would mean the audited system deciding
+      # what the auditor is allowed to see.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8045/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  agentvault_main_network:
+    external: true
+  sbx_alpha_network:
+    external: true
+  sbx_beta_network:
+    external: true
+  eu_network:
+    external: true
+  asia_network:
+    external: true

@@ -1,0 +1,20 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "TREASURY BALANCE CORRECTED" %}
+{% set headline = "Admin balance correction recorded" %}
+{% block body %}
+An administrative balance correction was applied. Per the supply invariant,
+every correction is logged immutably to the EventStore and audited against
+the issued/circulating ledger.
+
+  Agent DID:     {{ agent_did }}
+  Delta:         {{ delta }} {{ frame_currency }}
+  New balance:   {{ new_balance }} {{ frame_currency }}
+  Reason:        {{ reason }}
+  Actor:         {{ actor }}
+  Recorded at:   {{ recorded_at }}
+
+Open projections: {{ registry_ui_url }}#/admin/projections
+
+Positive deltas count toward tokens_issued in the supply audit. Negative
+deltas record the correction without decrementing the issued total.
+{% endblock %}

@@ -1,0 +1,12 @@
+# §MTLSHOPS T2 (2026-09-15): the frame's Prometheus serves TLS on the kit's SVID and requires a client certificate from this
+# frame's kit or its registry. client_allowed_sans matches the URI SAN: measured on v2.45.0 (agentvault2-b5's lab), a
+# teg-layer SVID from the same root and a peer frame's registry from a federated root are refused at the handshake.
+tls_server_config:
+  cert_file: /certs/svid.0.pem
+  key_file: /certs/svid.0.key
+  client_auth_type: RequireAndVerifyClientCert
+  client_ca_file: /certs/bundle.0.pem
+  client_allowed_sans:
+    - spiffe://{{TRUST_DOMAIN}}/service/kit
+    - spiffe://{{TRUST_DOMAIN}}/service/{{REGISTRY_NAME}}-registry
+    - spiffe://{{TRUST_DOMAIN}}/service/registry

@@ -1,0 +1,12 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "FRAME FEDERATION REVOKED" %}
+{% set headline = "Federation Revoked: " ~ local_name %}
+{% block body %}
+Federation with {{ local_name }} has been revoked.
+
+  Trust domain: {{ trust_domain }}
+
+Reason: {{ reason }}
+
+Our SPIRE no longer trusts your bundle. You may still have us in your own bundle; consider removing us on your side to complete the bilateral teardown.
+{% endblock %}

@@ -1,0 +1,32 @@
+{# Footer block. Included once at bottom of _base.html.j2 layout. #}
+<tr>
+  <td class="em-footer">
+    {#- 2026-08-01: em-dash removed here and in _base.txt.j2. This tagline ships in EVERY
+       outbound mail, so it was the single most-sent em-dash in the product, against the
+       standing no-em-dash rule for outward-facing text. #}
+    {#- §MAILIDENT 2026-08-02: one shared sender for the whole fleet means THIS line
+       is where a recipient learns which node is writing to them. registry_name and
+       registry_ui_url are injected by build_email_context on every send and preview;
+       the relay overrides them with the child's identity. The guard keeps the line
+       readable if a node has no name configured. #}
+    {% if registry_name and registry_name != 'TheProtocol' %}
+    <strong style="color: {{ palette.text_body }};">Sent by {{ registry_name }}</strong>, a TheProtocol registry.<br/>
+    {% else %}
+    <strong style="color: {{ palette.text_body }};">{{ project_name | default('TheProtocol') }}</strong>: Constitution for non-human intelligence.<br/>
+    {% endif %}
+    <a href="{{ registry_ui_url | default('https://theprotocol.cloud/ui') }}">Console</a> &nbsp;·&nbsp;
+    <a href="https://theprotocol.cloud">theprotocol.cloud</a>
+    {%- if provider_legal_line %}
+    <br/><span style="color: {{ palette.muted }}; font-size: 10px;">Provider: {{ provider_legal_line }}
+    {%- if legal_url %} &nbsp;·&nbsp; <a href="{{ legal_url }}">Legal notice</a>{% endif %}</span>
+    {%- endif %}
+    <br/><br/>
+    <span style="color: {{ palette.muted }}; font-size: 10px;">
+      {#- footer_reason is overridable per-template: outreach mail goes to people who have
+         no account, and "because of activity on your account" would simply be false there.
+         The default is byte-identical to the previous hardcoded line. #}
+      {{ footer_reason | default('You received this because of activity on your ' ~ (registry_name | default('TheProtocol')) ~ ' account.') }}
+      &copy; {{ current_year | default('2026') }} TheProtocol Sovereign Stack.
+    </span>
+  </td>
+</tr>

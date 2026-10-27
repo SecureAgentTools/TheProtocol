@@ -1,0 +1,8 @@
+/* Neural Command's universal reset, for the SCOPED style blocks that import neural-command.css (there it compiles to
+   *[data-v-…] and zeroes margins and paddings inside that component, as it always did). Not imported globally: the
+   global sheet gets the same reset from Tailwind's preflight, before the utilities (Tailwind 4, 2026-10-01). */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}

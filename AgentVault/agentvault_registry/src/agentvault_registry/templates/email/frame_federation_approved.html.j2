@@ -1,0 +1,24 @@
+{% extends "_base.html.j2" %}
+{% set kicker = "// FRAME FEDERATION APPROVED" %}
+{% set headline = "Federation Approved: " ~ local_name %}
+{% block body %}
+<p>Your frame federation invitation has been approved.</p>
+{% with rows=[
+  ('Your trust domain', initiator_trust_domain),
+  ('Our trust domain', local_trust_domain),
+  ('Our bundle endpoint', local_bundle_endpoint),
+  ('Invitation ID', invitation_id)
+] %}{% include '_partials/data_table.html' %}{% endwith %}
+{% if completed %}
+{% with notice="Bilateral handshake completed. Both frames now trust each other's SPIRE bundles." %}{% include '_partials/info_box.html' %}{% endwith %}
+{% else %}
+{% with notice="Bilateral callback pending; admin will retry." %}{% include '_partials/info_box.html' %}{% endwith %}
+{% endif %}
+{% if notes %}
+<p><strong>Review notes:</strong></p>
+<p style="white-space: pre-wrap;">{{ notes }}</p>
+{% endif %}
+{% if release_channel_public_pull %}
+<p><strong>Images and updates.</strong> Release images are pulled from <code>{{ images_prefix }}/*:{{ images_tag }}</code> (no login needed) or built from the kit. Your frame's admin is notified of stable releases and hotfixes on the signed release channel and schedules the rollout; <code>frame-update.py</code> applies it.</p>
+{% endif %}
+{% endblock %}

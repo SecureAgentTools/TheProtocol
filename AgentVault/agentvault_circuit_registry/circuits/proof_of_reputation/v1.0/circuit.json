@@ -1,0 +1,13 @@
+{
+  "name": "ProofOfGoodReputation",
+  "version": "1.0",
+  "description": "Not a circuit: an intended proof that an agent's reputation score is above a public threshold. There is no Noir source and no key. The registry checks the two public inputs only (Option B), reports the submission as not_a_proof and never counts it as verified; check an agent's reputation against the registry instead.",
+  "private_inputs": [
+    {"name": "reputation_score", "type": "integer"},
+    {"name": "salt", "type": "string"}
+  ],
+  "public_inputs": [
+    {"name": "reputation_threshold", "type": "integer"},
+    {"name": "agent_did", "type": "string"}
+  ]
+}

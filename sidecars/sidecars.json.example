@@ -1,0 +1,40 @@
+{
+  "_doc": "A host that runs the sidecar compose project (docker-compose.sidecars.yml). Copy to sidecars.json. Relative paths resolve against the stack root. No metrics_store: the frame's VICTORIA_METRICS_URL is the Prometheus query_url (same query API); add one when the host runs a long-term store.",
+  "host": "my-host",
+  "auditor": {
+    "env": "sidecars/.env.sidecars",
+    "compose": "sidecars/docker-compose.sidecars.yml",
+    "service": "auditor",
+    "container": "tp-sidecars-auditor",
+    "frames_file": "sidecars/auditor/frames/frames.json",
+    "admin_url": "http://127.0.0.1:8045"
+  },
+  "directory": {
+    "env": "sidecars/.env.sidecars",
+    "compose": "sidecars/docker-compose.sidecars.yml",
+    "container": "tp-sidecars-directory",
+    "anchors_managed": true
+  },
+  "prometheus": {
+    "mode": "file_sd",
+    "targets_dir": "sidecars/prometheus/targets",
+    "mounted_at": "/etc/prometheus/targets",
+    "container": "tp-sidecars-prometheus",
+    "query_url": "http://tp-sidecars-prometheus:9090",
+    "aliases": [
+      "prometheus"
+    ]
+  },
+  "bundles": {
+    "frames_list": "/etc/theprotocol/frame-spire-bundles.list",
+    "federated_lists": "/etc/theprotocol/federated-bundles.list",
+    "refresh": "/usr/local/bin/frame-spire-bundle.sh",
+    "cron_marker": "frame-spire-bundle.sh",
+    "federated_by_net": {}
+  },
+  "sni": {
+    "script": "scripts/extend_stream_sni_map.sh",
+    "conf": "/etc/nginx/stream.d/federation-mtls.conf"
+  },
+  "identity_nets": "/etc/theprotocol/self-contained-identity-nets"
+}

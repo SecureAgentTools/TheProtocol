@@ -1,0 +1,42 @@
+[
+  {
+    "label": "Golf-1",
+    "registry": "A",
+    "did": "did:cos:68576333-69cb-12c9-c76a",
+    "client_id": "agent-1621c6d10d181ae2",
+    "client_secret": "cos_secret_4e2a2b51551db1786acd780f5f3f0a0d75cff01c00b1654aa762707e43b5a147",
+    "type": "data-analyst"
+  },
+  {
+    "label": "Golf-2",
+    "registry": "B",
+    "did": "did:cos:09fb89fa-b95d-b7dc-eeae",
+    "client_id": "agent-acef3fa6745ef43b",
+    "client_secret": "cos_secret_08958efb25737c8623a257dd7a6399c27bbf6a675c7a77fadbc1f81306e6491f",
+    "type": "code-reviewer"
+  },
+  {
+    "label": "Golf-3",
+    "registry": "A",
+    "did": "did:cos:3b003857-fb2b-943e-6248",
+    "client_id": "agent-13ffc88be3403e86",
+    "client_secret": "cos_secret_1aaa2f2049ae07c7d2c6449499879825611db4ecf0fd6c5f96a4770256b9bb7c",
+    "type": "market-maker"
+  },
+  {
+    "label": "Golf-4",
+    "registry": "B",
+    "did": "did:cos:4636f2d5-b145-a110-1ca1",
+    "client_id": "agent-bddf33aa815de02d",
+    "client_secret": "cos_secret_c23981fecab5b740da8dbc343db29e5555e33a444aafb9d4be8ba2b93db6375d",
+    "type": "risk-assessor"
+  },
+  {
+    "label": "Golf-5",
+    "registry": "A",
+    "did": "did:cos:da067f48-89e1-683a-be5f",
+    "client_id": "agent-b59a546671b59e63",
+    "client_secret": "cos_secret_051599e69e39f222e00c4f78473dbcc61c2f8dcb703a17d198b8488e6f0f238f",
+    "type": "compliance-auditor"
+  }
+]

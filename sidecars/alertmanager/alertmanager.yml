@@ -1,0 +1,36 @@
+# §FRAMEKIT P3.1 (2026-09-12) — the alert routes a frame ships with. ROUTE ORDER IS THE POINT: routes
+# evaluate in order with continue:false, so `page|critical` sits FIRST — a severity the rules emit and
+# no route matches falls silently into the DEFAULT receiver, the lowest-urgency bucket (§PAGEROUTE:
+# a `page` alert sat 17.5h unseen that way). Name your receivers' integrations below (email_configs,
+# webhook_configs, ...); a receiver with none is valid and DROPS what reaches it — deliberate, so
+# this file boots on any host, and honest, because `amtool config routes test` shows where each
+# severity goes. Alerts are grouped per frame so one frame's incident is one notification.
+global:
+  resolve_timeout: 5m
+route:
+  receiver: everything-else
+  group_by: ['alertname', 'frame', 'severity']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # 1. WAKE-SOMEONE grade — FIRST, and it repeats hourly until resolved
+    - matchers: ['severity =~ "page|critical"']
+      receiver: page
+      repeat_interval: 1h
+    # 2. warnings: one mail per frame per four hours
+    - matchers: ['severity = "warning"']
+      receiver: warning
+receivers:
+  - name: page
+    # email_configs:
+    #   - to: ops@example.org
+    #     from: alerts@example.org
+    #     smarthost: smtp.example.org:587
+    #     auth_username: alerts@example.org
+    #     auth_password_file: /etc/alertmanager/smtp.secret   # 600, never in this file
+    #     send_resolved: true
+    # webhook_configs:
+    #   - url: http://ntfy:80/frames-page
+  - name: warning
+  - name: everything-else

@@ -1,0 +1,214 @@
+# The checks a pull request can run with no secret and no running frame. They are the maintainer's own gates
+# (AgentVault/.forgejo/workflows/ci.yml and the hygiene workflow of the maintainer's forge), pointed at this tree's
+# layout, on the Python each component's image uses. What needs a frame (the image builds, the integration suites and
+# the MCP tester's sandbox runs) happens on the maintainer's side; a contributor brings the sandbox runs as the evidence
+# archive (CONTRIBUTING.md section 3, REVIEWING.md). Every suite has a floor and a skip ceiling: a suite that stops
+# running reads as a failure, never as a pass.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    # bash -eo pipefail: a failing stage of a pipe fails the step. So every count read with grep ends in `|| true`
+    # (a clean run prints no "skipped" at all, and that must read 0, not end the step).
+    shell: bash
+
+jobs:
+  registry-teg:
+    name: Registry and TEG layer (compile, undefined names, source contracts, migrations)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: AgentVault
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14"  # the registry and TEG images' Python
+      - name: Compile gate
+        run: python -m compileall -q agentvault_registry/src/agentvault_registry agentvault_teg_layer_mvp/src
+      - name: Undefined-name gate (hard zero)
+        run: |
+          pip install --quiet pyflakes
+          python -m pyflakes agentvault_registry/src/agentvault_registry agentvault_teg_layer_mvp/src > "$RUNNER_TEMP/pf.txt" || true
+          grep -E "undefined name|referenced before assignment" "$RUNNER_TEMP/pf.txt" > "$RUNNER_TEMP/undef.txt" || true
+          N=$(wc -l < "$RUNNER_TEMP/undef.txt")
+          echo "undefined-name findings: $N (limit 0)"
+          if [ "$N" -gt 0 ]; then cat "$RUNNER_TEMP/undef.txt"; exit 1; fi
+      - name: Source contract gates (TEG emission policies, MCP contracts, audit tiers)
+        run: |
+          python3 .forgejo/checks/teg_emission_policy_contract.py
+          python3 .forgejo/checks/mcp_contract_phrase_hygiene.py
+          python3 .forgejo/checks/mcp_contract_fixture_guard.py
+          python3 .forgejo/checks/mcp_audit_tier_coverage.py
+      - name: Migration graph (id length, uniqueness, one head) and the A2A AgentCard schema
+        run: |
+          python3 .forgejo/checks/alembic_graph.py
+          python3 .forgejo/checks/a2a_schema_gate.py
+
+  event-store:
+    name: Event store (compile, undefined names, the supply invariant, mint origin, auth posture)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: agentvault-event-store
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14"
+      - name: Compile and undefined-name gate (hard zero)
+        run: |
+          python -m compileall -q src
+          pip install --quiet pyflakes
+          python -m pyflakes src > "$RUNNER_TEMP/pf.txt" || true
+          grep -E "undefined name|referenced before assignment" "$RUNNER_TEMP/pf.txt" > "$RUNNER_TEMP/undef.txt" || true
+          N=$(wc -l < "$RUNNER_TEMP/undef.txt")
+          echo "undefined-name findings: $N (limit 0)"
+          if [ "$N" -gt 0 ]; then cat "$RUNNER_TEMP/undef.txt"; exit 1; fi
+      - name: The supply invariant (the arithmetic behind delta = 0)
+        run: |
+          RC=0; python tests/test_supply_invariant.py > "$RUNNER_TEMP/si.log" 2>&1 || RC=$?
+          cat "$RUNNER_TEMP/si.log"
+          [ "$RC" -eq 0 ] || { echo "FATAL: supply-invariant tests exited $RC"; exit 1; }
+          PASSED=$(grep -oE '^[0-9]+/[0-9]+ passed' "$RUNNER_TEMP/si.log" | cut -d/ -f1 || true); PASSED=${PASSED:-0}
+          echo "supply-invariant tests passed=$PASSED (floor 7)"
+          [ "$PASSED" -ge 7 ] || { echo "FATAL: the suite collapsed rather than passed"; exit 1; }
+      - name: Mint origin, auth posture and Kafka record auth
+        run: |
+          pip install --quiet pytest -c constraints.txt cryptography httpx
+          RC=0; python -m pytest tests/test_mint_origin_rule.py tests/test_es_auth_posture.py tests/test_redis_url_never_logged_raw.py \
+            tests/test_jwks_fetch_tls.py tests/test_kafka_record_auth.py -q -p no:cacheprovider -rs > "$RUNNER_TEMP/es.log" 2>&1 || RC=$?
+          cat "$RUNNER_TEMP/es.log"
+          [ "$RC" -eq 0 ] || { echo "FATAL: event-store tests exited $RC"; exit 1; }
+          PASSED=$(grep -oE '[0-9]+ passed' "$RUNNER_TEMP/es.log" | tail -1 | cut -d' ' -f1 || true); PASSED=${PASSED:-0}
+          SKIPPED=$(grep -oE '[0-9]+ skipped' "$RUNNER_TEMP/es.log" | tail -1 | cut -d' ' -f1 || true); SKIPPED=${SKIPPED:-0}
+          echo "event-store tests passed=$PASSED skipped=$SKIPPED (floor 75, skip ceiling 0)"
+          [ "$PASSED" -ge 75 ] && [ "$SKIPPED" -eq 0 ] || { echo "FATAL: the suite collapsed"; exit 1; }
+
+  directory:
+    name: Directory (who may read the index)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: directory
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14"
+      - name: Reader gate tests
+        run: |
+          PIN=$(grep -oE '"strawberry-graphql\[fastapi\]==[0-9.]+"' Dockerfile | tr -d '"')
+          [ -n "$PIN" ] || { echo "FATAL: no strawberry-graphql pin in directory/Dockerfile"; exit 1; }
+          pip install --quiet pytest "cryptography>=41.0.0,<44.0.0" "$PIN"
+          RC=0; python -m pytest tests -q -p no:cacheprovider -rs > "$RUNNER_TEMP/dir.log" 2>&1 || RC=$?
+          cat "$RUNNER_TEMP/dir.log"
+          [ "$RC" -eq 0 ] || { echo "FATAL: reader gate tests exited $RC"; exit 1; }
+          PASSED=$(grep -oE '[0-9]+ passed' "$RUNNER_TEMP/dir.log" | tail -1 | cut -d' ' -f1 || true); PASSED=${PASSED:-0}
+          SKIPPED=$(grep -oE '[0-9]+ skipped' "$RUNNER_TEMP/dir.log" | tail -1 | cut -d' ' -f1 || true); SKIPPED=${SKIPPED:-0}
+          echo "reader gate tests passed=$PASSED skipped=$SKIPPED (floor 50, skip ceiling 0)"
+          [ "$PASSED" -ge 50 ] && [ "$SKIPPED" -eq 0 ] || { echo "FATAL: the suite collapsed"; exit 1; }
+
+  kit-tools:
+    name: Kit tools (frame-contribute, frame-review, frame-test, provenance, standup)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: scripts/distribution
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14"
+      - name: The kit tools' tests
+        run: |
+          pip install --quiet pytest
+          RC=0; python -m pytest tests -q -p no:cacheprovider -rs -W ignore::DeprecationWarning > "$RUNNER_TEMP/kit.log" 2>&1 || RC=$?
+          cat "$RUNNER_TEMP/kit.log"
+          [ "$RC" -eq 0 ] || { echo "FATAL: the kit tools' tests exited $RC"; exit 1; }
+          PASSED=$(grep -oE '[0-9]+ passed' "$RUNNER_TEMP/kit.log" | tail -1 | cut -d' ' -f1 || true); PASSED=${PASSED:-0}
+          SKIPPED=$(grep -oE '[0-9]+ skipped' "$RUNNER_TEMP/kit.log" | tail -1 | cut -d' ' -f1 || true); SKIPPED=${SKIPPED:-0}
+          echo "kit tools' tests passed=$PASSED skipped=$SKIPPED (floor 100, skip ceiling 0)"
+          [ "$PASSED" -ge 100 ] && [ "$SKIPPED" -eq 0 ] || { echo "FATAL: the suite collapsed"; exit 1; }
+
+  auditor:
+    name: The solo auditor
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: Agents/TheAuditor
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"  # the auditor image's Python
+      - name: The auditor's tests
+        run: |
+          pip install --quiet -r src/auditor/requirements.txt pytest
+          RC=0; python -m pytest tests -q -p no:cacheprovider -rs > "$RUNNER_TEMP/aud.log" 2>&1 || RC=$?
+          cat "$RUNNER_TEMP/aud.log"
+          [ "$RC" -eq 0 ] || { echo "FATAL: auditor tests exited $RC"; exit 1; }
+          PASSED=$(grep -oE '[0-9]+ passed' "$RUNNER_TEMP/aud.log" | tail -1 | cut -d' ' -f1 || true); PASSED=${PASSED:-0}
+          SKIPPED=$(grep -oE '[0-9]+ skipped' "$RUNNER_TEMP/aud.log" | tail -1 | cut -d' ' -f1 || true); SKIPPED=${SKIPPED:-0}
+          echo "auditor tests passed=$PASSED skipped=$SKIPPED (floor 20, skip ceiling 1: the check that reads a deployment's .env names)"
+          [ "$PASSED" -ge 20 ] && [ "$SKIPPED" -le 1 ] || { echo "FATAL: the suite collapsed"; exit 1; }
+          if [ "$SKIPPED" -eq 1 ] && ! grep -q "^SKIPPED .*test_host_auditor_presents_no_certificate.py" "$RUNNER_TEMP/aud.log"; then
+            echo "FATAL: the one allowed skip is the .env names check"; exit 1
+          fi
+
+  sdk:
+    name: SDK unit suite (Python ${{ matrix.py }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # the SDK claims 3.10 to 3.14 (its pyproject classifiers): the suite runs at the floor and at the ceiling
+    strategy:
+      matrix:
+        py: ["3.10", "3.14"]
+    defaults:
+      run:
+        working-directory: theprotocol-sdk
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: ${{ matrix.py }}
+      - name: SDK tests
+        run: |
+          pip install --quiet -e '.[test,server,keyring,anp]'
+          RC=0; python -m pytest -q -p no:cacheprovider -rs > "$RUNNER_TEMP/sdk.log" 2>&1 || RC=$?
+          cat "$RUNNER_TEMP/sdk.log"
+          [ "$RC" -eq 0 ] || { echo "FATAL: SDK tests exited $RC"; exit 1; }
+          PASSED=$(grep -oE '[0-9]+ passed' "$RUNNER_TEMP/sdk.log" | tail -1 | cut -d' ' -f1 || true); PASSED=${PASSED:-0}
+          SKIPPED=$(grep -oE '[0-9]+ skipped' "$RUNNER_TEMP/sdk.log" | tail -1 | cut -d' ' -f1 || true); SKIPPED=${SKIPPED:-0}
+          echo "SDK tests passed=$PASSED skipped=$SKIPPED (floor 240, skip ceiling 0)"
+          [ "$PASSED" -ge 240 ] && [ "$SKIPPED" -eq 0 ] || { echo "FATAL: the suite collapsed"; exit 1; }

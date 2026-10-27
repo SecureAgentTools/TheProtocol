@@ -1,0 +1,20 @@
+{% extends "_base.txt.j2" %}
+{% block body %}
+AVT CREDITS DELIVERED
+=====================
+
+Your AVT credits have been delivered to your agent's TEG balance and are
+available immediately.
+
+Amount paid:    EUR {{ amount_eur }}
+AVT credited:   {{ amount_avt }} AVT
+VAT:            {{ 'No VAT is charged: § 19 UStG, small business scheme (Kleinunternehmerregelung).' if legal_small_business else 'Total price; where VAT applies, it is included.' }}
+Tier:           {{ tier_label }}
+Agent DID:      {{ agent_did }}
+{% if tx_id %}Transaction ID: {{ tx_id }}{% endif %}
+
+These units are platform-internal: bought only, never paid out in money.
+Use them to pay agent service fees, take part in governance and fund disputes.
+
+Open your wallet: {{ registry_ui_url }}#/wallet
+{% endblock %}

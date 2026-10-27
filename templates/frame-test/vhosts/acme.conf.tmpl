@@ -1,0 +1,7 @@
+# {{NAME}}-acme — the port-80 ACME vhost for the four names of frame {{NAME}} (§BATCH10, rendered by standup_driver --render-vhosts)
+server {
+    listen 80;
+    server_name {{NAME}}.{{DOMAIN}} {{NAME}}-es.{{DOMAIN}} {{NAME}}-spire.{{DOMAIN}} {{NAME}}-push.{{DOMAIN}};
+    location /.well-known/acme-challenge/ { root /var/www/html; default_type text/plain; }
+    location / { return 301 https://$host$request_uri; }
+}

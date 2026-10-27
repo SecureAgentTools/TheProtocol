@@ -1,0 +1,26 @@
+{#
+  Key-value data table for diagnostics / transaction details.
+  Use:
+    {% with rows=[('Delta', delta), ('Net supply', net_supply)] %}
+      {% include '_partials/data_table.html' %}
+    {% endwith %}
+#}
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 16px 0; border-collapse: collapse;">
+  {% for label, value in rows %}
+  <tr>
+    <td style="padding: 8px 12px;
+               border-bottom: 1px solid {{ palette.border }};
+               font-family: 'IBM Plex Mono', monospace;
+               font-size: 11px;
+               letter-spacing: 0.1em;
+               color: {{ palette.muted }};
+               width: 40%;">{{ label }}</td>
+    <td style="padding: 8px 12px;
+               border-bottom: 1px solid {{ palette.border }};
+               font-family: 'IBM Plex Mono', monospace;
+               font-size: 13px;
+               color: {{ palette.text_primary }};
+               text-align: right;">{{ value }}</td>
+  </tr>
+  {% endfor %}
+</table>

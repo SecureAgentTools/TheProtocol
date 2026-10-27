@@ -1,0 +1,45 @@
+{
+ "url": "https://fixture-agent.example/a2a",
+ "name": "Fixture Corridor Auditor",
+ "tags": null,
+ "skills": [
+  {
+   "id": "corridor-audit",
+   "name": "Corridor audit",
+   "description": "Manifest audits.",
+   "input_schema": null,
+   "output_schema": null
+  }
+ ],
+ "iconUrl": null,
+ "provider": {
+  "url": "https://fixture-agent.example/",
+  "name": "Fixture Org",
+  "support_contact": null
+ },
+ "security": null,
+ "extensions": null,
+ "authSchemes": [
+  {
+   "scheme": "none",
+   "scopes": null,
+   "tokenUrl": null,
+   "description": null,
+   "service_identifier": null
+  }
+ ],
+ "description": "A realistic v0.3 card mirroring live frame-c card_data shape (nulls included).",
+ "lastUpdated": null,
+ "agentVersion": "1.2.3",
+ "capabilities": {
+  "streaming": false,
+  "a2aVersion": null,
+  "extendedAgentCard": null,
+  "pushNotifications": null,
+  "stateTransitionHistory": null
+ },
+ "schemaVersion": "0.3.0",
+ "humanReadableId": "fixture/corridor-auditor",
+ "protocolVersion": "0.3.0",
+ "preferredTransport": "JSONRPC"
+}

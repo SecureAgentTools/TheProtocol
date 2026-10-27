@@ -1,0 +1,36 @@
+FROM python:3.11-slim
+
+# ─── ZKP toolchain note ──────────────────────────────────────────────────────
+# nargo and barretenberg are NOT downloaded at build time.
+# Reason: GitHub release URLs for nargo/bb are version-pinned and require exact
+# tag alignment — pulling them at build time makes the image fragile and slow.
+#
+# For LOCAL development: the agent runs without ZKP capabilities. attestation_client.py
+# will gracefully skip proof generation when nargo/bb are absent (logs a warning).
+#
+# For PRODUCTION (Hetzner TheProtocol-SRV1): nargo v{{ nargo_version }} and
+# bb v{{ bb_version }} are pre-installed in /usr/local/bin on the host.
+# Mount them into the container or use the server's base image that includes them.
+# ─────────────────────────────────────────────────────────────────────────────
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy requirements first for layer caching
+COPY src/{{ package_name }}/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source
+COPY src/ ./src/
+COPY .env ./
+
+# Data + log dirs
+RUN mkdir -p /app/data /app/logs /app/circuits
+
+EXPOSE {{ agent_api_port }}
+EXPOSE {{ agent_metrics_port }}
+
+CMD ["uvicorn", "src.{{ package_name }}.main:app", "--host", "0.0.0.0", "--port", "{{ agent_api_port }}"]

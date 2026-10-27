@@ -1,0 +1,272 @@
+/* Global Theme System - The Protocol Registry */
+
+:root {
+  /* Light Mode Colors */
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f9fafb;
+  --color-bg-tertiary: #f3f4f6;
+  --color-bg-elevated: #ffffff;
+  
+  --color-text-primary: #111827;
+  --color-text-secondary: #6b7280;
+  --color-text-tertiary: #9ca3af;
+  --color-text-inverse: #ffffff;
+  
+  --color-border: #e5e7eb;
+  --color-border-secondary: #d1d5db;
+  
+  /* Brand Colors */
+  --color-protocol-blue: #3b82f6;
+  --color-protocol-purple: #8b5cf6;
+  --color-protocol-teal: #14b8a6;
+  --color-protocol-gold: #f59e0b;
+  
+  /* Semantic Colors */
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --color-info: #3b82f6;
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  
+  /* Glows */
+  --glow-protocol: 0 0 20px rgba(59, 130, 246, 0.5);
+  --glow-success: 0 0 20px rgba(16, 185, 129, 0.5);
+  --glow-error: 0 0 20px rgba(239, 68, 68, 0.5);
+}
+
+/* Dark Mode Colors */
+:root.dark,
+.dark {
+  /* Dark Mode Backgrounds */
+  --color-bg-primary: #0f0f14;
+  --color-bg-secondary: #1a1a22;
+  --color-bg-tertiary: #252530;
+  --color-bg-elevated: #2a2a38;
+  
+  /* Dark Mode Text - HIGH CONTRAST */
+  --color-text-primary: #f9fafb;
+  --color-text-secondary: #d1d5db;
+  --color-text-tertiary: #9ca3af;
+  --color-text-inverse: #111827;
+  
+  /* Dark Mode Borders */
+  --color-border: #374151;
+  --color-border-secondary: #4b5563;
+  
+  /* Brand Colors (Brighter in Dark Mode) */
+  --color-protocol-blue: #60a5fa;
+  --color-protocol-purple: #a78bfa;
+  --color-protocol-teal: #2dd4bf;
+  --color-protocol-gold: #fbbf24;
+  
+  /* Semantic Colors (Adjusted for Dark) */
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-error: #f87171;
+  --color-info: #60a5fa;
+  
+  /* Dark Mode Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+  
+  /* Dark Mode Glows (More Intense) */
+  --glow-protocol: 0 0 30px rgba(96, 165, 250, 0.6);
+  --glow-success: 0 0 30px rgba(52, 211, 153, 0.6);
+  --glow-error: 0 0 30px rgba(248, 113, 113, 0.6);
+}
+
+/* Glass Morphism Base */
+.glass {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dark .glass {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Protocol Gradient */
+.protocol-gradient {
+  background: linear-gradient(135deg, var(--color-protocol-blue), var(--color-protocol-purple));
+}
+
+.protocol-gradient-text {
+  background: linear-gradient(135deg, var(--color-protocol-blue), var(--color-protocol-purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Animations */
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+@keyframes particle-float {
+  0% {
+    transform: translate(0, 0) scale(0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    transform: translate(var(--x), var(--y)) scale(0);
+    opacity: 0;
+  }
+}
+
+/* Utility Classes */
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.2) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-size: 1000px 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+/* Focus States */
+.focus-protocol:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-protocol-blue), var(--glow-protocol);
+}
+
+/* Hover Effects */
+.hover-glow {
+  transition: all 0.3s ease;
+}
+
+.hover-glow:hover {
+  box-shadow: var(--glow-protocol);
+  transform: translateY(-2px);
+}
+
+/* Loading Skeleton */
+.skeleton {
+  background: linear-gradient(90deg, 
+    var(--color-bg-secondary) 0%, 
+    var(--color-bg-tertiary) 50%, 
+    var(--color-bg-secondary) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Success Particle Container */
+.particle-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.particle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--color-success);
+  border-radius: 50%;
+  animation: particle-float 2s ease-out forwards;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-protocol-blue);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-protocol-purple);
+}
+
+/* Ensure proper text contrast */
+.dark {
+  color: var(--color-text-primary);
+}
+
+/* Fix specific component colors */
+.dark .api-tester,
+.dark .health-monitor {
+  color: var(--color-text-primary);
+}
+
+.dark .endpoint-item,
+.dark .endpoint-card,
+.dark .summary-card,
+.dark .auth-section,
+.dark .category-button,
+.dark .endpoints-section {
+  background: var(--color-bg-elevated);
+  border-color: var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.dark .endpoint-path,
+.dark code {
+  color: var(--color-protocol-blue);
+}
+
+.dark .subtitle,
+.dark .card-stats,
+.dark .detail-label {
+  color: var(--color-text-secondary);
+}

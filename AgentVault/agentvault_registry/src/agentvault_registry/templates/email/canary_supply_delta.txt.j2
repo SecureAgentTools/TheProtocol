@@ -1,0 +1,28 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "CANARY DETECTED SUPPLY DELTA" %}
+{% set headline = "Canary Fire Produced Supply Imbalance" %}
+{% block body %}
+A canary synthetic transfer triggered a supply invariant deviation. The canary system fires
+real production transfers between dedicated system agents. When the cross-frame ledger
+snapshot before vs after a fire shows non-zero Δ, it indicates a correctness regression in
+the transfer pipeline.
+
+  Frame:        {{ frame }}
+  Delta:        {{ delta }}
+  Path:         {{ path }}
+  Backend:      {{ backend }}
+  Test ID:      {{ test_id }}
+  Sender:       {{ sender_did }}
+  Receiver:     {{ receiver_did }}
+  Detected at:  {{ detected_at }}
+
+Investigate: {{ registry_ui_url }}#/admin
+
+CLI:
+  docker exec agentvault_event_store_db psql -U postgres -d eventstore \
+    -c "SELECT event_type, source_service, timestamp FROM events
+        WHERE event_data::text LIKE '%{{ test_id }}%' ORDER BY timestamp"
+
+A canary-detected delta is more actionable than the projection-based auditor: it pinpoints
+the offending transfer.
+{% endblock %}

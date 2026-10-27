@@ -1,0 +1,14 @@
+# §SOVKIT (2026-09-14): the build context is src/ + frontend/ + the Dockerfile. The 7 GB live database, the
+# retired sandbox db, the env, the compose files, node_modules and every bak stay out.
+data/
+data-sandbox/
+db/
+frames/
+.env
+.env.*
+docker-compose*.yml*
+frontend-src/node_modules/
+frontend.bak-*/
+*.bak-*
+__pycache__/
+*.pyc

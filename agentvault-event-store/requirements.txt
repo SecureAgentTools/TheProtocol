@@ -1,0 +1,22 @@
+# §DEPS (2026-09-27, his words "would be cool if we get everything to the newest stable version that runs with us"):
+# the newest stable release of each, resolved together on python:3.11-slim; constraints.txt (the built image's own
+# `pip freeze --all`) pins everything they pull in and the Dockerfile installs with `-c constraints.txt`.
+# SQLAlchemy 2.1 since §DEPS store-jwt (2026-09-29): the store builds only asyncpg engines from an explicit
+# postgresql+asyncpg:// URL (src/database/connection.py), so 2.1's psycopg (3) default for a plain URL never applies.
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
+sqlalchemy[asyncio]==2.1.1
+asyncpg==0.31.0
+alembic==1.20.0
+pydantic==2.13.5
+python-dotenv==1.2.3
+httpx==0.28.1
+aiohttp==3.14.3
+websockets==17.1
+prometheus-fastapi-instrumentator==8.1.0
+prometheus-client==0.26.0
+aiokafka[snappy]==0.14.0
+python-snappy==0.7.3  # snappy codec for aiokafka -- 2026-08-03: an rpk-default snappy-compressed record poisoned the ingest loop (UnsupportedCodecError); cramjam-backed wheels, no system libs. aiokafka 0.14 decodes snappy through cramjam itself (its [snappy] extra); kept so either path has its codec
+redis[hiredis]==8.1.0
+PyJWT[crypto]==2.15.1
+cryptography==50.0.1

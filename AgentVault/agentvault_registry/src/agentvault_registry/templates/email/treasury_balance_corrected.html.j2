@@ -1,0 +1,17 @@
+{% extends "_base.html.j2" %}
+{% set theme = "sovereign" %}
+{% set kicker = "// TREASURY BALANCE CORRECTED" %}
+{% set headline = "Admin balance correction recorded" %}
+{% block body %}
+<p>An <strong>administrative balance correction</strong> was applied. Per the supply invariant, every correction is logged immutably to the EventStore and audited against the issued/circulating ledger.</p>
+{% with rows=[
+  ('Agent DID', agent_did),
+  ('Delta (signed)', delta ~ ' ' ~ frame_currency),
+  ('New balance', new_balance ~ ' ' ~ frame_currency),
+  ('Reason', reason),
+  ('Actor', actor),
+  ('Recorded at', recorded_at)
+] %}{% include '_partials/data_table.html' %}{% endwith %}
+{% with cta_url=registry_ui_url ~ '#/admin/projections', cta_label="OPEN PROJECTIONS CONSOLE" %}{% include '_partials/cta_button.html' %}{% endwith %}
+{% with notice="Positive deltas count toward tokens_issued in the supply audit. Negative deltas record the correction without decrementing the issued total. The supply auditor will reconcile within one cycle." %}{% include '_partials/info_box.html' %}{% endwith %}
+{% endblock %}

@@ -1,0 +1,99 @@
+# Claude Desktop Setup — {{ agent_name }}
+
+Connect this agent to Claude Desktop in 3 steps.
+
+---
+
+## Step 1 — Install dependencies
+
+```bash
+cd /path/to/{{ human_readable_id }}/mcp
+npm install
+```
+
+---
+
+## Step 2 — Add to Claude Desktop config
+
+Open (or create) your Claude Desktop config file:
+- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+- **Mac:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Linux:** `~/.config/claude/claude_desktop_config.json`
+
+Add this entry to the `mcpServers` object:
+
+### Windows
+```json
+{
+  "mcpServers": {
+    "{{ human_readable_id }}": {
+      "command": "node",
+      "args": ["C:/path/to/{{ human_readable_id }}/mcp/server.js"],
+      "env": {
+        "AGENT_SECRET_FILE": "C:/path/to/{{ human_readable_id }}/.env.secret"
+      }
+    }
+  }
+}
+```
+
+### Mac / Linux
+```json
+{
+  "mcpServers": {
+    "{{ human_readable_id }}": {
+      "command": "node",
+      "args": ["/path/to/{{ human_readable_id }}/mcp/server.js"],
+      "env": {
+        "AGENT_SECRET_FILE": "/path/to/{{ human_readable_id }}/.env.secret"
+      }
+    }
+  }
+}
+```
+
+Replace `/path/to/{{ human_readable_id }}` with the actual directory where you extracted the bundle.
+
+---
+
+## Step 3 — Restart Claude Desktop
+
+Fully quit and reopen Claude Desktop (not just close the window).
+
+You should see **{{ agent_name }}** in the MCP tools list.
+
+---
+
+## Verify it's working
+
+Ask Claude:
+> "What's the status of my {{ agent_name }} agent?"
+
+Claude will call `agent_status` and show you container state + balance.
+
+---
+
+## Multiple agents
+
+Each agent needs its own entry in `mcpServers` with a unique key and port.
+Port conflicts: edit `MCP_PORT` in `.env` and update `args` accordingly.
+
+---
+
+## Troubleshooting
+
+**Claude doesn't see the tool:**
+- Confirm `npm install` ran without errors
+- Confirm the path in `args` is absolute and correct
+- Restart Claude Desktop after any config change
+
+**Authentication error on first tool call:**
+- Check `.env.secret` exists and contains `CLIENT_SECRET=tp_secret_...`
+- Verify the registry is running: `curl {{ registry_url }}/api/v1/health`
+
+**Container not found:**
+- Run `docker-compose up -d` from the agent root directory first
+- Check `CONTAINER_NAME` in `.env` matches what docker-compose uses
+
+**Logs:**
+The MCP server writes logs to stderr — visible in Claude Desktop's developer console.

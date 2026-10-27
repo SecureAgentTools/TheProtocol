@@ -1,0 +1,43 @@
+# The frame's public edge (§HELLOFRAME 2026-09-18), rendered by frame-up from this template into <stack>/edge/Caddyfile.
+# Caddy runs in the HOST network namespace and proxies the same loopback doors the host nginx vhost of a runner-built
+# frame proxies (the registry and the store's edge), so the console, its websockets, MCP and the ledger feed are one
+# name behind one certificate. The machine lanes (the federation gateway, the SPIRE bundle endpoint, the ledger's mTLS
+# gateway) are NOT here: they publish their own ports and verify by SPIFFE identity, not by a public CA.
+{
+	http_port {{HTTP_PORT}}
+	https_port {{HTTPS_PORT}}
+	# this edge's own admin API: every `caddy reload --config <this file>` reads the address from here, so two frames'
+	# edges on one host never share (or reload) each other's Caddy (§TESTBED P0 g; the default 2019 is one per host)
+	admin 127.0.0.1:{{ADMIN_PORT}}
+	{{ACME_EMAIL_LINE}}
+}
+
+# each cloud operator of this frame gets its own site block, written by the frame runner as operators/<slug>.caddy when the
+# operator is provisioned and removed at its teardown (§HELLOFRAME Phase 2b); the directory is created empty by frame-up
+import operators/*.caddy
+# each sandbox of this frame (frame-sandbox.py, §TESTBED) gets its own site block here, sandbox.<this name> and
+# sandbox-b.<this name>, written when the sandbox stands up and removed with it; empty until then
+import sandboxes/*.caddy
+
+{{PUBLIC_NAME}} {
+	{{TLS_LINE}}
+	encode gzip zstd
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+	# the store's live ledger feed (websocket), served by the frame's own edge on loopback
+	handle /ws/events* {
+		reverse_proxy 127.0.0.1:{{PORT_ES}}
+	}
+	# everything else is the registry: the API, the app, its websocket, MCP
+	handle {
+		reverse_proxy 127.0.0.1:{{PORT_REGISTRY}} {
+			header_up X-Forwarded-Proto https
+			header_up X-Real-IP {remote_host}
+		}
+	}
+}

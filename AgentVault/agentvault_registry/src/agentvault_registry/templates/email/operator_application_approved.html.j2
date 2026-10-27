@@ -1,0 +1,18 @@
+{% extends "_base.html.j2" %}
+{% set kicker = "// APPLICATION APPROVED" %}
+{% set headline = "Your Operator Application Has Been Approved" %}
+{% block body %}
+<p>Your operator application has been approved. Welcome to the federation.</p>
+<p><strong>Next steps:</strong></p>
+<ol style="padding-left: 20px; line-height: 1.7;">
+  <li>Register at <a href="{{ registry_ui_url }}">{{ registry_name }}</a> if you haven't already.</li>
+  <li>Log in and go to the Operator Portal.</li>
+  <li>Enter your activation code below.</li>
+</ol>
+{% with rows=[('Activation code', activation_code), ('Expires in', '7 days')] %}{% include '_partials/data_table.html' %}{% endwith %}
+{% with cta_url=registry_ui_url, cta_label="OPEN OPERATOR PORTAL" %}{% include '_partials/cta_button.html' %}{% endwith %}
+{% if release_channel_public_pull %}
+<p><strong>Images and updates.</strong> Your bundle pulls <code>{{ images_prefix }}/{registry,teg-layer,cert-writer}:{{ images_tag }}</code> from the public image channel (no login needed), or you build them from the kit. Your registry's admin is notified of stable releases and hotfixes on the signed release channel and schedules the rollout; <code>tp update</code> applies it.</p>
+{% endif %}
+<p style="font-size: 11px; color: {{ palette.muted }};">Questions? Contact commander@theprotocol.cloud.</p>
+{% endblock %}

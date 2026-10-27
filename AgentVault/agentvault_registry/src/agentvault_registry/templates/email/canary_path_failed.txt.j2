@@ -1,0 +1,25 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "CANARY PATH FAILING" %}
+{% set headline = "Synthetic Transfer Path Down" %}
+{% block body %}
+The canary monitoring system detected sustained failures on a production transfer path.
+Synthetic transfers are firing, but the expected event chain is not completing within SLO.
+
+  Path:            {{ path }}
+  Backend:         {{ backend }}
+  Failure rate:    {{ failure_rate }}
+  Window:          {{ window }}
+  Detected at:     {{ detected_at }}
+  Last failure:    {{ last_failure_type }}
+  Sample test_id:  {{ sample_test_id }}
+
+Investigate: {{ registry_ui_url }}#/admin/reactors
+Runbook:     PRODUCTION_DOCS/06_OPERATIONS/Canary_Transfer_System.md
+
+CLI:
+  # Frame A shown; substitute your node's db container + db name
+  docker exec agentvault_registry_db_a psql -U postgres -d agentvault_registry_a \
+    -c "SELECT * FROM canary_test_results WHERE outcome='failed' ORDER BY fired_at DESC LIMIT 10"
+
+This alert fires when canary path success rate drops below threshold.
+{% endblock %}

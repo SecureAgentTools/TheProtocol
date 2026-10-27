@@ -1,0 +1,296 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   tp-senate.css — OWL-18
+   TheProtocol design language for Senate Floor (staking + governance).
+   Mirrors tp-disputes-modals.css (OWL-17) / tp-contract-modals.css (OWL-16).
+───────────────────────────────────────────────────────────────────────────── */
+
+/* ── Overlay / Modal shell ──────────────────────────────────────────────── */
+.tp-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9900;
+  animation: tp-fade-in 0.15s ease;
+}
+
+.tp-modal {
+  background: #0d1626;
+  border: 1px solid rgba(var(--nc-primary-rgb), 0.2);
+  border-radius: 12px;
+  width: min(96vw, 560px);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65), 0 0 40px rgba(var(--nc-primary-rgb), 0.05);
+  animation: tp-entry 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.tp-modal--lg { width: min(96vw, 640px); }
+.tp-modal--sm { width: min(96vw, 420px); }
+
+.tp-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem 1rem;
+  border-bottom: 1px solid rgba(var(--nc-primary-rgb), 0.1);
+}
+.tp-modal-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgb(0, 210, 210);
+}
+.tp-modal-close {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  border: 1px solid rgba(var(--nc-primary-rgb), 0.15);
+  background: transparent;
+  color: #8fa3be;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem;
+  transition: all 0.15s;
+}
+.tp-modal-close:hover { background: rgba(var(--nc-primary-rgb), 0.08); color: rgb(0, 210, 210); }
+
+.tp-modal-body   { padding: 1.25rem 1.5rem; }
+.tp-modal-footer {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem 1.25rem;
+  border-top: 1px solid rgba(var(--nc-primary-rgb), 0.1);
+}
+
+/* ── Form elements ──────────────────────────────────────────────────────── */
+.tp-label {
+  display: block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: #8fa3be; margin-bottom: 0.4rem;
+}
+.tp-input, .tp-textarea, .tp-select {
+  width: 100%;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(var(--nc-primary-rgb),0.2);
+  border-radius: 6px;
+  color: #e2e8f0; padding: 0.6rem 0.85rem;
+  font-size: 0.875rem; outline: none;
+  transition: border-color 0.15s;
+}
+.tp-input:focus, .tp-textarea:focus, .tp-select:focus {
+  border-color: rgba(var(--nc-primary-rgb),0.55);
+  background: rgba(255,255,255,0.06);
+}
+.tp-input::placeholder, .tp-textarea::placeholder { color: #71809a; }
+.tp-select option { background: #0d1626; color: #e2e8f0; }
+.tp-textarea { resize: vertical; min-height: 80px; font-family: inherit; }
+.tp-input--readonly {
+  background: rgba(0,0,0,0.25);
+  border-color: rgba(var(--nc-primary-rgb),0.1);
+  color: #8191a5; cursor: default;
+}
+.tp-hint { font-size: 0.75rem; color: #7b91b2; margin-top: 0.3rem; }
+.tp-field { margin-bottom: 1rem; }
+
+/* ── Banners ────────────────────────────────────────────────────────────── */
+.tp-banner { border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.82rem; margin-bottom: 1rem; line-height: 1.5; }
+.tp-banner--info    { background: rgba(var(--nc-primary-rgb),0.08);   border: 1px solid rgba(var(--nc-primary-rgb),0.2);   color: rgba(var(--nc-primary-rgb),0.85); }
+.tp-banner--warn    { background: rgba(251,191,36,0.08);  border: 1px solid rgba(251,191,36,0.25); color: rgba(251,191,36,0.9); }
+.tp-banner--danger  { background: rgba(239,68,68,0.08);   border: 1px solid rgba(239,68,68,0.25);  color: rgba(239,68,68,0.9); }
+.tp-banner--success { background: rgba(34,197,94,0.08);   border: 1px solid rgba(34,197,94,0.2);   color: rgba(34,197,94,0.9); }
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+.tp-btn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 0.55rem 1.1rem;
+  border-radius: 6px; border: 1px solid transparent;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.tp-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.tp-btn--primary  { background: rgb(0,210,210); color: #060b14; border-color: rgb(0,210,210); }
+.tp-btn--primary:hover:not(:disabled) { background: rgba(var(--nc-primary-rgb),0.85); }
+.tp-btn--ghost    { background: transparent; color: #8fa3be; border-color: rgba(var(--nc-primary-rgb),0.2); }
+.tp-btn--ghost:hover:not(:disabled)   { background: rgba(var(--nc-primary-rgb),0.08); color: rgb(0,210,210); }
+.tp-btn--danger   { background: rgba(239,68,68,0.12); color: rgb(239,68,68); border-color: rgba(239,68,68,0.3); }
+.tp-btn--danger:hover:not(:disabled)  { background: rgba(239,68,68,0.2); }
+.tp-btn--success  { background: rgba(34,197,94,0.12); color: rgb(34,197,94); border-color: rgba(34,197,94,0.3); }
+.tp-btn--success:hover:not(:disabled) { background: rgba(34,197,94,0.2); }
+.tp-btn--amber    { background: rgba(251,191,36,0.12); color: rgb(251,191,36); border-color: rgba(251,191,36,0.3); }
+.tp-btn--amber:hover:not(:disabled)   { background: rgba(251,191,36,0.2); }
+
+/* ── Spinner ────────────────────────────────────────────────────────────── */
+.tp-spinner {
+  width: 14px; height: 14px;
+  border: 2px solid rgba(var(--nc-primary-rgb),0.3);
+  border-top-color: rgb(0,210,210);
+  border-radius: 50%;
+  animation: tp-spin 0.7s linear infinite;
+  display: inline-block;
+}
+
+/* ── KV rows ────────────────────────────────────────────────────────────── */
+.tp-row {
+  display: flex; align-items: flex-start;
+  justify-content: space-between; gap: 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(var(--nc-primary-rgb),0.07);
+}
+.tp-row:last-child { border-bottom: none; }
+.tp-row__label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: #7b91b2; flex-shrink: 0; padding-top: 2px;
+}
+.tp-row__value         { color: #c8d6e8; font-size: 0.85rem; text-align: right; word-break: break-all; }
+.tp-row__value--mono   { font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; }
+.tp-row__value--big    { font-size: 1.1rem; font-weight: 700; color: rgb(0,210,210); }
+.tp-row__value--green  { color: rgb(34,197,94); }
+.tp-row__value--amber  { color: rgb(251,191,36); }
+.tp-row__value--red    { color: rgb(239,68,68); }
+
+/* ── Lock option tiles (used in StakeModal) ─────────────────────────────── */
+.tp-lock-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.tp-lock-tile {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(var(--nc-primary-rgb),0.15);
+  border-radius: 8px;
+  padding: 0.6rem 0.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tp-lock-tile:hover { border-color: rgba(var(--nc-primary-rgb),0.4); background: rgba(var(--nc-primary-rgb),0.05); }
+.tp-lock-tile--active {
+  border-color: rgb(0,210,210);
+  background: rgba(var(--nc-primary-rgb),0.1);
+  box-shadow: 0 0 12px rgba(var(--nc-primary-rgb),0.12);
+}
+.tp-lock-tile__days {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem; color: #8191a5;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  margin-bottom: 0.2rem;
+}
+.tp-lock-tile--active .tp-lock-tile__days { color: rgb(0,210,210); }
+.tp-lock-tile__apy {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1rem; font-weight: 700; color: rgb(0,210,210);
+}
+.tp-lock-tile__bonus {
+  font-size: 0.65rem; color: rgb(251,191,36);
+  margin-top: 0.15rem; font-weight: 600;
+}
+.tp-lock-tile__flex { font-size: 0.65rem; color: rgb(34,197,94); margin-top: 0.15rem; }
+
+/* ── Vote choice tiles (used in VoteModal) ──────────────────────────────── */
+.tp-vote-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.tp-vote-tile {
+  width: 100%; font: inherit; color: inherit; background: transparent;  /* a <button> since §FESUITE */
+  border: 2px solid rgba(255,255,255,0.07);
+  border-radius: 10px; padding: 1rem;
+  text-align: center; cursor: pointer;
+  transition: all 0.15s;
+}
+.tp-vote-tile--for   { border-color: rgba(34,197,94,0.25); }
+.tp-vote-tile--for:hover,
+.tp-vote-tile--for.tp-vote-tile--active {
+  border-color: rgb(34,197,94);
+  background: rgba(34,197,94,0.08);
+  box-shadow: 0 0 16px rgba(34,197,94,0.12);
+}
+.tp-vote-tile--against { border-color: rgba(239,68,68,0.25); }
+.tp-vote-tile--against:hover,
+.tp-vote-tile--against.tp-vote-tile--active {
+  border-color: rgb(239,68,68);
+  background: rgba(239,68,68,0.08);
+  box-shadow: 0 0 16px rgba(239,68,68,0.1);
+}
+.tp-vote-tile__icon { font-size: 1.8rem; line-height: 1; margin-bottom: 0.4rem; }
+.tp-vote-tile__label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.75rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em;
+}
+.tp-vote-tile--for   .tp-vote-tile__label { color: rgb(34,197,94); }
+.tp-vote-tile--against .tp-vote-tile__label { color: rgb(239,68,68); }
+
+/* ── Proposal type selector ─────────────────────────────────────────────── */
+.tp-type-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.tp-type-tile {
+  display: block; width: 100%; text-align: left; font: inherit; color: inherit;  /* a <button> since §FESUITE */
+  border: 1px solid rgba(var(--nc-primary-rgb),0.15);
+  border-radius: 8px; padding: 0.85rem 1rem;
+  cursor: pointer; transition: all 0.15s;
+  background: rgba(255,255,255,0.02);
+}
+.tp-type-tile:hover { border-color: rgba(var(--nc-primary-rgb),0.35); }
+.tp-type-tile--active {
+  border-color: rgb(0,210,210);
+  background: rgba(var(--nc-primary-rgb),0.07);
+}
+.tp-type-tile--policy.tp-type-tile--active {
+  border-color: rgb(167,139,250);
+  background: rgba(167,139,250,0.07);
+}
+.tp-type-tile__label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: #8fa3be; margin-bottom: 0.35rem;
+}
+.tp-type-tile--active .tp-type-tile__label { color: rgb(0,210,210); }
+.tp-type-tile--policy.tp-type-tile--active .tp-type-tile__label { color: rgb(167,139,250); }
+.tp-type-tile__desc { font-size: 0.75rem; color: #7b91b2; line-height: 1.4; }  /* 4.6:1 (§FESUITE; #4a6080 was 2.8:1) */
+
+/* ── Duration selector tiles (used in CreateProposalModal) ────────────── */
+.tp-duration-grid {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.tp-duration-tile {
+  width: 100%; font: inherit; color: inherit;  /* a <button> since §FESUITE */
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(var(--nc-primary-rgb),0.15);
+  border-radius: 8px;
+  padding: 0.55rem 0.4rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tp-duration-tile:hover { border-color: rgba(var(--nc-primary-rgb),0.4); background: rgba(var(--nc-primary-rgb),0.05); }
+.tp-duration-tile--active {
+  border-color: rgb(0,210,210);
+  background: rgba(var(--nc-primary-rgb),0.1);
+  box-shadow: 0 0 12px rgba(var(--nc-primary-rgb),0.12);
+}
+.tp-duration-tile__label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem; font-weight: 600; color: #8191a5;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.tp-duration-tile--active .tp-duration-tile__label { color: rgb(0,210,210); }
+
+/* ── Animations ─────────────────────────────────────────────────────────── */
+@keyframes tp-fade-in { from { opacity: 0; }                                       to { opacity: 1; } }
+@keyframes tp-entry   { from { opacity: 0; transform: scale(0.97) translateY(8px);} to { opacity: 1; transform: scale(1) translateY(0); } }
+@keyframes tp-spin    { to { transform: rotate(360deg); } }

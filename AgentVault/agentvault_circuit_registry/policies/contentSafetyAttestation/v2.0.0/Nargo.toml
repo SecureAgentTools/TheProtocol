@@ -1,0 +1,7 @@
+[package]
+name = "content_safety_attestation"
+type = "bin"
+authors = ["TheProtocol"]
+compiler_version = ">=0.1.0"
+
+[dependencies]

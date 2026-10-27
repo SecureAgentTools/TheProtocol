@@ -1,0 +1,13 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "REGISTRY LICENSE REVOKED" %}
+{% set headline = "License Revoked: " ~ name %}
+{% block body %}
+Your operator registry license for {{ name }} has been REVOKED.
+
+Reason: {{ reason }}
+
+This action is IRREVERSIBLE. All SPIRE access, Docker image registry
+credentials, and federation licenses have been revoked.
+
+If you believe this is an error, please contact operators@theprotocol.cloud.
+{% endblock %}

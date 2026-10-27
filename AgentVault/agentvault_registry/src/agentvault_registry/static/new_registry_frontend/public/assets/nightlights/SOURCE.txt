@@ -1,0 +1,11 @@
+Night-light tiles for the globe (zoom levels 0 to 4, 341 PNG tiles, WMTS layout {z}/{y}/{x}).
+
+Source: NASA Global Imagery Browse Services (GIBS), layer VIIRS_Black_Marble, date 2016-01-01,
+tile matrix set GoogleMapsCompatible_Level8, fetched unmodified on 2026-09-30.
+
+Licence: NASA imagery is a work of the United States Government and is not subject to copyright
+in the United States; NASA asks for acknowledgement. We acknowledge the use of imagery provided by
+services from NASA's Global Imagery Browse Services (GIBS), part of NASA's Earth Science Data and
+Information System (ESDIS).
+
+Served from this origin so that a visitor's browser never contacts a third party for them.

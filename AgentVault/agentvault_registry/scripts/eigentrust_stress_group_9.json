@@ -1,0 +1,42 @@
+[
+  {
+    "label": "India-1",
+    "registry": "A",
+    "did": "did:cos:5fd8372d-144a-4e05-6f05",
+    "client_id": "agent-4be5bc1c0002f6b2",
+    "client_secret": "cos_secret_e2b5bdcc51e1c1417de3044595208296801bd867974d61d579ab6a3981969ad1",
+    "type": "data-analyst"
+  },
+  {
+    "label": "India-2",
+    "registry": "A",
+    "did": "did:cos:cf16f9b6-ec63-aec1-b3cc",
+    "client_id": "agent-0f3c7f2872ca1d94",
+    "client_secret": "cos_secret_8a63f027be955c70cfb57e539e438fbf42069f6e9432209299b95328acfd8ff5",
+    "type": "code-reviewer"
+  },
+  {
+    "label": "India-3",
+    "registry": "A",
+    "did": "did:cos:b5e0d162-08bb-5d74-6a1e",
+    "client_id": "agent-775dd13bf5fce759",
+    "client_secret": "cos_secret_b68cadacde5d7443b622710482e516aeabb5f912d58d3370c966bd217d6c4067",
+    "type": "market-maker"
+  },
+  {
+    "label": "India-4",
+    "registry": "B",
+    "did": "did:cos:d2efe5d2-c0f7-0fbb-97c4",
+    "client_id": "agent-b75e09b32e74a9bf",
+    "client_secret": "cos_secret_e86dc250dfb77079e86ce2197a596e30efd1e5a72291c41fa8d6e2f26fd7cfe9",
+    "type": "risk-assessor"
+  },
+  {
+    "label": "India-5",
+    "registry": "B",
+    "did": "did:cos:7bff3470-be00-c95f-b830",
+    "client_id": "agent-cac57922bd8d204e",
+    "client_secret": "cos_secret_a570f74ba08b40bfce42821988461f683ae1c9cca2cce4a2e34b34239ff675cc",
+    "type": "compliance-auditor"
+  }
+]

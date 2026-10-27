@@ -1,0 +1,45 @@
+name: Design issue
+description: Agree on a change larger than a fix before it is built (CONTRIBUTING.md section 2).
+labels: ["design"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A change to money, contracts, identity or federation, and any change over the size caps
+        (20 code files or 600 changed lines; 12 or 400 in those four areas), starts here. Once this issue is
+        agreed, the work is built on the feature branch it names and brings one evidence run for the whole branch
+        (REVIEWING.md section 4).
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: The change you propose
+      description: What changes, where, and what stays as it is. Name the existing rails you build on.
+    validations:
+      required: true
+  - type: checkboxes
+    id: areas
+    attributes:
+      label: Areas it touches
+      options:
+        - label: money (anything that moves value keeps the supply invariant)
+        - label: contracts
+        - label: identity
+        - label: federation
+  - type: input
+    id: size
+    attributes:
+      label: Expected size
+      description: Code files and changed lines, roughly.
+  - type: textarea
+    id: proof
+    attributes:
+      label: How you will prove it
+      description: The sandbox runs you will bring, and the control for any new test.
+    validations:
+      required: true

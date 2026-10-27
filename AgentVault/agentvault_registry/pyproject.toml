@@ -1,0 +1,239 @@
+[tool.poetry]
+name = "agentvault-registry-api"
+version = "1.0.0"
+description = "Secure Backend API for the AgentVault Central Registry"
+authors = ["Raphael Zbigniew Jeziorny <r.jeziorny@theprotocol.cloud>"]
+license = "AGPL-3.0-or-later"
+readme = "README.md"
+packages = [{include = "agentvault_registry", from = "src"}]
+
+[tool.poetry.dependencies]
+# §DEPS (2026-09-27): the registry image's direct dependencies at the versions it runs (V0474). The image installs from
+# the pin list in ./Dockerfile against ./constraints-network.txt, not from this file; requirements.txt is its exact set.
+# Python 3.14 only (§DEPS V0479, 2026-09-28): every image and the CI sanity job run 3.14. Held back, each for a reason the Dockerfile names:
+# SQLAlchemy 2.1 since §DEPS sqla21 (every sync engine names psycopg2). stripe 15 since §DEPS stripe15 (services/stripe_checkout.py hands out dicts). passlib is gone (§DEPS
+# 2026-09-28): bcrypt 5 is called directly, in core/secret_hash.py.
+# networkx 3.7 declares Python !=3.14.1 (it will not install on that one patch release), so the range says so too;
+# the images run python:3.14-slim, 3.14.7 today.
+python = ">=3.14,!=3.14.1,<3.15"
+fastapi = ">=0.141.1,<0.142"
+# FastAPI stopped installing python-multipart at 0.112; every Form(...) route, the login among them, needs it
+python-multipart = ">=0.0.32,<0.1"
+uvicorn = {version = ">=0.54,<0.55", extras = ["standard"]}
+gunicorn = ">=26.2.0,<27"
+uvicorn-worker = ">=0.4.0,<0.5"
+sqlalchemy = {version = ">=2.1.1,<2.2", extras = ["asyncio"]}   # sync engines name psycopg2 (core/dsn.sync_engine_url)
+asyncpg = ">=0.31,<0.32"
+alembic = ">=1.20,<1.21"
+pydantic = ">=2.13.5,<3.0"
+pydantic-settings = ">=2.15,<2.16"
+python-dotenv = ">=1.2.3,<2.0"
+slowapi = ">=0.1.10,<0.2.0"
+psycopg = {version = ">=3.3.6,<4.0", extras = ["binary"]}
+psycopg2-binary = ">=2.9.13,<3.0.0"
+fastapi-mail = ">=1.6.8,<2.0"
+aiosmtplib = ">=5.1.3,<6.0"
+# Email template redesign: premailer auto-inlines styles for Gmail/Outlook compat;
+# beautifulsoup4 is a premailer dep but we pin it explicitly to avoid drift.
+premailer = ">=3.10,<4.0"
+beautifulsoup4 = ">=4.15,<5.0"
+bcrypt = ">=5.0.0,<6"
+redis = {version = ">=8.1,<9.0", extras = ["hiredis"]}
+cryptography = ">=50.0.1,<51.0.0"
+structlog = ">=26.1,<27.0"
+prometheus-client = ">=0.26,<0.27"
+prometheus-fastapi-instrumentator = ">=8.1,<9.0"
+httpx = ">=0.28.1,<0.29"
+aiohttp = ">=3.14.3,<4.0"
+pyotp = ">=2.10,<3.0"
+qrcode = {version = ">=8.2,<9.0", extras = ["pil"]}
+pillow = ">=12.3,<13.0"
+docker = ">=7.2,<8.0"
+psutil = ">=7.2.2,<8.0"
+numpy = ">=2.5,<3.0"
+scipy = ">=1.18,<2.0"
+networkx = ">=3.7,<4.0"
+stripe = ">=15.6.1,<16.0"
+jsonschema = ">=4.26,<5.0"
+pywebpush = ">=2.5,<3.0"
+grpcio = ">=1.84,<2.0"
+grpcio-tools = ">=1.84,<2.0"
+spiffe = ">=0.3.1,<0.4"
+pyjwt = ">=2.13,<2.14"   # spiffe 0.3.1 declares pyjwt<2.14
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=9.1,<10"
+pytest-asyncio = ">=1.4,<2"
+pytest-cov = ">=7.1,<8"
+pytest-mock = ">=3.16,<4"
+factory-boy = ">=3.3.3,<4"
+faker = ">=40.39,<41"
+black = ">=26.5,<27"
+ruff = ">=0.16,<0.17"
+mypy = ">=2.3,<3"
+types-redis = ">=4.6.0"
+ipython = ">=9.0"
+pre-commit = ">=4.6,<5"
+
+[tool.poetry.group.security.dependencies]
+safety = ">=3.8,<4.0"
+bandit = {version = ">=1.9,<2.0", extras = ["toml"]}
+pip-audit = ">=2.10,<3.0"
+
+[tool.poetry.group.docs.dependencies]
+mkdocs = ">=1.6,<2.0"
+mkdocs-material = ">=9.7,<10.0"
+mkdocstrings = {version = ">=1.0,<2.0", extras = ["python"]}
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+agentvault-registry = "agentvault_registry.cli:main"
+
+# Black configuration
+[tool.black]
+line-length = 88
+target-version = ['py310', 'py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | migrations
+)/
+'''
+
+# Ruff configuration
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "C",  # flake8-comprehensions
+    "B",  # flake8-bugbear
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501",  # line too long
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+    "migrations",
+]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/*" = ["S101"]  # Allow assert in tests
+
+# MyPy configuration
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "fastapi_mail.*",
+    "slowapi.*",
+]
+ignore_missing_imports = true
+
+# Pytest configuration
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--cov=agentvault_registry",
+    "--cov-branch",
+    "--cov-report=term-missing:skip-covered",
+    "--cov-report=html",
+    "--cov-report=xml",
+    "--cov-fail-under=80",
+    "-p", "no:warnings",
+    "-p", "pytest_asyncio"
+]
+testpaths = ["tests"]
+# The package lives under src/ (src-layout); without this, test modules that
+# `import agentvault_registry` fail collection with ModuleNotFoundError.
+pythonpath = ["src"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+markers = [
+    "asyncio: mark test as requiring asyncio",
+    "performance: marks tests as performance tests (deselect with -m 'not performance')",
+    "integration: marks tests as integration tests (deselect with -m 'not integration')"
+]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["src/agentvault_registry"]
+omit = [
+    "*/tests/*",
+    "*/migrations/*",
+    "*/__main__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+# Bandit configuration
+[tool.bandit]
+exclude_dirs = ["tests", "migrations"]
+skips = ["B101", "B601"]  # Skip assert_used and paramiko tests

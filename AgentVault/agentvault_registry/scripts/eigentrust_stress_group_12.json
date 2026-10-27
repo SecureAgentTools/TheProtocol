@@ -1,0 +1,42 @@
+[
+  {
+    "label": "Lima-1",
+    "registry": "B",
+    "did": "did:cos:8022b12a-d7d9-73bf-7125",
+    "client_id": "agent-3e6136e94e16079f",
+    "client_secret": "cos_secret_48c8d98edb576e6b08bd1fe0414523daab200630abd9c190b6fe7a6b234eae41",
+    "type": "data-analyst"
+  },
+  {
+    "label": "Lima-2",
+    "registry": "A",
+    "did": "did:cos:c73000b9-6c5b-fc56-44d6",
+    "client_id": "agent-ff24076910bcf915",
+    "client_secret": "cos_secret_bae715446b38917e6220c98ca6a3b3806f838a1db224ea6505e6dbfd7a935d53",
+    "type": "code-reviewer"
+  },
+  {
+    "label": "Lima-3",
+    "registry": "A",
+    "did": "did:cos:fc52b22e-6296-8d5f-aaee",
+    "client_id": "agent-9f1a678392d23d24",
+    "client_secret": "cos_secret_ac75f3253640fc18c239407b8341f0115327320fcfbdb542c0d3c344c05ce384",
+    "type": "market-maker"
+  },
+  {
+    "label": "Lima-4",
+    "registry": "B",
+    "did": "did:cos:277ff56a-9664-2604-41b0",
+    "client_id": "agent-a65735676c9003f0",
+    "client_secret": "cos_secret_0ee3bd6011e27f7367aadd8f0f087758c3130a32771807fcf8a79f07d43695bb",
+    "type": "risk-assessor"
+  },
+  {
+    "label": "Lima-5",
+    "registry": "B",
+    "did": "did:cos:2fe05320-9adb-b755-702d",
+    "client_id": "agent-eff8e4ecfb054c75",
+    "client_secret": "cos_secret_79b09855a3289a9448db63ef13f26cdb65601d32270563c6f1ccc3bf76e831b1",
+    "type": "compliance-auditor"
+  }
+]

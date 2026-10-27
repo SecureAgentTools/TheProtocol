@@ -1,0 +1,72 @@
+# Dockerfile.eventstore.dist — TheProtocol EventStore Distribution Image
+# Multi-stage build; the application keeps its Python source (pre-compiled), since 2026-09-30.
+# Produces a functionally identical image to the development Dockerfile,
+# with the source pre-compiled into __pycache__.
+#
+# The EventStore uses SQLAlchemy create_all() for schema creation (no alembic),
+# so ALL .py files can be compiled and stripped without exception.
+#
+# SQL migration scripts in src/migrations/ are preserved as-is (not Python).
+
+# ============================================================
+# Stage 1: Builder — install deps, compile bytecode
+# ============================================================
+FROM python:3.14-slim AS builder
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements.txt constraints.txt ./
+# §DEPS (2026-09-27): every install resolves against the network image's own freeze (constraints.txt), pip, setuptools
+# and wheel first, and pip check must be clean
+RUN pip install --no-cache-dir -c constraints.txt --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir -c constraints.txt -r requirements.txt
+RUN pip check > /tmp/pipcheck.txt 2>&1; \
+    if grep -vxF -e "No broken requirements found." /tmp/pipcheck.txt; then \
+      echo "pip check reports a conflict (above)"; exit 1; fi; \
+    rm -f /tmp/pipcheck.txt
+
+# Copy application
+COPY . .
+
+# ── Distribution: pre-compile the application, keep its source ───────
+# Since 2026-09-30 the release images keep their Python source (REVIEW_2026-09-30_LICENSING.md): the code is
+# AGPL-3.0-or-later and public. compileall writes __pycache__/*.pyc beside the sources.
+RUN python -m compileall -q /app/src/
+
+# ============================================================
+# Stage 2: Runtime: minimal image with the pre-compiled source
+# ============================================================
+FROM python:3.14-slim AS runtime
+
+# Install runtime-only system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy installed Python packages from builder
+# §DEPS (2026-09-27): the builder's site-packages replace the base's own (one copy each of pip, setuptools and wheel)
+RUN rm -rf /usr/local/lib/python3.14/site-packages
+COPY --from=builder /usr/local/lib/python3.14/site-packages/ /usr/local/lib/python3.14/site-packages/
+COPY --from=builder /usr/local/bin/ /usr/local/bin/
+
+# Copy the compiled application (bytecode + SQL migrations)
+COPY --from=builder /app/ /app/
+
+LABEL com.agentvault.service="event-store"
+LABEL com.theprotocol.distribution="source"
+
+# Expose port
+EXPOSE 8200
+
+# Default command — matches production Dockerfile
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8200"]

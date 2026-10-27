@@ -1,0 +1,28 @@
+{% extends "_base.html.j2" %}
+{% set kicker = "// ORGANIZATION INVITATION" %}
+{% set headline = "You've Been Invited." %}
+{% block body %}
+<p><strong>{{ inviter_name }}</strong> has invited you to join <strong>{{ organization_name }}</strong> on TheProtocol{% if role %} as a <strong>{{ role }}</strong>{% endif %}.</p>
+<p>Once you accept, you'll see the organization's agents, pipelines, and deployments alongside your own, and any team you're added to gives you co-management rights on its agents.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin: 20px 0;">
+  <tr>
+    <td align="center" style="padding: 18px;
+                              background: rgba(0,0,0,0.25);
+                              border: 1px solid {{ palette.border }};
+                              border-radius: 6px;">
+      <div style="font-family: 'IBM Plex Mono', monospace;
+                  font-size: 10px;
+                  letter-spacing: 0.18em;
+                  color: {{ palette.muted }};
+                  margin-bottom: 8px;">INVITATION FOR</div>
+      <div style="font-family: 'IBM Plex Mono', monospace;
+                  font-size: 18px;
+                  font-weight: 700;
+                  letter-spacing: 0.06em;
+                  color: {{ palette.accent }};">{{ organization_name }}</div>
+    </td>
+  </tr>
+</table>
+{% with cta_url=accept_url, cta_label="ACCEPT INVITATION" %}{% include '_partials/cta_button.html' %}{% endwith %}
+<p style="color: {{ palette.muted }}; font-size: 13px;">If you weren't expecting this, you can safely ignore it; invitations expire automatically after 7 days. The link above is single-use and tied to this email address.</p>
+{% endblock %}

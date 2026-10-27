@@ -1,0 +1,621 @@
+# CI gates (§FORGEJO 2026-08-05, expanded §CIWIDE same day) — GitHub Actions
+# syntax on the self-hosted forgejo-runner (job containers capped
+# --cpus 2 --memory 4g, capacity 1 — jobs run sequentially).
+#
+# Checkout is a plain git clone: the runner injects no node into arbitrary
+# job images, so node actions like actions/checkout cannot run here.
+#
+# image-build (Commander-approved 2026-08-05): a socket build executes in the
+# HOST daemon outside job caps, so the caps live host-side — the build's RUN
+# steps run under --cgroup-parent=ci.slice (systemd slice, CPUQuota=400%
+# MemoryMax=6G), the job load-gates at <60 first (host loadavg is not
+# namespaced), builds to a throwaway tag (NEVER :latest / :pre-* rollback
+# anchors), and never pushes. CI proves buildability; publishing images
+# stays with the rollout doctrine (CLAUDE.md rule 17).
+#
+# Every gate encodes a measured baseline or a past incident:
+#   sanity     — compileall + pyflakes undefined-name HARD ZERO over the
+#                registry AND TEG trees (the §V0164 NameError class; both
+#                trees paid down to 0 on 2026-08-05).
+#   migrations — alembic id <=32 chars (§NOTIFV2 crash-loop), unique ids,
+#                exactly one head per tree (registry + TEG).
+#   frontend   — Icon.vue duplicate map keys (§OPGUIDE-6 build breaker),
+#                all i18n locales parse, no em-dashes in RENDERED email
+#                template text (outward-text rule; jinja comments exempt).
+name: ci
+on:
+  push:
+  schedule:
+    - cron: '23 4 * * *'   # nightly on the default branch — catches drift (base images, deps) between pushes
+
+jobs:
+  sanity:
+    runs-on: docker
+    container:
+      # §EMITDIAG-3 2026-09-07 — THE COMPILE GATE MUST SPEAK THE IMAGE'S PYTHON.
+      # Production images were python 3.11.15 when this job ran 3.12, and 3.12 accepts
+      # syntax 3.11 refuses (PEP 701 multi-line expressions inside f-string braces
+      # is the one that caught me: `py_compile` GREEN on the host, SyntaxError in
+      # the image). A compile gate on the wrong interpreter is a gate that cannot
+      # see the class it exists for. Keep this pinned to whatever
+      # `agentvault_registry/Dockerfile` builds FROM: python 3.14 since V0479 (§DEPS, 2026-09-28).
+      image: python:3.14-bookworm
+    steps:
+      - name: Checkout (shell, no node)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git clone --quiet --depth 1 --branch "$GITHUB_REF_NAME" \
+            "http://token:${TOKEN}@forgejo:3000/${GITHUB_REPOSITORY}.git" .
+          echo "checked out $(git rev-parse --short HEAD) on $GITHUB_REF_NAME"
+
+      - name: Compile gate (registry + TEG)
+        run: |
+          python -m compileall -q agentvault_registry/src/agentvault_registry agentvault_teg_layer_mvp/src
+
+      - name: Pyflakes undefined-name gate (hard zero, registry + TEG)
+        run: |
+          pip install --quiet pyflakes
+          python -m pyflakes agentvault_registry/src/agentvault_registry agentvault_teg_layer_mvp/src > /tmp/pf.txt || true
+          grep -E "undefined name|referenced before assignment" /tmp/pf.txt > /tmp/undef.txt || true
+          N=$(wc -l < /tmp/undef.txt)
+          echo "undefined-name findings: $N (limit 0)"
+          if [ "$N" -gt 0 ]; then
+            echo "REGRESSION — undefined names introduced:"; cat /tmp/undef.txt; exit 1
+          fi
+
+      - name: Known-default credential gate (§MONEY-M3a, 2026-09-03)
+        run: |
+          # R26/R32/R33: no default-credential literal, no fallback default on the TEG admin key,
+          # and the TEG image never carries a build-context env file. FRAGMENTS, not literals — a
+          # gate must never carry the string it refuses. Runner is dash `sh -e`: no bashisms.
+          printf '%s\n' 'development-admin-api-key' 'default-admin-key-change' 'default-token-signing-key' 'registry-service-token' 'getattr\(settings, .TEG_ADMIN_API_KEY., .[A-Za-z0-9]' > /tmp/badpats.txt
+          [ "$(git ls-files | wc -l)" -gt 100 ] || { echo "FATAL: checkout too small to gate"; exit 1; }
+          N=$(git grep -n -E -f /tmp/badpats.txt -- ':!*.md' ':!.forgejo/' ':!*/tests/*' | wc -l)
+          echo "known-default credential hits: $N (limit 0)"
+          if [ "$N" -gt 0 ]; then git grep -n -E -f /tmp/badpats.txt -- ':!*.md' ':!.forgejo/' ':!*/tests/*'; exit 1; fi
+          grep -qxF '.env' agentvault_teg_layer_mvp/.dockerignore || { echo "FATAL: .env missing from agentvault_teg_layer_mvp/.dockerignore (R32)"; exit 1; }
+          echo "TEG .dockerignore excludes .env: ok"
+
+      - name: TEG emission-policy contract gate (§EVTYPES, 2026-09-05)
+        run: |
+          # The TEG emitter is fail-CLOSED: an event_type with no emit_from_teg=true
+          # policy row is DENIED and emit() still returns without raising, so the
+          # ledger event is SILENTLY DROPPED. Measured 2026-09-05: five TEG-emitted
+          # types had no row at all while their siblings in the same file did.
+          # Pure AST — no DB, no network, no image.
+          python3 .forgejo/checks/teg_emission_policy_contract.py
+
+      - name: MCP contract phrase hygiene (§EVTYPES2, 2026-09-06)
+        run: |
+          # A refusal contract that pins one node's HTTP status, or a phrase built
+          # from an identifier the probe run minted, cannot match on the next node
+          # or the next run. Measured live 2026-09-05: castVote's contract said
+          # "Vote failed (HTTP 403):" from sbx-alpha and FAILED on sandboxdelta,
+          # which answers 404 on the same call. Four defects of that family were
+          # found by watching a failure count move; all four are decidable here.
+          # Pure AST — no DB, no network, no image.
+          python3 .forgejo/checks/mcp_contract_phrase_hygiene.py
+
+      - name: MCP contract fixture guard (§EVTYPES8, 2026-09-06)
+        run: |
+          # `requires_fixtures` is set on 51 contracts and read by nothing: what
+          # actually skips a contract with a missing fixture is the sweep's
+          # unresolved-${name} scan over `arguments`. Declare a fixture the
+          # arguments never reference and the contract believes it is guarded
+          # while the call happens anyway. All 51 are consistent today, which is
+          # what makes this gate's green mean something.
+          python3 .forgejo/checks/mcp_contract_fixture_guard.py
+
+      - name: MCP audit tier coverage (§EVTYPES3, 2026-09-06)
+        run: |
+          # audit.py::_tier_for() returns "unknown" for a tool in no _TIER_*_TOOLS
+          # set, and that string is written into security_audit_logs.tier — so the
+          # audit trail cannot say what authority the call used. Coverage is
+          # complete (433/433) today; this keeps it that way.
+          python3 .forgejo/checks/mcp_audit_tier_coverage.py
+
+      - name: Pyflakes full report (non-gating)
+        run: |
+          echo "total findings: $(wc -l < /tmp/pf.txt)"
+          head -30 /tmp/pf.txt || true
+
+  migrations:
+    runs-on: docker
+    container:
+      image: python:3.14-bookworm
+    steps:
+      - name: Checkout (shell, no node)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git clone --quiet --depth 1 --branch "$GITHUB_REF_NAME" \
+            "http://token:${TOKEN}@forgejo:3000/${GITHUB_REPOSITORY}.git" .
+
+      - name: Alembic graph gate (id length, uniqueness, single head)
+        run: python3 .forgejo/checks/alembic_graph.py
+
+  a2a-schema:
+    runs-on: docker
+    container:
+      image: python:3.14-bookworm
+    steps:
+      - name: Checkout (shell, no node)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git clone --quiet --depth 1 --branch "$GITHUB_REF_NAME" \
+            "http://token:${TOKEN}@forgejo:3000/${GITHUB_REPOSITORY}.git" .
+
+      # §AGENTDISC #189 — canonicalize_card_data() output must validate against the
+      # vendored A2A v1.0 AgentCard schema (a2a.proto v1.0.1 field_behavior=REQUIRED).
+      # Dependency-free (compat.py is stdlib-only, loaded by file path); includes a
+      # negative control that must FAIL and an idempotence fixed-point check.
+      - name: A2A v1.0 AgentCard schema gate
+        run: python3 .forgejo/checks/a2a_schema_gate.py
+
+  frontend:
+    runs-on: docker
+    container:
+      image: python:3.14-bookworm
+    steps:
+      - name: Checkout (shell, no node)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git clone --quiet --depth 1 --branch "$GITHUB_REF_NAME" \
+            "http://token:${TOKEN}@forgejo:3000/${GITHUB_REPOSITORY}.git" .
+
+      - name: Frontend integrity gate (Icon.vue, i18n, email templates)
+        run: python3 .forgejo/checks/frontend_integrity.py
+
+  image-build:
+    runs-on: docker
+    container:
+      image: docker:29-cli
+      options: -v /var/run/docker.sock:/var/run/docker.sock
+    steps:
+      - name: Checkout (shell, no node)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          apk add --no-cache --quiet git
+          git clone --quiet --depth 1 --branch "$GITHUB_REF_NAME" \
+            "http://token:${TOKEN}@forgejo:3000/${GITHUB_REPOSITORY}.git" .
+
+      - name: Load gate (doctrine, <60)
+        run: |
+          i=0
+          while [ $i -lt 60 ]; do
+            L=$(cut -d' ' -f1 /proc/loadavg)
+            OK=$(awk -v l="$L" 'BEGIN{print (l<60)?1:0}')
+            if [ "$OK" = "1" ]; then echo "load $L — gate open"; exit 0; fi
+            echo "load $L >= 60 — waiting"; sleep 10; i=$((i+1))
+          done
+          echo "load gate never opened"; exit 1
+
+      - name: Build registry + TEG images (cgroup-capped, throwaway tags, no push)
+        run: |
+          docker build --cgroup-parent=ci.slice \
+            -f agentvault_registry/Dockerfile -t "ci-agentvault-registry:${GITHUB_SHA}" . \
+            > /tmp/build-reg.log 2>&1 || { tail -40 /tmp/build-reg.log; exit 1; }
+          docker build --cgroup-parent=ci.slice \
+            -f agentvault_teg_layer_mvp/Dockerfile -t "ci-agentvault-teg:${GITHUB_SHA}" agentvault_teg_layer_mvp \
+            > /tmp/build-teg.log 2>&1 || { tail -40 /tmp/build-teg.log; exit 1; }
+          echo "registry artifact: $(docker image inspect --format '{{.Id}}' "ci-agentvault-registry:${GITHUB_SHA}")"
+          echo "teg artifact: $(docker image inspect --format '{{.Id}}' "ci-agentvault-teg:${GITHUB_SHA}")"
+
+      - name: Boot-import gate (the app must import inside its own image)
+        run: |
+          # `import main` resolves the whole router/worker import chain with the
+          # image's exact dep set — the crash-loop-on-roll class, caught here
+          # instead of at canary. Registry settings REQUIRE two env fields; the
+          # CI dummies prove the import chain, not config completeness.
+          docker run --rm --cpus 2 --memory 2g -w /app -e PYTHONPATH=/app/src \
+            -e DATABASE_URL='postgresql+asyncpg://ci:ci@localhost:5432/ci' \
+            -e API_KEY_SECRET=ci-dummy-secret \
+            "ci-agentvault-registry:${GITHUB_SHA}" \
+            python -c "import agentvault_registry.main; print('registry main imports OK')"
+          # Fleet TEG images import env-free only because roll builds COPY a
+          # gitignored working-tree .env into the image (the §V0160 baked-env
+          # class); the CI checkout is clean, so Settings honestly requires
+          # these two — dummies again.
+          docker run --rm --cpus 2 --memory 2g -w /app -e PYTHONPATH=/app/src \
+            -e AVTP_SYSTEM_API_KEY=ci-dummy-0123456789abcdef0123456789abcdef \
+            -e TEG_TOKEN_SIGNING_KEY=ci-dummy-0123456789abcdef0123456789abcdef \
+            "ci-agentvault-teg:${GITHUB_SHA}" \
+            python -c "import teg_core_service.main; print('teg main imports OK')"
+
+      - name: Registry unit tests (in-image, offline)
+        run: |
+          # §CHATCOHERE-CI (2026-09-01) — until today the registry's ~390 unit
+          # tests were run by NO workflow. They had drifted red: 18 failures, all
+          # of them tests asserting contracts the product had deliberately moved
+          # on from (a closed set that gained a member, a notify() rail that
+          # replaced notify_developers, a dispatch mode that stopped awaiting
+          # inline, a fixture frozen at a 2026-04 date that the stale-replay
+          # guard now correctly refuses). Nothing was wrong with the product;
+          # nothing was watching the tests.
+          #
+          # Run INSIDE the freshly built image, so the dep set under test is the
+          # one that ships. ⚠ NOT inside a live container: a real SPIFFE SVID
+          # there appends a token to the WS URL and half the suite fails for
+          # reasons that have nothing to do with the commit.
+          #
+          # --network none is load-bearing: it proves the suite is hermetic. A
+          # test that quietly reaches Redis/Postgres passes on this box and fails
+          # on anyone else's.
+          #
+          # The one .ts file is the cross-artifact DRIFT GATE in
+          # test_system_preview.py: the image ships the built dist, not the FE
+          # source, so without it that gate SKIPS (loudly) instead of running.
+          # ⚠ --user 0: this box's umask is 027, so a checked-out tests/reactors
+          # is 750 root:root while the image runs as uid 1000. Without it the
+          # whole suite dies at COLLECTION, which is a 0-test green if anything
+          # downstream is lax. Safe here: throwaway container, no network.
+          #
+          # ⚠ NO BIND MOUNTS (§OSSRC 2026-09-14). This job runs INSIDE docker:29-cli
+          # and talks to the HOST daemon through the socket, so `-v "$(pwd)/..."`
+          # named a path on the HOST, where /workspace/theprotocol/AgentVault/...
+          # existed only as the empty directories a bind of a missing source
+          # leaves behind. From the step's first pushed run (2026-09-13) to this
+          # fix the suite collected 0 tests (`no tests ran in 0.00s`, exit 5): it
+          # had never run in Forgejo. `docker cp` streams from THIS container, so
+          # the test container sees the checkout; the staged copy also means the
+          # suite cannot write back into it.
+          set -e
+          STAGE=/tmp/registry-tests-w
+          rm -rf "$STAGE" && mkdir -p "$STAGE/fe"
+          cp -a agentvault_registry/tests agentvault_registry/alembic agentvault_registry/scripts agentvault_registry/config "$STAGE/"
+          cp -a agentvault_teg_layer_mvp/src "$STAGE/teg_src"
+          cp -a agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/services/chat/orgRoomActions.ts "$STAGE/fe/orgRoomActions.ts"
+          # §FEFRAME W3: the console's auth-tier map, so test_auth_tiers.py compares it with the running app
+          cp -a agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/services/api/authTiers.generated.json "$STAGE/fe/authTiers.generated.json"
+          # The console's whole source, where the tests that read it look (src/agentvault_registry/static/
+          # new_registry_frontend/src beside tests/), as the release build's suite finds it in the checkout: journal
+          # 50's and 51's wording gates read BlogView.vue, two API tests read services/api/*.ts. The image ships the
+          # built dist and no frontend source, so they failed here with FileNotFoundError on every branch that carries
+          # them (mcptest/v0600 5, mcptest/v0601 9; agentvault2-45 and agentvault2-09, 2026-10-12). A copy, like all
+          # of the stage: the suite cannot write back into the checkout. No skip guard: a missing source fails.
+          cp -a agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src "$STAGE/fe_src"
+          NFE=$(find "$STAGE/fe_src" -type f | wc -l)
+          echo "staged frontend source files: ${NFE}"
+          if [ "$NFE" -lt 100 ]; then echo "FATAL: the frontend source was not staged (${NFE} files)"; exit 1; fi
+          # The TEG's own source, staged above as teg_src for the profile parity gate, is also read where a checkout
+          # keeps it, beside the registry tree: agentvault2-45's tests/test_payout_outcome.py pins the 2PC's clean-abort
+          # sentences (core/cross_teg/coordinator.py, api/cross_teg_router.py) and fx/move's 409
+          # (api/v1/endpoints_treasury.py) at /agentvault_teg_layer_mvp, two levels above tests/. On fix/repat-lane both
+          # failed here with FileNotFoundError (task 10063; the release build's focused gate refused V0603's first build
+          # for the same reason, agentvault2-09, 2026-10-12). Counted here, linked in the container below. No skip
+          # guard: a missing source fails.
+          NTEG=$(find "$STAGE/teg_src" -name '*.py' | wc -l)
+          echo "staged TEG source files: ${NTEG}"
+          if [ "$NTEG" -lt 50 ]; then echo "FATAL: the TEG source was not staged (${NTEG} files)"; exit 1; fi
+          # Count what was staged BEFORE pytest runs: zero is exactly the class
+          # above, and it should fail here, legibly, not as an exit code later.
+          NSTAGED=$(find "$STAGE/tests" -name 'test_*.py' | wc -l)
+          echo "staged registry test files: ${NSTAGED}"
+          if [ "$NSTAGED" -eq 0 ]; then echo "FATAL: no registry test files were staged"; exit 1; fi
+          CID=$(docker create --network none --user 0 --cpus 2 --memory 2g \
+            -e PYTHONPATH=/app/src \
+            -e DATABASE_URL='postgresql+asyncpg://ci:ci@127.0.0.1:1/ci' \
+            -e API_KEY_SECRET=ci-dummy-secret \
+            --entrypoint sh "ci-agentvault-registry:${GITHUB_SHA}" -c '
+              # tests/ imports "src..." and "alembic/"; the image keeps the
+              # package at /app/src, so stand them up as siblings.
+              # §MONEY-M2: scripts/ carries the knob table and teg_src/ the TEG
+              # tree, so the profile PARITY gate can check every scope. Without
+              # them it degrades to "NOT MEASURED" for the TEG knobs and says so
+              # — a gate whose scope is narrower than its claim must announce it.
+              ln -s /app/src /w/src 2>/dev/null || true
+              # the console source staged above, where tests/ look for it; the image carries none
+              # there, and if it ever does this refuses rather than hide it behind the stage
+              F=/app/src/agentvault_registry/static/new_registry_frontend
+              [ -d "$F" ] && [ ! -e "$F/src" ] || { echo "FATAL: $F/src is in the image, or $F is not"; exit 1; }
+              ln -s /w/fe_src "$F/src"
+              # the TEG source staged above, where tests/ look for it beside the registry tree; it refuses if the
+              # image ever carries that path, rather than hide it behind the stage
+              [ ! -e /agentvault_teg_layer_mvp ] || { echo "FATAL: /agentvault_teg_layer_mvp is in the image"; exit 1; }
+              mkdir -p /agentvault_teg_layer_mvp && ln -s /w/teg_src /agentvault_teg_layer_mvp/src
+              cd /w
+              # pytest missing must be LOUD. A skipped suite that reports green
+              # is worse than no suite at all.
+              python -c "import pytest" || { echo "FATAL: pytest not in the image"; exit 1; }
+              # ⚠ -o asyncio_mode=auto IS LOAD-BEARING (§VITALS 2026-09-04).
+              # pyproject.toml sets it, but the suite runs from /w where there is
+              # no pyproject, so pytest-asyncio fell back to STRICT mode and
+              # skipped every async test that carries no explicit marker.
+              # MEASURED: 468 passed / 12 skipped without it, 478 passed / 2 with.
+              # Ten tests had been reporting green by not running at all, and the
+              # only trace was a plugin warning in the log nobody reads.
+              python -m pytest tests -q -p no:cacheprovider -o asyncio_mode=auto -rs
+            ')
+          docker cp "$STAGE" "$CID:/w"
+          # `docker start -a` returns the container's own exit status (measured
+          # on this daemon: a container exiting 7 gives rc=7).
+          docker start -a "$CID" > /tmp/registry-tests.log 2>&1 || RC=$?
+          docker rm -f "$CID" > /dev/null 2>&1 || true
+          # ⚠ NOT `| tee`: a pipe hands `set -e` the exit status of tee, so a red
+          # suite would sail through and only the floor gate below could catch
+          # it — and 389 -> 360 with 29 failures still clears any floor. Capture
+          # the run's OWN status, then print, then gate on both.
+          : "${RC:=0}"
+          cat /tmp/registry-tests.log
+          if [ "$RC" -ne 0 ]; then
+            echo "FATAL: registry unit tests exited ${RC}"
+            exit 1
+          fi
+          # Floor gate: pytest exits 5 on "collected 0", but a partial collapse
+          # (an import error that eats one directory) still exits 0 over the
+          # remainder. Assert the population, not just the exit code.
+          PASSED=$(command grep -oE '[0-9]+ passed' /tmp/registry-tests.log | tail -1 | cut -d' ' -f1)
+          : "${PASSED:=0}"
+          echo "registry unit tests passed=${PASSED} (floor 350)"
+          if [ "$PASSED" -lt 350 ]; then
+            echo "FATAL: only ${PASSED} tests ran; the suite collapsed rather than passed"
+            exit 1
+          fi
+          # Skip ALLOWLIST (§VITALS 2026-09-04, §OSSRC 2026-09-14). A floor cannot see tests that vanish
+          # into "skipped": ten async tests sat there for weeks while the floor read a comfortable 468.
+          # The first answer was a COUNT ceiling of the named legitimate skips (five at §BATCH4). The
+          # step's first real run (2026-09-14, after the bind-mount fix) measured eight, three of them
+          # added while the step collected nothing, and a count cannot tell a new skip from a named one.
+          # So each legitimate skip is named here by FILE and number; a skip in any other file, or one
+          # more than a file's allowance, fails. Every reason prints above through -rs.
+          #   test_spawn_anchor.py                    1  a real Postgres (ANCHOR_TEST_DB)
+          #   test_api_tests_no_tier_literals.py      3  the sanctioned default-holders: db_verifier.py,
+          #                                              federation_suite/rig.py, multiframe_helpers.py
+          #   test_fund_origin_allowlist.py           1  its template fixture lives in the stack repo (R50_TREE)
+          #   test_admin_sweep_honours_skip_reason.py 2  its controls read old revisions with `git show`; the
+          #                                              image has no git and this clone is --depth 1
+          #   test_sovereign_owners_are_frame_data.py 1  the script it checks lives in the stack repo
+          #   test_operator_runner_branch.py          7  §OPDIST: the real generator scripts and the auditor's source live in
+          #   test_operator_host_work_phases.py       9  the stack repo (absolute paths, the R50 class); guarded by skipif
+          #   test_release_channel.py                 1  §RELEASECHANNEL: the one-copy public-key test reads the CLI's and the kit's
+          #                                              copies in the stack repo (the R50 class); the image gate mounts them and runs it
+          #   test_membership_db.py, test_commons_db.py, test_federation_ballot_db.py, test_card_key_migration_db.py and
+          #   test_authz_role_add_db.py         1 each  a REAL Postgres they may wipe (MEMBERSHIP_TEST_DB), test_spawn_anchor.py's
+          #                                              class: this step has no network and no database
+          #   test_operator_opa.py and test_operator_push.py  1 each  the stack's operator templates, not beside this checkout
+          #                                              (test_operator_host_work_phases.py's class)
+          #   These seven were not counted here before 2026-10-12: on every release branch the step stopped earlier, at the
+          #   FileNotFoundError class the console-source stage closed, so this gate never reached them (agentvault2-09).
+          #   test_moira_template_words_db.py and test_webhook_delete_race_db.py  1 each  V0643's two new files that need a
+          #                                              REAL Postgres (MEMBERSHIP_TEST_DB): test_membership_db.py's class
+          ALLOW="test_spawn_anchor.py:1 test_api_tests_no_tier_literals.py:3 test_fund_origin_allowlist.py:1 test_admin_sweep_honours_skip_reason.py:2 test_sovereign_owners_are_frame_data.py:1 test_operator_runner_branch.py:7 test_operator_host_work_phases.py:9 test_release_channel.py:1 test_membership_db.py:1 test_commons_db.py:1 test_federation_ballot_db.py:1 test_card_key_migration_db.py:1 test_authz_role_add_db.py:1 test_operator_opa.py:1 test_operator_push.py:1 test_moira_template_words_db.py:1 test_webhook_delete_race_db.py:1"
+          SKIPS=$(awk '/^SKIPPED \[[0-9]+\] tests\// { n = $2; gsub(/[][]/, "", n); f = $3; sub(/^tests\//, "", f); sub(/:.*/, "", f); c[f] += n } END { for (k in c) print k ":" c[k] }' /tmp/registry-tests.log | sort)
+          echo "registry unit tests skipped, by file: $(echo $SKIPS)"
+          BAD=0
+          for e in $SKIPS; do
+            f=${e%%:*}; n=${e##*:}
+            allowed=$(echo "$ALLOW" | tr ' ' '\n' | command grep -F "${f}:" | cut -d: -f2)
+            if [ -z "$allowed" ] || [ "$n" -gt "$allowed" ]; then
+              echo "FATAL: ${n} skip(s) in ${f} (allowed ${allowed:-0}); a skip is not a pass, see the SKIPPED lines above"
+              BAD=1
+            fi
+          done
+          if [ "$BAD" -ne 0 ]; then exit 1; fi
+
+      - name: TEG unit + idempotency tests (in-image, throwaway postgres)
+        run: |
+          # §TEGTESTS (2026-09-01) — the sibling of §CITESTS one tree over. This
+          # workflow has BUILT the TEG image since it existed and never run its
+          # tests. Measured before writing this step: all 12 are GREEN (5
+          # conservation + 3 reward-fund idem + 4 single-transfer idem), so
+          # unlike the registry's 390 nothing had rotted here — the suite simply
+          # had no runner. Do not read this step as a repair.
+          #
+          # ⚠ THE INVOCATION IS LOAD-BEARING: each file runs through its OWN
+          # __main__ runner, NOT through pytest. test_single_transfer_idem.py
+          # deliberately aborts a transaction mid-scenario; that session stays
+          # `idle in transaction` and the NEXT scenario's drop_all() blocks on a
+          # relation lock forever. The file carries a 60s per-scenario SIGALRM
+          # that turns the hang into a legible failure — pytest does not run it,
+          # so under pytest the suite WEDGES (reproduced: pg_stat_activity showed
+          # `DROP TABLE ...` waiting on Lock/relation behind an idle-in-transaction
+          # peer). The runners are the supported path and they self-report
+          # "<passed>/<total> passed", which is what the floor gate below reads.
+          #
+          # ⚠ The scratchpad harnesses inherit frame-c-teg's REAL env, because
+          # get_settings() wants its secrets. CI must NOT copy that: dummies
+          # only — the same two the boot-import gate above already uses. Nothing
+          # here can touch a production schema; the tests drop_all/create_all
+          # their own throwaway one.
+          #
+          # The tests come from the image built in this job, so they are the
+          # checkout's tests by construction (the TEG Dockerfile COPYs context).
+          set -e
+          NET="tegci-${GITHUB_SHA}"
+          PG="tegpg-${GITHUB_SHA}"
+          cleanup() { docker rm -f "$PG" >/dev/null 2>&1 || true; docker network rm "$NET" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          docker network create "$NET" >/dev/null
+          docker run -d --rm --name "$PG" --network "$NET" \
+            -e POSTGRES_USER=teg -e POSTGRES_PASSWORD=test -e POSTGRES_DB=tegtest \
+            postgres:16-alpine >/dev/null
+          i=0
+          while [ $i -lt 40 ]; do
+            docker exec "$PG" pg_isready -U teg -d tegtest >/dev/null 2>&1 && break
+            sleep 1; i=$((i+1))
+          done
+          docker exec "$PG" pg_isready -U teg -d tegtest \
+            || { echo "FATAL: throwaway postgres never came up"; exit 1; }
+          DBU="postgresql://teg:test@${PG}:5432/tegtest"
+          : > /tmp/teg-tests.log
+          RC=0
+          for f in test_conservation.py test_reward_fund_idem.py test_single_transfer_idem.py test_admin_key_defaults.py test_reputation_signal_atomic.py test_fund_send_resume.py test_balance_outbox_txid_reuse.py test_ledger_health_cycle.py; do
+            echo "===== $f" >> /tmp/teg-tests.log
+            # 300s outer bound: the per-scenario alarm already makes a hang
+            # legible; this only stops a wedged docker from holding the runner.
+            # ⚠ --init IS WHAT LETS THE BOUND BITE (§DEPS, 2026-09-28): without it python is the container's PID 1,
+            # PID 1 ignores a SIGTERM it installed no handler for, and `timeout` only signals the docker client, which
+            # forwards it and waits. Measured: a scenario that died with a transaction open left the next scenario's
+            # DROP TABLE waiting on its lock, the SIGALRM could not interrupt that C-level wait, and the run was still
+            # alive 7 minutes into a 300s bound; a probe (timeout 3 over a 20s sleep) returned after 22s plain, 3s --init.
+            timeout 300 docker run --init --rm --network "$NET" --user 0 -w /app --cpus 2 --memory 2g \
+              -e PYTHONPATH=/app/src \
+              -e DATABASE_URL="$DBU" -e DATABASE_URL_SYNC="$DBU" \
+              -e AVTP_SYSTEM_API_KEY=ci-dummy-0123456789abcdef0123456789abcdef \
+              -e TEG_TOKEN_SIGNING_KEY=ci-dummy-0123456789abcdef0123456789abcdef \
+              -e AUDITED_BALANCE_ENABLED=false -e TEG_HOME_FRAME_GUARD_ENABLED=false \
+              -e ENVIRONMENT=development \
+              --entrypoint python "ci-agentvault-teg:${GITHUB_SHA}" -u "tests/$f" \
+              >> /tmp/teg-tests.log 2>&1 || RC=$?
+            echo "----- $f exit=${RC}" >> /tmp/teg-tests.log
+            if [ "$RC" -ne 0 ]; then break; fi
+          done
+          cat /tmp/teg-tests.log
+          if [ "$RC" -ne 0 ]; then echo "FATAL: TEG tests exited ${RC}"; exit 1; fi
+          # Floor gate: a runner that collected nothing still exits 0, so assert
+          # the POPULATION, not just the status. 31 today (12 + the 7 admin-key/faucet
+          # tests of §MONEY-M3a + the 4 §TRUSTCHAIN reputation-signal scenarios, one of
+          # them CONCURRENT, + the 8 §OPPROV fund-send resume scenarios: a stalled drain
+          # resumes, a retry is bound to its row, a resume's 4xx never re-credits);
+          # + the 5 of §LEDGERGATE (test_ledger_health_cycle: the outbox's real cycle measures the
+          # ledger and publishes one verdict; a 422 group is stuck, never an outage) = 40;
+          # adding a test raises this number deliberately.
+          PASSED=$(command grep -oE '^[0-9]+/[0-9]+ passed' /tmp/teg-tests.log | cut -d/ -f1 | awk '{s+=$1} END {print s+0}')
+          echo "TEG tests passed=${PASSED} (floor 40)"
+          if [ "$PASSED" -lt 40 ]; then
+            echo "FATAL: only ${PASSED} TEG tests ran; the suite collapsed rather than passed"
+            exit 1
+          fi
+
+          # §MONEY-R45 (2026-09-04) — the OTHER half of the TEG suite. The loop
+          # above runs the four RUNNER-style files (their own __main__, needed
+          # because one of them deliberately wedges a transaction). Three more
+          # files are PYTEST-style and were run by NOTHING: test_entry_type_tagging
+          # (§MONEY-R18: the bulk path stamps entry_type before it mutates),
+          # test_opening_balance_guard (§MONEY-R35: an account cannot be created
+          # with money) and test_retired_rails_and_stubs (§MONEY-R30/R31: nine
+          # duplicate staking routes answer 404 as their FIRST statement). Measured
+          # before wiring: 41 passed in the running frame-a TEG image with a dead
+          # DATABASE_URL and --network none — they parse source, they do not need a
+          # database. Same dummies as the loop; the throwaway postgres is not used.
+          timeout 300 docker run --init --rm --network none --user 0 -w /app --cpus 2 --memory 2g \
+            -e PYTHONPATH=/app/src \
+            -e DATABASE_URL="$DBU" -e DATABASE_URL_SYNC="$DBU" \
+            -e AVTP_SYSTEM_API_KEY=ci-dummy-0123456789abcdef0123456789abcdef \
+            -e TEG_TOKEN_SIGNING_KEY=ci-dummy-0123456789abcdef0123456789abcdef \
+            -e AUDITED_BALANCE_ENABLED=false -e TEG_HOME_FRAME_GUARD_ENABLED=false \
+            -e ENVIRONMENT=development \
+            --entrypoint python "ci-agentvault-teg:${GITHUB_SHA}" -m pytest \
+              tests/test_entry_type_tagging.py tests/test_opening_balance_guard.py \
+              tests/test_retired_rails_and_stubs.py tests/test_internal_service_identity.py tests/test_teg_proxy_trust.py tests/test_redis_url_never_logged_raw.py tests/test_emission_policy_fetch_tls.py \
+              tests/test_licence_gate.py tests/test_sync_engine_url.py tests/test_sqla21_session_contract.py \
+              tests/test_ledger_gate.py tests/test_attestation_reward_fail_closed.py \
+              -q -p no:cacheprovider -o asyncio_mode=auto -rs > /tmp/teg-pytest.log 2>&1 || RC2=$?
+          : "${RC2:=0}"
+          cat /tmp/teg-pytest.log
+          if [ "$RC2" -ne 0 ]; then echo "FATAL: TEG pytest-style suites exited ${RC2}"; exit 1; fi
+          # Floor + skip ceiling (§VITALS: a pass floor cannot see tests that vanish
+          # into "skipped"). 41 + the 8 of §MONEY-R51 (test_internal_service_identity: the
+          # ONE path-anchored caller-identity rule) = 49, + the 13 of §MTLSHOPS G1 (test_teg_proxy_trust: a forwarded
+          # certificate counts only with the terminator's marker and SUCCESS) = 62, + 1 (test_redis_url_never_logged_raw) = 63, + the 6 of §MTLSHOPS V0379 (test_emission_policy_fetch_tls: the policy fetch presents the frame SVID) = 69, + the 12 of §FEDLICENCE (test_licence_gate: the cross-TEG cut-off follows the registry's licence verdicts) = 81, + the 14 of §DEPS sqla-driver-pin (test_sync_engine_url: every sync engine names psycopg2, on SQLAlchemy 2.0 and 2.1) = 95, + the 2 of §DEPS sqla21 (test_sqla21_session_contract: the TEG's sessions never autoflush, so 2.1's autoflush before raw SQL cannot reach a money path) = 97, + the 24 of §LEDGERGATE (test_ledger_gate: every write route classified, the tracker, the verdict, the gate, its place in the middleware) = 121, + the 4 of §ATTESTREWARD (test_attestation_reward_fail_closed: no reward without a proof a real verifier accepted) = 125 today;
+          # adding a test raises the floor.
+          P2=$(command grep -oE '[0-9]+ passed' /tmp/teg-pytest.log | tail -1 | cut -d' ' -f1)
+          S2=$(command grep -oE '[0-9]+ skipped' /tmp/teg-pytest.log | tail -1 | cut -d' ' -f1)
+          : "${P2:=0}"; : "${S2:=0}"
+          echo "TEG pytest-style tests passed=${P2} skipped=${S2} (floor 125, skip ceiling 0)"
+          if [ "$P2" -lt 125 ] || [ "$S2" -gt 0 ]; then
+            echo "FATAL: TEG pytest-style suites collapsed (passed=${P2} skipped=${S2})"
+            exit 1
+          fi
+
+      - name: Cleanup throwaway tags
+        if: always()
+        run: |
+          docker rmi "ci-agentvault-registry:${GITHUB_SHA}" "ci-agentvault-teg:${GITHUB_SHA}" > /dev/null 2>&1 || true
+          echo "throwaway tags removed; layer cache retained for the next roll"
+
+  frontend-build:
+    runs-on: docker
+    container:
+      # §DEPS FE (2026-09-28): node 24 LTS. Node 20 reached end of life 2026-04-30, and the toolchain needs >= 22.12
+      # (vitest 5; vite-plugin-static-copy 4 needs >= 22); the npm it bundles (11.x) reads the same cache below.
+      image: node:24-bookworm
+      # Commander-approved (2026-08-05). The vite build OOMs under a 4G
+      # ceiling (§CANARYUNIFY: heap must be 4096). NOTE: workflow-level
+      # RESOURCE options are IGNORED by the runner (the in-job cgroup print
+      # proved it) — real caps live runner-wide in runner/config.yml
+      # (--cpus 3 --memory 7g); only the VOLUME below takes effect. The npm
+      # cache persists on the host so CI doesn't pull ~0.5 GB per run.
+      # First rehearsal of this reproducible build caught a real defect:
+      # markdown-it-container was imported but undeclared — host builds only
+      # passed by resolving it from the OUTER repo's stray root node_modules
+      # five directories up.
+      options: -v /opt/theprotocol/stack/forgejo/npmcache:/root/.npm
+    steps:
+      - name: Checkout (shell, no node actions)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git clone --quiet --depth 1 --branch "$GITHUB_REF_NAME" \
+            "http://token:${TOKEN}@forgejo:3000/${GITHUB_REPOSITORY}.git" .
+
+      - name: Reproducible FE build (npm ci + vite build-only, doctrine heap)
+        run: |
+          echo "job caps: mem=$(cat /sys/fs/cgroup/memory.max 2>/dev/null) cpu=$(cat /sys/fs/cgroup/cpu.max 2>/dev/null)"
+          cd agentvault_registry/src/agentvault_registry/static/new_registry_frontend
+          npm ci --no-audit --no-fund
+          NODE_OPTIONS=--max-old-space-size=4096 npm run build-only
+
+      - name: Artifact gate (dist populated)
+        run: |
+          cd agentvault_registry/src/agentvault_registry/static/new_registry_frontend
+          test -f dist/index.html
+          N=$(ls dist/assets | wc -l)
+          echo "dist assets: $N"
+          [ "$N" -gt 100 ]
+
+      - name: Cesium gate (dist/cesium is Build/Cesium's own tree)
+        # ADDED 2026-09-28 (V0486). vite-plugin-static-copy 4 put every Cesium file under
+        # dist/cesium/<dir>/node_modules/cesium/Build/Cesium/<dir>/, the step above only counts dist/assets, and
+        # V0481-V0485 shipped a landing globe that could not load its workers. The script compares the two trees
+        # as sets and refuses an empty source; it runs here because node_modules is still installed.
+        run: |
+          cd agentvault_registry/src/agentvault_registry/static/new_registry_frontend
+          node scripts/check-cesium-dist.mjs
+
+      - name: Unit suite (vitest, clean checkout)
+        # ADDED 2026-10-01 (§FEFRAME, his "improvements also approved"). 94 files / 1,229 tests ran only by hand and in
+        # the image build drivers; no CI job ran them. src + postcss/ (the Tailwind 4 sibling shim's test); e2e/ is
+        # Playwright's and excluded in vitest.config.ts. NO_COLOR: the summary line is grepped plain. A loaded runner
+        # once took over 5 s for one test's first import, hence the per-test room.
+        run: |
+          cd agentvault_registry/src/agentvault_registry/static/new_registry_frontend
+          rc=0
+          NO_COLOR=1 npx vitest run --reporter=dot --testTimeout=20000 src postcss > /tmp/fe_unit.out 2>&1 || rc=$?
+          tail -n 20 /tmp/fe_unit.out
+          F=$(grep -E '^[[:space:]]*Test Files' /tmp/fe_unit.out | tail -1)
+          echo "vitest rc=$rc · ${F:-<no Test Files line>}"
+          [ "$rc" = 0 ] || exit 1
+          case "$F" in *passed*) : ;; *) exit 1 ;; esac
+          case "$F" in *failed*) exit 1 ;; esac
+
+      - name: Console lifecycle suite types (tsc, no browser)
+        # ADDED 2026-10-01 (§FESUITE). The suite runs on the host against a sandbox frame (scripts/fesuite/run.py); this
+        # keeps its code compiling from a clean clone, strict, so a refactor of the app never breaks it quietly.
+        run: |
+          cd agentvault_registry/src/agentvault_registry/static/new_registry_frontend
+          npx tsc -p e2e/suite/tsconfig.json
+
+      - name: Type ratchet (vue-tsc, clean checkout - errors may shrink, never grow)
+        # ADDED 2026-09-07. The ratchet existed since §POCKETBRIDGE2 W7.3 but ran
+        # NOWHERE in CI - it was a working-TREE-only instrument, the exact class in
+        # PART 1: a tracked file importing an untracked one is green on every
+        # tree-resolved gate. This runs it from the clean clone.
+        # MEASURED before wiring (2026-09-07, read-only run on the host):
+        #   peak RSS 5.96 GB vs the runner's 7 g cap -> fits, ~1.0 GB headroom
+        #   wall 2m51s at 128% CPU (runner has 3) · 356 errors vs baseline 356 -> GREEN
+        # Deliberately a STEP in this job, not a new job: it reuses this job's
+        # `npm ci`, so it costs no second container and no second 6 GB peak.
+        # The script's own guard is the important one - vue-tsc exits 2 when it
+        # REPORTS diagnostics and 134/SIGKILL when it dies, and it refuses to
+        # report (let alone lower its own baseline) when it produced no
+        # diagnostics and still failed. If the project outgrows the 7 g cap this
+        # job goes RED with "DID NOT RUN" rather than silently green.
+        # Baseline rewrites here are discarded with the ephemeral clone.
+        run: |
+          cd agentvault_registry/src/agentvault_registry/static/new_registry_frontend
+          node scripts/tsc-ratchet.mjs

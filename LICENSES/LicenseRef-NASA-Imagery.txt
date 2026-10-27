@@ -1,0 +1,11 @@
+NASA imagery (Global Imagery Browse Services, GIBS)
+
+The night-light tiles in this repository are imagery from NASA's Global Imagery Browse Services (GIBS), layer
+VIIRS_Black_Marble, 2016-01-01, fetched unmodified. NASA imagery is a work of the United States Government and is not
+subject to copyright protection in the United States (17 U.S.C. § 105). It may be used, copied and redistributed
+freely. NASA asks that its use be acknowledged:
+
+"We acknowledge the use of imagery provided by services from NASA's Global Imagery Browse Services (GIBS), part of
+NASA's Earth Science Data and Information System (ESDIS)."
+
+NASA's name and insignia are not licensed by this statement and may not be used to suggest endorsement.

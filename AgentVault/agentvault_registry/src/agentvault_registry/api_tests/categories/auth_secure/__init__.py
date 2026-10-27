@@ -1,0 +1,3 @@
+"""
+Auth Secure test module
+"""

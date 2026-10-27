@@ -1,0 +1,39 @@
+# Sandbox Auditor — a copy of The Auditor pointed at the SANDBOX-A EventStore
+# (eventstore_test), which carries the §B transit_net changeset. Lets us watch the
+# §B invariant (tokens_issued − tokens_destroyed + transit_net = Σ balances) and the
+# A2 true-mint/burn live on a dashboard, without touching the prod auditor.
+#
+# Distinct image name (theauditor-sandbox-auditor) + container so a build here NEVER
+# alters the prod `theauditor-auditor-agent` image. Single-frame (sandbox-A only).
+# Served at sandbox-auditor.theprotocol.cloud (nginx → 127.0.0.1:8046).
+services:
+  sandbox-auditor-agent:
+    build: .
+    image: theauditor-sandbox-auditor
+    container_name: sandbox-auditor-agent
+    restart: unless-stopped
+    environment:
+      FRAME_A_EVENT_STORE_URL: http://agentvault_event_store_test:8200
+      # 2026-05-31: sandbox-B brought to CQRS+B parity → auditor now watches BOTH frames (mirrors prod).
+      FRAME_B_EVENT_STORE_URL: http://agentvault_event_store_test_b:8200
+      AGENT_NAME: The Auditor - Sandbox
+      AUDIT_INTERVAL: "60"
+      AUDITOR_VERSION: "2.1.0-sandbox-B"
+      # Direct-DB atomic invariant (read-only) against sandbox-A ES Postgres.
+      FRAME_A_ES_DSN: postgresql://postgres:postgres@agentvault_event_store_db_test:5432/eventstore_test
+      FRAME_B_ES_DSN: postgresql://postgres:postgres@agentvault_event_store_db_test_b:5432/eventstore_test_b
+      EVENT_STORE_INTERNAL_KEY: ${SBX_EVENT_STORE_KEY:-}  # §SOVKIT K0: env-only (the literal was the retired tier's key)
+      # Sandbox runs live (not maintenance) so the dashboard shows real status.
+      MAINTENANCE_ACTIVE: "false"
+      AUDITOR_ADMIN_TOKEN: ${AUDITOR_ADMIN_TOKEN:-}
+    ports:
+      - "127.0.0.1:8057:8045"
+    volumes:
+      - ./data-sandbox:/app/data
+      - ./frontend:/app/frontend
+    networks:
+      - agentvault_main_network
+
+networks:
+  agentvault_main_network:
+    external: true

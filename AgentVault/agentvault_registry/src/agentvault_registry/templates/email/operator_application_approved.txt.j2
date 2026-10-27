@@ -1,0 +1,22 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "APPLICATION APPROVED" %}
+{% set headline = "Your Operator Application Has Been Approved" %}
+{% block body %}
+Your operator application has been approved. Welcome to the federation.
+
+Next steps:
+  1. Register at {{ registry_ui_url }} (if you haven't already)
+  2. Log in and go to the Operator Portal
+  3. Enter your activation code:
+
+       {{ activation_code }}
+
+This code expires in 7 days.
+{% if release_channel_public_pull %}
+Images: your bundle pulls {{ images_prefix }}/{registry,teg-layer,cert-writer}:{{ images_tag }} from the public
+image channel (no login needed), or build them from the kit. Updates: your registry's admin is notified of stable
+releases and hotfixes on the signed release channel and schedules the rollout; `tp update` applies it.
+{% endif %}
+
+Questions? Contact commander@theprotocol.cloud
+{% endblock %}

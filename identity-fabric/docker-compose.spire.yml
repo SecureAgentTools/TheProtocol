@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  spire-server:
+    image: ghcr.io/spiffe/spire-server:1.10.4
+    container_name: agentvault-spire-server
+    hostname: spire-server
+    user: "0:0"  # SPIRE 1.10+ runs as non-root; dev volumes need root
+    volumes:
+      - ./spire-server:/opt/spire/conf
+      - spire-server-data:/opt/spire/data
+    ports:
+      - "8281:8081"  # SPIRE Server API
+    command: >
+      -config /opt/spire/conf/server.conf
+    networks:
+      - agentvault-identity
+
+  spire-agent:
+    image: ghcr.io/spiffe/spire-agent:1.10.4
+    container_name: agentvault-spire-agent
+    hostname: spire-agent
+    user: "0:0"  # SPIRE 1.10+ runs as non-root; Docker socket needs root
+    depends_on:
+      - spire-server
+    volumes:
+      - ./spire-agent:/opt/spire/conf
+      - spire-agent-socket:/opt/spire/sockets
+    command: >
+      -config /opt/spire/conf/agent.conf
+    networks:
+      - agentvault-identity
+    environment:
+      - SPIRE_SERVER_ADDRESS=spire-server
+      - SPIRE_AGENT_JOIN_TOKEN=${SPIRE_AGENT_JOIN_TOKEN:-default-join-token}
+
+  sample-workload:
+    build:
+      context: ./sample-workload
+      dockerfile: Dockerfile
+    container_name: agentvault-sample-workload
+    depends_on:
+      - spire-agent
+      - opa
+    volumes:
+      - spire-agent-socket:/spire-agent-socket
+    environment:
+      - SPIFFE_ENDPOINT_SOCKET=unix:///spire-agent-socket/agent.sock
+    networks:
+      - agentvault-identity
+    command: python app.py
+
+  opa:
+    image: openpolicyagent/opa:0.61.0
+    container_name: agentvault-opa
+    hostname: opa
+    volumes:
+      - ./policies:/policies
+    ports:
+      - "8181:8181"
+    command: >
+      run
+      --server
+      --addr :8181
+      --log-level debug
+      /policies
+    networks:
+      - agentvault-identity
+
+volumes:
+  spire-server-data:
+    driver: local
+  spire-agent-socket:
+    driver: local
+
+networks:
+  agentvault-identity:
+    driver: bridge

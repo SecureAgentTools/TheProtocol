@@ -1,0 +1,9 @@
+# §MTLSHOPS T2 (2026-09-15): the healthcheck's own client (promtool check healthy): the kit's certificate, verified against
+# the frame's bundle under the name the server certificate carries (it has no localhost SAN). Measured on v2.45.0: rc 0
+# with the certificate, rc 1 when the certificate file is missing, so the healthcheck fails on a missing certificate and not
+# only on a closed port.
+tls_config:
+  ca_file: /certs/bundle.0.pem
+  cert_file: /certs/svid.0.pem
+  key_file: /certs/svid.0.key
+  server_name: {{REGISTRY_NAME}}-prometheus

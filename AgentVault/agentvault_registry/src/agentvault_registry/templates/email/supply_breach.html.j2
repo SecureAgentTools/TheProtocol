@@ -1,0 +1,18 @@
+{% extends "_base.html.j2" %}
+{% set theme = "sovereign" %}
+{% set kicker = "// SUPPLY INVARIANT BREACH" %}
+{% set headline = "Token Supply Audit Failed" %}
+{% block body %}
+<p>The supply auditor detected a divergence between issued units and total circulating supply. This is a critical correctness signal and warrants immediate investigation.</p>
+{% with rows=[
+  ('Delta', delta),
+  ('Net supply', net_supply),
+  ('Circulating', circulating),
+  ('Detected at', detected_at),
+  ('Audit type', audit_type),
+  ('Auto-lockdown', auto_lockdown | string)
+] %}{% include '_partials/data_table.html' %}{% endwith %}
+{% with cta_url=registry_ui_url ~ '#/admin', cta_label="OPEN ADMIN CONSOLE" %}{% include '_partials/cta_button.html' %}{% endwith %}
+{% with notice="The supply auditor will continue logging at 60s intervals while the breach persists. This email is throttled (min 5min between repeats)." %}{% include '_partials/info_box.html' %}{% endwith %}
+<p style="font-family: 'IBM Plex Mono', monospace; font-size: 12px;">CLI (Frame A; substitute your node's registry container): <code>docker logs agentvault_registry_a | grep SUPPLY-BREACH</code></p>
+{% endblock %}

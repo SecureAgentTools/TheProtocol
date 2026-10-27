@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Protocol Animations Test</title>
+    <style>
+        body {
+            background: #0a0f1b;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .card {
+            background: #1a1f2e;
+            border: 1px solid #3b82f6;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 10px 0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
+        }
+        .stats-card {
+            background: #2a2f3e;
+            border: 1px solid #8b5cf6;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 10px 0;
+            cursor: pointer;
+        }
+        .agent-card {
+            background: #1a2f3e;
+            border: 1px solid #10b981;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 10px 0;
+            cursor: pointer;
+        }
+        .status {
+            background: #1e293b;
+            border: 1px solid #475569;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 20px 0;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>Protocol Animations Test Page</h1>
+        <p>Hover over the cards below to test particle effects. The fix should prevent exponential listener creation.</p>
+        
+        <div class="card">
+            <h3>Regular Card</h3>
+            <p>This is a test card. Hover to see particle effects.</p>
+        </div>
+        
+        <div class="stats-card">
+            <h3>Stats Card</h3>
+            <p>Another type of card with particles on hover.</p>
+        </div>
+        
+        <div class="agent-card">
+            <h3>Agent Card</h3>
+            <p>Agent card type - should also have particles.</p>
+        </div>
+        
+        <div class="status" id="status">
+            <strong>Status:</strong><br>
+            <span id="status-text">Waiting for animations to load...</span>
+        </div>
+        
+        <div>
+            <button onclick="checkStatus()">Check Status</button>
+            <button onclick="testHover()">Test Hover (100x)</button>
+            <button onclick="cleanupAnimations()">Cleanup Animations</button>
+        </div>
+    </div>
+    
+    <script>
+        function updateStatus(text) {
+            document.getElementById('status-text').innerHTML = text;
+        }
+        
+        function checkStatus() {
+            if (window.checkProtocolAnimations) {
+                window.checkProtocolAnimations();
+                updateStatus('Check console for status');
+            } else {
+                updateStatus('Protocol animations not loaded yet');
+            }
+        }
+        
+        function testHover() {
+            updateStatus('Simulating 100 mouseover events...');
+            const cards = document.querySelectorAll('.card, .stats-card, .agent-card');
+            let count = 0;
+            
+            const interval = setInterval(() => {
+                cards.forEach(card => {
+                    const event = new MouseEvent('mouseover', {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window
+                    });
+                    card.dispatchEvent(event);
+                });
+                
+                count++;
+                if (count >= 100) {
+                    clearInterval(interval);
+                    updateStatus('Completed 100 mouseover events. Check if UI is still responsive.');
+                }
+            }, 10);
+        }
+        
+        function cleanupAnimations() {
+            if (window.cleanupProtocolAnimations) {
+                window.cleanupProtocolAnimations();
+                updateStatus('Animations cleaned up');
+            } else {
+                updateStatus('Cleanup function not available');
+            }
+        }
+        
+        // Check status after page loads
+        setTimeout(() => {
+            if (window.ProtocolAnimations) {
+                updateStatus('Protocol Animations loaded. The clean fix should be active.');
+            } else {
+                updateStatus('Protocol Animations not found');
+            }
+        }, 1000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,463 @@
+# docker-compose.standalone.yml — TheProtocol Sovereign Registry (Standalone)
+# Includes local EventStore + Redpanda (Kafka) — fully self-contained, no mainframe dependency.
+# 11 containers plus redpanda-init (runs once and exits). ~3GB RAM. Full sovereignty. Issuance enabled.
+#
+# Usage:
+#   ./build.sh                                   # builds theprotocol/{registry,teg-layer,event-store}:stable locally
+#   ./operator-setup.sh my-registry standalone   # writes .env.operator (calls generate-operator-env.sh)
+#   docker compose -f docker-compose.standalone.yml --env-file .env.operator up -d
+#
+# §OSSRC 2026-09-14: the application images default to the LOCAL prefix build.sh tags (theprotocol/...:stable), so a
+# stranger runs what they built; set IMAGE_REGISTRY / VERSION to run images from elsewhere. REGISTRY_HTTP_PORT moves the
+# registry's host port (the container still listens on 8000).
+
+x-common-env: &common-env
+  TZ: UTC
+
+services:
+  # ────────────────────────────────────────────────────────────
+  # Registry — FastAPI backend + Vue frontend
+  # ────────────────────────────────────────────────────────────
+  registry:
+    image: ${IMAGE_REGISTRY:-theprotocol}/registry:${VERSION:-stable}
+    container_name: ${REGISTRY_NAME:-operator}-registry
+    restart: unless-stopped
+    ports:
+      - "${REGISTRY_HTTP_PORT:-8000}:8000"
+    env_file: .env.operator
+    volumes:
+      # CB-019: /app/data outlives a recreate. The registry keeps there the bundle signing key it generates on first use
+      # (a peer that cached its public key would otherwise pin a key this node can no longer produce) and the status
+      # page's history. Not registry-data: that is the database's.
+      - registry-appdata:/app/data
+    environment:
+      <<: *common-env
+      DATABASE_URL: postgresql+asyncpg://registry:${PG_PASS_REGISTRY}@pgbouncer:6432/agentvault_registry
+      DATABASE_URL_SYNC: postgresql://registry:${PG_PASS_REGISTRY}@pgbouncer:6432/agentvault_registry
+      TEG_LAYER_URL: http://teg-layer:8080
+      EVENT_STORE_URL: http://event-store:8200
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      API_KEY_SECRET: ${API_KEY_SECRET}
+      TEG_ADMIN_API_KEY: ${TEG_ADMIN_API_KEY}
+      EVENT_STORE_API_KEY: ${EVENT_STORE_INTERNAL_API_KEY}
+      MINTING_AUTHORITY: teg-layer
+      # §OSSDRY 2026-09-13: a standalone registry IS its own sovereign mainframe (local ledger, issuance enabled, as this file's own
+      # header says). Without this the issuance rail refuses as mainframe-only (404 "mainframe_only: This feature runs on sovereign
+      # mainframes only. ..." since V0640, 503 before), the treasury stays 0 and every genesis grant reports partial: a
+      # stranger's first agent starts with nothing.
+      IS_CENTRAL_REGISTRY: "true"
+      # ... and the sovereign allowlist is env-extensible: a registry is a mainframe when its NAME is listed AND the flag is set
+      MAINFRAME_REGISTRY_NAMES: ${REGISTRY_NAME:-operator}
+      # §OSSDRY 2026-09-13: without these a quickstart registry signs a card claiming Frame A's trust domain
+      # (agentvault.com) and no DID issuer namespace (§DIDWIDEN's birth-time property). One value, both names,
+      # as the frame template renders them; the boot posture check requires the two to be equal.
+      SPIRE_TRUST_DOMAIN: ${TRUST_DOMAIN:-operator.local}
+      DID_ISSUER_NAMESPACE: ${TRUST_DOMAIN:-operator.local}
+      # §SOVKIT K1 (2026-09-14): no KAFKA_* here; the ledger bus is the event store's alone (V0371+ holds no producer)
+      ENABLE_PROJECTION_SNAPSHOTS: ${ENABLE_PROJECTION_SNAPSHOTS:-true}
+      GENESIS_GRANT_ENABLED: ${GENESIS_GRANT_ENABLED:-true}
+      GENESIS_GRANT_AMOUNT: ${GENESIS_GRANT_AMOUNT:-5000.0}
+      BETA_INVITE_REQUIRED: ${BETA_INVITE_REQUIRED:-false}
+      AUDITED_BALANCE_ENABLED: ${AUDITED_BALANCE_ENABLED:-true}
+      # §SOVKIT: OPA shadow beside the registry (every authz decision mirrored, Python stays authoritative)
+      OPA_ENABLED: ${OPA_ENABLED:-true}
+      OPA_ENFORCE: ${OPA_ENFORCE:-false}
+      OPA_URL: http://opa:8181
+      MAIL_SERVER: ${MAIL_SERVER:-smtp.example.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-noreply@example.com}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-TheProtocol}
+      MAIL_STARTTLS: ${MAIL_STARTTLS:-True}
+      MAIL_SSL_TLS: ${MAIL_SSL_TLS:-False}
+      UVICORN_WORKERS: 4
+    # §OSSDRY 2026-09-13: the gunicorn supervisor with gunicorn_conf.py, as the frame template and production launch it.
+    # `uvicorn --forwarded-allow-ips '*'` trusted the CALLER's X-Forwarded-For element (§XFFTRUST); the worker
+    # subclass names the real proxies (FORWARDED_ALLOW_IPS, default loopback + RFC1918).
+    command: ["sh", "-c", "cd /app && PYTHONPATH=/app/src python -m agentvault_registry.migration_bridge && alembic upgrade head && PYTHONPATH=/app/src python -m agentvault_registry.operator_seed && PYTHONPATH=/app/src gunicorn agentvault_registry.main:app --workers 4 -c /app/gunicorn_conf.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_healthy
+      teg-layer:
+        condition: service_healthy
+      event-store:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - operator-net
+
+  # ────────────────────────────────────────────────────────────
+  # TEG Layer — Token Exchange Gateway
+  # ────────────────────────────────────────────────────────────
+  teg-layer:
+    image: ${IMAGE_REGISTRY:-theprotocol}/teg-layer:${VERSION:-stable}
+    container_name: ${REGISTRY_NAME:-operator}-teg
+    restart: unless-stopped
+    env_file: .env.operator
+    environment:
+      <<: *common-env
+      DATABASE_URL: postgresql://teg:${PG_PASS_TEG}@teg-db:5432/teg_layer
+      DATABASE_URL_SYNC: postgresql://teg:${PG_PASS_TEG}@teg-db:5432/teg_layer
+      REGISTRY_URL: http://registry:8000
+      EVENT_STORE_URL: http://event-store:8200
+      ADMIN_API_KEY: ${TEG_ADMIN_API_KEY}
+      AVTP_SYSTEM_API_KEY: ${TEG_AVTP_SYSTEM_API_KEY}
+      TEG_TOKEN_SIGNING_KEY: ${TEG_TOKEN_SIGNING_KEY}
+      REGISTRY_SERVICE_TOKEN: ${TEG_REGISTRY_JWT_SECRET}
+      # CB-049: the TEG checks the registry's exchange JWT with this key; the registry signs with its API_KEY_SECRET
+      REGISTRY_JWT_SECRET: ${TEG_REGISTRY_JWT_SECRET}
+      EVENT_STORE_API_KEY: ${EVENT_STORE_INTERNAL_API_KEY}
+      TEG_ID: teg-layer
+      MINTING_AUTHORITY: teg-layer
+      # §SOVKIT K1 (2026-09-14): no KAFKA_* here; the ledger bus is the event store's alone (V0371+ holds no producer)
+      UVICORN_WORKERS: 4
+    # §LEDGERGATE (2026-10-12, contract R40): `exec`, so gunicorn is PID 1 and a stop is graceful. dash as PID 1
+    # ignores SIGTERM: without it every stop is docker's SIGKILL after 10 s and the balance outbox's lease is never
+    # released (the TEG's ledger gate then reads the ledger behind). Proven on sbxalphaop and sbxbetaop 2026-10-11.
+    command: ["sh", "-c", "cd /app && python -m src.teg_core_service.migration_bridge && alembic upgrade head && exec gunicorn src.teg_core_service.main:app --workers 4 -c /app/gunicorn_conf.py"]
+    depends_on:
+      teg-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - operator-net
+
+  # ────────────────────────────────────────────────────────────
+  # Event Store — Immutable CQRS ledger
+  # ────────────────────────────────────────────────────────────
+  event-store:
+    image: ${IMAGE_REGISTRY:-theprotocol}/event-store:${VERSION:-stable}
+    container_name: ${REGISTRY_NAME:-operator}-event-store
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      DATABASE_URL: postgresql+asyncpg://eventstore:${PG_PASS_EVENT_STORE}@es-db:5432/event_store
+      DATABASE_URL_SYNC: postgresql://eventstore:${PG_PASS_EVENT_STORE}@es-db:5432/event_store
+      INTERNAL_API_KEY: ${EVENT_STORE_INTERNAL_API_KEY}
+      # CB-012: this stack has no TLS terminator in front of the store, so the registry and the TEG write their events
+      # with the internal key, and under EVENTSTORE_MTLS_REQUIRED (on by default) the store accepts a change by that key
+      # only when told to. Without this every event was refused (403 mtls_required): the TEG moved balances, the
+      # ledger stayed empty and its supply audit read delta 0 over nothing.
+      EVENTSTORE_INTERNAL_KEY_WRITES: "allow"
+      KAFKA_ENABLED: "true"
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      KAFKA_CONSUMER_GROUP: eventstore-consumer
+      KAFKA_CONSUMER_BATCH_SIZE: 50
+      # §SOVKIT K1 (2026-09-14, his word "Kafka private to the store"): the store is the broker's ONLY client. SCRAM
+      # (the password from .env.operator) on the ledger-only network; no TLS in the standalone stack (no identity
+      # fabric; the network has two members); every record signed with ES_KAFKA_RECORD_KEY and the consumer drops
+      # what this store did not sign (enforce).
+      KAFKA_SECURITY_PROTOCOL: ${KAFKA_SECURITY_PROTOCOL:-SASL_PLAINTEXT}
+      KAFKA_SASL_MECHANISM: SCRAM-SHA-256
+      KAFKA_SASL_USERNAME: es
+      KAFKA_SASL_PASSWORD: ${KAFKA_ES_PASSWORD}
+      ES_KAFKA_RECORD_KEY: ${ES_KAFKA_RECORD_KEY}
+      ES_KAFKA_RECORD_AUTH: ${ES_KAFKA_RECORD_AUTH:-enforce}
+      MATERIALIZED_BALANCES: "true"
+      UVICORN_WORKERS: 2
+    depends_on:
+      es-db:
+        condition: service_healthy
+      redpanda-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8200/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    networks:
+      - operator-net
+      - ledger-net
+
+  # ────────────────────────────────────────────────────────────
+  # PostgreSQL — Registry database
+  # ────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16.15-alpine
+    container_name: ${REGISTRY_NAME:-operator}-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agentvault_registry
+      POSTGRES_USER: registry
+      POSTGRES_PASSWORD: ${PG_PASS_REGISTRY}
+      POSTGRES_HOST_AUTH_METHOD: md5
+      POSTGRES_INITDB_ARGS: --auth-host=md5
+    volumes:
+      - registry-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U registry -d agentvault_registry"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - operator-net
+
+  # ────────────────────────────────────────────────────────────
+  # PostgreSQL — TEG database
+  # ────────────────────────────────────────────────────────────
+  teg-db:
+    image: postgres:16.15-alpine
+    container_name: ${REGISTRY_NAME:-operator}-teg-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: teg_layer
+      POSTGRES_USER: teg
+      POSTGRES_PASSWORD: ${PG_PASS_TEG}
+    volumes:
+      - teg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U teg -d teg_layer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - operator-net
+
+  # ────────────────────────────────────────────────────────────
+  # PostgreSQL — EventStore database
+  # ────────────────────────────────────────────────────────────
+  es-db:
+    image: postgres:16.15-alpine
+    container_name: ${REGISTRY_NAME:-operator}-es-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: event_store
+      POSTGRES_USER: eventstore
+      POSTGRES_PASSWORD: ${PG_PASS_EVENT_STORE}
+    volumes:
+      - es-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eventstore -d event_store"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - operator-net
+
+  # ────────────────────────────────────────────────────────────
+  # Redis — Shared state, leader election, rate limiting
+  # ────────────────────────────────────────────────────────────
+  redis:
+    image: redis:8.10.2-alpine
+    container_name: ${REGISTRY_NAME:-operator}-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - operator-net
+
+  # ────────────────────────────────────────────────────────────
+  # PgBouncer — Connection pooling for registry DB
+  # ────────────────────────────────────────────────────────────
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.25.2-p0
+    container_name: ${REGISTRY_NAME:-operator}-pgbouncer
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://registry:${PG_PASS_REGISTRY}@db:5432/agentvault_registry
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 200
+      DEFAULT_POOL_SIZE: 20
+      LISTEN_PORT: 6432
+      # asyncpg sends extra_float_digits/options startup params that transaction-mode
+      # pgbouncer rejects without these → registry-DB connect failures on a clean bring-up.
+      AUTH_TYPE: plain
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits,options
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -p 6432 -U registry"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - operator-net
+
+  # ────────────────────────────────────────────────────────────
+  # Redpanda — the ledger bus (§SOVKIT K1 2026-09-14, his word "Kafka private to the store"; "fix kafka scalable and
+  # secure"). The broker sits on ledger-net with the event store as its ONLY client: SASL/SCRAM-SHA-256 (the superuser
+  # created at bootstrap from KAFKA_ES_PASSWORD in .env.operator), the admin API and both HTTP proxies on the container's
+  # loopback, developer_mode off (fsync on: a ledger bus that acks what it has not written is the wrong bus; it needs
+  # --memory 1G), auto-create off (redpanda-init creates the three topics with explicit partitions before the store
+  # starts). No TLS here: the standalone stack has no identity fabric, and the network has two members. The RPK_* lines
+  # make `docker exec <op>-redpanda rpk ...` authenticate as the store's user. No port reaches the host.
+  # ────────────────────────────────────────────────────────────
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.2.3
+    container_name: ${REGISTRY_NAME:-operator}-redpanda
+    restart: unless-stopped
+    environment:
+      RP_BOOTSTRAP_USER: es:${KAFKA_ES_PASSWORD}:SCRAM-SHA-256
+      RPK_BROKERS: redpanda:9092
+      RPK_USER: es
+      RPK_PASS: ${KAFKA_ES_PASSWORD}
+      RPK_SASL_MECHANISM: SCRAM-SHA-256
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092
+      - --advertise-kafka-addr internal://redpanda:9092
+      - --smp 1
+      - --memory 1G
+      - --reserve-memory 0M
+      - --overprovisioned
+      - --default-log-level=warn
+      - --node-id 0
+      - --set redpanda.admin=[{"address":"127.0.0.1","port":9644}]
+      - --set redpanda.enable_sasl=true
+      - --set redpanda.superusers=["es"]
+      - --set redpanda.developer_mode=false
+      - --set redpanda.auto_create_topics_enabled=false
+      - --set redpanda.kafka_api=[{"address":"0.0.0.0","port":9092,"name":"internal","authentication_method":"sasl"}]
+      - --set pandaproxy.pandaproxy_api=[{"address":"127.0.0.1","port":8082}]
+      - --set schema_registry.schema_registry_api=[{"address":"127.0.0.1","port":8081}]
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ledger-net
+
+  redpanda-init:
+    # the three ledger topics with explicit partitions, before the store's first connect; one-shot, idempotent
+    image: docker.redpanda.com/redpandadata/redpanda:v26.2.3
+    container_name: ${REGISTRY_NAME:-operator}-redpanda-init
+    restart: "no"
+    environment:
+      RPK_BROKERS: redpanda:9092
+      RPK_USER: es
+      RPK_PASS: ${KAFKA_ES_PASSWORD}
+      RPK_SASL_MECHANISM: SCRAM-SHA-256
+      LEDGER_TOPICS: theprotocol.events.financial,theprotocol.events.governance,theprotocol.events.system
+      LEDGER_PARTITIONS: ${KAFKA_PARTITIONS:-4}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        i=0
+        until rpk cluster info >/dev/null 2>&1; do
+          i=$$((i+1)); [ "$$i" -ge 60 ] && { echo "redpanda-init: the broker never answered over SASL"; exit 1; }
+          sleep 2
+        done
+        for t in $$(echo "$$LEDGER_TOPICS" | tr ',' ' '); do
+          rpk topic describe "$$t" >/dev/null 2>&1 || rpk topic create "$$t" -p "$$LEDGER_PARTITIONS" -r 1 || exit 1
+        done
+        rpk topic list
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    networks:
+      - ledger-net
+
+  # ────────────────────────────────────────────────────────────
+  # THE FRAME KIT (§SOVKIT 2026-09-14): what a frame ships with beyond its three services.
+  # OPA shadow (policies from identity-fabric/), and the solo auditor, an independent verifier of the ledger's supply
+  # invariant reading the three databases directly (delta 0 or BREACH, continuously). Prometheus, Alertmanager and
+  # Grafana are docker-compose.monitoring.yml, a second file of the same project. The Directory (the frame's own
+  # federated index) is NOT here: its read leg is mTLS on the frame's identity network (SPIRE), which this compose has
+  # no fabric for; a runner-built frame (templates/frame-test) ships it. Standalone runs the auditor on the databases'
+  # owner roles; a runner-built frame gives it a read-only role (auditor_ro).
+  # ────────────────────────────────────────────────────────────
+  opa:
+    image: openpolicyagent/opa:0.61.0
+    container_name: ${REGISTRY_NAME:-operator}-opa
+    restart: unless-stopped
+    # §HELLOFRAME (2026-09-18, measured on the quick start): the image runs unprivileged and the policies are a bind
+    # mount of this checkout, so a clone under a directory the daemon's unprivileged user cannot traverse (a home or
+    # /root at mode 700, the common case) crash-loops OPA on "open /policies: permission denied" while the status page
+    # says "OPA down". OPA reads seven policy files and answers on the stack's own network, nothing more; root inside
+    # this container is the one posture that does not depend on where the clone lives.
+    user: "0:0"
+    command: ["run", "--server", "--addr", ":8181", "--log-level", "${OPA_LOG_LEVEL:-error}", "/policies"]
+    volumes:
+      - ../../identity-fabric/policies:/policies:ro
+    networks:
+      - operator-net
+
+  auditor:
+    image: ${IMAGE_REGISTRY:-theprotocol}/auditor:${VERSION:-stable}
+    container_name: ${REGISTRY_NAME:-operator}-auditor
+    restart: unless-stopped
+    environment:
+      AUDITOR_SOLO: "true"
+      AGENT_NAME: "${REGISTRY_NAME:-operator} auditor"
+      AUDIT_INTERVAL: ${AUDIT_INTERVAL:-60}
+      AUDITOR_ADMIN_TOKEN: ${AUDITOR_ADMIN_TOKEN:-}
+      MAINTENANCE_ACTIVE: "false"
+      EVENT_STORE_URL: http://event-store:8200
+      REGISTRY_URL: http://registry:8000
+      # one frame: this stack, under the frame's own unit (FRAME_CURRENCY, the name the registry reads it by; unset,
+      # both fall back to the registry's code default) (CB-018: it was the literal "AVT" whatever the frame's unit)
+      AUDITOR_EXTRA_FRAMES_JSON: >-
+        [{"id":"${REGISTRY_NAME:-operator}","name":"${REGISTRY_NAME:-operator}","url":"http://registry:8000",
+          "dsn":"postgresql://eventstore:${PG_PASS_EVENT_STORE}@es-db:5432/event_store",
+          "reg_dsn":"postgresql://registry:${PG_PASS_REGISTRY}@db:5432/agentvault_registry",
+          "teg_dsn":"postgresql://teg:${PG_PASS_TEG}@teg-db:5432/teg_layer",
+          "mode":"prod","key":"${EVENT_STORE_INTERNAL_API_KEY}","currency":"${FRAME_CURRENCY:-AVT}"}]
+    volumes:
+      - auditor-data:/app/data
+    ports:
+      # §HELLOFRAME: a variable like REGISTRY_HTTP_PORT, so two stacks on one host (or a host that already uses 8045) do not collide
+      - "127.0.0.1:${AUDITOR_HTTP_PORT:-8045}:8045"
+    depends_on:
+      es-db:
+        condition: service_healthy
+      event-store:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8045/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - operator-net
+
+volumes:
+  auditor-data:
+  registry-appdata:      # the registry's /app/data (its bundle signing key, the status history)
+  registry-data:
+  teg-data:
+  es-data:
+  redis-data:
+  redpanda-data:
+
+networks:
+  operator-net:
+    driver: bridge
+  # §SOVKIT K1: the ledger bus; the broker and the event store are its only members, no route out
+  ledger-net:
+    driver: bridge
+    internal: true

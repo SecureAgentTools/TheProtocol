@@ -1,0 +1,64 @@
+
+# pass78-bak-exclude: keep sandbox rollback *.bak* backups OUT of the prod build context.
+# (the .bak files remain on disk as documented FX-build rollback points — this only
+#  excludes them from the image, per Commander's non-destructive request 2026-06-04.)
+**/*.bak*
+*.bak*
+**/*.orig
+*.orig
+**/*~
+
+# ---------------------------------------------------------------------------
+# §EXCISION (2026-07-30) — the image ships to parties we do not control: the
+# Hetzner frame (external admin, PART 11b), 13 cloud-ops, and the OSS repo.
+# Nothing below is read at runtime; all of it was verified before exclusion.
+# PRODUCTION_DOCS/08_SECURITY/Private_Surface_Excision.md
+# ---------------------------------------------------------------------------
+
+# Tier 2 — Commander tooling + 85 agent credential fixtures (dead, but identity
+# and credential-pattern disclosure). Verified dead weight: `grep -rn "app/scripts"
+# src/` = 0 hits, and the only in-container runner (_run_host_script) executes
+# from WorkingDir /work, i.e. the HOST stack scripts dir, a different directory.
+agentvault_registry/scripts
+
+# Tier 2F — the frontend DEV payload: 1.1 GB of a 1.2 GB image, and 27 of these
+# files carry Commander credentials. Runtime serves ONLY `dist/` (main.py:181
+# STATIC_DIR), and the Dockerfile runs no npm — the FE is built on the host and
+# the prebuilt dist is copied. KEEP dist/ (and public/, which vite copies into it).
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/node_modules
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/e2e
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/*.mjs
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/test-results
+agentvault_registry/src/agentvault_registry/static/new_registry_frontend/playwright-report
+
+# Build/test detritus that has no business on an operator's disk.
+# htmlcov is 85 MB / 698 rendered-source HTML pages from pytest-cov, and it
+# carried a VERBATIM copy of the Commander password that survived both the
+# scripts/ exclusion and the src/ code fix — found only by grepping the whole
+# image rather than the files we had just changed (§1.1). Coverage output is a
+# rendering of the source: excise it wherever the source is excised.
+**/htmlcov
+**/.coverage
+**/coverage.xml
+**/__pycache__
+**/.pytest_cache
+
+# ---------------------------------------------------------------------------
+# §MONEY-R37 (2026-09-04) — the registry image was baking agentvault_registry/.env
+# into /app/.env, the same shape R32 found in the TEG. Measured before removing:
+# 9 keys, of which 5 were NOT overridden by any container env. Four of those
+# populate middleware/rate_limiter.py's RATE_LIMITS dict, which has ZERO
+# consumers ("slowapi applies limits per ROUTE, not per role, so these are not
+# wired into the per-endpoint decorators"), and the fifth, RATE_LIMIT_BYPASS_KEYS,
+# parses to empty. So nothing had to move first: the file was stale, not live.
+#
+# It still ships to parties we do not control, and it LOOKS authoritative — the
+# day RATE_LIMITS is wired up, an image-baked file starts deciding limits.
+#
+# ⚠ THE RULE IS PRECISE ON PURPOSE. A blanket **/*.env would also drop
+# agentvault_registry/config/network_profile.*.env, and every money knob would
+# silently fall back to its code default with nothing to say so.
+# ---------------------------------------------------------------------------
+agentvault_registry/.env
+agentvault_registry/.env.*

@@ -1,0 +1,22 @@
+{% extends "_base.txt.j2" %}
+{% set kicker = "REGISTRY LICENSE APPLICATION" %}
+{% set headline = "New Operator Application: " ~ name %}
+{% block body %}
+A new operator registry license application has been received at {{ timestamp }}.
+
+  Name:               {{ name }}
+  Email:              {{ email }}
+  Organization:       {{ organization | default('Not specified') }}
+  Deployment:         {{ deployment }}
+  Docker experience:  {{ experience }}
+  Developer linked:   {{ developer_linked | default('No') }}
+  Settings chosen:    {{ env_choices | default('inherited from the frame') }}
+
+{% if use_case %}
+Use case:
+  {{ use_case }}
+{% endif %}
+
+Reply directly to this email to contact the applicant.
+Application received via theprotocol.cloud landing page.
+{% endblock %}

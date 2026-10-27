@@ -1,0 +1,3 @@
+"""
+Reputation Signal test module
+"""

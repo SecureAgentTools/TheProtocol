@@ -1,0 +1,27 @@
+{% extends "_base.html.j2" %}
+{% set theme = "neural" %}
+{% set kicker = "// AGENT REINSTATED" %}
+{% set headline = "Your agent has been reinstated" %}
+
+{% block body %}
+<p>An agent under your developer account, previously <strong>{{ previous_status | default('suspended') }}</strong>, has been <strong>reinstated</strong>. Cross-TEG transfer routes, IRONHAND mTLS, and federation-sync access are restored. The agent is back in the active roster across the federation.</p>
+
+{% with rows=[
+  ('Agent DID', agent_did),
+  ('Previous status', previous_status),
+  ('Reinstated at', reinstated_at),
+  ('Reinstated by', reinstated_by)
+] %}
+{% include '_partials/data_table.html' %}
+{% endwith %}
+
+<p style="margin-top: 14px;"><strong>Reason recorded:</strong> {{ reason }}</p>
+
+{% with cta_url=registry_ui_url ~ '#/agents/' ~ agent_did, cta_label="OPEN AGENT PROFILE" %}
+{% include '_partials/cta_button.html' %}
+{% endwith %}
+
+{% with notice="No new SVID is required: the agent's existing IRONHAND credential is back in the trust store. Suspended balances and locked positions are unchanged; payouts on locked units, where this registry makes them, resume on the next cycle." %}
+{% include '_partials/info_box.html' %}
+{% endwith %}
+{% endblock %}

@@ -1,0 +1,82 @@
+[
+  {
+    "label": "Ramon",
+    "registry": "A",
+    "did": "did:cos:53395d99-745b-1139-d087",
+    "client_id": "agent-71814793b64cbbe8",
+    "client_secret": "cos_secret_f240ec765f724e5ef404cde34dd585f174651c56d46aefc71ab3eea3f9c96d8a",
+    "type": "data-analyst"
+  },
+  {
+    "label": "Percival",
+    "registry": "A",
+    "did": "did:cos:a465e72b-a824-9191-cd23",
+    "client_id": "agent-224cb4fdde47155d",
+    "client_secret": "cos_secret_d014ab31991602028aa0bf14ef2667df26aec4ad94946bcb2af1dd5620d9b356",
+    "type": "code-reviewer"
+  },
+  {
+    "label": "Bellicose Beatrix",
+    "registry": "A",
+    "did": "did:cos:0d835d40-b975-002d-3129",
+    "client_id": "agent-fa3b27e70c88cde0",
+    "client_secret": "cos_secret_a6f32dd2eb2acbf9d8a6c741d55f842a8af3693ca7d861e5c5bfa0e54d614273",
+    "type": "market-maker"
+  },
+  {
+    "label": "Ferocious Ferdinand",
+    "registry": "A",
+    "did": "did:cos:ed7979ea-f149-cff8-8b48",
+    "client_id": "agent-057334955421e202",
+    "client_secret": "cos_secret_988274b3392a59e499a0860ee509aa019b26e1dd1ced27fcb70a389802f6e70d",
+    "type": "risk-assessor"
+  },
+  {
+    "label": "Rapacious Rodrigo",
+    "registry": "A",
+    "did": "did:cos:b3663202-580c-ef76-6ffc",
+    "client_id": "agent-1ac1b21de7058871",
+    "client_secret": "cos_secret_a294859212af0a567c5a507941617940ac49bfe3e2a5b133969e7c1b69b54d61",
+    "type": "compliance-auditor"
+  },
+  {
+    "label": "Voracious Valentina",
+    "registry": "B",
+    "did": "did:cos:d92c23ff-76d4-e857-14dc",
+    "client_id": "agent-61ddb65c227f936d",
+    "client_secret": "cos_secret_7168d980c6481216df70dbf75854818ce1decd60d40d436f7cca66c09d2f8ae5",
+    "type": "data-analyst"
+  },
+  {
+    "label": "Tenacious Tarquin",
+    "registry": "B",
+    "did": "did:cos:9172acf8-dc32-6625-409e",
+    "client_id": "agent-98a70c4450ddba2f",
+    "client_secret": "cos_secret_14f072455ef41fd6152f02a1f4af649acc3c1c23f0d2aa9a8596d1151ad36280",
+    "type": "code-reviewer"
+  },
+  {
+    "label": "Imperious Isolde",
+    "registry": "B",
+    "did": "did:cos:8ae00079-b955-4afd-6b67",
+    "client_id": "agent-7d001770a65dc504",
+    "client_secret": "cos_secret_2bc9e54509269063f83b192689466835f3f72394f8a8b74fec78a0c693a29c21",
+    "type": "market-maker"
+  },
+  {
+    "label": "Audacious Aldric",
+    "registry": "B",
+    "did": "did:cos:4b53c613-dbe1-2245-001c",
+    "client_id": "agent-32bc9a1f2396de60",
+    "client_secret": "cos_secret_7ea787c525648975947d0620982e3c47ad3ebc2fcb037870354537e998c5ce50",
+    "type": "risk-assessor"
+  },
+  {
+    "label": "Marauding Magdalena",
+    "registry": "B",
+    "did": "did:cos:392d1cca-3ed1-46ad-2d9d",
+    "client_id": "agent-1ba0aae724221330",
+    "client_secret": "cos_secret_abe2939c4d4a593c1b16d5da160db3f5031207c4fbcd81d262e64a17d5e179fc",
+    "type": "compliance-auditor"
+  }
+]

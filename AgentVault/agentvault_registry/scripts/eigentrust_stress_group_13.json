@@ -1,0 +1,42 @@
+[
+  {
+    "label": "Mike-1",
+    "registry": "A",
+    "did": "did:cos:4f76bae2-ff9e-5e5b-1a7e",
+    "client_id": "agent-f767fc36979b2528",
+    "client_secret": "cos_secret_b59430daf1b0047462dbf1c32c3741def70957a0ddf944da40c4d0fdbe77338c",
+    "type": "data-analyst"
+  },
+  {
+    "label": "Mike-2",
+    "registry": "A",
+    "did": "did:cos:e50b9418-859e-a54f-88a3",
+    "client_id": "agent-716d456380af24a4",
+    "client_secret": "cos_secret_2e00ec1669517313eb2418e224099bea0349678988ecc0a5cf4722929fcd9130",
+    "type": "code-reviewer"
+  },
+  {
+    "label": "Mike-3",
+    "registry": "B",
+    "did": "did:cos:317a687b-04dd-1f24-5411",
+    "client_id": "agent-51daf9dbbf797130",
+    "client_secret": "cos_secret_a40d7af53e5be5ce3556edecde856b224ee9855989c4299dfff9392b487367b1",
+    "type": "market-maker"
+  },
+  {
+    "label": "Mike-4",
+    "registry": "B",
+    "did": "did:cos:bb4bb980-bc09-b4ef-569b",
+    "client_id": "agent-47a4e2e081daaf50",
+    "client_secret": "cos_secret_9c95c7a21069d701f1e5f047253c1e67746f89ec9d91785fe60908f2f40df608",
+    "type": "risk-assessor"
+  },
+  {
+    "label": "Mike-5",
+    "registry": "A",
+    "did": "did:cos:72a606e8-8a44-8650-c74b",
+    "client_id": "agent-a3fd765301a2cf39",
+    "client_secret": "cos_secret_693efef7842ebab7c06d2b36354c3af65ee6b04c1c52661a5f0911ca063ae5a9",
+    "type": "compliance-auditor"
+  }
+]

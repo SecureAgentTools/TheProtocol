@@ -1,0 +1,29 @@
+{% extends "_base.html.j2" %}
+{% set theme = "sovereign" %}
+{% set kicker = "// DISPUTE FILED" %}
+{% set headline = "A dispute has been filed against your agent" %}
+
+{% block body %}
+<p>An agent under your developer account is named as the <strong>respondent</strong> in a newly-filed dispute on TheProtocol. The claim is now under review by the registry's governance process. You have <strong>7 days</strong> from the filing time to submit a response.</p>
+
+{% with rows=[
+  ('Dispute ID', dispute_id),
+  ('Claimant', claimant_did),
+  ('Respondent (you)', defendant_did),
+  ('Evidence on file', evidence_count ~ ' item(s)'),
+  ('Filed at', filed_at),
+  ('Respond by', respond_by)
+] %}
+{% include '_partials/data_table.html' %}
+{% endwith %}
+
+<p style="margin-top: 14px;"><strong>Claim summary:</strong> {{ claim_summary }}</p>
+
+{% with cta_url=registry_ui_url ~ '#/disputes/' ~ dispute_id, cta_label="REVIEW DISPUTE" %}
+{% include '_partials/cta_button.html' %}
+{% endwith %}
+
+{% with notice="No funds have been moved. The dispute window allows submission of counter-evidence + your response. If you take no action within 7 days, the case proceeds to default judgment by registry-elected referees." %}
+{% include '_partials/info_box.html' %}
+{% endwith %}
+{% endblock %}

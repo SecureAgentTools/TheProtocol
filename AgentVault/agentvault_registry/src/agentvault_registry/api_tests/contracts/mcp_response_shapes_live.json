@@ -1,0 +1,1811 @@
+{
+  "theprotocol_discoverAgents": [
+    "agents",
+    "limit",
+    "offset",
+    "query",
+    "total"
+  ],
+  "theprotocol_discoverRegistries": [
+    "registries",
+    "total"
+  ],
+  "theprotocol_getAchievementCatalog": [
+    "achievements",
+    "total"
+  ],
+  "theprotocol_getActivityFeedByType": [
+    "items",
+    "total"
+  ],
+  "theprotocol_getAdminAgentDetail": [
+    "auto_compound_enabled",
+    "card_created_at",
+    "card_data",
+    "card_id",
+    "card_is_active",
+    "card_updated_at",
+    "client_id",
+    "created_at",
+    "creator_developer_deleted",
+    "creator_developer_email",
+    "creator_developer_id",
+    "current_signing_kid",
+    "did",
+    "drift_count_24h",
+    "enforcement_level",
+    "enforcement_status",
+    "last_active_at",
+    "last_drift_event",
+    "last_offense_at",
+    "last_pulled_at",
+    "last_pulled_etag",
+    "last_reward_distribution",
+    "latitude",
+    "liquid_balance",
+    "location_label",
+    "longitude",
+    "mtls_enabled",
+    "mtls_enrolled_at",
+    "name",
+    "offense_count",
+    "open_disputes_as_complainant",
+    "open_disputes_as_defendant",
+    "organization_id",
+    "public_key_jwk",
+    "reputation_bond_amount",
+    "reputation_bond_status",
+    "reputation_score",
+    "rewards_paused_until",
+    "signing_keys",
+    "spiffe_id",
+    "staked_balance",
+    "stakes",
+    "staking_tier",
+    "status",
+    "team_id",
+    "total_rewards_earned"
+  ],
+  "theprotocol_getAdminAgentFlags": [
+    "agent_did",
+    "count",
+    "flags"
+  ],
+  "theprotocol_getAdminAgentOrphans": [
+    "agents",
+    "limit",
+    "offset",
+    "total"
+  ],
+  "theprotocol_getAdminAgentSigningKeys": [
+    "agent_did",
+    "keys"
+  ],
+  "theprotocol_getAdminAgents": [
+    "agents",
+    "limit",
+    "offset",
+    "total"
+  ],
+  "theprotocol_getAdminAgentsByDeveloper": [
+    "agents",
+    "developer_id",
+    "total"
+  ],
+  "theprotocol_getAdminAuditLogs": [
+    "count",
+    "items",
+    "window_hours"
+  ],
+  "theprotocol_getAdminBroadcastsOverview": [
+    "active",
+    "by_type",
+    "emails_sent",
+    "last_24h",
+    "last_7d",
+    "retracted",
+    "scope",
+    "scope_description",
+    "total",
+    "total_recipients_lifetime",
+    "verified_developers",
+    "ws_connections_now"
+  ],
+  "theprotocol_getAdminDashboard": [
+    "active_agents",
+    "active_developers",
+    "agent_count",
+    "bootstrap_tokens_issued",
+    "developer_count",
+    "timestamp",
+    "tokens_expired",
+    "tokens_used"
+  ],
+  "theprotocol_getAdminDeveloperDetail": [
+    "admin_enforcement",
+    "admin_federation",
+    "admin_platform",
+    "admin_support",
+    "admin_treasury",
+    "agent_count",
+    "agents",
+    "api_keys",
+    "avatar_url",
+    "bio",
+    "company",
+    "created_at",
+    "deleted_at",
+    "display_name",
+    "email",
+    "federation_operator_status",
+    "flare_tier",
+    "github_url",
+    "id",
+    "is_admin",
+    "is_federation_operator",
+    "is_suspended",
+    "is_verified",
+    "last_login_at",
+    "latitude",
+    "location_label",
+    "longitude",
+    "must_change_password",
+    "name",
+    "operator_application_id",
+    "organizations",
+    "profile_visibility",
+    "suspended_at",
+    "suspended_reason",
+    "timezone",
+    "twitter_handle",
+    "two_fa_enabled",
+    "website_url"
+  ],
+  "theprotocol_getAdminDeveloperQuota": [
+    "bundle_create_rate_per_day",
+    "current_usage",
+    "custom_quota_reason",
+    "developer_id",
+    "is_default",
+    "max_bundle_count",
+    "max_bundle_total_bytes",
+    "max_individual_bundle_bytes",
+    "updated_at"
+  ],
+  "theprotocol_getAdminDevelopers": [
+    "developers",
+    "limit",
+    "offset",
+    "total"
+  ],
+  "theprotocol_getAdminFederationPolicyCompliance": [
+    "policy_hash",
+    "policy_version",
+    "registry_did",
+    "timestamp"
+  ],
+  "theprotocol_getAdminFederationSelfHealth": [
+    "admitted_at",
+    "compliance_score",
+    "economic_health",
+    "federation_status",
+    "last_polled_at",
+    "policy_drift_events",
+    "quarantine_events",
+    "quarantine_reason",
+    "quarantine_since",
+    "registry_did",
+    "registry_id",
+    "registry_name",
+    "registry_url",
+    "reputation_graph"
+  ],
+  "theprotocol_getAdminFiatPricing": [
+    "active",
+    "fallback_in_use",
+    "history"
+  ],
+  "theprotocol_getAdminFiatPurchases": [
+    "limit",
+    "offset",
+    "rows",
+    "total"
+  ],
+  "theprotocol_getAdminFiatStats": [
+    "anonymous_devs_created",
+    "avg_purchase_eur",
+    "completed_count",
+    "daily_revenue",
+    "failed_count",
+    "pending_count",
+    "refunded_count",
+    "status_breakdown",
+    "success_rate_pct",
+    "tier_share",
+    "total_avt",
+    "total_eur",
+    "treasury_consumed_estimate_avt",
+    "window_days"
+  ],
+  "theprotocol_getAdminFlags": [
+    "by_type",
+    "count",
+    "flags",
+    "window_hours"
+  ],
+  "theprotocol_getAdminFundingAll": [
+    "requests",
+    "total"
+  ],
+  "theprotocol_getAdminFundingPending": [
+    "pending",
+    "total"
+  ],
+  "theprotocol_getAdminHealthCheckAuthenticated": [
+    "authentication_note",
+    "groupSummaries",
+    "metadata",
+    "overallStatus",
+    "results",
+    "timestamp"
+  ],
+  "theprotocol_getAdminHealthCheckPublicOnly": [
+    "groupSummaries",
+    "metadata",
+    "note",
+    "overallStatus",
+    "results",
+    "timestamp"
+  ],
+  "theprotocol_getAdminHealthCheckSimple": [
+    "service",
+    "status",
+    "timestamp",
+    "version"
+  ],
+  "theprotocol_getAdminMcpAuditLogByActor": [
+    "limit",
+    "next_cursor",
+    "queried_actor_id",
+    "rows",
+    "self_watched"
+  ],
+  "theprotocol_getAdminMetricsAgentActivity": [
+    "active_agents",
+    "error_rate",
+    "network_latency_ms",
+    "timestamp",
+    "total_requests_last_hour",
+    "transactions_per_minute"
+  ],
+  "theprotocol_getAdminRegistryCard": [
+    "capabilities",
+    "commitments",
+    "description",
+    "economic",
+    "endpoints",
+    "federation",
+    "fees",
+    "identity",
+    "lifecycle",
+    "links",
+    "operator",
+    "policy",
+    "registry_card_version",
+    "signature",
+    "stats",
+    "tags",
+    "visual"
+  ],
+  "theprotocol_getAdminSimulationDeadmanStatus": [
+    "armed",
+    "breach_history",
+    "enabled_at_start",
+    "instance_cap",
+    "last_snapshot",
+    "thresholds"
+  ],
+  "theprotocol_getAdminSimulationFundStatus": [
+    "lines",
+    "total"
+  ],
+  "theprotocol_getAdminSimulationLogs": [
+    "lines",
+    "total"
+  ],
+  "theprotocol_getAdminSimulationStatus": [
+    "container_ids",
+    "instances",
+    "params",
+    "running",
+    "timestamp",
+    "uptime_seconds"
+  ],
+  "theprotocol_getAdminSimulationSupplyAudit": [
+    "A",
+    "B"
+  ],
+  "theprotocol_getAdminSimulationTopology": [
+    "edges",
+    "registries"
+  ],
+  "theprotocol_getAdminTestTokens": [
+    "agent_registration_endpoint",
+    "agent_token",
+    "developer_email",
+    "developer_id",
+    "developer_token",
+    "note",
+    "token_expiry",
+    "usage"
+  ],
+  "theprotocol_getAdminWorkersStatus": [
+    "snapshot_at",
+    "summary",
+    "workers"
+  ],
+  "theprotocol_getAgentANP": [
+    "capabilities",
+    "created_at",
+    "description",
+    "did",
+    "endpoints",
+    "name",
+    "protocol",
+    "reputation_score",
+    "status",
+    "version"
+  ],
+  "theprotocol_getAgentAttestationSchedulesByDID": [
+    "count",
+    "items"
+  ],
+  "theprotocol_getAgentAttestationsByDID": [
+    "count",
+    "items",
+    "limit",
+    "offset"
+  ],
+  "theprotocol_getAgentByDID": [
+    "bears_corner_flare",
+    "bears_encirclement_flare",
+    "card_data",
+    "client_id",
+    "created_at",
+    "creator_developer_id",
+    "description",
+    "did",
+    "flare_accent_color",
+    "flare_cause",
+    "flare_corner_variant",
+    "flare_display_name",
+    "flare_encirclement_overlay",
+    "flare_encirclement_variant",
+    "flare_granted_at",
+    "flare_id",
+    "flare_link_url",
+    "flare_logo_url",
+    "flare_tagline",
+    "flare_tier",
+    "id",
+    "last_active_at",
+    "liquid_balance",
+    "name",
+    "reputation_score",
+    "staked_balance",
+    "status"
+  ],
+  "theprotocol_getAgentByDIDAlt": [
+    "agent_id",
+    "did",
+    "redirect_url"
+  ],
+  "theprotocol_getAgentCardDriftDetail": [
+    "agent_did",
+    "diff",
+    "fresh",
+    "http_code",
+    "last_pulled_at",
+    "last_pulled_etag",
+    "name",
+    "stored",
+    "unreachable_reason",
+    "well_known_url"
+  ],
+  "theprotocol_getAgentCardDriftList": [
+    "count",
+    "items",
+    "limit",
+    "offset"
+  ],
+  "theprotocol_getAgentCardExport": [
+    "agentVersion",
+    "authSchemes",
+    "capabilities",
+    "description",
+    "extensions",
+    "humanReadableId",
+    "iconUrl",
+    "lastUpdated",
+    "metadata",
+    "name",
+    "preferredTransport",
+    "privacyPolicyUrl",
+    "protocolVersion",
+    "provider",
+    "security",
+    "securitySchemes",
+    "service_endpoints",
+    "skills",
+    "supportedInterfaces",
+    "tags",
+    "termsOfServiceUrl",
+    "url"
+  ],
+  "theprotocol_getAgentCardPullsyncEvents": [
+    "events",
+    "filters_applied",
+    "total_returned"
+  ],
+  "theprotocol_getAgentCardPullsyncStatus": [
+    "banner",
+    "cycles_24h_by_registry",
+    "db_buckets",
+    "drift_24h_by_field",
+    "summary",
+    "worker_snapshot"
+  ],
+  "theprotocol_getAgentContracts": [
+    "contracts",
+    "total"
+  ],
+  "theprotocol_getAgentDIDDoc": [
+    "@context",
+    "authentication",
+    "id",
+    "service",
+    "verificationMethod"
+  ],
+  "theprotocol_getAgentFlare": [
+    "accent_color",
+    "cause",
+    "display_name",
+    "flare_granted_at",
+    "flare_id",
+    "flare_tier",
+    "link_url",
+    "logo_url",
+    "tagline"
+  ],
+  "theprotocol_getAgentHealthStatus": [
+    "db_summary",
+    "flapping_or_down",
+    "local_last_cycle",
+    "per_registry",
+    "probes_by_outcome",
+    "snapshot_iso",
+    "summary",
+    "transitions_grid"
+  ],
+  "theprotocol_getAgentHealthTransitions": [
+    "filters_applied",
+    "total_returned",
+    "transitions"
+  ],
+  "theprotocol_getAgentLocations": [
+    "locations",
+    "total"
+  ],
+  "theprotocol_getAgentLocationsEmissionPolicies": [
+    "policies"
+  ],
+  "theprotocol_getAgentLocationsOperator": [
+    "label",
+    "lat",
+    "lng"
+  ],
+  "theprotocol_getAgentLocationsTrustedRegistries": [
+    "registries"
+  ],
+  "theprotocol_getAgentMetrics": [
+    "agent_id",
+    "avg_response_time",
+    "daily_stats",
+    "last_active",
+    "success_rate",
+    "total_requests",
+    "uptime_percentage",
+    "weekly_trend"
+  ],
+  "theprotocol_getAgentPendingRewards": [
+    "last_claim_timestamp",
+    "pending_rewards",
+    "reward_sources"
+  ],
+  "theprotocol_getAgentProfile": [
+    "bears_corner_flare",
+    "bears_encirclement_flare",
+    "card_data",
+    "client_id",
+    "created_at",
+    "creator_developer_id",
+    "description",
+    "did",
+    "flare_accent_color",
+    "flare_cause",
+    "flare_corner_variant",
+    "flare_display_name",
+    "flare_encirclement_overlay",
+    "flare_encirclement_variant",
+    "flare_granted_at",
+    "flare_id",
+    "flare_link_url",
+    "flare_logo_url",
+    "flare_tagline",
+    "flare_tier",
+    "id",
+    "last_active_at",
+    "liquid_balance",
+    "name",
+    "reputation_score",
+    "staked_balance",
+    "status"
+  ],
+  "theprotocol_getAgentPublicKey": [
+    "agent_did",
+    "algorithm",
+    "extension_uri",
+    "public_key_jwk"
+  ],
+  "theprotocol_getAgentRewardsHistory": [
+    "rewards",
+    "total_earned"
+  ],
+  "theprotocol_getAgentStakingBalance": [
+    "active_stakes",
+    "agent_id",
+    "available_to_unstake",
+    "locked_balance",
+    "staked_balance"
+  ],
+  "theprotocol_getAgentStakingHistory": [
+    "total",
+    "transactions"
+  ],
+  "theprotocol_getAgentTransactionHistory": [
+    "agent_id",
+    "limit",
+    "offset",
+    "source",
+    "summary",
+    "total",
+    "transactions"
+  ],
+  "theprotocol_getApiTestArchiveRuns": [
+    "runs"
+  ],
+  "theprotocol_getApiTestBucketClassification": [
+    "buckets",
+    "total_categories"
+  ],
+  "theprotocol_getApiTestEndpoints": [
+    "categories",
+    "endpoints",
+    "force_enabled",
+    "source",
+    "total_endpoints"
+  ],
+  "theprotocol_getApiTestFlowValues": [
+    "timestamp",
+    "values"
+  ],
+  "theprotocol_getApiTestSandboxCredentials": [
+    "admin",
+    "agent",
+    "counterparty_agent",
+    "developer",
+    "info",
+    "sandbox_active",
+    "target_url"
+  ],
+  "theprotocol_getApyRates": [
+    "metadata",
+    "tiers"
+  ],
+  "theprotocol_getArenaAgentStats": [
+    "agent_did",
+    "stats"
+  ],
+  "theprotocol_getArenaLeaderboard": [
+    "game_type",
+    "leaderboard"
+  ],
+  "theprotocol_getArenaMatchBets": [
+    "bets",
+    "match_id",
+    "odds",
+    "total_pool"
+  ],
+  "theprotocol_getAttestationHealth": [
+    "service",
+    "status"
+  ],
+  "theprotocol_getAttestationSigningPubkey": [
+    "alg",
+    "issuer_registry",
+    "pubkey_b64",
+    "pubkey_id"
+  ],
+  "theprotocol_getAttestationsAnalytics": [
+    "as_of",
+    "by_circuit",
+    "cadence",
+    "period",
+    "recent",
+    "stats",
+    "top_agents",
+    "zkp_phases"
+  ],
+  "theprotocol_getAuthProfile": [
+    "created_at",
+    "email",
+    "id",
+    "is_admin",
+    "is_verified",
+    "name",
+    "organization",
+    "role"
+  ],
+  "theprotocol_getAuthRegistrationConfig": [
+    "beta_invite_required",
+    "email_verification_required"
+  ],
+  "theprotocol_getAutoCompoundForAgent": [
+    "enabled"
+  ],
+  "theprotocol_getAutoTallyConfig": [
+    "enabled",
+    "interval_seconds",
+    "source"
+  ],
+  "theprotocol_getBridgeAggregate": [
+    "as_of",
+    "async",
+    "inbound",
+    "period",
+    "recent_async",
+    "recent_sync",
+    "sync_sf3"
+  ],
+  "theprotocol_getBroadcastEmailRetryDeadLetter": [
+    "items",
+    "limit",
+    "skip"
+  ],
+  "theprotocol_getBroadcastEmailRetryStatus": [
+    "enabled",
+    "interval_sec",
+    "is_leader_now",
+    "last_cycle_iso",
+    "last_duration_ms",
+    "last_stats",
+    "registry_id",
+    "worker_id"
+  ],
+  "theprotocol_getBroadcastSchedulerStatus": [
+    "enabled",
+    "interval_sec",
+    "is_leader_now",
+    "last_cycle_iso",
+    "last_duration_ms",
+    "last_stats",
+    "registry_id",
+    "worker_id"
+  ],
+  "theprotocol_getBroadcastTemplates": [
+    "templates",
+    "total"
+  ],
+  "theprotocol_getCanaryIronhandEvents": [
+    "count",
+    "events",
+    "limit",
+    "offset"
+  ],
+  "theprotocol_getCanaryIronhandStatus": [
+    "by_failure_type",
+    "per_path",
+    "snapshot_iso",
+    "summary"
+  ],
+  "theprotocol_getCanaryJudgeEvents": [
+    "events",
+    "filters_applied",
+    "total_returned"
+  ],
+  "theprotocol_getCanaryJudgeStatus": [
+    "by_failure_type",
+    "per_path",
+    "snapshot_iso",
+    "summary"
+  ],
+  "theprotocol_getCanaryRebalancerEvents": [
+    "events",
+    "filters_applied",
+    "total_returned"
+  ],
+  "theprotocol_getCanaryRebalancerStatus": [
+    "by_home_kind",
+    "config",
+    "per_agent",
+    "snapshot_iso",
+    "summary"
+  ],
+  "theprotocol_getCanaryStatus": [
+    "agents",
+    "paths",
+    "recent_failures",
+    "summary"
+  ],
+  "theprotocol_getCicdDeployments": [
+    "count",
+    "items"
+  ],
+  "theprotocol_getCicdSummary": [
+    "deployments",
+    "flags",
+    "pipelines",
+    "versions",
+    "window_hours"
+  ],
+  "theprotocol_getCircuits": [
+    "circuits"
+  ],
+  "theprotocol_getCollusionRings": [
+    "filters_applied",
+    "rings",
+    "total_returned"
+  ],
+  "theprotocol_getCollusionStatus": [
+    "by_severity",
+    "errors_by_stage",
+    "local_last_cycle",
+    "per_registry",
+    "snapshot_iso",
+    "summary",
+    "top_flagged_dids"
+  ],
+  "theprotocol_getCommunityAnnouncements": [
+    "announcements",
+    "body",
+    "total"
+  ],
+  "theprotocol_getCrossFrameReputation": [
+    "agent_count",
+    "foreign_reputation",
+    "status"
+  ],
+  "theprotocol_getCrossTegSweeperEvents": [
+    "events",
+    "filters_applied",
+    "total_returned"
+  ],
+  "theprotocol_getCrossTegSweeperStatus": [
+    "per_op",
+    "snapshot_iso",
+    "summary"
+  ],
+  "theprotocol_getDevTrustGraph": [
+    "page",
+    "per_page",
+    "relationships",
+    "total"
+  ],
+  "theprotocol_getDeveloperFlare": [
+    "accent_color",
+    "cause",
+    "display_name",
+    "flare_granted_at",
+    "flare_id",
+    "flare_tier",
+    "link_url",
+    "logo_url",
+    "tagline"
+  ],
+  "theprotocol_getDeveloperStats": [
+    "month",
+    "note",
+    "today",
+    "topEndpoints"
+  ],
+  "theprotocol_getDiagnosticActions": [
+    "actions",
+    "count"
+  ],
+  "theprotocol_getDiagnosticChecks": [
+    "checks",
+    "count"
+  ],
+  "theprotocol_getDiagnosticTargets": [
+    "count",
+    "targets"
+  ],
+  "theprotocol_getDownloadsManifest": [
+    "files"
+  ],
+  "theprotocol_getEmailTemplates": [
+    "neural_palette",
+    "sovereign_palette",
+    "templates",
+    "themes"
+  ],
+  "theprotocol_getEnforcementAgentStatus": [
+    "bond",
+    "did",
+    "eigentrust_score",
+    "enforcement_level",
+    "enforcement_status",
+    "offense_count",
+    "recent_actions",
+    "reputation_bond_amount",
+    "reputation_bond_status",
+    "reputation_score",
+    "rewards_paused_until"
+  ],
+  "theprotocol_getEnforcementPending": [
+    "items",
+    "page",
+    "per_page"
+  ],
+  "theprotocol_getEnforcementPolicy": [
+    "id",
+    "is_active",
+    "modified_at",
+    "modified_by",
+    "policy_json",
+    "previous_version",
+    "version"
+  ],
+  "theprotocol_getEnforcementPolicyDefaults": [
+    "correlation_penalty",
+    "dispute_escalation",
+    "enforcement",
+    "governance",
+    "reputation",
+    "reputation_bond",
+    "staking_rewards",
+    "supply_integrity",
+    "transaction_fees"
+  ],
+  "theprotocol_getEventEmissionPolicies": [
+    "policies",
+    "total"
+  ],
+  "theprotocol_getEventStoreBalances": [
+    "agents",
+    "total_agents",
+    "total_liquid",
+    "total_staked"
+  ],
+  "theprotocol_getEventStoreRecent": [
+    "events",
+    "total"
+  ],
+  "theprotocol_getEventStoreStats": [
+    "event_counts",
+    "last_refresh_ts",
+    "newest_event",
+    "oldest_event",
+    "total_events",
+    "unique_agents"
+  ],
+  "theprotocol_getEventsAggregate": [
+    "count",
+    "events",
+    "frame"
+  ],
+  "theprotocol_getFeaturedBundles": [
+    "featured",
+    "total"
+  ],
+  "theprotocol_getFederationComplianceDrifts": [
+    "by_type",
+    "drifts",
+    "total"
+  ],
+  "theprotocol_getFederationComplianceEnforcementMode": [
+    "effective_enforcement",
+    "enforcement_env_flag",
+    "is_central_registry_env_flag",
+    "last_changed_at",
+    "last_changed_by",
+    "mode"
+  ],
+  "theprotocol_getFederationComplianceEvents": [
+    "events",
+    "total"
+  ],
+  "theprotocol_getFederationComplianceOverview": [
+    "effective_enforcement",
+    "enforcement_env_flag",
+    "is_central_registry_env_flag",
+    "mode",
+    "peers",
+    "peers_blacklisted",
+    "peers_federated",
+    "peers_never_polled",
+    "peers_quarantined",
+    "peers_total",
+    "peers_unreachable_streak",
+    "peers_with_compliance",
+    "poll_interval_seconds",
+    "poller_enabled"
+  ],
+  "theprotocol_getFederationDisputeSettlements": [
+    "count",
+    "settlements",
+    "stats"
+  ],
+  "theprotocol_getFederationHealthCheck": [
+    "components",
+    "registry_name",
+    "status",
+    "timestamp",
+    "version"
+  ],
+  "theprotocol_getFederationInfo": [
+    "api_version",
+    "federation_protocol_version",
+    "health_check_endpoint",
+    "is_mainframe",
+    "registry_name",
+    "spiffe_trust_domain",
+    "supported_auth_methods",
+    "tier",
+    "timestamp"
+  ],
+  "theprotocol_getFederationLocalEvents": [
+    "aggregate_ids",
+    "count",
+    "events",
+    "registry"
+  ],
+  "theprotocol_getFederationNetworkStats": [
+    "activeRegistries",
+    "crossRegistryAgents",
+    "lastGlobalSync",
+    "networkHealth",
+    "totalAgents",
+    "totalRegistries"
+  ],
+  "theprotocol_getFederationSyncPeers": [
+    "filters_applied",
+    "peers",
+    "total_returned"
+  ],
+  "theprotocol_getFederationSyncStatus": [
+    "errors_by_reason",
+    "local_last_cycle",
+    "per_peer",
+    "per_registry",
+    "snapshot_iso",
+    "summary"
+  ],
+  "theprotocol_getFederationTopologyOverview": [
+    "cloud_operators",
+    "direct_peers",
+    "discovered",
+    "frames",
+    "summary"
+  ],
+  "theprotocol_getFeeCollectorInfo": [
+    "as_of",
+    "balance",
+    "fee_collector_did",
+    "period",
+    "recent",
+    "sparkline",
+    "teg_error",
+    "totals_in_window"
+  ],
+  "theprotocol_getFeeCurrentRate": [
+    "base_rate_percent",
+    "max_rate_percent",
+    "note",
+    "rate_percent",
+    "velocity_index"
+  ],
+  "theprotocol_getFiatProviders": [
+    "providers"
+  ],
+  "theprotocol_getFiatStatsPublic": [
+    "architect_count",
+    "founder_count",
+    "founder_slots_remaining",
+    "founder_slots_total",
+    "recent_backers",
+    "sentinel_count",
+    "shadow_chancellor_count",
+    "total_avt_distributed",
+    "total_backers"
+  ],
+  "theprotocol_getFiatTiers": [
+    "config_version",
+    "currency",
+    "max_eur",
+    "min_eur",
+    "note",
+    "tiers"
+  ],
+  "theprotocol_getGovernanceProposals": [
+    "proposals",
+    "status_filter",
+    "total"
+  ],
+  "theprotocol_getHealthCheckWithAgentAuth": [
+    "authentication_used",
+    "groupSummaries",
+    "metadata",
+    "overallStatus",
+    "results",
+    "timestamp"
+  ],
+  "theprotocol_getInviteCodes": [
+    "invite_codes",
+    "total"
+  ],
+  "theprotocol_getMcpStdioBridgeAdminJs": [
+    "content_type",
+    "preview",
+    "size_bytes"
+  ],
+  "theprotocol_getMcpStdioBridgeJs": [
+    "content_type",
+    "preview",
+    "size_bytes"
+  ],
+  "theprotocol_getMy2FAStatus": [
+    "backup_codes_remaining",
+    "enabled",
+    "verified_at"
+  ],
+  "theprotocol_getMyA2APaymentTokens": [
+    "tokens",
+    "total"
+  ],
+  "theprotocol_getMyAchievements": [
+    "achievements",
+    "pending_count",
+    "total",
+    "total_payout"
+  ],
+  "theprotocol_getMyAgentBalance": [
+    "agent_did",
+    "balance",
+    "currency"
+  ],
+  "theprotocol_getMyAgentBundles": [
+    "bundles",
+    "limit",
+    "offset",
+    "total"
+  ],
+  "theprotocol_getMyAgentCicdStats": [
+    "cicd_enabled",
+    "deployment_success_rate",
+    "last_deployment_at",
+    "statistics",
+    "total_deployments"
+  ],
+  "theprotocol_getMyAgentDisputes": [
+    "disputes",
+    "total"
+  ],
+  "theprotocol_getMyAgentHealth": [
+    "did",
+    "message",
+    "status"
+  ],
+  "theprotocol_getMyAgentInfo": [
+    "client_id",
+    "created_at",
+    "creator_developer_id",
+    "did",
+    "last_active_at",
+    "public_key_jwk",
+    "status"
+  ],
+  "theprotocol_getMyAgents": [
+    "agents",
+    "developer_id",
+    "total"
+  ],
+  "theprotocol_getMyApiKeys": [
+    "api_keys",
+    "total"
+  ],
+  "theprotocol_getMyAutoCompound": [
+    "enabled"
+  ],
+  "theprotocol_getMyBalance": [
+    "active_stakes",
+    "agent_did",
+    "can_vote",
+    "last_updated",
+    "liquid_balance",
+    "pending_rewards",
+    "staked_balance",
+    "total_balance",
+    "ve_token_power"
+  ],
+  "theprotocol_getMyCicdDeployments": [
+    "deployments",
+    "total"
+  ],
+  "theprotocol_getMyCicdPipelines": [
+    "pipelines"
+  ],
+  "theprotocol_getMyCicdVersions": [
+    "total",
+    "versions"
+  ],
+  "theprotocol_getMyContracts": [
+    "contracts",
+    "total"
+  ],
+  "theprotocol_getMyDeletionStatus": [
+    "anonymizes_at",
+    "cooling_off_days",
+    "deletion_requested_at",
+    "deletion_status"
+  ],
+  "theprotocol_getMyDeveloperActivity": [
+    "activity",
+    "total"
+  ],
+  "theprotocol_getMyDeveloperActivityEventstore": [
+    "events",
+    "total"
+  ],
+  "theprotocol_getMyDeveloperJwks": [
+    "keys"
+  ],
+  "theprotocol_getMyDeveloperProfile": [
+    "admin_enforcement",
+    "admin_federation",
+    "admin_platform",
+    "admin_support",
+    "admin_treasury",
+    "anonymized_at",
+    "avatar_url",
+    "bio",
+    "company",
+    "created_at",
+    "deletion_requested_at",
+    "deletion_status",
+    "display_name",
+    "email",
+    "federation_operator_status",
+    "flare_accent_color",
+    "flare_cause",
+    "flare_celebration_seen_at",
+    "flare_corner_variant",
+    "flare_display_name",
+    "flare_encirclement_overlay",
+    "flare_encirclement_variant",
+    "flare_granted_at",
+    "flare_id",
+    "flare_link_url",
+    "flare_logo_url",
+    "flare_tagline",
+    "flare_tier",
+    "github_url",
+    "id",
+    "is_admin",
+    "is_federation_operator",
+    "is_verified",
+    "last_login_at",
+    "latitude",
+    "location_label",
+    "longitude",
+    "name",
+    "notification_prefs",
+    "profile_visibility",
+    "selected_corner_flare",
+    "selected_encirclement_flare",
+    "timezone",
+    "twitter_handle",
+    "two_fa_enabled",
+    "website_url"
+  ],
+  "theprotocol_getMyDeveloperTegSummary": [
+    "active_agent_count",
+    "agent_count",
+    "aggregate_reputation_score",
+    "total_balance",
+    "total_liquid_balance",
+    "total_staked_balance"
+  ],
+  "theprotocol_getMyDisputes": [
+    "disputes",
+    "total"
+  ],
+  "theprotocol_getMyEarnings": [
+    "limit",
+    "offset",
+    "total",
+    "transactions"
+  ],
+  "theprotocol_getMyEnforcementStatus": [
+    "active_restrictions",
+    "did",
+    "eigentrust_score",
+    "enforcement_level",
+    "enforcement_status",
+    "offense_count",
+    "reputation_bond",
+    "reputation_score",
+    "rewards_paused_until"
+  ],
+  "theprotocol_getMyFiatPurchases": [
+    "purchases",
+    "total"
+  ],
+  "theprotocol_getMyFlareStatus": [
+    "active_seasonal_variants",
+    "available_corner_variants",
+    "available_encirclement_overlays",
+    "available_encirclement_variants",
+    "caller_is_admin",
+    "corner_variants_admin_only",
+    "cumulative_eur_qualifying",
+    "flare_accent_color",
+    "flare_cause",
+    "flare_corner_variant",
+    "flare_display_name",
+    "flare_encirclement_overlay",
+    "flare_encirclement_variant",
+    "flare_granted_at",
+    "flare_id",
+    "flare_link_url",
+    "flare_logo_url",
+    "flare_tagline",
+    "flare_tier",
+    "locked_encirclement_variants",
+    "seasonal_encirclement_variants",
+    "selected_corner_flare",
+    "selected_encirclement_flare",
+    "shadow_threshold_eur",
+    "should_celebrate",
+    "unlocked_corner_flares",
+    "unlocked_encirclement_flares"
+  ],
+  "theprotocol_getMyFundingRequests": [
+    "requests",
+    "total"
+  ],
+  "theprotocol_getMyMcpAuditLog": [
+    "limit",
+    "next_cursor",
+    "rows"
+  ],
+  "theprotocol_getMyMtlsStatus": [
+    "docker_label",
+    "enrolled",
+    "enrolled_at",
+    "spiffe_id",
+    "spire_entry_exists"
+  ],
+  "theprotocol_getMyNotificationPrefs": [
+    "delivery_email",
+    "delivery_in_app",
+    "mute_info",
+    "mute_maintenance",
+    "mute_warning",
+    "prefs_version",
+    "quiet_hours_end",
+    "quiet_hours_start"
+  ],
+  "theprotocol_getMyOrganizations": [
+    "organizations",
+    "total"
+  ],
+  "theprotocol_getMyRewardHistory": [
+    "history",
+    "total"
+  ],
+  "theprotocol_getMySigningKeys": [
+    "keys",
+    "total"
+  ],
+  "theprotocol_getMyStakeStats": [
+    "agent_did",
+    "availableRewards",
+    "stakingPositions",
+    "totalStaked"
+  ],
+  "theprotocol_getMyStakes": [
+    "positions",
+    "total"
+  ],
+  "theprotocol_getMyStakingHistory": [
+    "limit",
+    "offset",
+    "total",
+    "transactions"
+  ],
+  "theprotocol_getMyStakingStatus": [
+    "active_stakes_detail",
+    "agent_status",
+    "recent_activity",
+    "system_status"
+  ],
+  "theprotocol_getMySupportTickets": [
+    "tickets",
+    "total"
+  ],
+  "theprotocol_getMyTegBalance": [
+    "agent_id",
+    "balance"
+  ],
+  "theprotocol_getMyTegDisputes": [
+    "disputes",
+    "total"
+  ],
+  "theprotocol_getMyTegTransactions": [
+    "limit",
+    "offset",
+    "total",
+    "transactions"
+  ],
+  "theprotocol_getMyTreasuryBalance": [
+    "additional_info",
+    "balance",
+    "currency",
+    "last_updated",
+    "note",
+    "treasury_did"
+  ],
+  "theprotocol_getMyUnreadNotifications": [
+    "total",
+    "unread"
+  ],
+  "theprotocol_getMyVotingPower": [
+    "canVote",
+    "decay_timeline",
+    "delegatedFrom",
+    "delegatedTo",
+    "positions",
+    "votingPower"
+  ],
+  "theprotocol_getMyWebhooks": [
+    "total",
+    "webhooks"
+  ],
+  "theprotocol_getNetworkHealth": [
+    "active_agents",
+    "error_rate",
+    "overall_health_score",
+    "response_time_p50",
+    "response_time_p95",
+    "response_time_p99",
+    "services",
+    "timestamp",
+    "total_agents"
+  ],
+  "theprotocol_getNetworkStats": [
+    "active_agents",
+    "active_disputes",
+    "active_proposals",
+    "description",
+    "network_status",
+    "platform",
+    "total_agents",
+    "total_staked",
+    "tvl_pct"
+  ],
+  "theprotocol_getOAuthFederationStatus": [
+    "introspection_endpoint",
+    "issuer",
+    "jwks_endpoint",
+    "oauth_enabled",
+    "supported_grant_types",
+    "token_exchange_enabled",
+    "trusted_registries"
+  ],
+  "theprotocol_getOperatorLifecycle": [
+    "application",
+    "cloud_stack",
+    "is_central_registry",
+    "is_local",
+    "license",
+    "peer_registry",
+    "registry_name",
+    "spire_bundle"
+  ],
+  "theprotocol_getOperatorMyLifecycle": [
+    "application",
+    "cloud",
+    "drift_flags",
+    "federation_license",
+    "peer_registry"
+  ],
+  "theprotocol_getOperatorsLifecycleOverview": [
+    "drift_count",
+    "filters",
+    "limit",
+    "offset",
+    "operators",
+    "total_returned"
+  ],
+  "theprotocol_getPeerSlashConfig": [
+    "peers"
+  ],
+  "theprotocol_getPendingPeerRegistries": [
+    "items",
+    "pagination"
+  ],
+  "theprotocol_getPipelineTemplates": [
+    "templates"
+  ],
+  "theprotocol_getPrometheusMetrics": [
+    "content_type",
+    "metric_count_lines",
+    "preview",
+    "size_bytes"
+  ],
+  "theprotocol_getPublicEventStoreRecent": [
+    "events",
+    "total"
+  ],
+  "theprotocol_getPublicEventStoreStats": [
+    "event_counts",
+    "last_refresh_ts",
+    "newest_event",
+    "oldest_event",
+    "total_events",
+    "unique_agents"
+  ],
+  "theprotocol_getPublicRegistryConfig": [
+    "is_federated_operator",
+    "registry_name"
+  ],
+  "theprotocol_getPublicShowcaseAgents": [
+    "agents",
+    "count"
+  ],
+  "theprotocol_getReactorStatus": [
+    "reactors",
+    "snapshot_at",
+    "summary"
+  ],
+  "theprotocol_getRecentWebhookDeliveries": [
+    "count",
+    "deliveries",
+    "filter"
+  ],
+  "theprotocol_getRegistryCard": [
+    "capabilities",
+    "commitments",
+    "description",
+    "economic",
+    "endpoints",
+    "federation",
+    "fees",
+    "identity",
+    "lifecycle",
+    "links",
+    "operator",
+    "policy",
+    "registry_card_version",
+    "signature",
+    "stats",
+    "tags",
+    "visual"
+  ],
+  "theprotocol_getRegistryFederationProposals": [
+    "proposals",
+    "total"
+  ],
+  "theprotocol_getReputationComputationStatus": [
+    "agents_computed",
+    "computation_time_ms",
+    "computed_at",
+    "epoch",
+    "last_epoch_converged",
+    "next_scheduled_at"
+  ],
+  "theprotocol_getRevokedIdentities": [
+    "enrolled",
+    "enrolled_count",
+    "revoked",
+    "revoked_count"
+  ],
+  "theprotocol_getRewardFundingPolicy": [
+    "default_waterfall",
+    "policy",
+    "valid_sources"
+  ],
+  "theprotocol_getSagaTimeoutEvents": [
+    "events",
+    "filters_applied",
+    "total_returned"
+  ],
+  "theprotocol_getSagaTimeoutStatus": [
+    "frame_pair_matrix",
+    "pending_settlements",
+    "per_registry",
+    "snapshot_iso",
+    "summary"
+  ],
+  "theprotocol_getSpireJWKS": [
+    "keys",
+    "trust_domain"
+  ],
+  "theprotocol_getStackHealth": [
+    "healthy",
+    "services",
+    "timestamp",
+    "total"
+  ],
+  "theprotocol_getStakingApyTiersTeg": [
+    "current_apy",
+    "current_tier",
+    "tiers"
+  ],
+  "theprotocol_getStakingDistributionStats": [
+    "distribution_count",
+    "last_distribution",
+    "total_distributed",
+    "unique_stakers_rewarded"
+  ],
+  "theprotocol_getStakingDistributions": [
+    "distributions",
+    "total"
+  ],
+  "theprotocol_getStakingGlobalStats": [
+    "averageApy",
+    "rewardsDistributed",
+    "totalStakers",
+    "totalValueLocked"
+  ],
+  "theprotocol_getSupplyAuditorEvents": [
+    "events",
+    "filters_applied",
+    "total_returned"
+  ],
+  "theprotocol_getSupplyAuditorStatus": [
+    "errors_by_reason",
+    "live_audit",
+    "local_last_cycle",
+    "per_registry",
+    "snapshot_iso",
+    "summary"
+  ],
+  "theprotocol_getSupportedWebhookEvents": [
+    "events"
+  ],
+  "theprotocol_getSystemActivityFeed": [
+    "items",
+    "total"
+  ],
+  "theprotocol_getSystemResources": [
+    "cpu",
+    "disk",
+    "memory",
+    "network",
+    "timestamp"
+  ],
+  "theprotocol_getTegAdvancedTransactions": [
+    "filters",
+    "limit",
+    "offset",
+    "source",
+    "total",
+    "transactions"
+  ],
+  "theprotocol_getTegAttestations": [
+    "attestations",
+    "total"
+  ],
+  "theprotocol_getTegPoliciesComplianceDashboard": [
+    "active_policies",
+    "attestations_submitted",
+    "attestations_verified",
+    "compliance_rate",
+    "policy_compliance_by_type",
+    "policy_violations",
+    "recent_attestations",
+    "total_policies"
+  ],
+  "theprotocol_getTegPrice": [
+    "change_24h",
+    "name",
+    "note",
+    "source",
+    "symbol",
+    "usd"
+  ],
+  "theprotocol_getTegReputationRankings": [
+    "rankings",
+    "timestamp",
+    "total_agents"
+  ],
+  "theprotocol_getTokenomicsRewards": [
+    "agent_did",
+    "last_claim_timestamp",
+    "pending_rewards",
+    "reward_sources"
+  ],
+  "theprotocol_getTokenomicsTransactions": [
+    "agent_did",
+    "total",
+    "transactions"
+  ],
+  "theprotocol_getTokenomicsTreasury": [
+    "burned_supply",
+    "circulating_supply",
+    "last_updated",
+    "locked_supply",
+    "reward_pool",
+    "total_supply",
+    "treasury_balance"
+  ],
+  "theprotocol_getTransactionsAnalytics": [
+    "all_event_counts",
+    "event_type_breakdown",
+    "newest_event",
+    "oldest_event",
+    "period",
+    "source",
+    "summary",
+    "top_agents_by_balance"
+  ],
+  "theprotocol_getTreasuryAggregate": [
+    "as_of",
+    "frame",
+    "mints_by_reason",
+    "period",
+    "recent_mints",
+    "sparkline",
+    "supply_audit",
+    "top_fee_payers",
+    "totals_in_window",
+    "treasury"
+  ],
+  "theprotocol_getTutorialHealth": [
+    "healthy",
+    "sandbox_url"
+  ],
+  "theprotocol_getVolumeProfile": [
+    "avg_per_peer",
+    "did",
+    "total_volume",
+    "unique_peers",
+    "volume_rank"
+  ],
+  "theprotocol_getWebhookAggregate": [
+    "as_of",
+    "deliveries_in_window",
+    "period",
+    "top_event_types",
+    "top_failing_webhooks",
+    "webhooks"
+  ],
+  "theprotocol_getWellKnownDevJwks": [
+    "keys"
+  ],
+  "theprotocol_getWellKnownRegistryCard": [
+    "capabilities",
+    "commitments",
+    "description",
+    "economic",
+    "endpoints",
+    "federation",
+    "fees",
+    "identity",
+    "lifecycle",
+    "links",
+    "operator",
+    "policy",
+    "registry_card_version",
+    "signature",
+    "stats",
+    "tags",
+    "visual"
+  ],
+  "theprotocol_listAdminBundlesReports": [
+    "limit",
+    "offset",
+    "reports",
+    "summary"
+  ],
+  "theprotocol_listAgentBuilderTemplates": [
+    "templates"
+  ],
+  "theprotocol_listAgentCards": [
+    "items",
+    "pagination"
+  ],
+  "theprotocol_listAgentTemplates": [
+    "templates",
+    "total"
+  ],
+  "theprotocol_listArenaMatches": [
+    "matches"
+  ],
+  "theprotocol_listDeveloperApikeysMe": [
+    "api_keys",
+    "total"
+  ],
+  "theprotocol_listDeveloperWebhooks": [
+    "total",
+    "webhooks"
+  ],
+  "theprotocol_listDeveloperWebhooksAlt": [
+    "total",
+    "webhooks"
+  ],
+  "theprotocol_listFederationAgentCards": [
+    "agent_cards",
+    "body",
+    "total"
+  ],
+  "theprotocol_listFederationPeers": [
+    "peers",
+    "total"
+  ],
+  "theprotocol_listFederationRegistries": [
+    "registries",
+    "total"
+  ],
+  "theprotocol_listFederationRegistryCards": [
+    "body",
+    "registry_cards",
+    "total"
+  ],
+  "theprotocol_listIronhandIdentities": [
+    "enrolled",
+    "operators",
+    "orphans",
+    "revoked",
+    "services",
+    "summary"
+  ],
+  "theprotocol_listMyAttestationSchedules": [
+    "count",
+    "items"
+  ],
+  "theprotocol_listMyAttestations": [
+    "count",
+    "items",
+    "limit",
+    "offset"
+  ],
+  "theprotocol_listPublicOperatorApplications": [
+    "applications",
+    "body",
+    "total"
+  ],
+  "theprotocol_listQuarantinedRegistries": [
+    "quarantined_count",
+    "registries"
+  ],
+  "theprotocol_listTegPolicies": [
+    "policies",
+    "total"
+  ],
+  "theprotocol_previewQuarantine": [
+    "generated_at",
+    "mode_at_check",
+    "peers",
+    "skipped_count",
+    "total_peers",
+    "would_noop_count",
+    "would_quarantine_count"
+  ],
+  "theprotocol_validateInviteCodeAdmin": [
+    "reason",
+    "valid"
+  ]
+}

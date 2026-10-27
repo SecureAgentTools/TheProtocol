@@ -1,0 +1,20 @@
+TheProtocol public documentation and protocol specifications
+
+Copyright 2025-2026 Raphael Zbigniew Jeziorny
+
+The documents in this directory (and the documentation chapters the console
+serves, under AgentVault/agentvault_registry/src/agentvault_registry/
+static/new_registry_frontend/src/assets/docs/) are licensed under the
+Creative Commons Attribution 4.0 International License (CC BY 4.0):
+https://creativecommons.org/licenses/by/4.0/
+The full legal code is in LICENSES/CC-BY-4.0.txt at the repository root.
+
+You may copy, translate, adapt and republish them, also commercially, as long
+as you name the source ("TheProtocol documentation") and link the licence.
+Code samples inside the documents may also be used under the Apache License,
+Version 2.0, whichever suits the code you put them in.
+
+The names and logos of TheProtocol are not licensed under CC BY 4.0; see
+LICENSING.md, Trademarks.
+
+SPDX-License-Identifier: CC-BY-4.0

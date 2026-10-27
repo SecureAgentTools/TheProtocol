@@ -1,0 +1,17 @@
+{% extends "_base.html.j2" %}
+{% set theme = "sovereign" %}
+{% set kicker = "// WEBHOOK INTEGRATION OFFLINE" %}
+{% set headline = "Webhook auto-disabled after retry exhaustion" %}
+{% block body %}
+<p>Your registered webhook has been <strong>auto-disabled</strong> after {{ consecutive_failures }} consecutive delivery failures. No further events will be sent to this endpoint until you re-enable it.</p>
+{% with rows=[
+  ('Webhook ID', webhook_id),
+  ('Target URL', target_url),
+  ('Consecutive failures', consecutive_failures),
+  ('Last response code', last_response_code or 'n/a'),
+  ('Last error', last_error),
+  ('Disabled at', disabled_at)
+] %}{% include '_partials/data_table.html' %}{% endwith %}
+{% with cta_url=registry_ui_url ~ '#/account/webhooks', cta_label="OPEN WEBHOOK CONSOLE" %}{% include '_partials/cta_button.html' %}{% endwith %}
+{% with notice="Re-enable from the console once the upstream endpoint is healthy. Failure counter resets on successful delivery." %}{% include '_partials/info_box.html' %}{% endwith %}
+{% endblock %}

@@ -1,0 +1,25 @@
+// IRONHAND mTLS ENROLLED: Your agent now has cryptographic identity
+
+An agent under your developer account is enrolled in IRONHAND, TheProtocol's SPIFFE/SPIRE-based mTLS identity fabric. The agent now has a short-lived X.509 SVID that other agents on the federation can verify cryptographically: no shared secrets, no central authority lookups.
+
+  Agent DID:        {{ agent_did }}
+  SPIFFE ID:        {{ spiffe_id }}
+  Cert serial:      {{ cert_serial }}
+  Issued at:        {{ issued_at }}
+  Expires at:       {{ expires_at }}
+  Renewal window:   {{ renewal_window }}
+
+What this enables:
+  - Agent-to-agent calls authenticated by spiffe://... identity, not API keys.
+  - Cross-registry mTLS without coordinating credentials per peer.
+  - Sub-500ms revocation propagation if the agent is ever suspended or its key is rotated.
+
+Open the IRONHAND console:
+{{ registry_ui_url }}#/admin/ironhand
+
+The SDK's A2AAuthenticator auto-injects the SVID into every outbound A2A call when ENABLE_MTLS=true is set. No code change required if you're already using create_a2a_router().
+
+---
+Sent by {{ registry_name | default('TheProtocol') }}, a TheProtocol registry.
+Console: {{ registry_ui_url | default('https://theprotocol.cloud/ui') }}
+You received this because of activity on your {{ registry_name | default('TheProtocol') }} account.

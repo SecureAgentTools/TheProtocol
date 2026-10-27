@@ -1,0 +1,31 @@
+# §DEPS (2026-09-27, his words "would be cool if we get everything to the newest stable version that runs with us"):
+# the newest stable release of each, resolved together on python:3.11-slim. constraints.txt (the built image's own
+# `pip freeze --all`) pins everything these pull in, so a rebuild installs exactly this set; the Dockerfile installs
+# with `-c constraints.txt`. Regenerate constraints.txt from a rebuilt image on purpose, never by hand.
+#
+# Removed on the way: spiffe (nothing in the TEG imports it; the JWT-SVID validator names pyspiffe and refuses
+# without it), black and ruff (formatters: nothing runs them from this image). pytest stays: CI and the build
+# drivers run the TEG suites inside this image.
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
+sqlalchemy[asyncio]==2.1.1  # 2.1 defaults postgresql:// to psycopg 3, which the TEG does not install: every sync engine names psycopg2 (core/db_url.py)
+psycopg2-binary==2.9.13
+asyncpg==0.31.0
+alembic==1.20.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+python-dotenv==1.2.3
+requests==2.34.2
+httpx==0.28.1
+aiohttp==3.14.3
+cryptography==50.0.1
+PyJWT==2.15.1
+structlog==26.1.0
+prometheus-fastapi-instrumentator==8.1.0
+prometheus-client==0.26.0
+redis==8.1.0
+# Test dependencies (the in-image TEG suites)
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-json-report==1.5.0
+pytest-xdist==3.8.0

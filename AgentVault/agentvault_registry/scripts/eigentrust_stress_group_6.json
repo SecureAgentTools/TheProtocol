@@ -1,0 +1,42 @@
+[
+  {
+    "label": "Foxtrot-1",
+    "registry": "A",
+    "did": "did:cos:5891f932-efa0-1be0-1886",
+    "client_id": "agent-e581374a3ea2a5c4",
+    "client_secret": "cos_secret_0f5e04d6067692fdd807555db1d8e9860ad0956b70f99a47a50ec5f2d2a7698c",
+    "type": "data-analyst"
+  },
+  {
+    "label": "Foxtrot-2",
+    "registry": "A",
+    "did": "did:cos:6b10ac58-bcea-7f3d-3486",
+    "client_id": "agent-22dd3dca172415ad",
+    "client_secret": "cos_secret_293af6c319c4ff878cf7714e635198834117138b33e3fc88962d08ffed55ea2c",
+    "type": "code-reviewer"
+  },
+  {
+    "label": "Foxtrot-3",
+    "registry": "B",
+    "did": "did:cos:e0712731-bf0a-2721-668a",
+    "client_id": "agent-b627520dd7fb5a96",
+    "client_secret": "cos_secret_b9947b5f9e92d4a5c172a73e024b60b51786597d9d5a56fa9e0c837a4d3cd53c",
+    "type": "market-maker"
+  },
+  {
+    "label": "Foxtrot-4",
+    "registry": "B",
+    "did": "did:cos:ccd78ff4-85b7-0ab0-68c6",
+    "client_id": "agent-e8ffdd5bbec16061",
+    "client_secret": "cos_secret_9d48b49829d0054cf2ce97e68abe6591e9b9baa04cec8dae933225926250919c",
+    "type": "risk-assessor"
+  },
+  {
+    "label": "Foxtrot-5",
+    "registry": "B",
+    "did": "did:cos:8e0630de-7038-9c92-d13c",
+    "client_id": "agent-637c17d867a6caf5",
+    "client_secret": "cos_secret_1fd098bebe1e3228ddfd50958c9c26d5216c62cfea72a2296137bf56f36dc0c1",
+    "type": "compliance-auditor"
+  }
+]

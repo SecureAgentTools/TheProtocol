@@ -1,0 +1,23 @@
+name: CLA acceptance
+description: Accept the Contributor License Agreement once, outside a pull request (CLA.md, "How to accept").
+title: "CLA acceptance"
+labels: ["cla"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read `CLA.md` first. You keep your copyright; the file says what you grant and why.
+        This issue is the record of your acceptance, so it stays public.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Your acceptance
+      description: Copy the line from CLA.md with your real name and an address you control.
+      placeholder: I have read and accept the TheProtocol Contributor License Agreement v1.2. <Your Name> <you@example.com>
+    validations:
+      required: true
+  - type: textarea
+    id: organisation
+    attributes:
+      label: For an organisation only
+      description: The organisation's name and the people this acceptance covers.

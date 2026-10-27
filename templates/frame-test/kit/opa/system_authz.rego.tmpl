@@ -1,0 +1,63 @@
+# §MTLSHOPS T2 (2026-09-15): the frame's OPA authenticates every caller by TLS (--authentication=tls against bundle.0.pem)
+# and this module authorizes (--authorization=basic). Measured on openpolicyagent/opa:0.61.0 (agentvault2-b5's lab):
+# input.identity is the subject DN only, which every SPIRE SVID shares, so the rules read the URI SAN from
+# input.client_certificates; bundle.0.pem carries federated roots, so only this frame's own trust domain is authorized.
+# The registry asks decisions, lists policies and checks health; its policy simulation may load and delete scratch
+# modules named __simulate_* (V0377's admin_opa refuses one in package system or system.*, which would OR itself into this
+# module); the kit's Prometheus reads /metrics. Nothing may write data or load any other policy.
+package system.authz
+
+import future.keywords
+
+default allow := false
+
+frame_ids contains id if {
+	some cert in input.client_certificates
+	some u in cert.URIs
+	u.Scheme == "spiffe"
+	u.Host == "{{TRUST_DOMAIN}}"
+	id := u.Path
+}
+
+registry if {
+	some id in frame_ids
+	id in {"/service/{{REGISTRY_NAME}}-registry", "/service/registry"}
+}
+
+kit if "/service/kit" in frame_ids
+
+# decisions and reads of documents
+allow if {
+	registry
+	input.method in {"GET", "POST"}
+	input.path[0] == "v1"
+	input.path[1] == "data"
+}
+
+allow if {
+	registry
+	input.method == "GET"
+	input.path == ["v1", "policies"]
+}
+
+# the policy simulation's scratch modules, and nothing else
+allow if {
+	registry
+	input.method in {"PUT", "DELETE"}
+	count(input.path) == 3
+	input.path[0] == "v1"
+	input.path[1] == "policies"
+	startswith(input.path[2], "__simulate_")
+}
+
+allow if {
+	registry
+	input.method == "GET"
+	input.path == ["health"]
+}
+
+allow if {
+	kit
+	input.method == "GET"
+	input.path in [["metrics"], ["health"]]
+}

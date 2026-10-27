@@ -1,0 +1,16 @@
+# The frame's public edge as its own compose project (<name>-edge), beside the frame's stack (§HELLOFRAME 2026-09-18).
+# Host network mode: it binds the edge ports on the host itself and reaches the frame's loopback doors, exactly as the
+# host nginx vhost does on the network's own host. Certificates live in the named volume and renew by themselves.
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: {{NAME}}-edge
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - {{STACK_DIR}}/edge:/etc/caddy:ro   # the Caddyfile and operators/*.caddy; the runner writes there, Caddy only reads
+      - edge_data:/data
+      - edge_config:/config
+volumes:
+  edge_data:
+  edge_config:

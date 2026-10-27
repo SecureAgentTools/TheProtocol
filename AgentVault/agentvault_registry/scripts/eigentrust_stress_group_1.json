@@ -1,0 +1,7 @@
+[
+  {"label": "Alpha-1", "registry": "A", "did": "did:cos:ae5418f9-2eb5-0fd1-96ce", "client_id": "agent-2723fc1c8a37561f", "client_secret": "cos_secret_b40950c93ed9644e195967135e32649605b55aaf6320663959a71a4087e835c4", "type": "data-analyst"},
+  {"label": "Alpha-2", "registry": "A", "did": "did:cos:1e83111f-3ed2-e01a-4106", "client_id": "agent-ed2cb4d2e7d1a0c8", "client_secret": "cos_secret_8486ee9e0752bcf0889e7d61123aacdbb7330a1e5ca5afbcbfa386d33776f122", "type": "code-reviewer"},
+  {"label": "Alpha-3", "registry": "A", "did": "did:cos:e16b3f58-18b7-7c80-6152", "client_id": "agent-d7bbd002bc6ffa49", "client_secret": "cos_secret_aab902d81e99a48f82348f9512630a8daa1d6ec99168d83811edcfe5e9b32920", "type": "market-maker"},
+  {"label": "Alpha-4", "registry": "B", "did": "did:cos:de39040b-3572-1f1b-b33a", "client_id": "agent-731ae9cde48e1576", "client_secret": "cos_secret_7bb227694c300b9e9d931ef05d65b7ad5421c14a71315447eebb8e5998b5b13b", "type": "risk-assessor"},
+  {"label": "Alpha-5", "registry": "B", "did": "did:cos:cd6f7290-0e19-9363-2e84", "client_id": "agent-ad355cd774a8cb75", "client_secret": "cos_secret_4d0f0283501968dd85eb145fe211fca43d3abe48cdaf21e7d9828717c9a4ebaa", "type": "compliance-auditor"}
+]
