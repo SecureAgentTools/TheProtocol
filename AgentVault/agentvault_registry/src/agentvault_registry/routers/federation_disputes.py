@@ -1027,6 +1027,18 @@ async def _tell_origin(settlement: CrossRegistrySettlement, payload: Dict[str, A
     return False, f"it answered HTTP {resp.status_code}"
 
 
+def _saga_decided(settlement: CrossRegistrySettlement, saga_state: str) -> None:
+    """An administrator's decision moves the saga off INITIATED, as the automatic slash (receive_slash_request) does.
+
+    The admin approve and reject left saga_state at INITIATED with its 72 h deadline, so the saga sweep
+    (SettlementSaga.check_timeouts) later rewrote the decided settlement as EXPIRED, replaced the administrator's words
+    with "Saga timeout after 72h in state INITIATED" and emitted SettlementTimeout asking for an admin review: on
+    sbx-beta every settlement the nightly federation suite had rejected read EXPIRED three days later (V0649,
+    agentvault2-13). An approved slash would have read EXPIRED after its units had moved."""
+    settlement.saga_state = saga_state
+    settlement.saga_last_step_at = datetime.now(timezone.utc)
+
+
 @router.post("/settlements/{settlement_id}/approve", response_model=Dict[str, Any])
 async def approve_settlement(
     settlement_id: str,
@@ -1064,6 +1076,7 @@ async def approve_settlement(
     if not defendant:
         settlement.status = "FAILED"
         settlement.error_message = "Defendant no longer exists locally"
+        _saga_decided(settlement, "SLASH_FAILED")
         await db.commit()
         raise HTTPException(status_code=404, detail="Defendant agent not found")
     
@@ -1132,6 +1145,7 @@ async def approve_settlement(
     settlement.slashed_amount = actual_slash
     settlement.status = "SLASHED" if actual_slash > 0 else "FAILED"
     settlement.slashed_at = datetime.now(timezone.utc)
+    _saga_decided(settlement, "SLASH_CONFIRMED" if actual_slash > 0 else "SLASH_FAILED")
 
     slash_tx_id = f"dispute-slash-{settlement.dispute_id}-{uuid.uuid4().hex[:8]}"
     settlement.slash_tx_id = slash_tx_id if actual_slash > 0 else ""
@@ -1216,6 +1230,7 @@ async def reject_settlement(
         f"Rejected by admin {current_admin.email}"
         + (f". Reason: {admin_reason}" if admin_reason else "")
     )
+    _saga_decided(settlement, "SLASH_FAILED")   # the saga's own word for "the defendant's home rejected it"
 
     # SF-5A (SEC-20): no trust observation here; a rejected request is not evidence about the peer that sent it.
 

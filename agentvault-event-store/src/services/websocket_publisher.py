@@ -13,6 +13,7 @@ import asyncio
 from typing import Dict, Set, Optional
 from fastapi import WebSocket, WebSocketDisconnect
 from src.models.events import Event
+from src import ledger_names
 from src.personal_ids import carries_personal_id, withhold_personal_ids
 
 logger = logging.getLogger(__name__)
@@ -406,7 +407,7 @@ class EventPublisher:
             "events:all",
             f"events:{event.event_type}",
         ]
-        if event.event_type == "TokensTransferred":
+        if ledger_names.live_old(event.event_type) == "TokensTransferred":  # W4: under either name
             to_agent = event.data.get("to")
             if to_agent and to_agent != event.aggregate_id:
                 channels.append(f"agent:{to_agent}")

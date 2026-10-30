@@ -143,7 +143,7 @@ async def transfer_tokens(
         raise TEGException(
             status_code=HTTP_400_BAD_REQUEST,
             error_code=ErrorCode.BIZ_SELF_TRANSFER,
-            message="Cannot transfer tokens to yourself"
+            message="Cannot transfer units to yourself"
         )
 
     # Durable idempotency claim (teg_idempotency_records) — upgrades the legacy
@@ -804,7 +804,7 @@ async def bulk_transfer_tokens(
             total_deduction = amount + fee_amount
 
             if item.sender_agent_id == item.receiver_agent_id:
-                raise ValueError("Cannot transfer tokens to yourself")
+                raise ValueError("Cannot transfer units to yourself")
             if amount < _min_amount:
                 raise ValueError(f"Amount {amount} below minimum {_min_amount}")
             if _max_amount is not None and amount > _max_amount:

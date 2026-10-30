@@ -46,9 +46,11 @@ from ..core.cross_teg import (
 from ..core.cross_teg.client import CrossTEGClientFactory
 from ..core.cross_teg.partner_cache import (
     set_partner_in_redis,
-    delete_partner_in_redis,
-    list_all_partners_from_redis,
+    delete_partners_in_redis,
+    read_partner_snapshot,
+    mark_partner_list,
 )
+from ..core.cross_teg import partner_rule as _partner_rule
 from ..core.config import get_settings
 
 # Get settings instance
@@ -68,46 +70,16 @@ _ak = _configured_admin_key()
 if _ak:
     _trusted_cross_teg_keys.add(_ak)
 
-# Runtime-added partners (hot-reload). §pass47 A4 — also mirrored to Redis
-# via partner_cache so other workers can pick up additions. This local list
-# remains the L1 read-path consulted by `resolve_partner_url`; the periodic
-# refresh task (started in main.py lifespan) keeps it in sync with Redis.
+# Runtime-added partners (hot-reload). §pass47 A4 — mirrored to Redis via partner_cache. This list is this worker's
+# copy of the shared list: the periodic refresh task (started in main.py lifespan) makes it the shared list as it
+# stands, removals included, and the partner rule (core/cross_teg/partner_rule.py) reads the shared list itself
+# whenever Redis answers.
 _runtime_partners: list = []
 
 
-def _mirror_partner_to_redis_async(teg_id: str, partner: Dict[str, str]) -> None:
-    """Fire-and-forget mirror to Redis from a sync context (resolve_partner_url).
-
-    Best-effort: if there's no running event loop (e.g. called during module
-    import) or Redis is unavailable, just no-op. Other workers will learn via
-    the periodic refresh task started in main.py lifespan.
-    """
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(set_partner_in_redis(teg_id, partner))
-    except RuntimeError:
-        # No running event loop — caller is sync without an async context. Skip.
-        return
-    except Exception as e:  # noqa: BLE001
-        logger.debug(f"[PartnerCache] mirror to redis failed (non-fatal) for {teg_id}: {e}")
-
-
-async def refresh_partners_from_redis(force_full: bool = False) -> int:
-    """§pass47 A4 — pull the Redis HASH snapshot and merge into _runtime_partners.
-
-    MERGE semantics:
-      - For each partner present in Redis: ensure local has a matching entry.
-        If local entry's URL differs, update it (Redis wins for changes
-        propagated by another worker).
-      - Local entries NOT in Redis are LEFT ALONE — they may be local
-        discoveries that haven't been mirrored yet. The mirror call on the
-        discovery path closes that gap on next discovery.
-
-    Returns the number of local entries that changed (added or URL-updated).
-    """
-    snapshot = await list_all_partners_from_redis()
-    if not snapshot:
-        return 0
+def _merge_partners(snapshot: list) -> int:
+    """Take every entry of a list a TEG wrote before the META field: additions and address changes, no removal (an
+    unmarked list cannot say what it lost). Returns the number of local entries that changed."""
     changed = 0
     by_id = {p["teg_id"]: p for p in _runtime_partners}
     for partner in snapshot:
@@ -118,9 +90,8 @@ async def refresh_partners_from_redis(force_full: bool = False) -> int:
         local = by_id.get(tid)
         if local is None:
             _runtime_partners.append(partner)
+            by_id[tid] = partner
             changed += 1
-            if force_full:
-                logger.info(f"[PartnerCache] seeded runtime partner from Redis: {tid} → {url}")
         elif local.get("url") != url:
             local["url"] = url
             # Carry through registry_id / api_key if Redis has them.
@@ -128,50 +99,85 @@ async def refresh_partners_from_redis(force_full: bool = False) -> int:
                 if k in partner and partner[k]:
                     local[k] = partner[k]
             changed += 1
-            logger.info(f"[PartnerCache] absorbed cross-worker partner update: {tid} → {url}")
     return changed
 
 
-def resolve_partner_url(teg_id: str, url_hint: Optional[str] = None) -> str:
-    """Resolve a partner TEG ID to its URL.
+def _adopt_shared_partners(snapshot: list) -> list:
+    """This worker's copy becomes the shared list as it stands: its additions, its address changes and its removals (a
+    removal served by another worker reaches this one here). Returns the teg ids this worker dropped."""
+    shared = [dict(p) for p in snapshot if p.get("teg_id") and p.get("url")]
+    keep = {p["teg_id"] for p in shared}
+    dropped = [p.get("teg_id") for p in _runtime_partners if p.get("teg_id") not in keep]
+    _runtime_partners[:] = shared
+    return dropped
 
-    Resolution order:
-      1. `url_hint` from registry request body (AUTHORITATIVE — registry built it
-         via `_to_internal_mtls_url` against current BFS topology + cluster-host
-         shortcut, §pass44 2026-05-19). If a runtime entry exists with a stale
-         URL, this self-heals it. Without this preference, stale per-worker
-         `_runtime_partners` entries cause persistent 404s after registry URL
-         contracts change — each TEG worker has its OWN runtime list, and
-         `/cross-teg/config/add-partner` only updates the worker the registry's
-         POST happens to hit, leaving other workers with stale data.
-      2. `_runtime_partners` cache (in-memory, per-worker, written by add-partner).
+
+async def refresh_partners_from_redis(force_full: bool = False) -> int:
+    """§pass47 A4 — follow the shared Redis list (every 30 s, and once at startup), by what read_partner_snapshot says:
+
+      live         the list as it stands: this worker's copy becomes it, removals included. Before the partner rule
+                   (2026-10-17) this merged additions only, so a removal reached the one worker that served it and every
+                   other worker kept the peer for its life.
+      unmarked     a list a TEG wrote before the META field: merged into this copy, then written back with the field.
+      missing      the frame Redis lost the list (it keeps no copy on disk): this worker writes its copy back, never an
+                   empty one, so a worker that just started cannot erase the list its siblings still hold.
+      unavailable  nothing changes.
+
+    Returns the number of local entries that changed (added, address changed or dropped).
+    """
+    state, snapshot = await read_partner_snapshot()
+    if state == "live":
+        before = {p.get("teg_id"): p.get("url") for p in _runtime_partners}
+        dropped = _adopt_shared_partners(snapshot)
+        changed = len(dropped) + sum(1 for p in _runtime_partners if before.get(p["teg_id"]) != p.get("url"))
+        for tid in dropped:
+            logger.info(f"[PartnerCache] {tid} is no longer in the shared partner list: dropped by this worker")
+            if teg_client_factory is not None:
+                try:
+                    await teg_client_factory.remove_client(tid)
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(f"[PartnerCache] cached client close failed for {tid}: {e}")
+        if force_full and changed:
+            logger.info(f"[PartnerCache] this worker follows the shared partner list ({len(_runtime_partners)} partners)")
+        return changed
+    if state == "unmarked":
+        changed = _merge_partners(snapshot)
+        await mark_partner_list(_runtime_partners)
+        logger.info(f"[PartnerCache] the shared partner list predates the partner rule: merged into this worker "
+                    f"({len(_runtime_partners)} partners) and marked")
+        return changed
+    if state == "missing" and _runtime_partners:
+        if await mark_partner_list(_runtime_partners):
+            logger.warning(f"[PartnerCache] the shared partner list was missing (a restarted or evicting Redis): "
+                           f"written back from this worker ({len(_runtime_partners)} partners)")
+    return 0
+
+
+def resolve_partner_url(teg_id: str, url_hint: Optional[str] = None) -> str:
+    """The address to dial a partner TEG at, for one dial. It adds no partner and changes none.
+
+      1. `url_hint` (AUTHORITATIVE for the address, §pass44 2026-05-19: the registry builds it via
+         `_to_internal_mtls_url` against its current BFS topology) is returned as it is. Before the partner rule
+         (2026-10-17) a hint naming an unknown TEG ADDED it as a partner ("dynamic discovery") and a hint naming a
+         known one wrote its address back into the shared list, so the next transfer toward a peer its registry had
+         removed put the peer back. Whether a leg may run is not decided here: POST /transfer asks the partner rule
+         before it locks anything, and an explicit target_url on the treasury fund-send is its caller's own address
+         for that one send.
+      2. `_runtime_partners` (this worker's copy of the shared list, written by add-partner).
       3. `settings.parsed_partner_tegs` (static from PARTNER_TEGS env).
+      4. an entry of either that names the same peer (partner_rule.same_peer).
 
     Raises KeyError if no source resolves the partner.
     """
     if url_hint:
-        for p in _runtime_partners:
-            if p["teg_id"] == teg_id:
-                if p["url"] != url_hint:
-                    logger.info(
-                        f"[CrossTEG] Self-healing stale runtime partner: "
-                        f"{teg_id} {p['url']} → {url_hint}"
-                    )
-                    p["url"] = url_hint
-                    _mirror_partner_to_redis_async(teg_id, p)
-                return url_hint
-        logger.info(f"[CrossTEG] Dynamic partner discovery: {teg_id} → {url_hint}")
-        new_p = {"teg_id": teg_id, "url": url_hint}
-        _runtime_partners.append(new_p)
-        _mirror_partner_to_redis_async(teg_id, new_p)
         return url_hint
-
-    for p in _runtime_partners:
-        if p["teg_id"] == teg_id:
-            return p["url"]
-    for p in settings.parsed_partner_tegs:
-        if p["teg_id"] == teg_id:
-            return p["url"]
+    for rows in (_runtime_partners, settings.parsed_partner_tegs or []):
+        for p in rows:
+            if isinstance(p, dict) and p.get("teg_id") == teg_id and p.get("url"):
+                return p["url"]
+    p = _partner_rule.find_partner_by_teg_id(list(_runtime_partners) + list(settings.parsed_partner_tegs or []), teg_id)
+    if p is not None and p.get("url"):
+        return p["url"]
     raise KeyError(f"Unknown partner TEG: {teg_id}")
 
 
@@ -246,13 +252,27 @@ try:
 except Exception:  # pragma: no cover
     CROSS_TEG_LOCAL_LEG_REFUSED_TOTAL = None
 
+try:
+    from prometheus_client import Counter as _PartnerCounter
+
+    CROSS_TEG_PARTNER_REFUSED_TOTAL = _PartnerCounter(
+        "teg_cross_teg_partner_refused_total",
+        "Cross-TEG legs with a peer that is not a current partner of this TEG (shadow: counted and served; enforce: "
+        "refused before anything moved)",
+        ["route", "mode"],
+    )
+except Exception:  # pragma: no cover
+    CROSS_TEG_PARTNER_REFUSED_TOTAL = None
+
 
 def _local_caller_dependency(route: str):
-    """The same rule as a FastAPI dependency, for a leg whose body is a typed model: dependencies are resolved before
+    """The same rules as a FastAPI dependency, for a leg whose body is a typed model: dependencies are resolved before
     the body is validated, so a refused caller gets 403 before its body is read (a check inside the handler runs only
     after validation, which lets an empty body answer 422 and hides whether the caller was admitted)."""
-    def _dep(request: Request, authorization: Optional[str] = Security(_cross_teg_auth_header)) -> str:
-        return _require_local_caller(request, authorization, route)
+    async def _dep(request: Request, authorization: Optional[str] = Security(_cross_teg_auth_header)) -> str:
+        caller = _require_local_caller(request, authorization, route)
+        await _require_current_partner(caller, route)
+        return caller
     return _dep
 
 
@@ -274,6 +294,87 @@ def _require_local_caller(request: Request, authorization: str, route: str) -> s
         status_code=status.HTTP_403_FORBIDDEN,
         detail="cross_teg_local_leg_refused: this leg is called only by this TEG's own frame "
                "(CROSS_TEG_LOCAL_LEG_SOURCES, default its own trust domain)",
+    )
+
+
+# The cross-TEG partner rule (2026-10-17; core/cross_teg/partner_rule.py has the rule and who is a peer): this TEG takes
+# part in a cross-TEG leg only with a current partner. Its registry removes a quarantined, suspended, revoked or
+# deactivated peer from the partner list; these two checks are what make that removal stop the money.
+
+def _own_trust_domain() -> str:
+    """This TEG's own trust domain: its own SVID's, else SPIRE_TRUST_DOMAIN."""
+    from ..core.internal_auth import own_spiffe_id, trust_domain_of
+    return (trust_domain_of(own_spiffe_id()) or os.environ.get("SPIRE_TRUST_DOMAIN") or "").strip().lower()
+
+
+def _own_operator_key() -> Optional[str]:
+    """This TEG's own operator name (an operator TEG) or None (a frame TEG), from its own SVID; while the SVID cannot be
+    read, from its TEG id (an operator TEG is teg-<its name>)."""
+    from ..core.internal_auth import own_spiffe_id
+    ident = _partner_rule.identity(own_spiffe_id())
+    if ident is not None:
+        return _partner_rule.name_key(ident[2]) if ident[1] == "operator" else None
+    return _partner_rule.peer_key(settings.teg_id) or None
+
+
+async def _current_partners() -> list:
+    """The static partners and the runtime list: the shared Redis list when it reads as live (this worker's copy is
+    brought in step with it on the way), else this worker's copy, which follows the shared list every 30 s."""
+    state, snapshot = await read_partner_snapshot()
+    if state == "live":
+        _adopt_shared_partners(snapshot)
+    return list(settings.parsed_partner_tegs or []) + list(_runtime_partners)
+
+
+def _count_partner_refusal(route: str, mode: str) -> None:
+    if CROSS_TEG_PARTNER_REFUSED_TOTAL is not None:
+        try:
+            CROSS_TEG_PARTNER_REFUSED_TOTAL.labels(route=route, mode=mode).inc()
+        except Exception:  # pragma: no cover
+            pass
+
+
+async def _require_current_partner(caller: Optional[str], route: str) -> None:
+    """A leg a peer calls: before anything moves, the peer the caller's VERIFIED identity names must be a current
+    partner of this TEG (never a TEG id the body claims). This TEG's own frame, its own identities and the shared key
+    are not peers and are not asked."""
+    mode = _partner_rule.mode()
+    if mode == "off":
+        return
+    peer = _partner_rule.peer_of(caller, own_trust_domain=_own_trust_domain(), own_operator=_own_operator_key())
+    if peer is None:
+        return
+    if _partner_rule.find_partner_for_peer(await _current_partners(), peer) is not None:
+        return
+    _count_partner_refusal(route, mode)
+    who = _partner_rule.describe(peer)
+    if mode == "shadow":
+        logger.warning(f"[CrossTEG] WOULD REFUSE route={route} caller={caller}: {who} is not a current partner (shadow)")
+        return
+    logger.warning(f"[CrossTEG] REFUSED route={route} caller={caller}: {who} is not a current partner of this TEG")
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=f"cross_teg_partner_refused: {who} is not a current partner of this TEG; nothing moved",
+    )
+
+
+async def _require_target_partner(target_teg_id: str) -> None:
+    """A transfer this TEG starts: its target must be a current partner, asked before the sender's funds are locked.
+    400 opening like this route's other "This TEG (" refusal, which the registry reads as one that moved nothing."""
+    mode = _partner_rule.mode()
+    if mode == "off":
+        return
+    if _partner_rule.find_partner_by_teg_id(await _current_partners(), target_teg_id) is not None:
+        return
+    _count_partner_refusal("transfer", mode)
+    if mode == "shadow":
+        logger.warning(f"[CrossTEG] WOULD REFUSE route=transfer target={target_teg_id}: not a current partner (shadow)")
+        return
+    logger.warning(f"[CrossTEG] REFUSED route=transfer target={target_teg_id}: not a current partner of this TEG")
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=(f"This TEG ({settings.teg_id}) has no current partner {target_teg_id} (cross_teg_partner_refused): "
+                f"nothing moved"),
     )
 
 # Router instance
@@ -368,6 +469,10 @@ async def initiate_cross_teg_transfer(
                     ),
                 },
             )
+
+    # The partner rule (2026-10-17): the target must be a current partner of this TEG, asked before the coordinator
+    # locks the sender's funds. Its address (target_teg_url) is only the address of this transfer's dials.
+    await _require_target_partner(request.target_teg_id)
 
     try:
         # Use the coordinator for distributed transaction
@@ -533,6 +638,10 @@ async def receive_cross_teg_treasury_fund(
     # §SECFIX-3 (2026-09-25): only this treasury's configured sources may credit it (default: its own trust domain, i.e.
     # its frame, or its parent frame for an operator). A federated peer is an internal caller on the other cross-TEG
     # routes, where it legitimately settles transfers; it is not a treasury funder.
+    # The partner rule (2026-10-17) does not ask here, and on purpose: this leg's sources are this treasury's own frame
+    # (its parent's funding of an operator) and the frame's own operators (the drain an operator purge runs before its
+    # ledger is destroyed, after its licence revoke has removed it as a partner). Refusing that drain would strand the
+    # operator's treasury and stop the purge; the configured sources decide this leg.
     from ..core.internal_auth import treasury_fund_source_ok, treasury_fund_sources
     if not treasury_fund_source_ok(spiffe_id):
         logger.warning(
@@ -643,6 +752,9 @@ async def prepare_transfer(
     This is part of the distributed transaction protocol.
     """
     caller = _validate_cross_teg_auth(request, authorization)
+    # The partner rule (2026-10-17): the peer this caller's verified identity names must be a current partner, asked
+    # before anything is prepared or counted (a commit credits what this prepare names).
+    await _require_current_partner(caller, "prepare")
     # §SECFIX-12 (2026-09-25): a foreign trust domain's daily inbound is bounded (observe by default), counted here,
     # before anything is prepared or credited; own-domain callers are not counted (core/cross_teg/peer_inbound.py)
     from ..core.cross_teg import peer_inbound as _peer_inbound
@@ -685,7 +797,8 @@ async def commit_transfer(
 
     This finalizes the transfer on this TEG.
     """
-    _validate_cross_teg_auth(request, authorization)
+    caller = _validate_cross_teg_auth(request, authorization)
+    await _require_current_partner(caller, "commit")  # the partner rule, before this commit credits anything
 
     try:
         # Handle commit request
@@ -720,7 +833,8 @@ async def abort_transfer(
 
     This rolls back any prepared state.
     """
-    _validate_cross_teg_auth(request, authorization)
+    caller = _validate_cross_teg_auth(request, authorization)
+    await _require_current_partner(caller, "abort")  # the partner rule: no leg of any kind with a removed peer
 
     try:
         # Handle abort request
@@ -932,10 +1046,18 @@ async def remove_partner_teg(
     on missing partner so reactor backlog replay does not trigger error storms.
 
     Body: { "teg_id": "teg-foo" }
+    The partner rule (2026-10-17, core/cross_teg/partner_rule.py) makes this removal what stops the money with a
+    quarantined, suspended, revoked or deactivated peer, so it removes EVERY runtime entry that names the same peer
+    (partner_rule.same_peer), from the shared list in one transaction and from this worker. The registry adds a peer
+    TEG as teg-layer-<slug> and its reactors remove it as teg-<safe name>: before the rule the removal named an entry
+    that did not exist and answered not_found, and a removal reached the worker that served it only.
     Tri-state response:
-      - removed:          teg_id was in _runtime_partners; dropped + cached client closed
-      - static_immutable: teg_id is only in env-var PARTNER_TEGS config; cannot mutate at runtime
-      - not_found:        teg_id not present in either list (idempotent restart-replay safe)
+      - removed:          runtime entries naming the peer were dropped (`removed` names them) + cached clients closed
+      - static_immutable: the peer is only in env-var PARTNER_TEGS config; cannot mutate at runtime
+      - not_found:        no entry names the peer (idempotent restart-replay safe)
+    `static_immutable` also lists any PARTNER_TEGS entry that still names the peer after a removal.
+    503 when the shared list cannot be reached: the removal reached this worker only and every other worker would keep
+    the peer, so the caller must try again (this worker's entries are dropped all the same).
     """
     teg_id = partner.get("teg_id")
     if not teg_id:
@@ -944,49 +1066,55 @@ async def remove_partner_teg(
             detail="teg_id is required"
         )
 
-    # Drop from runtime list if present
-    runtime_idx = next(
-        (i for i, p in enumerate(_runtime_partners) if p["teg_id"] == teg_id),
-        None,
-    )
-    # §pass47 A4 — always attempt Redis delete first; with multiple workers the
-    # POST-add may have hit a different worker than this remove, so the local
-    # _runtime_partners list might miss the entry even though Redis still has it.
-    redis_had_entry = await delete_partner_in_redis(teg_id)
-
-    if runtime_idx is not None:
-        _runtime_partners.pop(runtime_idx)
+    # §pass47 A4 — the shared list first; with multiple workers the add may have hit a different worker than this
+    # remove, so this worker's list can miss an entry that Redis still has.
+    _state, snapshot = await read_partner_snapshot()
+    ids = [p.get("teg_id") for p in list(_runtime_partners) + list(snapshot)
+           if isinstance(p, dict) and _partner_rule.same_peer(p, teg_id)]
+    ids = list(dict.fromkeys([t for t in ids if t] + [teg_id]))
+    removed_shared = await delete_partners_in_redis(ids)
+    removed_local = [p.get("teg_id") for p in _runtime_partners if p.get("teg_id") in ids]
+    _runtime_partners[:] = [p for p in _runtime_partners if p.get("teg_id") not in ids]
+    removed = list(dict.fromkeys(removed_local + list(removed_shared or [])))
+    for tid in removed:
         if teg_client_factory:
             try:
-                await teg_client_factory.remove_client(teg_id)
+                await teg_client_factory.remove_client(tid)
             except Exception as e:
-                logger.warning(f"[CrossTEG] Cached client close failed for {teg_id}: {e}")
-        total = len(settings.parsed_partner_tegs) + len(_runtime_partners)
-        logger.info(f"[CrossTEG] Removed runtime partner: {teg_id} (total: {total})")
-        return {"status": "removed", "teg_id": teg_id, "total_partners": total}
+                logger.warning(f"[CrossTEG] Cached client close failed for {tid}: {e}")
+    total = len(settings.parsed_partner_tegs) + len(_runtime_partners)
+    static_left = [p.get("teg_id") for p in (settings.parsed_partner_tegs or [])
+                   if isinstance(p, dict) and _partner_rule.same_peer(p, teg_id)]
 
-    if redis_had_entry:
-        # Local worker hadn't observed this partner (cross-worker race), but Redis
-        # had it and we just dropped it. Treat as removed.
-        total = len(settings.parsed_partner_tegs) + len(_runtime_partners)
-        logger.info(
-            f"[CrossTEG] Removed runtime partner from Redis only (cross-worker race): "
-            f"{teg_id} (total: {total})"
+    if removed_shared is None and (os.getenv("REDIS_URL") or "").strip():
+        logger.error(f"[CrossTEG] remove-partner {teg_id}: the shared partner list is unreachable, removed from this "
+                     f"worker only ({removed_local or 'nothing held here'}); the caller must try again")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(f"partner_list_unreachable: {teg_id} was removed from one TEG worker only; the shared partner list "
+                    f"could not be reached, so try again"),
         )
-        return {"status": "removed", "teg_id": teg_id, "total_partners": total}
+
+    if removed:
+        logger.info(f"[CrossTEG] Removed runtime partner(s) naming {teg_id}: {removed} (total: {total})")
+        if static_left:
+            logger.warning(f"[CrossTEG] {teg_id} is still named by static PARTNER_TEGS entries {static_left}: "
+                           f"runtime mutation not supported, the peer stays a partner through them")
+        out = {"status": "removed", "teg_id": teg_id, "removed": removed, "total_partners": total}
+        if static_left:
+            out["static_immutable"] = static_left
+        return out
 
     # Static config — cannot mutate at runtime
-    static_exists = any(p["teg_id"] == teg_id for p in settings.parsed_partner_tegs)
-    if static_exists:
-        total = len(settings.parsed_partner_tegs) + len(_runtime_partners)
+    if static_left:
         logger.warning(
             f"[CrossTEG] remove-partner called for {teg_id} but it is in static "
             f"PARTNER_TEGS env config — runtime mutation not supported"
         )
-        return {"status": "static_immutable", "teg_id": teg_id, "total_partners": total}
+        return {"status": "static_immutable", "teg_id": teg_id, "static_immutable": static_left,
+                "total_partners": total}
 
     # Neither — idempotent no-op
-    total = len(settings.parsed_partner_tegs) + len(_runtime_partners)
     logger.debug(f"[CrossTEG] remove-partner: {teg_id} not found (idempotent)")
     return {"status": "not_found", "teg_id": teg_id, "total_partners": total}
 
@@ -1368,7 +1496,8 @@ async def lock_async(
     is unconditional (no fee here — fee is on receiver side, matching 2PC
     accept_transfer). Refunded if saga timeout fires.
     """
-    _require_local_caller(http_request, authorization, "lock-async")
+    caller = _require_local_caller(http_request, authorization, "lock-async")
+    await _require_current_partner(caller, "lock-async")  # the partner rule, when a peer is admitted here
 
     transfer_id = payload.get("transfer_id")
     sender_did = payload.get("sender_did")
@@ -1476,7 +1605,8 @@ async def credit_async(
     Called by reactor_cross_frame_initiated after catching the cross-frame
     Initiated event. Mirrors accept_transfer's balance arithmetic.
     """
-    _require_local_caller(http_request, authorization, "credit-async")
+    caller = _require_local_caller(http_request, authorization, "credit-async")
+    await _require_current_partner(caller, "credit-async")  # the partner rule, when a peer is admitted here
 
     transfer_id = payload.get("transfer_id")
     sender_did = payload.get("sender_did")
@@ -1650,7 +1780,8 @@ async def credit_async_bulk(
     (asyncpg) so each TEG worker handles many concurrent bulk-credit
     transactions. Falls back to the sync path otherwise.
     """
-    _require_local_caller(http_request, authorization, "credit-async-bulk")
+    caller = _require_local_caller(http_request, authorization, "credit-async-bulk")
+    await _require_current_partner(caller, "credit-async-bulk")  # the partner rule, when a peer is admitted here
     transfers = payload.get("transfers") or []
     if not isinstance(transfers, list) or len(transfers) == 0:
         raise HTTPException(400, "transfers must be non-empty list")
@@ -2031,7 +2162,8 @@ async def refund_async(
     exceeds its 5-min timeout without a Settled event. Re-credits the
     full original amount (no fee was deducted at lock time).
     """
-    _require_local_caller(http_request, authorization, "refund-async")
+    caller = _require_local_caller(http_request, authorization, "refund-async")
+    await _require_current_partner(caller, "refund-async")  # the partner rule, when a peer is admitted here
 
     transfer_id = payload.get("transfer_id")
     sender_did = payload.get("sender_did")
@@ -2119,7 +2251,8 @@ async def reverse_async(
     Only fires when the receiver had previously credited (compensating
     action). Reverses both the recipient credit and the fee_collector fee.
     """
-    _require_local_caller(http_request, authorization, "reverse-async")
+    caller = _require_local_caller(http_request, authorization, "reverse-async")
+    await _require_current_partner(caller, "reverse-async")  # the partner rule, when a peer is admitted here
 
     transfer_id = payload.get("transfer_id")
     receiver_did = payload.get("receiver_did")

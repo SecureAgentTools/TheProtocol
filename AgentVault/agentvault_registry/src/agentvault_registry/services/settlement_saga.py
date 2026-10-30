@@ -39,6 +39,11 @@ logger = logging.getLogger(__name__)
 # Saga timeout: 72 hours per spec
 SAGA_TIMEOUT_HOURS = 72
 
+# A settlement in one of these statuses was decided (slashed, failed, rejected, settled) or has already timed out: the
+# sweep never rewrites it. Rows decided before V0649 still carry saga_state INITIATED (the admin approve and reject did
+# not move it), so the saga state alone cannot protect them (agentvault2-13, 2026-10-30).
+DECIDED_STATUSES = ("SLASHED", "FAILED", "REJECTED", "SETTLED", "EXPIRED")
+
 # Valid state transitions
 VALID_TRANSITIONS = {
     "INITIATED": ["SLASH_REQUESTED", "SLASH_FAILED", "TIMED_OUT", "ROLLED_BACK"],
@@ -329,7 +334,8 @@ class SettlementSaga:
                         "SLASH_REQUESTED"
                     ]),
                     CrossRegistrySettlement.saga_timeout_at.isnot(None),
-                    CrossRegistrySettlement.saga_timeout_at < now
+                    CrossRegistrySettlement.saga_timeout_at < now,
+                    CrossRegistrySettlement.status.notin_(DECIDED_STATUSES),
                 )
             )
         )

@@ -430,7 +430,7 @@ class BootstrapToken(Base):
         unique=True,
         nullable=False,
         index=True
-    )  # The actual token string (e.g., "bst_a1b2c3d4e5f67890_xxxxxxxxxxxx")
+    )  # D6-809: "sha256:<hex>", the token's SHA-256; the token itself ("bst_...") is never stored
     agent_type_hint = Column(String(255), nullable=True)  # e.g., "com.agentvault.research.v1"
     requested_by = Column(String(255), nullable=True)  # e.g., "cli-user-rzj"
     created_at = Column(DateTime(timezone=True), server_default=func.now())

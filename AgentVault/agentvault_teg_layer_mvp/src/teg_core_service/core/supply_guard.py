@@ -61,7 +61,7 @@ def refuse_nonzero_opening_balance(value, *, rail: str) -> Decimal:
                 "token_balance directly, with no mint event and no idempotency, so a "
                 "non-zero opening balance creates supply that the audit cannot see. "
                 "Create the account at 0 and fund it through the registry's "
-                "reward-funding rail, which emits the events the invariant reads."
+                "treasury funding rail, which emits the events the invariant reads."
             ),
             metadata={"rail": rail, "requested": str(amount)},
         )

@@ -11,6 +11,8 @@ Key design principles:
 - Consistent naming conventions for CRUD methods
 """
 from decimal import Decimal
+import hashlib
+import secrets
 from typing import Optional, List
 from uuid import uuid4
 from datetime import datetime, timezone
@@ -1536,12 +1538,21 @@ class ReputationSignalAlreadyApplied(Exception):
         self.transaction_id = transaction_id
 
 
+def _bootstrap_marker(token_value: str) -> str:
+    """D6-809 (2026-10-17): what bootstrap_tokens.token_value holds for a token: "sha256:<hex>", its SHA-256, never the
+    token. The token itself exists only in the response that hands it out (the registry's rule, D6-283)."""
+    return "sha256:" + hashlib.sha256(token_value.encode("utf-8")).hexdigest()
+
+
 class BootstrapTokenCRUD:
     """CRUD operations for bootstrap tokens used in self-onboarding
     
     Manages single-use bootstrap tokens that allow new agents to
     self-register with the system. Tokens have expiration times
     and can only be used once.
+
+    D6-809: a row stores the token's hash (_bootstrap_marker), never the token, and a presented token is found by its
+    hash. Read 2026-10-17 on all eleven TEG databases: no row at all, so no row ever held a token to scrub.
     """
     
     @staticmethod
@@ -1556,7 +1567,7 @@ class BootstrapTokenCRUD:
         
         Args:
             db: Database session
-            token_value: The token string (e.g., "bst_a1b2c3d4e5f67890_xxxxxxxxxxxx")
+            token_value: The token string (e.g., "bst_a1b2c3d4e5f67890_xxxxxxxxxxxx"); only its hash is stored
             expires_at: When the token expires
             agent_type_hint: Optional hint about the type of agent being created
             requested_by: Optional identifier of who requested the token
@@ -1569,7 +1580,7 @@ class BootstrapTokenCRUD:
         """
         token = BootstrapToken(
             token_id=str(uuid4()),
-            token_value=token_value,
+            token_value=_bootstrap_marker(token_value),
             expires_at=expires_at,
             agent_type_hint=agent_type_hint,
             requested_by=requested_by,
@@ -1582,7 +1593,7 @@ class BootstrapTokenCRUD:
             return token
         except IntegrityError:
             db.rollback()
-            raise ValueError(f"Bootstrap token with value '{token_value}' already exists")
+            raise ValueError("A bootstrap token with this value already exists")
     
     @staticmethod
     def get_active_bootstrap_token_by_value(
@@ -1598,13 +1609,17 @@ class BootstrapTokenCRUD:
         Returns:
             BootstrapToken if found and valid, None otherwise
         """
+        marker = _bootstrap_marker(token_value)
         token = db.query(BootstrapToken).filter(
             and_(
-                BootstrapToken.token_value == token_value,
+                BootstrapToken.token_value == marker,
                 BootstrapToken.is_used == False,
                 BootstrapToken.expires_at > datetime.now(timezone.utc)
             )
         ).first()
+        # the hash found the row; confirm it in constant time (the registry's lookup does the same)
+        if token is not None and not secrets.compare_digest(str(token.token_value), marker):
+            return None
         return token
     
     @staticmethod
@@ -1746,11 +1761,11 @@ class StakingCRUD:
         ).first()
         
         if not stake:
-            raise ValueError(f"Stake {stake_id} not found")
+            raise ValueError(f"Lock position {stake_id} not found")
         if stake.agent_id != agent_id:
-            raise ValueError(f"Stake {stake_id} does not belong to agent {agent_id}")
+            raise ValueError(f"Lock position {stake_id} does not belong to agent {agent_id}")
         if not stake.is_active:
-            raise ValueError(f"Stake {stake_id} is already unstaked")
+            raise ValueError(f"Lock position {stake_id} is already unlocked")
         
         # Calculate any pending rewards
         pending_rewards = StakingCRUD.calculate_pending_rewards(db, stake_id)
@@ -1936,17 +1951,17 @@ class StakingCRUD:
         ).first()
         
         if not stake:
-            raise ValueError(f"Stake {stake_id} not found")
+            raise ValueError(f"Lock position {stake_id} not found")
         if stake.agent_id != delegator_agent_id:
-            raise ValueError(f"Stake {stake_id} does not belong to agent {delegator_agent_id}")
+            raise ValueError(f"Lock position {stake_id} does not belong to agent {delegator_agent_id}")
         if not stake.is_active:
-            raise ValueError(f"Cannot delegate inactive stake")
+            raise ValueError("Cannot delegate an inactive lock position")
         
         # Default to full stake amount if not specified
         if amount is None:
             amount = stake.amount
         elif amount > stake.amount:
-            raise ValueError(f"Cannot delegate more than staked amount")
+            raise ValueError("Cannot delegate more than the locked amount")
         
         # Check for existing active delegation
         existing = db.query(Delegation).filter(
@@ -1957,7 +1972,7 @@ class StakingCRUD:
         ).first()
         
         if existing:
-            raise ValueError(f"Stake {stake_id} is already delegated")
+            raise ValueError(f"Lock position {stake_id} is already delegated")
         
         # Create delegation
         delegation = Delegation(

@@ -46,6 +46,7 @@ from starlette.status import HTTP_400_BAD_REQUEST, HTTP_409_CONFLICT
 from ...core.security import verify_admin_token
 from ...core.error_handling import TEGException, ErrorCode
 from ...core.ledger_gate import require_ledger
+from ...core.move_replay import same_move, refuse_other_move
 from ...database.db_session import get_db
 from ...database.crud import AgentCRUD, TransferService, SystemConfigCRUD
 from ...database.models import TEGTransaction, TransactionStatus
@@ -112,14 +113,19 @@ async def exchange_move(
     ref = f"exref:{request.idempotency_key}"
 
     def _replay(txn: TEGTransaction) -> ExchangeMoveResponse:
+        # D6-808: a replay is answered from the row the key names, and only when this request is that row's move; a
+        # different move under the same key is refused (core/move_replay.py). Both callers below: the lookup and the
+        # concurrent attempt's winner.
+        if not same_move(txn, from_did, to_did, request.amount):
+            raise refuse_other_move("exchange/move", request.idempotency_key, txn, from_did, to_did, request.amount)
         return ExchangeMoveResponse(
             transaction_id=txn.transaction_id,
             status="completed",
-            from_did=from_did,
-            to_did=to_did,
-            amount=request.amount,
-            from_balance=AgentCRUD.get_balance(db, from_did),
-            to_balance=AgentCRUD.get_balance(db, to_did),
+            from_did=txn.sender_agent_id,
+            to_did=txn.receiver_agent_id,
+            amount=Decimal(str(txn.amount)),
+            from_balance=AgentCRUD.get_balance(db, txn.sender_agent_id),
+            to_balance=AgentCRUD.get_balance(db, txn.receiver_agent_id),
             idempotent_replay=True,
         )
 

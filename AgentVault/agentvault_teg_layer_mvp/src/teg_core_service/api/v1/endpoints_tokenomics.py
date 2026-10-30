@@ -354,7 +354,7 @@ async def lock_tokens(
         logger.error(f"Failed to lock tokens: {str(e)}")
         raise HTTPException(
             status_code=HTTP_400_BAD_REQUEST,
-            detail=f"Failed to lock tokens: {str(e)}"
+            detail=f"Failed to lock units: {str(e)}"
         )
 
 
@@ -471,7 +471,7 @@ async def unlock_tokens(
         logger.error(f"Failed to unlock tokens: {str(e)}")
         raise HTTPException(
             status_code=HTTP_400_BAD_REQUEST,
-            detail=f"Failed to unlock tokens: {str(e)}"
+            detail=f"Failed to unlock units: {str(e)}"
         )
 
 

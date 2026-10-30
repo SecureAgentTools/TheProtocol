@@ -13,7 +13,7 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Optional, Literal, List, Dict, Any
 
-from pydantic import Field, field_validator, SecretStr
+from pydantic import AliasChoices, Field, field_validator, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -71,15 +71,24 @@ class Settings(BaseSettings):
         min_length=32
     )
     
-    # P0-002: Registry JWT validation key
-    # Used to verify the registry_jwt in POST /auth/token requests.
-    # Must match the Registry's API_KEY_SECRET environment variable.
+    # The registry's key for the JWT it sends to POST /auth/token: must equal the registry's API_KEY_SECRET.
+    # Read as REGISTRY_JWT_SECRET, or under the names the kit composes pass the same value
+    # (TEG_REGISTRY_JWT_SECRET, REGISTRY_SERVICE_TOKEN). Unset or empty: /auth/token refuses every exchange.
     registry_jwt_secret: Optional[SecretStr] = Field(
         default=None,
-        description="Secret key from the parent Registry used to sign agent JWTs. "
-                    "When set, the /auth/token endpoint will validate registry_jwt signatures. "
-                    "When None, validation is skipped (MVP mode — NOT for production).",
+        validation_alias=AliasChoices("REGISTRY_JWT_SECRET", "TEG_REGISTRY_JWT_SECRET", "REGISTRY_SERVICE_TOKEN"),
+        description="The registry's API_KEY_SECRET, which signs the exchange JWT. "
+                    "When unset, POST /auth/token refuses every exchange (503).",
     )
+
+    @field_validator("registry_jwt_secret", mode="before")
+    @classmethod
+    def _empty_registry_secret_is_unset(cls, v):
+        # an interpolated but empty value (`KEY: ${UNSET}` in a compose) must read as unset, never as a key
+        if v is None:
+            return None
+        raw = v.get_secret_value() if isinstance(v, SecretStr) else str(v)
+        return raw if raw.strip() else None
     
     # ===== Application Configuration =====
     app_name: str = Field(

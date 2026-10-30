@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 PREFIX = "list_detail: "
+GONE = "gone_from_list"   # V0649: the id was no longer listed on a re-read after its detail answered 404
 _HTTP = re.compile(r"\b(?:HTTP|returned)\s+(\d{3})\b")   # §MCPTEST30 (V0523): "<route> returned 500" too
 
 
@@ -130,8 +131,13 @@ def verdict(kinds: List[str], designed: Tuple[str, ...] = ()) -> Tuple[Optional[
     without the id key, and ids asked whose every answer was a designed step. The runner names the first two before it
     asks; this names the third."""
     asked = list(kinds)
-    kinds = [k for k in kinds if k not in designed]
+    gone = [k for k in asked if k == GONE]
+    kinds = [k for k in kinds if k not in designed and k != GONE]
     if not kinds:
+        if gone:
+            return None, (f"NOT MEASURED: {len(gone)} of {len(asked)} id(s) the list advertised were gone from it on a "
+                          f"re-read (deleted between the list read and the detail read, as another lifecycle's "
+                          f"cleanup does)")
         if asked:
             return None, (f"NOT MEASURED: every detail answer was a designed step ({', '.join(sorted(set(asked)))}), so "
                           f"none showed the row")
@@ -145,6 +151,37 @@ def verdict(kinds: List[str], designed: Tuple[str, ...] = ()) -> Tuple[Optional[
     if all(k == "no_id" for k in kinds):
         return None, "NOT MEASURED: the detail answered without the field that names its object"
     return True, None
+
+
+async def recheck_refused(p: Pair, list_rpc: Callable, detail_rpc: Callable, parse: Callable, answered: Callable,
+                          bag: Any, args: Dict[str, Any], jwt: str, ids: List[Any], kinds: List[str]) -> List[str]:
+    """V0649 (agentvault2-13): another lifecycle can delete a row between this probe's list read and its detail read.
+    pair_proof_v0645's first attempt went red on getMyWebhooks -> getWebhook that way: the owner-scoping lifecycle
+    deleted its webhook 62 ms after the probe listed it and 35 ms before the detail asked (frame a's log, 2026-10-27
+    05:27:47Z); the two routes serve one population. On a detail 404 the list is read once more: an id it no longer
+    carries was deleted in between (GONE, NOT MEASURED for that id, never a finding); an id it still carries is asked
+    again, and only a second refusal stays a BUG-FIND. A re-read that fails leaves the answers as they were."""
+    ok, body, code = await list_rpc(p.list_tool, args, jwt=jwt, timeout=30)
+    inner = parse(body)
+    if not answered(ok, inner, code) or failed_answer(inner) is not None:
+        return kinds
+    rows = rows_of(inner, p.rows_keys)
+    if rows is None:
+        return kinds
+    listed = {str(r.get(p.row_id)).strip().lower() for r in rows if isinstance(r, dict) and r.get(p.row_id) is not None}
+    out = list(kinds)
+    for n, (i, k) in enumerate(zip(ids, kinds)):
+        if k != "refused 404":
+            continue
+        if str(i).strip().lower() not in listed:
+            out[n] = GONE
+            continue
+        dargs = {**p.detail_args, p.detail_arg: i}
+        if (p.detail_tier or p.tier) == "2":
+            dargs["agent_jwt"] = bag.sentinel_jwt
+        dok, dbody, dcode = await detail_rpc(p.detail_tool, dargs, jwt=jwt, timeout=30)
+        out[n] = detail_kind(dok, parse(dbody), dcode, answered, i, p.detail_id)
+    return out
 
 
 async def run_pairs(rpc_for: Callable[[str], Optional[Callable]], parse: Callable, bag: Any, outcomes: Dict[str, dict],
@@ -200,6 +237,8 @@ async def run_pairs(rpc_for: Callable[[str], Optional[Callable]], parse: Callabl
             dok, dbody, dcode = await detail_rpc(p.detail_tool, dargs, jwt=jwt, timeout=30)
             kinds.append(detail_kind(dok, parse(dbody), dcode, answered, i, p.detail_id))
             last_code = dcode
+        if "refused 404" in kinds:
+            kinds = await recheck_refused(p, list_rpc, detail_rpc, parse, answered, bag, args, jwt, ids, kinds)
         healthy, sentence = verdict(kinds, p.designed)
         ev = {"rows": len(rows), "asked": len(ids), "answers": kinds}
         if healthy is None:

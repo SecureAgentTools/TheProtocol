@@ -4011,6 +4011,9 @@ def create_app() -> FastAPI:
     ).instrument(app)
     if metrics_enabled():
         _instrumentator.expose(app, endpoint="/metrics", include_in_schema=False)
+        # §SECFIX D6-823: through a proxy (a console vhost), /metrics carries no system balance (core/metrics_public.py)
+        from agentvault_registry.core.metrics_public import PublicMetricsMiddleware
+        app.add_middleware(PublicMetricsMiddleware)
         logger.info("Prometheus FastAPI instrumentation enabled at /metrics")
     else:
         logger.info("METRICS_ENABLED is off: this registry serves no /metrics")

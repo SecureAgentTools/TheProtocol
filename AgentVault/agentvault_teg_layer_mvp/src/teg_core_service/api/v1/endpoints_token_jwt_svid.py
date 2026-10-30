@@ -104,7 +104,7 @@ async def transfer_tokens(
     if sender_id == request.receiver_agent_id:
         raise HTTPException(
             status_code=HTTP_400_BAD_REQUEST,
-            detail="Cannot transfer tokens to yourself"
+            detail="Cannot transfer units to yourself"
         )
     
     try:

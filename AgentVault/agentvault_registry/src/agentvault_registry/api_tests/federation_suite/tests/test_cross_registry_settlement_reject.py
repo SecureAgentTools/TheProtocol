@@ -83,6 +83,17 @@ def _settlements(r: Any) -> Optional[List[Dict[str, Any]]]:
     return None
 
 
+def settlement_of(r: Any) -> Dict[str, Any]:
+    """The settlement in getFederationDisputeSettlement's answer. The route answers {"settlement": {...}}
+    (routers/federation_disputes.get_settlement); reading id or status at the top level reads None, which is how this
+    flow went red every night on the standing sandbox while both frames did the right thing (V0649, agentvault2-13).
+    An answer that is already the bare row is taken as it is; anything else is an empty dict."""
+    if not isinstance(r, dict):
+        return {}
+    inner = r.get("settlement")
+    return inner if isinstance(inner, dict) else r
+
+
 def _num(v: Any) -> Optional[float]:
     try:
         return None if v is None else float(str(v))
@@ -152,8 +163,8 @@ async def test_xframe_settlement_reject(rig: FederationTestRig) -> AssertionResu
         # (CROSS_REGISTRY_SETTLEMENT_DELIVERY off, the default, core/settlement_origin) is refused by every peer: the
         # home's half cannot run, which is the environment, not the path (V0639).
         own, _w = await _call(rig, _A, "getFederationDisputeSettlement", {"settlement_id": sid})
-        own = (own.get("settlement") or own) if isinstance(own, dict) else {}
-        named = str(own.get("origin_registry_url") or "") if isinstance(own, dict) else ""
+        own = settlement_of(own)
+        named = str(own.get("origin_registry_url") or "")
         if named and not _dialable_from_outside(named):
             raise PreconditionUnmet(
                 f"{_A} named itself {named} as the settlement's origin, an address no peer holds, so every peer refuses "
@@ -171,28 +182,29 @@ async def test_xframe_settlement_reject(rig: FederationTestRig) -> AssertionResu
         if not legs.check("the_home_holds_it_for_an_administrator", held, {"rows": mine, "settlement_id": sid}):
             return
 
-        one, why = await _call(rig, _B, "getFederationDisputeSettlement", {"settlement_id": sid})
+        got, why = await _call(rig, _B, "getFederationDisputeSettlement", {"settlement_id": sid})
+        one = settlement_of(got)
         legs.check("getFederationDisputeSettlement_reads_it",
-                   not why and isinstance(one, dict) and str(one.get("id")) == sid and one.get("status") == _PENDING,
-                   {"refused": why, "status": (one or {}).get("status") if isinstance(one, dict) else None})
+                   not why and str(one.get("id")) == sid and one.get("status") == _PENDING,
+                   {"refused": why, "status": one.get("status")})
 
         rej, why = await _call(rig, _B, "rejectDisputeSettlement", {"settlement_id": sid})
         legs.check("rejectDisputeSettlement_rejects_it",
                    not why and isinstance(rej, dict) and rej.get("status") == "REJECTED",
                    {"refused": why, "answer": rej})
 
-        after_row, why = await _call(rig, _B, "getFederationDisputeSettlement", {"settlement_id": sid})
+        got, why = await _call(rig, _B, "getFederationDisputeSettlement", {"settlement_id": sid})
+        after_row = settlement_of(got)
         after = await _balance(rig, _B, defendant["jwt"])
         legs.check("nothing_moved_on_the_home",
-                   not why and isinstance(after_row, dict) and after_row.get("status") == "REJECTED"
+                   not why and after_row.get("status") == "REJECTED"
                    and not _num(after_row.get("slashed_amount")) and before is not None and after == before,
-                   {"status": (after_row or {}).get("status") if isinstance(after_row, dict) else None,
-                    "slashed": (after_row or {}).get("slashed_amount") if isinstance(after_row, dict) else None,
+                   {"status": after_row.get("status"), "slashed": after_row.get("slashed_amount"),
                     "balance_before": before, "balance_after": after})
 
         async def _told():
             got, w = await _call(rig, _A, "getFederationDisputeSettlement", {"settlement_id": sid})
-            st = got.get("status") if isinstance(got, dict) else None
+            st = settlement_of(got).get("status")
             return st if st and st not in ("PENDING_SLASH", "PENDING") else None
         told = await _until(_told, _SETTLE_SEC)
         legs.check("the_origin_hears_failed", told == "FAILED", {"origin_status": told})

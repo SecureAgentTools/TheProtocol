@@ -443,7 +443,7 @@ jobs:
           DBU="postgresql://teg:test@${PG}:5432/tegtest"
           : > /tmp/teg-tests.log
           RC=0
-          for f in test_conservation.py test_reward_fund_idem.py test_single_transfer_idem.py test_admin_key_defaults.py test_reputation_signal_atomic.py test_fund_send_resume.py test_balance_outbox_txid_reuse.py test_ledger_health_cycle.py; do
+          for f in test_conservation.py test_reward_fund_idem.py test_single_transfer_idem.py test_admin_key_defaults.py test_reputation_signal_atomic.py test_fund_send_resume.py test_balance_outbox_txid_reuse.py test_ledger_health_cycle.py test_token_exchange_auth.py test_move_replay_key.py test_bootstrap_token_hash.py test_bridge_unlock_bound.py test_cross_teg_partner_legs.py; do
             echo "===== $f" >> /tmp/teg-tests.log
             # 300s outer bound: the per-scenario alarm already makes a hang
             # legible; this only stops a wedged docker from holding the runner.
@@ -473,10 +473,17 @@ jobs:
           # resumes, a retry is bound to its row, a resume's 4xx never re-credits);
           # + the 5 of §LEDGERGATE (test_ledger_health_cycle: the outbox's real cycle measures the
           # ledger and publishes one verdict; a 422 group is stuck, never an outage) = 40;
+          # measured 2026-10-17: 51 (reward-fund's fourth scenario, and CB-049's 10 in
+          # test_token_exchange_auth, the floor not raised for either), + D6-808's 11
+          # (test_move_replay_key: a used key is answered from its row, a different move
+          # under it refused, both branches, both movers) + D6-809's 5
+          # (test_bootstrap_token_hash: the row holds the hash, never the token) + SEC-03's 6
+          # (test_bridge_unlock_bound: an unlock releases its own journaled lock, once) = 73, + the partner rule's 7
+          # (test_cross_teg_partner_legs: a leg with a peer that is no current partner moves nothing, on real money) = 80;
           # adding a test raises this number deliberately.
           PASSED=$(command grep -oE '^[0-9]+/[0-9]+ passed' /tmp/teg-tests.log | cut -d/ -f1 | awk '{s+=$1} END {print s+0}')
-          echo "TEG tests passed=${PASSED} (floor 40)"
-          if [ "$PASSED" -lt 40 ]; then
+          echo "TEG tests passed=${PASSED} (floor 80)"
+          if [ "$PASSED" -lt 80 ]; then
             echo "FATAL: only ${PASSED} TEG tests ran; the suite collapsed rather than passed"
             exit 1
           fi
@@ -503,7 +510,8 @@ jobs:
               tests/test_entry_type_tagging.py tests/test_opening_balance_guard.py \
               tests/test_retired_rails_and_stubs.py tests/test_internal_service_identity.py tests/test_teg_proxy_trust.py tests/test_redis_url_never_logged_raw.py tests/test_emission_policy_fetch_tls.py \
               tests/test_licence_gate.py tests/test_sync_engine_url.py tests/test_sqla21_session_contract.py \
-              tests/test_ledger_gate.py tests/test_attestation_reward_fail_closed.py \
+              tests/test_ledger_gate.py tests/test_attestation_reward_fail_closed.py tests/test_cross_teg_partner_rule.py \
+              tests/test_inbound_reconciler.py tests/test_ledger_names_teg.py \
               -q -p no:cacheprovider -o asyncio_mode=auto -rs > /tmp/teg-pytest.log 2>&1 || RC2=$?
           : "${RC2:=0}"
           cat /tmp/teg-pytest.log
@@ -511,13 +519,16 @@ jobs:
           # Floor + skip ceiling (§VITALS: a pass floor cannot see tests that vanish
           # into "skipped"). 41 + the 8 of §MONEY-R51 (test_internal_service_identity: the
           # ONE path-anchored caller-identity rule) = 49, + the 13 of §MTLSHOPS G1 (test_teg_proxy_trust: a forwarded
-          # certificate counts only with the terminator's marker and SUCCESS) = 62, + 1 (test_redis_url_never_logged_raw) = 63, + the 6 of §MTLSHOPS V0379 (test_emission_policy_fetch_tls: the policy fetch presents the frame SVID) = 69, + the 12 of §FEDLICENCE (test_licence_gate: the cross-TEG cut-off follows the registry's licence verdicts) = 81, + the 14 of §DEPS sqla-driver-pin (test_sync_engine_url: every sync engine names psycopg2, on SQLAlchemy 2.0 and 2.1) = 95, + the 2 of §DEPS sqla21 (test_sqla21_session_contract: the TEG's sessions never autoflush, so 2.1's autoflush before raw SQL cannot reach a money path) = 97, + the 24 of §LEDGERGATE (test_ledger_gate: every write route classified, the tracker, the verdict, the gate, its place in the middleware) = 121, + the 4 of §ATTESTREWARD (test_attestation_reward_fail_closed: no reward without a proof a real verifier accepted) = 125 today;
+          # certificate counts only with the terminator's marker and SUCCESS) = 62, + 1 (test_redis_url_never_logged_raw) = 63, + the 6 of §MTLSHOPS V0379 (test_emission_policy_fetch_tls: the policy fetch presents the frame SVID) = 69, + the 12 of §FEDLICENCE (test_licence_gate: the cross-TEG cut-off follows the registry's licence verdicts) = 81, + the 14 of §DEPS sqla-driver-pin (test_sync_engine_url: every sync engine names psycopg2, on SQLAlchemy 2.0 and 2.1) = 95, + the 2 of §DEPS sqla21 (test_sqla21_session_contract: the TEG's sessions never autoflush, so 2.1's autoflush before raw SQL cannot reach a money path) = 97, + the 24 of §LEDGERGATE (test_ledger_gate: every write route classified, the tracker, the verdict, the gate, its place in the middleware) = 121, + the 4 of §ATTESTREWARD (test_attestation_reward_fail_closed: no reward without a proof a real verifier accepted) = 125, + the 27 of the partner rule (test_cross_teg_partner_rule: a cross-TEG leg runs only with a current partner, a removal reaches every worker, no leg adds a partner) = 152 today;
+          # W4 phase 1 (2026-10-25, agentvault2-aa): + test_inbound_reconciler (6: a credit verified against the source's
+          # record under its old or its new name, UnitsTransferred) and test_ledger_names_teg (4: the map is the registry's,
+          # a TEG never emits a new name without a row, every comparison against an old name asks the map) = 162.
           # adding a test raises the floor.
           P2=$(command grep -oE '[0-9]+ passed' /tmp/teg-pytest.log | tail -1 | cut -d' ' -f1)
           S2=$(command grep -oE '[0-9]+ skipped' /tmp/teg-pytest.log | tail -1 | cut -d' ' -f1)
           : "${P2:=0}"; : "${S2:=0}"
-          echo "TEG pytest-style tests passed=${P2} skipped=${S2} (floor 125, skip ceiling 0)"
-          if [ "$P2" -lt 125 ] || [ "$S2" -gt 0 ]; then
+          echo "TEG pytest-style tests passed=${P2} skipped=${S2} (floor 162, skip ceiling 0)"
+          if [ "$P2" -lt 162 ] || [ "$S2" -gt 0 ]; then
             echo "FATAL: TEG pytest-style suites collapsed (passed=${P2} skipped=${S2})"
             exit 1
           fi

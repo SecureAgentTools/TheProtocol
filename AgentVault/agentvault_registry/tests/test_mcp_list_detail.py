@@ -104,7 +104,9 @@ def test_the_engine_reads_a_list_and_asks_the_detail_for_each_picked_id():
     out = {}
     asyncio.run(LD.run_pairs(lambda tier: rpc, _parse_rpc_result, _Bag(), out, (pair,), L._make_outcome, L._answered))
     row = out["list_detail: listThings -> getThing"]
-    assert [c[1].get("thing_id") for c in calls[1:]] == [1, 3, 5]
+    assert [c[1].get("thing_id") for c in calls[1:4]] == [1, 3, 5]
+    # V0649: the 404 makes the probe read the list again (5 is still listed) and ask 5 once more: still refused
+    assert [c[0] for c in calls[4:]] == ["theprotocol_listThings", "theprotocol_getThing"] and calls[5][1]["thing_id"] == 5
     assert row["healthy"] is False and "1 of 3 id(s)" in row["fail_reason"]
     assert row["result_excerpt"] == {"rows": 5, "asked": 3, "answers": ["same", "same", "refused 404"]}
     assert row["probe_expect_status"] == "success"

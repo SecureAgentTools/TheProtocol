@@ -32,6 +32,8 @@ import uuid
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
 
+from ... import ledger_names
+
 logger = logging.getLogger(__name__)
 
 LEADER_KEY_PREFIX = "teg_inbound_reconciler"
@@ -70,7 +72,8 @@ def classify(row_amount, events: List[Dict[str, Any]]) -> str:
         return "mismatch"
     seen = []
     for e in events or []:
-        if (e or {}).get("event_type") != "TokensTransferred":
+        # W4 phase 1 (2026-10-25): the source's record under either name (UnitsTransferred once an emitter switches)
+        if ledger_names.live_old((e or {}).get("event_type") or "") != "TokensTransferred":
             continue
         try:
             seen.append(Decimal(str(((e or {}).get("data") or {}).get("amount"))))

@@ -76,7 +76,8 @@ ipython = ">=9.0"
 pre-commit = ">=4.6,<5"
 
 [tool.poetry.group.security.dependencies]
-safety = ">=3.8,<4.0"
+# safety is gone (V0648): nothing ran it (no CI job, no script), and its newest release (3.8.1) caps filelock below 4,
+# which held the dev lock on a filelock with known advisories; pip-audit does the same job.
 bandit = {version = ">=1.9,<2.0", extras = ["toml"]}
 pip-audit = ">=2.10,<3.0"
 

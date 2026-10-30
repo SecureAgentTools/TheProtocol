@@ -613,7 +613,7 @@ async def claim_rewards(
     if not unclaimed_staking_rewards and not unclaimed_general_rewards:
         raise HTTPException(
             status_code=404,
-            detail="No pending rewards to claim"
+            detail="No pending payouts to claim"
         )
     
     total_rewards = Decimal('0')
@@ -879,14 +879,14 @@ async def unstake_tokens(
     if not stake:
         raise HTTPException(
             status_code=404,
-            detail="Active stake not found"
+            detail="Active lock not found"
         )
     
     # Check lock period
     if stake.unlock_date and datetime.now(timezone.utc) < stake.unlock_date:
         raise HTTPException(
             status_code=400,
-            detail=f"Stake is locked until {stake.unlock_date.isoformat()}"
+            detail=f"This position is locked until {stake.unlock_date.isoformat()}"
         )
     
     # Determine unstake amount
@@ -895,7 +895,7 @@ async def unstake_tokens(
     if unstake_amount > stake.amount:
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot unstake more than staked amount. Staked: {stake.amount}, Requested: {unstake_amount}"
+            detail=f"Cannot unlock more than the locked amount. Locked: {stake.amount}, Requested: {unstake_amount}"
         )
     
     # Get agent profile

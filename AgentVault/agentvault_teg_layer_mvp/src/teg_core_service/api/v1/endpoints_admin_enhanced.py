@@ -109,7 +109,7 @@ async def issue_tokens(
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
             detail=f"Minting restricted to origin TEG ({settings.minting_authority}). "
-                   f"This TEG ({settings.teg_id}) cannot create tokens. "
+                   f"This TEG ({settings.teg_id}) cannot create units. "
                    f"Use cross-TEG treasury fund from the origin registry instead."
         )
 

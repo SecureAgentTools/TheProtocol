@@ -16,6 +16,7 @@ _federation_license_scheme = APIKeyHeader(
     auto_error=False,
 )
 from ..models.events import Event
+from .. import ledger_names
 from ..models.federation_operator import FederationOperator
 from ..services.event_store import EventStore
 from ..database.connection import get_db
@@ -442,7 +443,8 @@ async def append_event(
     #   · source_operator_id is a LIVE field (populated on 9 events, two distinct
     #     operator ids), so "NULL on all 847" is evidence and not an unused column.
     # ⇒ enforcing breaks no historical caller.
-    _MINT_CLASS_TYPES = {"TokensIssued", "DisputeCompensationMinted"}
+    # W4 phase 1: UnitsIssued is TokensIssued under its new name, refused from the same callers
+    _MINT_CLASS_TYPES = ledger_names.expand_live({"TokensIssued", "DisputeCompensationMinted"})
     _is_mint_class = event.event_type in _MINT_CLASS_TYPES or (
         event.event_type == "LedgerBalanceChanged"
         and isinstance(event.data, dict)
@@ -468,7 +470,7 @@ async def append_event(
     # Catch misconfigurations BEFORE they hit the immutable ledger.
     from ..services.projections import (
         BALANCE_MOVING_EVENT_TYPES,
-        _skip_in_projection,
+        _skip_listed,
         _is_known_event_type,
     )
 
@@ -513,7 +515,7 @@ async def append_event(
     # If we get an event whose type is in the policy skip set, it means an
     # admin (or buggy migration) set skip_in_projection=true on a balance-moving
     # type — silently dropping it from the projection would create supply drift.
-    if event.event_type in BALANCE_MOVING_EVENT_TYPES and event.event_type in _skip_in_projection:
+    if event.event_type in BALANCE_MOVING_EVENT_TYPES and _skip_listed(event.event_type):
         logger.error(
             f"[PHASE-H V2] CRITICAL: balance-moving event '{event.event_type}' is "
             f"flagged skip_in_projection=true. REJECTING write — fix the policy first."

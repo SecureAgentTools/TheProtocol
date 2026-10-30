@@ -21,6 +21,7 @@ import os
 
 from ..kafka_record_auth import key_source as record_key_source, mode as record_auth_mode, mode_word_known, sign
 from ..kafka_security import client_security_kwargs
+from .. import ledger_names
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +29,13 @@ KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "redpanda:9092")
 HTTP_VIA_KAFKA = os.getenv("EVENTSTORE_HTTP_VIA_KAFKA", "false").lower() == "true"
 
 # Topic routing — duplicated from registry event_emitter.py
-# (EventStore can't import from the registry package)
-FINANCIAL_EVENTS = {
+# (EventStore can't import from the registry package); W4 phase 1: with the new names
+FINANCIAL_EVENTS = ledger_names.expand_live({
     "TokensTransferred", "TokensIssued", "TokensStaked", "TokensUnstaked",
     "TransactionFeeCollected", "DisputeSlash", "DisputeCompensationMinted",
     "BalanceCorrected", "RewardsDistributed", "RewardsAutoCompounded",
     "CrossRegistryTransferCompleted", "ProjectionSnapshot",
-}
+})
 GOVERNANCE_EVENTS = {"ProposalCreated", "VoteCast", "ProposalTallied"}
 
 

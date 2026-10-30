@@ -715,7 +715,7 @@ async def get_reward_config(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to retrieve reward configuration: {str(e)}"
+            detail=f"Failed to retrieve payout configuration: {str(e)}"
         )
 
 
@@ -796,7 +796,7 @@ async def update_reward_config(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to update reward configuration: {str(e)}"
+            detail=f"Failed to update payout configuration: {str(e)}"
         )
 
 

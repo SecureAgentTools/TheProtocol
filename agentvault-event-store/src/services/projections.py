@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from src.models.events import Event
 from src.services.event_store import EventStore
+from src import ledger_names
 import logging
 import time
 import os
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # f037: Projection Skip Policy — fetched from Registry API
 # ---------------------------------------------------------------------------
-_skip_in_projection: Set[str] = {'RewardsDistributed'}  # Default: hardcoded known skips
+_skip_in_projection: Set[str] = {'RewardsDistributed', 'LockPayoutsDistributed'}  # Default: hardcoded known skips
 _skip_policy_cache_ts: float = 0
 _SKIP_POLICY_TTL = 120  # seconds
 
@@ -47,7 +48,8 @@ except ImportError:
 # Mirror of the Registry / TEG constant. Used by Phase H write-time validator
 # (in routers/events.py) to reject misconfigured skip_in_projection flags
 # and missing idempotency keys on balance-moving events.
-BALANCE_MOVING_EVENT_TYPES = frozenset({
+# W4 phase 1: an event under its new name (UnitsTransferred for TokensTransferred ...) moves the same balance.
+BALANCE_MOVING_EVENT_TYPES = ledger_names.expand_live({
     "TokensIssued", "TokensTransferred", "TokensStaked", "TokensUnstaked",
     "BalanceCorrected", "DisputeSlash", "DisputeCompensationMinted",
     "TransactionFeeCollected", "RewardsAutoCompounded", "ProjectionSnapshot",
@@ -106,7 +108,14 @@ def _is_known_event_type(event_type: str) -> bool:
     # Empty set = cache not yet populated → never reject (fail-open during startup)
     if not _known_event_types:
         return True
-    return event_type in _known_event_types
+    # W4 phase 1: a new name is known when its old name is (the table keys the old names until phase 2 adds the new)
+    return event_type in _known_event_types or ledger_names.live_old(event_type) in _known_event_types
+
+
+def _skip_listed(event_type: str) -> bool:
+    """W4 phase 1: an event is skipped when its name, or the old name of a new one, carries skip_in_projection (the
+    policy table keys the old names until phase 2 adds rows for the new ones with the same flags)."""
+    return event_type in _skip_in_projection or ledger_names.live_old(event_type) in _skip_in_projection
 
 
 def _should_skip_in_projection(event_type: str) -> bool:
@@ -116,7 +125,7 @@ def _should_skip_in_projection(event_type: str) -> bool:
     counter so we can prove skip rates per event_type and catch spurious skips
     on balance-moving events (which would be a Phase H validator failure).
     """
-    if event_type in _skip_in_projection:
+    if _skip_listed(event_type):
         if _projection_skipped_total is not None:
             _projection_skipped_total.labels(
                 event_type=event_type, reason="skip_in_projection"
@@ -252,6 +261,8 @@ class ProjectionService:
         "BalanceCorrected",                   # Manual correction event (admin reconciliation)
         "TransactionFeeCollected",            # TEG fee deducted from sender on top of transfer
     ]
+    # W4 phase 1: the same events under their new names, after the old ones
+    TRANSACTION_EVENT_TYPES += [n for t in TRANSACTION_EVENT_TYPES for n in ledger_names.live_names(t)[1:]]
     
     def __init__(self, event_store: EventStore):
         self.event_store = event_store
@@ -316,14 +327,15 @@ class ProjectionService:
             if _should_skip_in_projection(event.event_type):
                 logger.debug(f"Skipping {event.event_type} (skip_in_projection=true)")
                 continue
+            et = ledger_names.live_old(event.event_type)  # W4: a new name applies as its old one
 
             # Apply event to projection based on type
-            if event.event_type == "TokensIssued":
+            if et == "TokensIssued":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 liquid_balance += amount
                 logger.debug(f"Applied TokensIssued: +{amount} liquid")
 
-            elif event.event_type == "TokensTransferred":
+            elif et == "TokensTransferred":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 from_agent = event.data.get("from")
                 to_agent = event.data.get("to")
@@ -338,13 +350,13 @@ class ProjectionService:
                     liquid_balance += amount
                     logger.debug(f"Applied TokensTransferred (received): +{amount} liquid")
 
-            elif event.event_type == "TokensStaked":
+            elif et == "TokensStaked":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 liquid_balance -= amount
                 staked_balance += amount
                 logger.debug(f"Applied TokensStaked: -{amount} liquid, +{amount} staked")
 
-            elif event.event_type == "TokensUnstaked":
+            elif et == "TokensUnstaked":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 liquid_balance += amount
                 staked_balance -= amount
@@ -353,7 +365,7 @@ class ProjectionService:
             # OWL20-PREP: Rewards that are auto-compounded move from liquid to staked.
             # f037 fix: the preceding TokensIssued event already added `amount` to liquid,
             # so auto-compound must subtract it from liquid before adding to staked.
-            elif event.event_type == "RewardsAutoCompounded":
+            elif et == "RewardsAutoCompounded":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 liquid_balance -= amount
                 staked_balance += amount
@@ -364,19 +376,19 @@ class ProjectionService:
             # by the policy gate above. No hardcoded skip needed here.
 
             # OWL25: Dispute slash — deducts from defendant (sovereign local operation)
-            elif event.event_type == "DisputeSlash":
+            elif et == "DisputeSlash":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 liquid_balance -= amount
                 logger.debug(f"Applied DisputeSlash: -{amount} liquid")
 
             # OWL25: Dispute compensation mint — credits complainant (sovereign local operation)
-            elif event.event_type == "DisputeCompensationMinted":
+            elif et == "DisputeCompensationMinted":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 liquid_balance += amount
                 logger.debug(f"Applied DisputeCompensationMinted: +{amount} liquid")
 
             # OWL-BRIDGE: Cross-registry voluntary transfer (sender debited, receiver credited)
-            elif event.event_type == "CrossRegistryTransferCompleted":
+            elif et == "CrossRegistryTransferCompleted":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 from_agent = event.data.get("from")
                 to_agent = event.data.get("to")
@@ -388,13 +400,13 @@ class ProjectionService:
                     logger.debug(f"Applied CrossRegistryTransferCompleted (received): +{amount} liquid")
 
             # Manual balance correction (admin reconciliation)
-            elif event.event_type == "BalanceCorrected":
+            elif et == "BalanceCorrected":
                 adjustment = _safe_decimal(event.data.get("adjustment", 0))
                 liquid_balance += adjustment
                 logger.debug(f"Applied BalanceCorrected: {adjustment} liquid")
 
             # TEG fee: deducted from sender on top of transfer amount
-            elif event.event_type == "TransactionFeeCollected":
+            elif et == "TransactionFeeCollected":
                 fee = _safe_decimal(event.data.get("fee_amount", 0))
                 liquid_balance -= fee
                 logger.debug(f"Applied TransactionFeeCollected: -{fee} liquid")
@@ -435,10 +447,11 @@ class ProjectionService:
         # Filter to transaction events only
         if event_types is None:
             event_types = self.TRANSACTION_EVENT_TYPES
-        
+        wanted = ledger_names.expand_live(event_types)  # W4: an asked event under either of its names
+
         history = []
         for event in events:
-            if event.event_type in event_types:
+            if event.event_type in wanted:
                 
                 item = TransactionHistoryItem(
                     id=str(event.id),
@@ -485,53 +498,54 @@ class ProjectionService:
             # Respect emission policies — skip events marked as skip_in_projection
             if _should_skip_in_projection(event.event_type):
                 continue
+            et = ledger_names.live_old(event.event_type)  # W4: a new name applies as its old one
 
-            if event.event_type == "TokensIssued":
+            if et == "TokensIssued":
                 liquid_balance += _safe_decimal(event.data.get("amount", 0))
 
-            elif event.event_type == "TokensTransferred":
+            elif et == "TokensTransferred":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 if event.data.get("from") == agent_did:
                     liquid_balance -= amount
                 if event.data.get("to") == agent_did:
                     liquid_balance += amount
 
-            elif event.event_type == "TokensStaked":
+            elif et == "TokensStaked":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 liquid_balance -= amount
                 staked_balance += amount
 
-            elif event.event_type == "TokensUnstaked":
+            elif et == "TokensUnstaked":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 liquid_balance += amount
                 staked_balance -= amount
 
-            elif event.event_type == "RewardsAutoCompounded":
+            elif et == "RewardsAutoCompounded":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 liquid_balance -= amount
                 staked_balance += amount
 
             # RewardsDistributed: skip (already counted via TokensTransferred)
-            elif event.event_type == "RewardsDistributed":
+            elif et == "RewardsDistributed":
                 pass
 
-            elif event.event_type == "DisputeSlash":
+            elif et == "DisputeSlash":
                 liquid_balance -= _safe_decimal(event.data.get("amount", 0))
 
-            elif event.event_type == "DisputeCompensationMinted":
+            elif et == "DisputeCompensationMinted":
                 liquid_balance += _safe_decimal(event.data.get("amount", 0))
 
-            elif event.event_type == "CrossRegistryTransferCompleted":
+            elif et == "CrossRegistryTransferCompleted":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 if event.data.get("from") == agent_did:
                     liquid_balance -= amount
                 if event.data.get("to") == agent_did:
                     liquid_balance += amount
 
-            elif event.event_type == "BalanceCorrected":
+            elif et == "BalanceCorrected":
                 liquid_balance += _safe_decimal(event.data.get("adjustment", 0))
 
-            elif event.event_type == "TransactionFeeCollected":
+            elif et == "TransactionFeeCollected":
                 liquid_balance -= _safe_decimal(event.data.get("fee_amount", 0))
 
         return BalanceProjection(
@@ -652,6 +666,7 @@ class ProjectionService:
             # f037: Skip event types flagged by emission policy
             if _should_skip_in_projection(event.event_type):
                 continue
+            et = ledger_names.live_old(event.event_type)  # W4: a new name applies as its old one
 
             agent_did = event.aggregate_id
             _ensure_agent(agent_did)
@@ -659,12 +674,12 @@ class ProjectionService:
             state["count"] += 1
             state["last_ts"] = event.timestamp
 
-            if event.event_type == "TokensIssued":
+            if et == "TokensIssued":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 state["liquid"] += amount
                 supply_issued += amount  # f037: track supply creation
 
-            elif event.event_type == "TokensTransferred":
+            elif et == "TokensTransferred":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 from_agent = event.data.get("from")
                 to_agent = event.data.get("to")
@@ -678,17 +693,17 @@ class ProjectionService:
                 elif to_agent == agent_did:
                     state["liquid"] += amount
 
-            elif event.event_type == "TokensStaked":
+            elif et == "TokensStaked":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 state["liquid"] -= amount
                 state["staked"] += amount
 
-            elif event.event_type == "TokensUnstaked":
+            elif et == "TokensUnstaked":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 state["liquid"] += amount
                 state["staked"] -= amount
 
-            elif event.event_type == "RewardsAutoCompounded":
+            elif et == "RewardsAutoCompounded":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 state["liquid"] -= amount
                 state["staked"] += amount
@@ -696,20 +711,20 @@ class ProjectionService:
             # RewardsDistributed: skip in balance projection (already counted
             # via TokensTransferred from TEG EnhancedTransferService).
             # Event is preserved in immutable log for audit trail.
-            elif event.event_type == "RewardsDistributed":
+            elif et == "RewardsDistributed":
                 pass
 
-            elif event.event_type == "DisputeSlash":
+            elif et == "DisputeSlash":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 state["liquid"] -= amount
                 supply_slashed += amount  # f037: tokens destroyed
 
-            elif event.event_type == "DisputeCompensationMinted":
+            elif et == "DisputeCompensationMinted":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 state["liquid"] += amount
                 supply_minted_compensation += amount  # f037: tokens created
 
-            elif event.event_type == "CrossRegistryTransferCompleted":
+            elif et == "CrossRegistryTransferCompleted":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 from_agent = event.data.get("from")
                 to_agent = event.data.get("to")
@@ -722,7 +737,7 @@ class ProjectionService:
                 elif to_agent == agent_did:
                     state["liquid"] += amount
 
-            elif event.event_type == "BalanceCorrected":
+            elif et == "BalanceCorrected":
                 adj = _safe_decimal(event.data.get("adjustment", 0))
                 state["liquid"] += adj
                 if adj > 0:
@@ -730,7 +745,7 @@ class ProjectionService:
                 else:
                     supply_slashed += abs(adj)  # f037: negative correction = supply destruction
 
-            elif event.event_type == "TransactionFeeCollected":
+            elif et == "TransactionFeeCollected":
                 fee = _safe_decimal(event.data.get("fee_amount", 0))
                 state["liquid"] -= fee
                 supply_fees_collected += fee
@@ -739,19 +754,19 @@ class ProjectionService:
                 agent_state["teg:system:fee_collector"]["liquid"] += fee
 
             # SF-3: Cross-frame bridge events
-            elif event.event_type == "TokensBridgeLocked":
+            elif et == "TokensBridgeLocked":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 supply_bridge_locked += amount
 
-            elif event.event_type == "TokensBridgeUnlocked":
+            elif et == "TokensBridgeUnlocked":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 supply_bridge_locked -= amount
 
-            elif event.event_type == "WrappedTokensMinted":
+            elif et == "WrappedTokensMinted":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 supply_wrapped_minted += amount
 
-            elif event.event_type == "WrappedTokensBurned":
+            elif et == "WrappedTokensBurned":
                 amount = _safe_decimal(event.data.get("amount", 0))
                 supply_wrapped_minted -= amount
 

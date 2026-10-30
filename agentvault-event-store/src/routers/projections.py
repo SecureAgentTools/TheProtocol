@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select, func, distinct, case, cast, String, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.services.projections import ProjectionService
+from src import ledger_names
 from src.services.event_store import EventStore
 from src.database.connection import get_db
 from src.models.db_models import EventModel, ForeignEventModel
@@ -432,8 +433,9 @@ async def cross_frame_audit(
             bd = fdata["event_breakdown"]
             remote_minted = bd.get("WrappedTokensMinted", 0)
             remote_burned = bd.get("WrappedTokensBurned", 0)
-            remote_locked = bd.get("TokensBridgeLocked", 0)
-            remote_unlocked = bd.get("TokensBridgeUnlocked", 0)
+            # W4 phase 1: a bridge event counts under either of its names
+            remote_locked = sum(bd.get(n, 0) for n in ledger_names.live_names("TokensBridgeLocked"))
+            remote_unlocked = sum(bd.get(n, 0) for n in ledger_names.live_names("TokensBridgeUnlocked"))
 
             # Note: we report event COUNTS, not amounts (amounts need individual event parsing)
             # For the audit, having the events replicated is the key — amounts are verified via supply audit

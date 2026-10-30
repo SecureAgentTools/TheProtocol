@@ -7,7 +7,7 @@ operation with the same ``bridge_tx_id`` returns the cached response
 rather than mutating balances twice.
 """
 import logging
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, status, Security
 from pydantic import BaseModel, Field
@@ -25,6 +25,11 @@ class LockReq(BaseModel):
     agent_id: str
     amount: Decimal = Field(gt=0)
     bridge_tx_id: str
+
+def _stored(amount) -> Decimal:
+    """An amount as balance_ledger_journal stores it (NUMERIC(36, 18))."""
+    return Decimal(str(amount)).quantize(Decimal("1e-18"), rounding=ROUND_HALF_UP)
+
 
 class MintReq(BaseModel):
     agent_id: str
@@ -93,6 +98,27 @@ def bridge_unlock(
     try:
         profile = db.execute(select(models.AgentTEGProfile).where(models.AgentTEGProfile.agent_id == req.agent_id).with_for_update()).scalar_one_or_none()
         if not profile: raise HTTPException(404, f"Agent {req.agent_id} not found")
+        # SEC-03 (2026-10-17): an unlock releases one bridge lock this TEG made, once, by the lock's own record: the row
+        # the balance journal's trigger wrote in the lock's transaction (entry_type 'bridge_lock', entry_ref its
+        # bridge_tx_id), for this agent and this amount, with no release of it before. The admin-token caller (the
+        # registry, which binds an unlock to its own lock record since V0619) is no longer the only check: an unlock can
+        # no longer release units another mechanism locked, nor release one lock twice once its 24 h idempotency record
+        # has expired. Read 2026-10-17 on all eleven TEG databases: no bridge operation was ever journaled, so no lock
+        # made before this check is left without its record. Read with the agent's row locked: a concurrent release of
+        # the same lock commits first, and this statement sees it.
+        _jrows = db.execute(text(
+            "SELECT entry_type, delta_locked FROM balance_ledger_journal "
+            "WHERE agent_id = :a AND entry_ref = :r AND entry_type IN ('bridge_lock', 'bridge_unlock')"),
+            {"a": req.agent_id, "r": str(req.bridge_tx_id)}).all()
+        _locks = [d for t, d in _jrows if t == "bridge_lock"]
+        if any(t == "bridge_unlock" for t, _ in _jrows):
+            raise HTTPException(409, f"Bridge lock {req.bridge_tx_id} was already released on this TEG; nothing unlocked")
+        if not _locks:
+            raise HTTPException(404, f"No bridge lock {req.bridge_tx_id} for {req.agent_id} on this TEG; nothing unlocked")
+        if len(_locks) != 1:
+            raise HTTPException(409, f"Bridge lock {req.bridge_tx_id} has {len(_locks)} lock records on this TEG; nothing unlocked")
+        if _stored(_locks[0]) != _stored(req.amount):
+            raise HTTPException(409, f"Bridge lock {req.bridge_tx_id} locked {_stored(_locks[0])}, not {req.amount}; nothing unlocked")
         if profile.locked_balance < req.amount: raise HTTPException(400, f"Insufficient locked: {profile.locked_balance} < {req.amount}")
         db.execute(text("SELECT set_config('teg.entry_type','bridge_unlock',true), set_config('teg.entry_ref',:r,true)"), {"r": str(req.bridge_tx_id)})
         profile.locked_balance -= req.amount

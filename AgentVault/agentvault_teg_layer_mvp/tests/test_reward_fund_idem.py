@@ -206,7 +206,7 @@ def test_a_source_drained_under_the_leg_rolls_to_the_next():
     """§REWARDRACE (2026-10-06, measured on sbx-alpha: two 50 fundings 7 ms apart, the second refused "Insufficient
     balance" while the treasury held plenty). The waterfall reads the fee collector at 60; before its leg debits, another
     funding (its own session, committed) takes 50; the leg re-reads 10, takes it, and the treasury covers the other 40.
-    Pre-fix: the leg's ValueError fails the whole funding 400 ("Reward fund failed") and nothing reaches the target."""
+    Pre-fix: the leg's ValueError fails the whole funding 400 ("Reward fund failed" then, "Payout funding failed" since) and nothing reaches the target."""
     reset_db()
     db = SessionLocal()
     real_exec = ep.TransferService.execute_transfer

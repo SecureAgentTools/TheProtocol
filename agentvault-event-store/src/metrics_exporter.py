@@ -25,6 +25,7 @@ from prometheus_client import Gauge, Counter, Histogram
 
 from .database.connection import AsyncSessionLocal
 from .models.db_models import EventModel
+from . import ledger_names
 from sqlalchemy import select, func, distinct, text
 
 logger = logging.getLogger(__name__)
@@ -168,6 +169,8 @@ KNOWN_EVENT_TYPES = [
     'GenesisGrant',
     'TreasuryFunding',
 ]
+# W4 phase 1: the renamed ones under their new names too (UnitsIssued ...), so a panel finds them at 0
+KNOWN_EVENT_TYPES += [n for t in list(KNOWN_EVENT_TYPES) for n in ledger_names.live_names(t)[1:]]
 
 # Initialize all known types to 0 so they appear even if no events exist
 for event_type in KNOWN_EVENT_TYPES:

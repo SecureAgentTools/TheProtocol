@@ -643,7 +643,7 @@ class RewardConfigUpdateRequest(BaseModel):
     @field_validator('attestation_submission_reward')
     def validate_reward(cls, v):
         if v is not None and v < 0:
-            raise ValueError("Reward amount must be non-negative")
+            raise ValueError("Payout amount must be non-negative")
         return v
 
 
@@ -806,7 +806,7 @@ class StakeCreateRequest(BaseModel):
     @field_validator('amount')
     def validate_amount(cls, v):
         if v <= 0:
-            raise ValueError("Stake amount must be positive")
+            raise ValueError("Lock amount must be positive")
         if v.as_tuple().exponent < -18:
             raise ValueError("Amount has too many decimal places (max 18)")
         return v
@@ -888,7 +888,7 @@ class DelegationCreateRequest(BaseModel):
     @field_validator('reward_share_percentage')
     def validate_percentage(cls, v):
         if v < 0 or v > 100:
-            raise ValueError("Reward share percentage must be between 0 and 100")
+            raise ValueError("Payout share percentage must be between 0 and 100")
         return v
     
     class Config:
@@ -927,7 +927,7 @@ class StakingRewardCycleRequest(BaseModel):
     @field_validator('reward_percentage')
     def validate_percentage(cls, v):
         if v <= 0 or v > 100:
-            raise ValueError("Reward percentage must be between 0 and 100")
+            raise ValueError("Payout percentage must be between 0 and 100")
         return v
     
     class Config:

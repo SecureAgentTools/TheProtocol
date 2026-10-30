@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException
 from ..models.events import Event
 from ..models.db_models import EventModel
+from .. import ledger_names
 from .lockdown_state import GLOBAL_LOCKDOWN
 import logging
 
@@ -54,7 +55,7 @@ class EventStore:
             raise HTTPException(status_code=503, detail=GLOBAL_LOCKDOWN.detail())
 
         # ── Phase 2b: Double-Entry Balance Validation (EVENTSTORE_DOUBLE_ENTRY_ENABLED) ──
-        if DOUBLE_ENTRY_ENABLED and event.event_type == "TokensTransferred":
+        if DOUBLE_ENTRY_ENABLED and ledger_names.live_old(event.event_type) == "TokensTransferred":
             try:
                 from .projections import ProjectionService  # local import to avoid circular
                 ps = ProjectionService(self)
@@ -194,8 +195,8 @@ class EventStore:
         query = select(EventModel).where(
             or_(
                 EventModel.aggregate_id == agent_did,
-                # Check if agent is the recipient in TokensTransferred events
-                (EventModel.event_type == "TokensTransferred") &
+                # Check if agent is the recipient in TokensTransferred events (W4: under either name)
+                (EventModel.event_type.in_(ledger_names.live_names("TokensTransferred"))) &
                 (EventModel.data["to"].astext == agent_did),
                 # Also include CrossRegistryTransferCompleted where agent is receiver
                 (EventModel.event_type == "CrossRegistryTransferCompleted") &

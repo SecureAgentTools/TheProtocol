@@ -31,6 +31,7 @@ from ..metrics_exporter import (
 )
 from ..kafka_record_auth import key_source as record_key_source, mode as record_auth_mode, mode_word_known, screen
 from ..kafka_security import client_security_kwargs
+from .. import ledger_names
 
 logger = logging.getLogger(__name__)
 
@@ -363,11 +364,11 @@ async def _process_batch(events: list[dict]) -> list:
                 # holds the lock. All workers acquire in sorted order here,
                 # so the combined wait-for graph has no cycle ⇒ no deadlocks
                 # on the accumulated per-batch lock set.
-                _single_agent = {
+                _single_agent = ledger_names.expand_live({  # W4 phase 1: with the new names
                     "TokensIssued", "TokensStaked", "TokensUnstaked",
                     "RewardsAutoCompounded", "DisputeSlash",
                     "DisputeCompensationMinted", "BalanceCorrected",
-                }
+                })
                 lock_dids: set[str] = set()
                 for r in rows:
                     et = r.get("event_type")
@@ -376,7 +377,7 @@ async def _process_batch(events: list[dict]) -> list:
                     if et in _single_agent:
                         if aid:
                             lock_dids.add(aid)
-                    elif et == "TokensTransferred":
+                    elif ledger_names.live_old(et) == "TokensTransferred":
                         frm = data.get("from")
                         to_ = data.get("to")
                         if frm:

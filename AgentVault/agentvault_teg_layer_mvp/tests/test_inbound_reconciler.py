@@ -118,3 +118,15 @@ def test_the_lease_outlives_the_sleep():
 def test_main_starts_and_stops_it():
     src = MAIN.read_text(encoding="utf-8")
     assert "await start_inbound_reconciler()" in src and "await stop_inbound_reconciler()" in src
+
+
+def test_classify_reads_the_sources_record_under_either_name():
+    """W4 phase 1 (agentvault2-aa, 2026-10-25): once the source's registry writes UnitsTransferred (phase 2), a credit is
+    verified against it as against TokensTransferred; a legacy spelling or another event is still no record of it."""
+    def _ut(amount, name="UnitsTransferred"):
+        return {"event_type": name, "data": {"amount": amount, "transaction_id": "t"}}
+    assert ir.classify("5", [_ut("5")]) == "verified"
+    assert ir.classify("5", [_ut("4.99")]) == "mismatch"
+    assert ir.classify("5", [_ut("5", "TokenTransferred")]) == "missing"
+    assert ir.classify("5", [_ut("5", "UnitsLocked")]) == "missing"
+    assert ir.classify("5", [_tt("1"), _ut("5")]) == "verified"

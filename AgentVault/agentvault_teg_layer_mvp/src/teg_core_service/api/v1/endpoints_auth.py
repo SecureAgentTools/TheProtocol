@@ -1,13 +1,12 @@
 """Authentication endpoints for TEG Core Service
 
-P0-002: Added registry_jwt signature validation.
-When REGISTRY_JWT_SECRET is configured, the /auth/token endpoint will:
-1. Decode and verify the registry_jwt signature
-2. Check that the JWT is not expired
-3. Verify the agent_id in the JWT matches the request agent_id
+POST /auth/token exchanges the registry's JWT for a TEG access token. The registry_jwt is always verified:
+1. its HS256 signature with the registry's key (REGISTRY_JWT_SECRET; refused with 503 when no key is set)
+2. its expiry
+3. its purpose, which must be teg_token_exchange
+4. the agent it names, which must be exactly the request's agent_id
 """
 import logging
-from typing import Optional
 
 import jwt as pyjwt
 from fastapi import APIRouter, HTTPException, Depends
@@ -39,112 +38,66 @@ class TokenResponse(BaseModel):
     expires_in: int = 900  # 15 minutes
 
 
-def _validate_registry_jwt(registry_jwt: str, claimed_agent_id: str) -> Optional[str]:
-    """Validate the registry JWT and extract the agent identity.
-    
-    P0-002: This function verifies the registry_jwt signature using the
-    shared secret (REGISTRY_JWT_SECRET). If the secret is not configured,
-    validation is skipped with a warning (MVP backward compatibility).
-    
-    Args:
-        registry_jwt: The JWT string from the Registry
-        claimed_agent_id: The agent_id claimed in the request body
-        
-    Returns:
-        The validated agent_id from the JWT, or None if validation is skipped
-        
+def _validate_registry_jwt(registry_jwt: str, claimed_agent_id: str) -> str:
+    """Verify the registry's exchange JWT and return the agent it names.
+
+    The registry signs this JWT with its API_KEY_SECRET (HS256); the TEG holds the same value as
+    REGISTRY_JWT_SECRET (also read under TEG_REGISTRY_JWT_SECRET and REGISTRY_SERVICE_TOKEN, the names the
+    kit composes pass). Without that secret the TEG cannot tell the registry from any other caller, so the
+    exchange is refused (503) instead of issuing a token unchecked: the check was skipped when the setting
+    was absent, which left every frame and operator TEG issuing tokens for any agent to anyone who reached
+    the route (CB-049, closed by configuration on 2026-10-16).
+
     Raises:
-        HTTPException 401: If JWT is invalid, expired, or agent_id mismatch
+        HTTPException 503: no registry secret is configured on this TEG
+        HTTPException 401: the JWT is invalid, expired, not an exchange JWT, or names another agent
     """
-    # Check if registry JWT validation is configured
-    if settings.registry_jwt_secret is None:
-        logger.warning(
-            "⚠️ REGISTRY_JWT_SECRET not configured — skipping registry_jwt validation. "
-            "This is acceptable for MVP but MUST be configured in production."
+    secret = settings.registry_jwt_secret
+    if secret is None or not secret.get_secret_value().strip():
+        logger.error(
+            "REGISTRY_JWT_SECRET is not configured: refusing the token exchange. Set it to the "
+            "registry's API_KEY_SECRET."
         )
-        return None
-    
-    secret_key = settings.registry_jwt_secret.get_secret_value()
-    
+        raise HTTPException(
+            status_code=503,
+            detail="Token exchange is not configured on this TEG (REGISTRY_JWT_SECRET is not set)",
+        )
+
     try:
-        # Decode and verify the JWT signature
-        # The registry uses HS256 with API_KEY_SECRET
         payload = pyjwt.decode(
             registry_jwt,
-            secret_key,
+            secret.get_secret_value(),
             algorithms=["HS256"],
-            options={
-                "verify_exp": True,
-                "verify_iat": False,  # iat is not always present
-                "require": ["exp"],
-            }
+            options={"verify_exp": True, "verify_iat": False, "require": ["exp"]},
         )
-        
-        # Verify this is a token exchange JWT (not a regular user session token)
-        purpose = payload.get("purpose")
-        if purpose and purpose != "teg_token_exchange":
-            logger.warning(f"Registry JWT has unexpected purpose: {purpose}")
-            raise HTTPException(
-                status_code=401,
-                detail="Registry JWT is not a token exchange token"
-            )
-        
-        # Extract the agent identity from the JWT
-        # The registry encodes: sub="registry", agent_id=<agent DID>
-        jwt_agent_id = payload.get("agent_id") or payload.get("did")
-        
-        # Fall back to 'sub' only if it's not the generic "registry" value
-        if not jwt_agent_id:
-            sub = payload.get("sub")
-            if sub and sub != "registry":
-                jwt_agent_id = sub
-        
-        if not jwt_agent_id:
-            logger.error("Registry JWT missing agent identity claim (agent_id/did/sub)")
-            raise HTTPException(
-                status_code=401,
-                detail="Registry JWT missing agent identity claim"
-            )
-        
-        # Verify the agent_id in the JWT matches the request
-        if jwt_agent_id != claimed_agent_id:
-            # Flexible matching: the registry may use DID format while request uses short ID
-            # e.g., claimed="did:agentvault:agent:42" vs jwt="did:agentvault:agent:42"
-            # or claimed="42" vs jwt_agent_id="did:agentvault:agent:42"
-            if not (
-                claimed_agent_id in str(jwt_agent_id) or 
-                str(jwt_agent_id) in claimed_agent_id
-            ):
-                logger.error(
-                    f"Agent ID mismatch: request claims '{claimed_agent_id}', "
-                    f"JWT contains '{jwt_agent_id}'"
-                )
-                raise HTTPException(
-                    status_code=401,
-                    detail="Agent ID in request does not match registry JWT"
-                )
-        
-        logger.info(f"Registry JWT validated successfully for agent: {jwt_agent_id}")
-        return jwt_agent_id
-        
     except pyjwt.ExpiredSignatureError:
         logger.warning(f"Registry JWT expired for claimed agent: {claimed_agent_id}")
-        raise HTTPException(
-            status_code=401,
-            detail="Registry JWT has expired"
-        )
+        raise HTTPException(status_code=401, detail="Registry JWT has expired")
     except pyjwt.InvalidSignatureError:
         logger.error(f"Registry JWT signature invalid for claimed agent: {claimed_agent_id}")
-        raise HTTPException(
-            status_code=401,
-            detail="Registry JWT signature is invalid"
-        )
+        raise HTTPException(status_code=401, detail="Registry JWT signature is invalid")
     except pyjwt.InvalidTokenError as e:
         logger.error(f"Registry JWT validation failed: {e}")
-        raise HTTPException(
-            status_code=401,
-            detail=f"Registry JWT is invalid: {str(e)}"
-        )
+        raise HTTPException(status_code=401, detail=f"Registry JWT is invalid: {str(e)}")
+
+    # Only a JWT the registry minted for this exchange counts: a session or agent JWT signed with the
+    # same key is not an exchange JWT, with or without a purpose claim.
+    if payload.get("purpose") != "teg_token_exchange":
+        logger.warning(f"Registry JWT has purpose {payload.get('purpose')!r}, not teg_token_exchange")
+        raise HTTPException(status_code=401, detail="Registry JWT is not a token exchange token")
+
+    # The registry names the agent in agent_id (did is an older alias); it must be exactly the agent the
+    # request asks for. No substring or prefix matching: "did:x:1" must never stand for "did:x:12".
+    jwt_agent_id = payload.get("agent_id") or payload.get("did")
+    if not jwt_agent_id:
+        logger.error("Registry JWT missing agent identity claim (agent_id/did)")
+        raise HTTPException(status_code=401, detail="Registry JWT missing agent identity claim")
+    if str(jwt_agent_id) != claimed_agent_id:
+        logger.error(f"Agent ID mismatch: request claims '{claimed_agent_id}', JWT contains '{jwt_agent_id}'")
+        raise HTTPException(status_code=401, detail="Agent ID in request does not match registry JWT")
+
+    logger.info(f"Registry JWT validated successfully for agent: {jwt_agent_id}")
+    return str(jwt_agent_id)
 
 
 @router.post("/token", response_model=TokenResponse)
@@ -158,17 +111,16 @@ async def create_agent_token(
     This endpoint is called by the Registry to exchange its JWT
     for a TEG-specific access token.
     
-    P0-002: When REGISTRY_JWT_SECRET is configured, the registry_jwt
-    signature is validated before issuing a TEG token.
+    The registry_jwt is always verified first (signature, expiry, purpose, the
+    exact agent); without a configured registry secret the exchange is refused.
     """
-    # P0-002: Validate the registry JWT if secret is configured
-    _validate_registry_jwt(request.registry_jwt, request.agent_id)
-    
+    agent_id = _validate_registry_jwt(request.registry_jwt, request.agent_id)
+
     # Ensure agent exists in TEG database
-    agent = AgentCRUD.get_or_create(db, request.agent_id)
-    
+    AgentCRUD.get_or_create(db, agent_id)
+
     # Generate TEG access token
-    access_token = jwt_service.create_access_token(agent_id=request.agent_id)
+    access_token = jwt_service.create_access_token(agent_id=agent_id)
     
     return TokenResponse(
         access_token=access_token,

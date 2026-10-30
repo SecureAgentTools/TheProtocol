@@ -28,6 +28,7 @@ from ...core.secure_config import get_settings
 from ...core.structured_logging import get_logger, LogContext, log_performance, log_transaction
 from ...core.error_handling import TEGException, ErrorCode
 from ...core.ledger_gate import require_ledger
+from ...core.move_replay import same_move, refuse_other_move
 from ...core.idempotency import IdempotencyService
 from ...database.db_session import get_db
 from ...database.crud import AgentCRUD, TransferService, SystemConfigCRUD
@@ -150,7 +151,7 @@ def _reward_partial_content(request, waterfall, legs, funded) -> Dict:
         "reference_id": request.reference_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "detail": (
-            f"Partial reward funding cached after a mid-waterfall error: "
+            f"Partial payout funding cached after a mid-waterfall error: "
             f"{funded}/{request.amount} applied from {[l['source'] for l in legs]}; "
             f"{remaining} not applied. A same-key retry returns this partial (no re-pay); "
             f"fund the remainder with a NEW idempotency key."
@@ -1408,7 +1409,7 @@ async def reward_fund(
             raise TEGException(
                 status_code=HTTP_400_BAD_REQUEST,
                 error_code=ErrorCode.SYS_INTERNAL_ERROR,
-                message="Reward fund failed",
+                message="Payout funding failed",
                 detail=str(e),
             )
         except Exception as e:
@@ -1421,7 +1422,7 @@ async def reward_fund(
             raise TEGException(
                 status_code=HTTP_400_BAD_REQUEST,
                 error_code=ErrorCode.SYS_INTERNAL_ERROR,
-                message="Reward fund failed",
+                message="Payout funding failed",
                 detail=str(e) if settings.debug else None,
             )
 
@@ -1833,6 +1834,8 @@ async def treasury_cross_teg_fund_send(
             )
 
         # ── Step 1: Resolve target URL (PARTNER_TEGS or caller override) ──
+        # The partner rule (2026-10-17): an override is the address of this one send and adds no partner (it used to add
+        # the target, so a provisioning fund made the operator a partner of its frame's TEG as a side effect).
         try:
             target_url = resolve_partner_url(target_teg_id, request.target_url)
         except KeyError:
@@ -2155,14 +2158,19 @@ async def fx_move(
     ref = f"fxref:{request.idempotency_key}"
 
     def _replay(txn: TEGTransaction) -> FxMoveResponse:
+        # D6-808: a replay is answered from the row the key names, and only when this request is that row's move; a
+        # different move under the same key is refused (core/move_replay.py). Both callers below: the lookup and the
+        # concurrent attempt's winner.
+        if not same_move(txn, from_did, to_did, request.amount):
+            raise refuse_other_move("fx/move", request.idempotency_key, txn, from_did, to_did, request.amount)
         return FxMoveResponse(
             transaction_id=txn.transaction_id,
             status="completed",
-            from_did=from_did,
-            to_did=to_did,
-            amount=request.amount,
-            from_balance=AgentCRUD.get_balance(db, from_did),
-            to_balance=AgentCRUD.get_balance(db, to_did),
+            from_did=txn.sender_agent_id,
+            to_did=txn.receiver_agent_id,
+            amount=Decimal(str(txn.amount)),
+            from_balance=AgentCRUD.get_balance(db, txn.sender_agent_id),
+            to_balance=AgentCRUD.get_balance(db, txn.receiver_agent_id),
             idempotent_replay=True,
         )
 

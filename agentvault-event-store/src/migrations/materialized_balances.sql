@@ -95,6 +95,9 @@ CREATE INDEX IF NOT EXISTS idx_materialized_balances_updated
 --          RewardsAutoCompounded, TransactionFeeCollected, DisputeSlash,
 --          DisputeCompensationMinted, BalanceCorrected
 -- Skipped: RewardsDistributed, CrossRegistryTransferCompleted (skip_in_projection)
+-- W4 phase 1 (2026-10-25): each typed event under its old or its new name (UnitsIssued, UnitsTransferred, UnitsLocked,
+-- UnitsUnlocked, LockPayoutsRelocked; src/ledger_names.py) is applied the same. Under single_writer (every running
+-- store) typed events are audit-only either way; a legacy spelling (TokenTransferred) is still not applied.
 CREATE OR REPLACE FUNCTION update_materialized_balances() RETURNS TRIGGER AS $$
 DECLARE
     evt_type TEXT;
@@ -216,7 +219,7 @@ BEGIN
     END IF;
 
     CASE evt_type
-        WHEN 'TokensIssued' THEN
+        WHEN 'TokensIssued', 'UnitsIssued' THEN
             amount := COALESCE((evt_data->>'amount')::numeric, 0);
             PERFORM pg_advisory_xact_lock(lock_ns, hashtext(agent_id));
             INSERT INTO materialized_balances (agent_did, liquid_balance, event_count, last_event_id, last_event_timestamp, updated_at)
@@ -233,7 +236,7 @@ BEGIN
                 updated_at = NOW()
             WHERE id = 1;
 
-        WHEN 'TokensTransferred' THEN
+        WHEN 'TokensTransferred', 'UnitsTransferred' THEN
             amount := COALESCE((evt_data->>'amount')::numeric, 0);
             from_agent := evt_data->>'from';
             to_agent := evt_data->>'to';
@@ -273,7 +276,7 @@ BEGIN
 
             -- No supply_summary update: transfers are zero-sum
 
-        WHEN 'TokensStaked' THEN
+        WHEN 'TokensStaked', 'UnitsLocked' THEN
             amount := COALESCE((evt_data->>'amount')::numeric, 0);
             PERFORM pg_advisory_xact_lock(lock_ns, hashtext(agent_id));
             INSERT INTO materialized_balances (agent_did, liquid_balance, staked_balance, event_count, last_event_id, last_event_timestamp, updated_at)
@@ -286,7 +289,7 @@ BEGIN
                 last_event_timestamp = NEW.timestamp,
                 updated_at = NOW();
 
-        WHEN 'TokensUnstaked' THEN
+        WHEN 'TokensUnstaked', 'UnitsUnlocked' THEN
             amount := COALESCE((evt_data->>'amount')::numeric, 0);
             PERFORM pg_advisory_xact_lock(lock_ns, hashtext(agent_id));
             INSERT INTO materialized_balances (agent_did, liquid_balance, staked_balance, event_count, last_event_id, last_event_timestamp, updated_at)
@@ -299,7 +302,7 @@ BEGIN
                 last_event_timestamp = NEW.timestamp,
                 updated_at = NOW();
 
-        WHEN 'RewardsAutoCompounded' THEN
+        WHEN 'RewardsAutoCompounded', 'LockPayoutsRelocked' THEN
             amount := COALESCE((evt_data->>'amount')::numeric, 0);
             PERFORM pg_advisory_xact_lock(lock_ns, hashtext(agent_id));
             -- f037 fix: the preceding TokensIssued event already added `amount` to liquid_balance.

@@ -479,7 +479,7 @@ async def update_reward_config(
         if not reward:
             raise HTTPException(
                 status_code=HTTP_404_NOT_FOUND,
-                detail=f"Reward config {reward_id} not found"
+                detail=f"Payout config {reward_id} not found"
             )
         
         # Update fields
@@ -869,7 +869,7 @@ def _retired_rail_guard() -> None:
         return
     raise HTTPException(
         status_code=404,
-        detail=("This TEG staking surface is retired: the registry's staking rail is the "
+        detail=("This TEG lock surface is retired: the registry's lock rail is the "
                 "supported one and reaches the TEG via /tokenomics/lock and /tokenomics/unlock."),
     )
 
@@ -1034,8 +1034,8 @@ async def trigger_reward_cycle(
             not in ("1", "true", "yes", "on"):
         raise HTTPException(
             status_code=501,
-            detail=("Staking reward cycles are not issued from the TEG: this rail credits "
-                    "balances directly and creates supply. Rewards are paid by the "
+            detail=("Payout cycles on locked units are not issued from the TEG: this rail credits "
+                    "balances directly and creates supply. Payouts are made by the "
                     "registry's waterfall-funded distributor."),
         )
     try:

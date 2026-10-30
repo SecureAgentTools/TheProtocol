@@ -39,7 +39,7 @@ def test_a_non_zero_opening_balance_is_refused(v):
     assert ei.value.status_code == 400
     # `detail=` is stored as detail_info and serialised by teg_exception_handler
     # into ErrorDetail.detail — that is what a caller actually reads.
-    assert "reward-funding" in str(ei.value.detail_info), \
+    assert "treasury funding rail" in str(ei.value.detail_info), \
         "the refusal must say where to go instead, or it just looks broken"
 
 

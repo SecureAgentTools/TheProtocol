@@ -25,17 +25,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database.connection import get_db
 from ..models.db_models import EventModel
+from .. import ledger_names
 from .events import verify_event_auth
 
 router = APIRouter(prefix="/api/v1/forensics", tags=["forensics"])
 
-# Mirrors the registry/TEG BALANCE_MOVING_EVENT_TYPES (event_emitter.py:63-67).
-_BALANCE_MOVING = {
+# Mirrors the registry/TEG BALANCE_MOVING_EVENT_TYPES (event_emitter.py:63-67); W4 phase 1: with the new names.
+_BALANCE_MOVING = ledger_names.expand_live({
     "TokensIssued", "TokensTransferred", "TokensStaked", "TokensUnstaked",
     "BalanceCorrected", "DisputeSlash", "DisputeCompensationMinted",
     "TransactionFeeCollected", "RewardsAutoCompounded", "ProjectionSnapshot",
     "LedgerBalanceChanged",
-}
+})
 
 _MAX_SEARCH_SPAN = timedelta(days=31)   # hard cap on the search window
 _MAX_SCAN_SPAN = timedelta(days=7)      # detector scan is heavier per-row → tighter

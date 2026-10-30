@@ -18,6 +18,7 @@ Coverage strategy:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
@@ -109,6 +110,45 @@ def _measured_for_real(outcomes: Dict[str, dict], tool: str) -> bool:
     named skip (NOT MEASURED) still lets the probe run."""
     row = outcomes.get(tool)
     return isinstance(row, dict) and not row.get("skip_reason")
+
+
+SWEEP_BROADCAST_TITLE = "phase6 sweep"
+
+
+async def broadcast_read_back(bag: Any, broadcast_id: Any, dev_jwt: str, outcomes: Dict[str, dict]) -> None:
+    """V0649 (agentvault2-13): the sweep's composeBroadcast row passed on the compose call's 2xx alone (recorded by
+    agentvault2-aa 2026-10-26 from agentvault2-66's read: "PASS ON SEND"). The notice goes to the run's own developer
+    (V0645), so that developer reads it back through the receipt route GET /api/v1/notifications/{id}, which answers the
+    broadcast to its addressee and 404 to anyone else. Never the unread list: lifecycle_notifications_2fa marks the
+    newest unread notice read and would race it. The row stays a pass only when the notice reads back as sent; a flow
+    without an in-target transport says the read-back was not measured (the send alone is no measurement)."""
+    tool = "theprotocol_composeBroadcast"
+    row = outcomes.get(tool)
+    if not isinstance(row, dict) or not row.get("healthy") or row.get("skip_reason"):
+        return
+    if not str(broadcast_id or "").isdigit():
+        row["healthy"] = False
+        row["fail_reason"] = "composeBroadcast answered 2xx without a broadcast id, so nothing could be read back"
+        return
+    http = getattr(bag, "http_in_target", None)
+    if http is None:
+        outcomes[tool] = _not_measured(tool, "admin", "NOT MEASURED: composed (HTTP 2xx), but this flow has no in-target "
+                                                      "transport to read the notice back on the run's own account")
+        return
+    code, text = await http("GET", f"/api/v1/notifications/{int(broadcast_id)}", bearer=dev_jwt)
+    try:
+        body = json.loads(text) if text else None
+    except ValueError:
+        body = None
+    b = body.get("broadcast") if isinstance(body, dict) else None
+    if code == "200" and isinstance(b, dict) and str(b.get("id")) == str(broadcast_id) \
+            and b.get("title") == SWEEP_BROADCAST_TITLE and isinstance(body.get("read"), bool):
+        row["read_back"] = "the run's developer reads the notice it was sent (GET /api/v1/notifications/{id}, 200)"
+        return
+    row["healthy"] = False
+    row["fail_reason"] = (f"composeBroadcast answered 2xx, but the run's own developer cannot read the notice back: "
+                          f"GET /api/v1/notifications/{{id}} answered HTTP {code or '?'}"
+                          + ("" if isinstance(b, dict) else " without the broadcast"))
 
 
 def _record_never_invoke_skip(tool: str, outcomes: Dict[str, dict]) -> None:
@@ -489,7 +529,7 @@ async def lifecycle_admin_destructive_safe(rpc: RpcCall, parse: ParseResult,
         ("theprotocol_bulkSuspendAgents", {"agent_dids": [fake_did], "reason": "phase-6 sweep"}),
         ("theprotocol_cloudOperatorSelfRestart", {}),
         ("theprotocol_completeAdmission", {"admission_id": "00000000-0000-4000-8000-000000000000"}),  # a UUID that names nothing (V0550, rule 3)
-        ("theprotocol_composeBroadcast", {"title": "phase6 sweep", "body": "phase6 admin-bridge sweep test", "broadcast_type": "info",
+        ("theprotocol_composeBroadcast", {"title": SWEEP_BROADCAST_TITLE, "body": "phase6 admin-bridge sweep test", "broadcast_type": "info",
                                           "target_developer_id": own_dev}),
         ("theprotocol_deactivatePeerRegistry", {"peer_id": "999999"}),
         ("theprotocol_deleteAdminAgent", {"agent_did": fake_did, "reason": "phase-6 sweep probe of an agent that does not exist",
@@ -636,6 +676,7 @@ async def lifecycle_admin_destructive_safe(rpc: RpcCall, parse: ParseResult,
                                        dev_jwt, outcomes, expect_status="any")
         if tool == "theprotocol_composeBroadcast" and _ok:
             composed = composed_id(_inner)
+            await broadcast_read_back(bag, composed, dev_jwt, outcomes)
     for tool, why in ADMIN_PEER_ONLY_TOOLS:
         if _measured_for_real(outcomes, tool):
             continue

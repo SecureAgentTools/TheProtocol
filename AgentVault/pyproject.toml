@@ -30,7 +30,7 @@ pydantic-settings = ">=2.15,<2.16"
 slowapi = ">=0.1.10,<0.2.0"
 psycopg2-binary = ">=2.9.13,<3.0.0" # For Alembic offline
 fastapi-mail = ">=1.6.8,<2.0"
-pyjwt = ">=2.13,<2.14" # the registry's JWTs since §DEPS (python-jose is gone); spiffe 0.3.1 declares pyjwt<2.14
+pyjwt = ">=2.15.1,<2.16" # the registry's JWTs since §DEPS (python-jose is gone); spiffe 0.3.2 lifts 0.3.1's pyjwt<2.14 cap (V0647)
 bcrypt = ">=5.0.0,<6" # the registry calls it directly (core/secret_hash.py); passlib is gone
 structlog = ">=26.1,<27.0" # the version the registry and the TEG run
 cryptography = ">=50.0.1,<51.0.0" # the version the registry and the TEG run
@@ -40,7 +40,7 @@ typer = ">=0.27" # Needed for SDK packager script
 
 # TEG Layer MVP
 requests = ">=2.34.2,<3.0.0"
-spiffe = ">=0.3.1,<0.4" # the registry's (the TEG no longer installs it)
+spiffe = ">=0.3.2,<0.4" # the registry's (the TEG no longer installs it)
 # --- Path Dependencies for Sub-Packages ---
 # These tell Poetry where to find the local packages
 agentvault = { path = "./agentvault_library", develop = true }
