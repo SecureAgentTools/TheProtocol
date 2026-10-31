@@ -61,8 +61,14 @@ BUNDLE_AGE_CRITICAL_SECONDS = 144 * 3600  # 6d (alert — 24h before expiry)
 # federate step sends the approver's token). At approve time a PUBLIC bundle URL is never followed inward.
 # Residual, named: a name can resolve differently between this check and the dial (DNS rebinding); the refusal carries no
 # oracle and the route is rate-limited, which is what bounds it.
+# V0650 (k): a sandbox frame that opts in (FRAME_INVITATIONS_SAME_HOST_PEERS, routers/frame_invitations.py) lets an
+# anonymous caller on the private network name a bundle host on an RFC1918/ULA address (allow_private): loopback,
+# link-local (cloud metadata), CGNAT and every other non-global range stay refused, on every hop.
 # ---------------------------------------------------------------------------
 _BUNDLE_MAX_REDIRECTS = 3
+# Explicit networks, not ipaddress.is_private (which also covers loopback, documentation and more, and moves between
+# Python versions): the private ranges a same-host peer can sit on, and nothing else.
+_LAN_PRIVATE_NETS = tuple(ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"))
 
 
 def _address_is_internal(addr: str) -> bool:
@@ -76,15 +82,28 @@ def _address_is_internal(addr: str) -> bool:
                 or ip.is_reserved or ip.is_unspecified)
 
 
+def _address_is_lan_private(addr: str) -> bool:
+    """True only for an RFC1918 or ULA address (an IPv4-mapped IPv6 address is judged as its IPv4 address)."""
+    try:
+        ip = ipaddress.ip_address(addr.split("%", 1)[0])
+    except ValueError:
+        return False
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None:
+        ip = mapped
+    return any(ip.version == net.version and ip in net for net in _LAN_PRIVATE_NETS)
+
+
 async def _resolve(host: str, port: int) -> List[str]:
     loop = asyncio.get_running_loop()
     infos = await loop.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     return sorted({i[4][0] for i in infos})
 
 
-async def _host_is_internal(host: str, port: int) -> Tuple[bool, str]:
+async def _host_is_internal(host: str, port: int, allow_private: bool = False) -> Tuple[bool, str]:
     """(internal, why) for a literal address or EVERY address a name resolves to; a name that does not resolve counts as
-    internal (refused: nothing can be said about where it leads)."""
+    internal (refused: nothing can be said about where it leads). With allow_private, an RFC1918/ULA address passes (and
+    only that: one loopback or link-local address among them still refuses the host)."""
     literal = host.strip("[]")
     try:
         ipaddress.ip_address(literal.split("%", 1)[0])
@@ -94,7 +113,7 @@ async def _host_is_internal(host: str, port: int) -> Tuple[bool, str]:
             addrs = await _resolve(host, port)
         except Exception as exc:  # noqa: BLE001 — named in the refusal
             return True, f"the bundle host does not resolve ({type(exc).__name__})"
-    if not addrs or any(_address_is_internal(a) for a in addrs):
+    if not addrs or any(_address_is_internal(a) and not (allow_private and _address_is_lan_private(a)) for a in addrs):
         return True, "the bundle host is (or resolves to) an internal address"
     return False, ""
 
@@ -106,14 +125,16 @@ def _bundle_client(timeout: float) -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=timeout, verify=False, follow_redirects=False)
 
 
-async def _dial_checked(client: httpx.AsyncClient, method: str, url: str, allow_internal: bool, headers=None):
-    """(response, refusal): every hop https, and public unless allow_internal; at most _BUNDLE_MAX_REDIRECTS redirects."""
+async def _dial_checked(client: httpx.AsyncClient, method: str, url: str, allow_internal: bool, headers=None,
+                        allow_private: bool = False):
+    """(response, refusal): every hop https, and public unless allow_internal (or, with allow_private, public or
+    RFC1918/ULA); at most _BUNDLE_MAX_REDIRECTS redirects."""
     for _hop in range(_BUNDLE_MAX_REDIRECTS + 1):
         parts = urlsplit(url)
         if parts.scheme != "https" or not parts.hostname:
             return None, "every hop must be an https URL"
         if not allow_internal:
-            internal, why = await _host_is_internal(parts.hostname, parts.port or 443)
+            internal, why = await _host_is_internal(parts.hostname, parts.port or 443, allow_private=allow_private)
             if internal:
                 return None, why
         r = await client.request(method, url, headers=headers)
@@ -462,7 +483,8 @@ class FrameTrustManager:
     # ------------------------------------------------------------------
 
     async def probe_bundle_endpoint(
-        self, url: str, timeout: float = HTTP_PROBE_TIMEOUT_SECONDS, allow_internal: bool = False
+        self, url: str, timeout: float = HTTP_PROBE_TIMEOUT_SECONDS, allow_internal: bool = False,
+        allow_private: bool = False,
     ) -> Tuple[bool, Optional[str]]:
         """Best-effort HEAD (falling back to GET) to confirm the URL is reachable.
 
@@ -475,14 +497,14 @@ class FrameTrustManager:
         try:
             async with _bundle_client(timeout) as client:
                 try:
-                    r, refusal = await _dial_checked(client, "HEAD", url, allow_internal)
+                    r, refusal = await _dial_checked(client, "HEAD", url, allow_internal, allow_private=allow_private)
                     if refusal:
                         return False, refusal
                     if 200 <= r.status_code < 500:
                         return True, None
                 except Exception:
                     pass
-                r, refusal = await _dial_checked(client, "GET", url, allow_internal)
+                r, refusal = await _dial_checked(client, "GET", url, allow_internal, allow_private=allow_private)
                 if refusal:
                     return False, refusal
                 if 200 <= r.status_code < 400:

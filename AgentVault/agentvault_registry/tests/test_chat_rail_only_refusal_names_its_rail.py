@@ -21,6 +21,8 @@ RAIL = {
     "engagement.accepted": "contract rail",
     "engagement.milestone": "contract rail",
     "engagement.settled": "contract rail",
+    "approval.request": "chat approval rail",      # V0650 (l)
+    "approval.decided": "chat approval rail",
 }
 
 

@@ -392,3 +392,20 @@ seven minutes after the approval.
 | 2 | refused before touching anything | the printed sentence names what is missing |
 | 3 | a step failed | the sentence names the step and the log to read; fix it and re-run |
 | 4 | a wait timed out | re-run later; it resumes where it stopped |
+
+## If the peer refuses: undoing your half
+
+Steps 3 and 4 put the peer's root into your SPIRE server and your terminators before the peer decides anything. A
+refusal at step 5 (exit 3) leaves that one-way trust in place: harmless, because your frame trusts the peer and not the
+other way round. If you give up on that peer, remove it on your frame:
+
+```bash
+docker exec <frame>-spire-server /opt/spire/bin/spire-server federation delete -id <peer trust domain>
+docker exec <frame>-spire-server /opt/spire/bin/spire-server bundle delete -id spiffe://<peer trust domain>
+```
+
+The cert-writers drop the root from the terminators on their next cycle. Two refusals come from where your frame
+stands, not from what it sent. A peer only stores an invitation whose bundle endpoint is a public https address that
+answers: a frame on a private address (a dev machine without public DNS) is refused at step 5 before the peer
+connects anywhere. And a peer whose console uses its edge's own CA (`--edge-tls internal`) fails step 2 with
+`CERTIFICATE_VERIFY_FAILED`: point `SSL_CERT_FILE` at a bundle holding the system CAs and that CA.

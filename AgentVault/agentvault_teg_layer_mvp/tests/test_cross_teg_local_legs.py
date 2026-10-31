@@ -238,3 +238,16 @@ def test_without_redis_observe_serves_and_enforce_refuses(monkeypatch):
     peer = f"spiffe://{PEER}/service/teg-layer"
     assert _admit(monkeypatch, None, "observe", peer, "1")[0]
     assert not _admit(monkeypatch, None, "enforce", peer, "1")[0]
+
+
+def test_a_transfer_refuses_an_agent_certificate_of_its_own_domain(monkeypatch):
+    """§EXTTEST (V0649): an external agent's inline SVID carries the frame's own trust domain and completes mTLS through
+    nginx-federation (measured from a dev machine, 2026-10-30); the domain rule alone admits it, so /transfer asks the
+    path-anchored service rule too. RED control: the tree before V0649 lacks the second clause."""
+    monkeypatch.setenv("SPIRE_TRUST_DOMAIN", OWN)
+    agent = f"spiffe://{OWN}/agent/did-theprotocol-{OWN}-0f0e0d0c"
+    assert ia.local_leg_caller_ok(agent)              # the domain alone says yes
+    assert not ia.is_internal_service_identity(agent)  # the service rule says no
+    src = _src(ROUTER)
+    seg = ast.get_source_segment(src, _fn(ast.parse(src), "initiate_cross_teg_transfer"))
+    assert "is_internal_service_identity(_svid) and local_leg_caller_ok(_svid)" in seg

@@ -290,6 +290,20 @@ def _is_sandbox_mode() -> bool:
     return False
 
 
+def reserved_tld_of(url: str) -> Optional[str]:
+    """The special-use TLD (RFC 6761 / 6762) a URL's host ends in, or None. One rule for the pull-sync's skip and for
+    create_agent's refusal (V0650 (e)): the registry never asks such a host for a card, so it never builds a placeholder
+    card that waits on one either."""
+    try:
+        host = (urlparse(str(url)).hostname or "").lower()
+    except Exception:
+        return None
+    if not host:
+        return None
+    tld = host.rsplit(".", 1)[-1]
+    return tld if tld in _RESERVED_TLDS else None
+
+
 def _is_skippable_host(url: str) -> bool:
     """Skip URLs we can't reach from inside the registry container (plan §12.8).
 
@@ -309,7 +323,7 @@ def _is_skippable_host(url: str) -> bool:
     if host in ("localhost", "127.0.0.1", "::1", "host.docker.internal"):
         return True
     # A special-use TLD cannot resolve in ANY mode (RFC 6761 / 6762) — see _RESERVED_TLDS.
-    if host.rsplit(".", 1)[-1] in _RESERVED_TLDS:
+    if reserved_tld_of(url):
         return True
     # §ALERTFIX: a card on this registry's own host is a card it hosts itself (see _own_hosts)
     if host in _own_hosts():

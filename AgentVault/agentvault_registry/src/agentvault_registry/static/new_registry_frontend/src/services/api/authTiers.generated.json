@@ -2,9 +2,9 @@
  "version": 2,
  "source": "agentvault_registry/core/auth_tiers.py (the FastAPI dependency tree, registration order)",
  "counts": {
-  "a": 153,
-  "e": 59,
-  "d": 4
+  "a": 156,
+  "e": 62,
+  "d": 6
  },
  "routes": [
   [
@@ -13,9 +13,24 @@
    "e"
   ],
   [
+   "GET",
+   "/api/v1/organizations/slug/{slug}",
+   "d"
+  ],
+  [
+   "GET",
+   "/api/v1/organizations/invitations/{token}",
+   "d"
+  ],
+  [
    "POST",
    "/api/v1/organizations/{org_id}/treasury/remit",
    "a"
+  ],
+  [
+   "GET",
+   "/api/v1/organizations/{org_id}/presence",
+   "e"
   ],
   [
    "GET",
@@ -35,6 +50,16 @@
   [
    "DELETE",
    "/api/v1/agents/me",
+   "a"
+  ],
+  [
+   "PUT",
+   "/api/v1/agents/me/status",
+   "a"
+  ],
+  [
+   "GET",
+   "/api/v1/agents/me/status",
    "a"
   ],
   [
@@ -1085,6 +1110,21 @@
   [
    "GET",
    "/api/v1/chat/federation/status",
+   "e"
+  ],
+  [
+   "POST",
+   "/api/v1/chat/conversations/{conversation_id}/approvals",
+   "a"
+  ],
+  [
+   "GET",
+   "/api/v1/chat/conversations/{conversation_id}/approvals",
+   "e"
+  ],
+  [
+   "GET",
+   "/api/v1/chat/approvals/{approval_id}",
    "e"
   ]
  ]

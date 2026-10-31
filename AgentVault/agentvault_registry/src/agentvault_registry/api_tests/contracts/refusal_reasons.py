@@ -25,38 +25,70 @@ BY_DESIGN_REFUSAL: Dict[str, str] = {
         "a resync rebuilds a frame's ledger projection, frame-wide, which no tester run does",
     'theprotocol_quarantineRegistry':
         "a quarantine holds a real registry (every roll driver refuses while one is held, and it sends the registry's "
-        'operators a critical notice, registry.quarantined), which no tester run does',
+        "operators a critical notice, registry.quarantined); a run quarantines a peer row of its own only on a target "
+        'torn down after the run, the nightly and proof pairs (MCP_TESTER_EPHEMERAL_TARGET, earned_ad_ephemeral)',
     'theprotocol_liftQuarantine':
-        'a lift needs a registry in quarantine, which no tester run makes (a quarantine holds a real registry)',
+        'a lift needs a registry in quarantine, which a run makes of its own only on the nightly and proof pairs '
+        '(earned_ad_ephemeral)',
     'theprotocol_blacklistRegistry':
-        'a blacklist cuts a real peer registry off the federation, which no tester run does',
+        'a blacklist cuts a peer registry off the federation and no route removes the row; a run blacklists a peer row '
+        'of its own only on the nightly and proof pairs (earned_ad_ephemeral)',
     'theprotocol_approveOperatorApplication':
         'approving an operator application provisions a real operator, which no tester run does',
     'theprotocol_rejectOperatorApplication':
         "a rejection needs an application of the run's own, and one stays in Operator Management for good (no route "
-        'removes it)',
+        "removes it), so a run makes and rejects one only on the nightly and proof pairs, last (earned_ad_pair_last, Phase 8)",
     'theprotocol_adminDownloadOperatorBundle':
-        "an operator's bundle carries its credentials, and it exists only for an approved application, which no tester "
-        'run makes',
+        "an operator's bundle carries its credentials and exists only for an approved application, so a run downloads "
+        "one (its status, type and size, never a byte of it) only from the pair's own operator on the nightly and proof "
+        "pairs, last (earned_ad_pair_last, Phase 8)",
     'theprotocol_suspendOperator':
-        "suspending an operator stops a real operator's federation, which no tester run does",
-    'theprotocol_reinstateOperator': 'a reinstatement needs a suspended operator, which no tester run makes',
-    'theprotocol_revokeOperatorAccess': "revoking an operator's access ends a real operator, which no tester run does",
+        "suspending an operator stops a real operator's federation, so a run suspends and reinstates only the pair's "
+        "own operator on the nightly and proof pairs, last (earned_ad_pair_last, Phase 8)",
+    'theprotocol_reinstateOperator':
+        "a reinstatement needs a suspended operator, which a run makes only of the pair's own operator on the nightly "
+        "and proof pairs, last (earned_ad_pair_last, Phase 8)",
+    'theprotocol_revokeOperatorAccess':
+        "revoking an operator's access ends a real operator, so a run revokes only the pair's own operator, as its very "
+        "last step on the nightly and proof pairs (earned_ad_pair_last, Phase 8)",
     'theprotocol_rotateOperatorPullToken':
-        "rotating an operator's image pull token breaks that real operator's next pull until it takes the new one, "
-        'which no tester run does',
+        "rotating an operator's image pull token breaks that real operator's next pull until it takes the new one, so "
+        "a run rotates only the pair's own operator's, on the nightly and proof pairs, last (earned_ad_pair_last, Phase 8)",
     'theprotocol_suspendFederationLicense':
-        'the run never mints a federation licence (a well-formed generateFederationLicense makes a real credential), so'
-        ' it has none of its own to suspend',
+        'a run mints a federation licence of its own (a real credential) only on a target torn down after the run, the '
+        'nightly and proof pairs (MCP_TESTER_EPHEMERAL_TARGET, earned_ad_ephemeral), so on a standing frame it has none '
+        'to suspend',
     'theprotocol_reinstateFederationLicense':
-        'the run never mints a federation licence, so it has none of its own to reinstate',
+        'a run mints a federation licence of its own only on the nightly and proof pairs (earned_ad_ephemeral), so on a '
+        'standing frame it has none to reinstate',
     'theprotocol_revokeFederationLicense':
-        'the run never mints a federation licence, so it has none of its own to revoke',
+        'a run mints a federation licence of its own only on the nightly and proof pairs (earned_ad_ephemeral), so on a '
+        'standing frame it has none to revoke',
     'theprotocol_deleteFederationLicense':
-        'the run never mints a federation licence, so it has none of its own to delete',
+        'a run mints a federation licence of its own only on the nightly and proof pairs (earned_ad_ephemeral), so on a '
+        'standing frame it has none to delete',
+    # §MCPTEST30 (tester batch 2 item 2): the two bridge routes only the bridge's other registry calls; refusal-only on
+    # sbx-alpha, the one frame running the bridge (the switch table holds them elsewhere)
+    'theprotocol_bridgeIssueWrapped':
+        "a route only the bridge's other registry calls (a federation peer's identity), so no MCP caller has a success "
+        "path; the Token Bridge is on the D8 retire list, his decision, and runs only where TOKEN_BRIDGE_ENABLED is on",
+    'theprotocol_bridgeUnlock':
+        "a route only the bridge's other registry calls (a federation peer's identity), so no MCP caller has a success "
+        "path; the Token Bridge is on the D8 retire list, his decision, and runs only where TOKEN_BRIDGE_ENABLED is on",
+    # §MCPTEST30 (tester batch 2 item 3): the commons season's money steps
+    'theprotocol_adminCommonsPaySeason':
+        "paying a season moves units from the payout waterfall to its winners, so a run pays only a season of its own, "
+        "on the nightly and proof pairs (the commons season lifecycle); elsewhere it is held to its refusal on the "
+        "open season",
+    'theprotocol_adminCommonsWriteOffAward':
+        "a write-off settles only an award whose payment failed or never answered, which a healthy target never gives "
+        "a run; its refusal is measured on the open season and, on the pairs, on the award that was never sent",
     'theprotocol_uploadRegistryCardIcon':
-        "the icon is the registry's own, on its signed registry card, which no tester run changes",
-    'theprotocol_tegTreasuryMint': 'minting is never automated (his decision D9: no automated mint)',
+        "the icon is the registry's own, on its signed registry card, so a run replaces it and puts it back only on "
+        "the nightly and proof pairs, last (earned_ad_pair_last, Phase 8)",
+    # keyed by the tool's live name since V0650: under its old name (tegTreasuryMint, mcp/tool_aliases.py) the reason
+    # reached no row, and the pair's tegTreasuryIssue row read the generic sentence (agentvault2-d3, 2026-10-31)
+    'theprotocol_tegTreasuryIssue': 'minting is never automated (his decision D9: no automated mint)',
     'theprotocol_refundFiatPurchase':
         'a fiat purchase exists only after a card payment through the euro on-ramp, which no tester run makes (an '
         "operator has no on-ramp: the fiat rail is a mainframe's, FIAT_GENESIS_REGISTRY)",
@@ -73,7 +105,9 @@ BY_DESIGN_REFUSAL: Dict[str, str] = {
     'theprotocol_toggleCanaryPath':
         "a toggle changes a real canary path's schedule, so the run toggles one only where the registry holds an "
         'active path, off and on again (earned_ad_platform); where none is held there is none to toggle',
-    'theprotocol_requestFrame': 'a frame request stays in Frame Management for good (no route removes it)',
+    'theprotocol_requestFrame':
+        "a frame request stays in Frame Management for good (no route removes it) and is mailed to the network's "
+        "commander address, so a run makes one only on the nightly and proof pairs, which mail nobody (earned_ad_pair_last, Phase 8)",
     'theprotocol_updateEnforcementPolicy':
         "a policy write records an amendment to the registry's enforcement policy, for every agent",
     'theprotocol_acknowledgeAgentFlag':
@@ -86,7 +120,8 @@ BY_DESIGN_REFUSAL: Dict[str, str] = {
         'an admission completes only for a registry the federation admitted through its admission rail, which no '
         'sandbox registry is',
     'theprotocol_federationPolicyUpdateRequest':
-        'a policy update request goes to a real peer registry, which no tester run asks',
+        "a policy update rewrites the stored policy of a federated peer registry, so a run updates only a peer row of "
+        "its own, on the nightly and proof pairs (earned_ad_ephemeral)",
     'theprotocol_federationCliAudit':
         "the remote CLI's audit events need a federation licence header, which no MCP caller carries",
     'theprotocol_adminGrafanaQuery': 'no Grafana credentials on a sandbox registry (GRAFANA_ADMIN_PASS unset)',

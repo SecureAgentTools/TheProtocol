@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field
 from .arguments import argument_problems  # §MCPTEST30 V0524: arguments checked against the inputSchema
 from .arguments import ToolArgumentsRefused, refuse_unbindable  # §MCPTEST30 V0545: arguments bound before the call
 from .audit import emit_mcp_audit
+from .protocol_version import negotiate_protocol_version
 from .tool_aliases import resolve_alias  # §AGORAWORDS (V0419)
 
 from .auth_bridge import authenticate_mcp_token, MCPAuthError, MCPAuthUnavailable, safe_exception_text  # §MCPTEST30 V0529
@@ -1156,7 +1157,7 @@ async def handle_admin_rpc(request: Request) -> JSONResponse:
 
         if method == "initialize":
             return _ok(request_id, {
-                "protocolVersion": ADMIN_SERVER_INFO["protocolVersion"],
+                "protocolVersion": negotiate_protocol_version(params),
                 "capabilities":    ADMIN_SERVER_INFO["capabilities"],
                 "serverInfo": {
                     "name":        ADMIN_SERVER_INFO["name"],

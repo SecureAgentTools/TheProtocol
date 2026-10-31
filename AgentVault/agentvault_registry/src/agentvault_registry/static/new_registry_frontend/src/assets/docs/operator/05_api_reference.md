@@ -235,7 +235,9 @@ curl -X POST <your-registry-url>/api/v1/onboard/create_agent \
 `agent_did_method` is required, plus `agent_host` (preferred: the registry builds a stub card and reads the real one
 from `<host>/.well-known/agent-card.json`, see [chapter 36](/docs/36)) or `agent_card` (a full A2A card, the older
 path). A name, description or skills belong inside the card, never at the top level of this body; a body with
-neither `agent_host` nor `agent_card` answers `422`.
+neither `agent_host` nor `agent_card` answers `422`. Sent without `agent_card`, an `agent_host` on a special-use name
+(`.invalid`, `.test`, `.example`, `.local`, `.localhost`) answers `400` and creates nothing: the registry could never
+read a card there.
 
 The answer is `201` (key fields):
 

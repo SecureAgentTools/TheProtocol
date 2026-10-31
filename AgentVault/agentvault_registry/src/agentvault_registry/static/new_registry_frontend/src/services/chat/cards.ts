@@ -134,6 +134,18 @@ export type CardView =
       type: 'engagement.settled'; contractId: string; seq: number
       amount: string; currency: string; completed: boolean; providerHome: string | null
     }
+  // V0650 (l) — approvals in the chat. RAIL-ONLY: the approval rail posts both, for the asking agent and for the
+  // developer who decided. The record behind them (GET /chat/approvals/{id}) is the authority; a card shows it.
+  | {
+      type: 'approval.request'; approvalId: string; title: string; unlocks: string | null
+      reason: string | null; expiresAt: string | null; artifactSha256: string | null
+      artifactLabel: string | null; productionImpact: boolean; requesterDid: string
+    }
+  | {
+      type: 'approval.decided'; approvalId: string; decision: 'approved' | 'denied'; title: string
+      decidedAt: string | null; decidedByName: string; decidedById: number | null; role: string
+      artifactSha256: string | null; requestDigest: string | null; note: string | null
+    }
   | { type: 'unknown'; rawType: string }
 
 /** The applet's doors: the server's closed list (services/chat_applet.py ACTIONS), re-applied here. D6-553: open_trade
@@ -145,7 +157,8 @@ const KNOWN = new Set(['pay.request', 'pay.receipt', 'service.call', 'service.re
                        'agent.card', 'contract.offer', 'guild.order',
                        'media', 'applet', 'exchange.listing', 'share.certificate', 'org.work.receipt',
                        'engagement.proposal', 'engagement.counter', 'engagement.offer',
-                       'engagement.accepted', 'engagement.milestone', 'engagement.settled'])
+                       'engagement.accepted', 'engagement.milestone', 'engagement.settled',
+                       'approval.request', 'approval.decided'])
 
 /** Trim a decimal string for DISPLAY. The venue stores prices at eighteen
  *  places, so a listing card rendered `1.500000000000000000 BVT` — technically
@@ -382,6 +395,29 @@ export function cardView(card: ChatCard | null | undefined, ctx: CardCtx = {}): 
         type: 'engagement.milestone',
         contractId: String(d.contract_id ?? ''),
         seq: Number(d.seq ?? 0), title: String(d.title ?? ''),
+      }
+    case 'approval.request':
+      return {
+        type: 'approval.request',
+        approvalId: String(d.approval_id ?? ''), title: String(d.title ?? ''),
+        unlocks: d.unlocks ? String(d.unlocks) : null, reason: d.reason ? String(d.reason) : null,
+        expiresAt: d.expires_at ? String(d.expires_at) : null,
+        artifactSha256: d.artifact_sha256 ? String(d.artifact_sha256) : null,
+        artifactLabel: d.artifact_label ? String(d.artifact_label) : null,
+        productionImpact: !!d.production_impact, requesterDid: String(d.requester_did ?? ''),
+      }
+    case 'approval.decided':
+      return {
+        type: 'approval.decided',
+        approvalId: String(d.approval_id ?? ''),
+        decision: d.decision === 'approved' ? 'approved' : 'denied',
+        title: String(d.title ?? ''), decidedAt: d.decided_at ? String(d.decided_at) : null,
+        decidedByName: String(d.decided_by_name ?? ''),
+        decidedById: typeof d.decided_by_developer_id === 'number' ? d.decided_by_developer_id : null,
+        role: String(d.role ?? ''),
+        artifactSha256: d.artifact_sha256 ? String(d.artifact_sha256) : null,
+        requestDigest: d.request_digest ? String(d.request_digest) : null,
+        note: d.note ? String(d.note) : null,
       }
     case 'engagement.settled':
       return {

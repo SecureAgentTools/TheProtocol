@@ -969,7 +969,8 @@ async def agent_heartbeat(auth: MCPAuthContext) -> Dict[str, Any]:
 async def enable_mtls(auth: MCPAuthContext) -> Dict[str, Any]:
     """
     Enroll this agent in IRONHAND mTLS — provisions a SPIFFE X.509 SVID for peer-to-peer auth.
-    Returns spiffe_id + docker_label + instructions for using the SVID.
+    Returns spiffe_id, the delivery and instructions for using the SVID (docker_label only for an agent on the
+    registry's host, where the label is what SPIRE matches).
     """
     require_agent_auth(auth)
     if not auth.raw_token:
@@ -2205,7 +2206,7 @@ AGENT_TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "name": "theprotocol_enableMtls",
         "description": (
             "Enroll this agent in IRONHAND mTLS: provisions a SPIFFE X.509 SVID for peer-to-peer authentication. "
-            "Returns spiffe_id + docker_label + instructions. Requires agent JWT."
+            "Returns spiffe_id, the delivery and its instructions (docker_label only for an agent on the registry's host). Requires agent JWT."
         ),
         "inputSchema": {"type": "object", "properties": {"agent_jwt": {"type": "string"}}}
     },
@@ -2777,7 +2778,8 @@ async def chat_list_conversations(auth: MCPAuthContext, state: str = "active",
 
 async def chat_read_thread(auth: MCPAuthContext, conversation_id: str,
                            before_seq: Optional[int] = None,
-                           limit: int = 40, join: bool = False) -> Dict[str, Any]:
+                           limit: int = 40, join: bool = False,
+                           mentions: Optional[str] = None) -> Dict[str, Any]:
     """Read one OurChat thread's messages (newest page; page back with before_seq). §TWOAGENT G1 (V0437): an agent's
     OWNER opening its cross-registry thread for the first time is announced to the other side, so that read answers
     409 household_join_confirm until it is repeated with join=true."""
@@ -2788,6 +2790,8 @@ async def chat_read_thread(auth: MCPAuthContext, conversation_id: str,
         params["before_seq"] = int(before_seq)
     if join:
         params["join"] = "true"
+    if mentions:                    # V0650 (h): "me", only the messages that @mention the caller (the route checks it)
+        params["mentions"] = str(mentions)
     return await _chat_request(auth, "GET",
                                f"/api/v1/chat/conversations/{seg(conversation_id)}/messages",
                                params=params, op_name="readThread")
@@ -2874,7 +2878,7 @@ async def chat_unblock_principal(auth: MCPAuthContext, ptype: str, developer_id:
 
 AGENT_TOOL_SCHEMAS.extend([
     {"name": "theprotocol_listConversations", "description": "OurChat chat: list my threads (state=active) or my Requests lane (state=requests). Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"state": {"type": "string", "enum": ["active", "requests"], "default": "active"}, "cursor": {"type": "string", "description": "ISO timestamp from a prior page"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 30}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": []}},
-    {"name": "theprotocol_readThread", "description": "OurChat chat: read one thread's messages (page back with before_seq). Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"conversation_id": {"type": "string"}, "before_seq": {"type": "integer", "minimum": 1}, "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 40}, "join": {"type": "boolean", "default": False, "description": "An agent's owner opening its cross-registry thread is announced to the other side as a visible join; the first such read answers 409 household_join_confirm until repeated with join=true"}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": ["conversation_id"]}},
+    {"name": "theprotocol_readThread", "description": "OurChat chat: read one thread's messages (page back with before_seq; mentions=me reads only the messages that @mention you). Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"conversation_id": {"type": "string"}, "before_seq": {"type": "integer", "minimum": 1}, "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 40}, "join": {"type": "boolean", "default": False, "description": "An agent's owner opening its cross-registry thread is announced to the other side as a visible join; the first such read answers 409 household_join_confirm until repeated with join=true"}, "mentions": {"type": "string", "enum": ["me"], "description": "me: only the messages that @mention you (your handle, your card name or your DID)"}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": ["conversation_id"]}},
     {"name": "theprotocol_sendChatMessage", "description": "OurChat chat: send a text message. Give conversation_id to continue, or target_agent_did / target_developer_id to start-or-continue the pair thread. A first message to a stranger lands as a request. Idempotent on client_ref. Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"body": {"type": "string"}, "conversation_id": {"type": "string"}, "target_agent_did": {"type": "string"}, "target_developer_id": {"type": "integer"}, "target_remote_key": {"type": "string", "description": "Someone on ANOTHER registry: handle@https://their.registry or did:...@https://their.registry"}, "conversation_kind": {"type": "string", "enum": ["dm", "agent_service"], "default": "dm"}, "client_ref": {"type": "string", "description": "Idempotency key (uuid); generated if omitted"}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": ["body"]}},
     {"name": "theprotocol_blockChatPrincipal", "description": "OurChat chat: block a principal silently (shared pair threads are left; the blocked party is told nothing). ptype remote names someone on another registry by its address. Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"ptype": {"type": "string", "enum": ["developer", "agent", "remote"]}, "developer_id": {"type": "integer"}, "agent_did": {"type": "string"}, "remote_key": {"type": "string", "description": "id@https://their.registry"}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": ["ptype"]}},
     {"name": "theprotocol_unblockChatPrincipal", "description": "OurChat chat: remove a block (threads stay left; opening the dm again re-engages it). Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"ptype": {"type": "string", "enum": ["developer", "agent", "remote"]}, "developer_id": {"type": "integer"}, "agent_did": {"type": "string"}, "remote_key": {"type": "string", "description": "id@https://their.registry"}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": ["ptype"]}},

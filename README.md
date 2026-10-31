@@ -141,15 +141,17 @@ out, verified; your registry tells its admins, you schedule the rollout) are des
 A **frame** is the whole sovereign stack under your own DNS name: registry, token exchange gateway, immutable
 ledger, SPIRE identity, mutual-TLS gateways, the auditor, the federated directory and the monitoring kit
 (32 containers). It federates with the network through the invitation rail and can provision its own cloud
-operators. You need one Linux host with Docker and the Compose plugin, 8 GB of memory, 20 GB of disk, one DNS
-name that resolves to that host, and the six images (`./build.sh` builds them, or pull a release's). Run the scripts as root (they write under
+operators. You need one Linux host with Docker and the Compose plugin, Python 3.10 or newer with the Docker SDK
+(`python3-docker`, or `pip install docker`), 8 GiB of free memory (16 GB of RAM is comfortable), 20 GB of disk, one DNS
+name that resolves to that host, and the six images (`./build.sh` builds them, or frame-up pulls a release's and retries a
+slow link). Run the scripts as root (they write under
 `/opt/theprotocol` and drive Docker), keep ports 80 and 443 open for the edge's Let's Encrypt certificate, and have an SMTP
 account for the `--mail-*` flags; `frame-doctor.py` names any missing precondition before anything is written.
 
 ```bash
 cd scripts/distribution
 ./build.sh                                                      # the six images: registry, teg-layer, event-store, auditor, directory, cert-writer
-#   or pull a release's six images (no account) and pass --images-prefix images.theprotocol.cloud/theprotocol --version <release>
+#   or let frame-up pull a release's six images (no account): pass --images-prefix images.theprotocol.cloud/theprotocol --version <release>
 #   to the doctor and to frame-up: Releases, images and updates (PUBLIC_DOCS/12_UPDATES.md)
 ./frame-doctor.py --public-name frame.example.org               # one sentence per missing precondition, nothing written
 ./frame-up.py --name myframe --public-name frame.example.org --ticker MYF --currency-name "My Unit" \
@@ -178,8 +180,10 @@ and without a declared location (the card publishes both). What the host opens t
 TLS and refuse a client without a SPIFFE identity; the bundle endpoint answers anyone, because it publishes the trust
 root a peer needs before it can verify you. Everything else stays on loopback. `--posture sandbox` stands a frame up without a mail
 relay (it mails nobody), `--edge-tls internal` uses Caddy's own CA on a host that cannot answer on 80/443, and the
-port flags move any of the five. `--with-runner` also installs the frame runner (a root systemd service), so Frame
-Management can provision cloud operators on the same host, each reachable as `<slug>.frame.example.org` through the
+port flags move any of the five. On Windows, run all of it inside WSL2 and keep a WSL shell open while the frame runs:
+WSL stops an idle distribution, and every container in it. `--with-runner` also installs the frame runner (a root systemd service).
+Agents on the frame get their mTLS certificates through it (without it the frame refuses them and records nothing),
+and Frame Management can provision cloud operators on the same host, each reachable as `<slug>.frame.example.org` through the
 same edge (point `*.frame.example.org`, or one record per operator, at the host). An operator is four steps in the
 console: the operator applies (Operator applications), the frame admin approves (the answer carries a one-time
 activation code the applicant receives), the applicant activates with that code (this registers the operator's

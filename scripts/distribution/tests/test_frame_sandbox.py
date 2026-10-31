@@ -126,3 +126,151 @@ def test_a_resumed_sandbox_reuses_the_lanes_its_partial_stack_publishes(tmp_path
     assert fs.partial_lanes(str(tmp_path), "larch") is None          # another frame's name reads nothing
     (sd / "hetzner-demo-run.json").write_text(json.dumps({"ports": {"nginx_fed": 28553}}))
     assert fs.partial_lanes(str(tmp_path), "larchsbx") is None        # an incomplete record is no answer
+
+
+# ── V0650 (k), the kit half (agentvault2-7c, 2026-10-31): the same-host lane in each sandbox's own carriers ─────────────
+COMPOSE = """services:
+  larchsbx-spire-server:
+    image: ghcr.io/spiffe/spire-server:1.15.3
+    restart: unless-stopped
+    volumes:
+      - /s/server.conf:/opt/spire/conf/server.conf:ro
+    ports:
+      - "28581:8081"
+  larchsbx-registry:
+    image: reg
+    volumes:
+      - /s/kit/data-tls:/opt/data-tls:ro   # T3
+      - /s/operator-bundles:/app/operator-bundles
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      net:
+        aliases:
+          - registry-test
+"""
+NAMES = ["sandbox.larch.example.org", "sandbox-b.larch.example.org"]
+
+
+def test_the_lane_adds_the_names_and_the_mount_once():
+    out, n = fs.same_host_compose(COMPOSE, "larchsbx-registry", "larchsbx-spire-server", NAMES, "/s/kit/peer-ca")
+    assert n == 5   # two names in the registry, the mount, two names in the SPIRE server's new extra_hosts
+    reg = out.split("  larchsbx-registry:")[1]
+    spire = out.split("  larchsbx-registry:")[0].split("  larchsbx-spire-server:")[1]
+    for name in NAMES:
+        assert f'      - "{name}:host-gateway"' in reg and f'      - "{name}:host-gateway"' in spire
+    assert "      - /s/kit/peer-ca:/run/peer-ca:ro" in reg and "peer-ca" not in spire
+    assert spire.index("    extra_hosts:") < spire.index("    volumes:")
+    again, n2 = fs.same_host_compose(out, "larchsbx-registry", "larchsbx-spire-server", NAMES, "/s/kit/peer-ca")
+    assert (again, n2) == (out, 0)
+    try:
+        import yaml
+    except ImportError:
+        return
+    svc = yaml.safe_load(out)["services"]
+    assert sorted(svc["larchsbx-registry"]["extra_hosts"]) == sorted(["host.docker.internal:host-gateway"] +
+                                                                    [f"{n}:host-gateway" for n in NAMES])
+    assert "/s/kit/peer-ca:/run/peer-ca:ro" in svc["larchsbx-registry"]["volumes"]
+    assert sorted(svc["larchsbx-spire-server"]["extra_hosts"]) == sorted(f"{n}:host-gateway" for n in NAMES)
+
+
+def test_without_an_edge_root_no_mount_is_added():
+    out, n = fs.same_host_compose(COMPOSE, "larchsbx-registry", "larchsbx-spire-server", NAMES, None)
+    assert n == 4 and "peer-ca" not in out
+
+
+def test_a_missing_anchor_refuses_and_edits_nothing():
+    import pytest
+    with pytest.raises(ValueError, match="host.docker.internal"):
+        fs.same_host_compose(COMPOSE.replace('      - "host.docker.internal:host-gateway"\n', ""),
+                             "larchsbx-registry", "larchsbx-spire-server", NAMES)
+    with pytest.raises(ValueError, match="no service larchsbx-spire-server"):
+        fs.same_host_compose(COMPOSE.replace("larchsbx-spire-server", "other"), "larchsbx-registry",
+                             "larchsbx-spire-server", NAMES)
+    with pytest.raises(ValueError, match="data-tls"):
+        fs.same_host_compose(COMPOSE.replace(":/opt/data-tls:ro", ":/opt/other:ro"), "larchsbx-registry",
+                             "larchsbx-spire-server", NAMES, "/s/kit/peer-ca")
+
+
+def test_the_frame_template_still_renders_the_anchors_the_lane_edits():
+    import re
+    tmpl = open(os.path.join(HERE, "..", "..", "..", "templates", "frame-test", "docker-compose.frame-test.yml.tmpl")).read()
+    text = re.sub(r"\{\{[A-Z0-9_]+\}\}", "X", tmpl.replace("{{REGISTRY_NAME}}", "larchsbx"))
+    out, n = fs.same_host_compose(text, "larchsbx-registry", "larchsbx-spire-server", NAMES, "/s/kit/peer-ca")
+    assert n == 5
+
+
+def test_env_declares_reads_bare_and_quoted_values():
+    assert fs.env_declares("A=1\nFRAME_POSTURE=sandbox\n", "FRAME_POSTURE", "sandbox")
+    assert fs.env_declares('FRAME_POSTURE="sandbox"\n', "FRAME_POSTURE", "sandbox")
+    assert not fs.env_declares("FRAME_POSTURE=production\n", "FRAME_POSTURE", "sandbox")
+    assert not fs.env_declares("XFRAME_POSTURE=sandbox\n", "FRAME_POSTURE", "sandbox")
+
+
+class _Frame:
+    def __init__(self, name, sd, public):
+        self.name, self.rec = name, {"stack_dir": sd, "public_name": public}
+
+    def healthy(self):
+        return True
+
+
+class _Progress:
+    def __init__(self):
+        self.notes = []
+
+    def note(self, msg):
+        self.notes.append(msg)
+
+
+def _sandbox(tmp_path, name, public, posture="sandbox"):
+    sd = tmp_path / name
+    (sd / "edge").mkdir(parents=True)
+    (sd / ".env.frame-test").write_text(f"A=1\nFRAME_POSTURE={posture}\n")
+    (sd / "docker-compose.frame-test.yml").write_text(COMPOSE.replace("larchsbx-", f"{name}-"))
+    return _Frame(name, str(sd), public)
+
+
+PEM = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+
+
+def test_the_lane_refuses_a_frame_that_does_not_declare_sandbox(tmp_path, monkeypatch):
+    import pytest
+    monkeypatch.setattr(fs, "edge_root_pem", lambda parent: None)
+    a = _sandbox(tmp_path, "larchsbx", NAMES[0], posture="production")
+    b = _sandbox(tmp_path, "larchsbxb", NAMES[1])
+    with pytest.raises(fs.StepFailed, match="FRAME_POSTURE=sandbox"):
+        fs.prepare_same_host(a, b, {"stack_dir": str(tmp_path)}, _Progress())
+
+
+def test_the_lane_opens_once_and_a_second_run_recreates_nothing(tmp_path, monkeypatch):
+    calls = []
+
+    class _R:
+        returncode, stdout, stderr = 0, "", ""
+
+    def fake_run(argv, **kw):
+        calls.append(argv)
+        return _R()
+    monkeypatch.setattr(fs, "edge_root_pem", lambda parent: PEM)
+    monkeypatch.setattr(fs.subprocess, "run", fake_run)
+    a, b = _sandbox(tmp_path, "larchsbx", NAMES[0]), _sandbox(tmp_path, "larchsbxb", NAMES[1])
+    parent = {"stack_dir": str(tmp_path / "parent")}
+    bundle = fs.prepare_same_host(a, b, parent, _Progress())
+    ups = [c for c in calls if "up" in c]
+    assert [c[-2:] for c in ups] == [["larchsbx-spire-server", "larchsbx-registry"], ["larchsbxb-spire-server", "larchsbxb-registry"]]
+    for fr in (a, b):
+        sd = fr.rec["stack_dir"]
+        env = open(os.path.join(sd, ".env.frame-test")).read()
+        assert "FRAME_INVITATIONS_SAME_HOST_PEERS=true" in env
+        assert "FRAME_INVITATIONS_PEER_CA_FILE=/run/peer-ca/frame-edge-ca.pem" in env
+        assert "REGISTRY_ENVIRONMENT" not in env   # R42: a kit frame never states sandbox to the tester
+        ca = os.path.join(sd, "kit", "peer-ca", "frame-edge-ca.pem")
+        assert open(ca).read() == PEM and stat.S_IMODE(os.stat(ca).st_mode) == 0o644
+        assert os.path.exists(os.path.join(sd, "docker-compose.frame-test.yml.bak-pre-samehost"))
+    assert bundle and open(bundle).read().endswith(PEM)
+    calls.clear()
+    progress = _Progress()
+    fs.prepare_same_host(a, b, parent, progress)
+    assert not [c for c in calls if "up" in c]
+    assert sum("open already" in n for n in progress.notes) == 2

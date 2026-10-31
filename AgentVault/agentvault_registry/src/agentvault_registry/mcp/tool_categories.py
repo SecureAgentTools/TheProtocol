@@ -144,6 +144,10 @@ PUBLIC_TOOL_CATEGORIES: Dict[str, str] = {
     "respondChatRequest": "account",
     "blockChatPrincipal": "account",
     "unblockChatPrincipal": "account",
+    # V0650 (l) (2026-10-31) — approvals in the chat
+    "requestChatApproval": "account",
+    "getChatApprovalStatus": "account",
+    "decideChatApproval": "account",
     "bridgeTransfer": "wallet",
     "buyAgoraLaunch": "exchange",
     "cancelAccountDeletion": "account",
@@ -367,6 +371,7 @@ PUBLIC_TOOL_CATEGORIES: Dict[str, str] = {
     "getOrganization": "dev-lifecycle",
     "getOrganizationBySlug": "dev-lifecycle",
     "getOrganizationCicdSummary": "dev-lifecycle",
+    "getOrganizationPresence": "dev-lifecycle",   # V0650 (a)
     "getOrganizationTeam": "dev-lifecycle",
     "getPeerSlashConfig": "governance",
     "getPipelineTemplates": "dev-lifecycle",
@@ -489,6 +494,7 @@ PUBLIC_TOOL_CATEGORIES: Dict[str, str] = {
     "setFlareCornerVariant": "account",
     "setFlareOverlay": "account",
     "setFlareVariant": "account",
+    "setMyAgentStatus": "dev-lifecycle",           # V0650 (a)
     "settlePayment": "payments-a2a",
     "setup2FA": "account",
     "smartSend": "core",

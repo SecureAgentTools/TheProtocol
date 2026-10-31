@@ -40,13 +40,17 @@ of the run has yet).
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
+import hashlib
 import json
+import re
 import secrets
 import time
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from agentvault_registry.api_tests.contracts.earned_fixtures import (
-    Throwaways, lc, refusal_step, said, step, unmeasured, zip_answer,
+    Throwaways, lc, refusal_step, said, step, tool_row, unmeasured, zip_answer,
 )
 
 CICD = ("theprotocol_deleteVersion", "theprotocol_triggerDeployment", "theprotocol_getDeployment",
@@ -484,7 +488,192 @@ async def _dev_agents(rpc: Any, parse: Any, bag: Any, outcomes: Dict[str, dict],
             _bug(outcomes, tool, "answered 2xx without a zip archive")
 
 
+# ── what the outside view found (V0650, tester batch 1 item 3, Guild order gwo_2015b757c94ce69138500df6) ─────────────
+
+ONBOARD_NAMED = "onboarding: create_agent names its placeholder card after agent_name"
+# §MCPTEST30 (V0650, tester batch 2 item 5, Guild order gwo_e3bad842b1a5943022b01d40): the outside view's V0649 re-check
+# (the dev machine, 2026-10-31; order (n), session-release's 19a504ab8) found the credential and the manual naming two
+# addresses for one registry (on EU: https://theprotocol.cloud and https://eu.theprotocol.cloud)
+ONBOARD_MANUAL = "onboarding: the operator manual names the registry address its credentials name"
+_MANUAL_URL = re.compile(r"`REGISTRY_URL`\s*(?:\|\s*|=\s*)`([^`\s]+)`")
+
+
+def manual_registry_url(text: str) -> Optional[str]:
+    """The registry URL the served operator manual was filled in with: its live-facts line (`REGISTRY_URL` | `<url>`,
+    or the degraded `REGISTRY_URL` = `<url>`); None when it carries neither."""
+    m = _MANUAL_URL.search(text or "")
+    return m.group(1).rstrip("/") if m else None
+
+
+async def _manual_names_the_credential_home(http: Any, outcomes: Dict[str, dict], home: Any, t0: float) -> None:
+    """The manual a client downloads names the address the credential create_agent just issued names: the console decides
+    "this registry or another" by a credential's origin, so two addresses for one registry split one client in two
+    (routers/downloads._manual_base_url, V0650). Public reads only; the row keeps the two addresses, which are public."""
+    if not home:
+        return _nm(outcomes, ONBOARD_MANUAL, "create_agent's answer names no registry_url, so no credential named a "
+                                             "home to compare the manual with")
+    code, text = await http("GET", "/api/v1/downloads/CLAUDE.md")
+    ms = int((time.time() - t0) * 1000)
+    if not str(code).startswith("2"):
+        return tool_row(ONBOARD_MANUAL, outcomes, "3", False, code, ms,
+                        f"the operator manual (/api/v1/downloads/CLAUDE.md) answered HTTP {code or '?'}", {})
+    named = manual_registry_url(text)
+    if named is None:
+        return _nm(outcomes, ONBOARD_MANUAL, "the operator manual carries no REGISTRY_URL line (its live-facts block is "
+                                             "gone), so the address it was filled in with cannot be read")
+    want = str(home).rstrip("/")
+    fail = None if named == want else (
+        f"the operator manual names {named!r} as REGISTRY_URL while the credential create_agent issued names {want!r}: "
+        f"a client that reads both meets two addresses for one registry (the outside view's V0649 re-check)")
+    tool_row(ONBOARD_MANUAL, outcomes, "3", fail is None, code, ms, fail,
+             {"manual_registry_url": named, "credential_registry_url": want})
+
+
+async def lifecycle_earn_onboard_agent_name(rpc: Any, parse: Any, bag: Any, outcomes: Dict[str, dict]) -> None:
+    """The external test's run 1 (a newcomer from outside, 2026-10-30) created its agents the manuals' way, POST
+    /api/v1/onboard/create_agent with agent_host and agent_name, and the placeholder card came out named after the host:
+    the schema dropped agent_name silently (fixed in V0649). A developer of the run's own asks for a bootstrap token
+    and creates an agent that way; the card the registry built (getAgentCardById) must carry the agent_name sent. Its
+    host is a name under theprotocol.cloud that no DNS record answers (NXDOMAIN, and no one else can make it answer):
+    from V0650 this rail refuses a special-use name such as .invalid (session-release's order (e), 4aba8d0e3), and a
+    domain someone else owns could one day serve a card the pull-sync would read. The agent's balance goes back to the treasury and
+    it is deleted with its developer (Throwaways.adopt, close). The row keeps the two names and the card id, never the
+    credentials the creation answers."""
+    http = getattr(bag, "http_in_target", None)
+    if http is None:
+        return _nm(outcomes, ONBOARD_NAMED, "this flow has no in-target transport (bag.http_in_target): the onboarding "
+                                            "route takes a Bootstrap-Token header, which the MCP bridges cannot send")
+    tag = secrets.token_hex(3)
+    t0 = time.time()
+    t = Throwaways(rpc, parse, bag, "onboard-agent-name")
+    try:
+        dev = await t.developer("onboard-agent-name")
+        if dev.get("why"):
+            return _nm(outcomes, ONBOARD_NAMED, f"no developer of the run's own: {dev['why']}")
+        jwt = dev["access_token"]
+        code, text = await http("POST", "/api/v1/onboard/bootstrap/request-token", bearer=jwt, body=json.dumps(
+            {"agent_type_hint": "mcp_tester", "requested_by": "mcp_tester_onboard_agent_name"}).encode())
+        try:
+            token = (json.loads(text) or {}).get("bootstrap_token") if str(code).startswith("2") else None
+        except ValueError:
+            token = None
+        if not token:
+            return _nm(outcomes, ONBOARD_NAMED, f"the run's developer got no bootstrap token (HTTP {code or '?'})")
+        name = f"MCP tester named card {tag}"
+        code, text = await http("POST", "/api/v1/onboard/create_agent", headers={"Bootstrap-Token": token},
+                                body=json.dumps({"agent_did_method": "theprotocol", "agent_name": name,
+                                                 "agent_host": f"https://mcp-earn-{tag}.tester.theprotocol.cloud"}).encode())
+        try:
+            made = json.loads(text) if str(code).startswith("2") else {}
+        except ValueError:
+            made = {}
+        made = made if isinstance(made, dict) else {}
+        did, card_id = made.get("agent_did"), made.get("agent_card_id")
+        if did:
+            t.adopt(did, jwt)
+        await _manual_names_the_credential_home(http, outcomes, made.get("registry_url"), t0)
+        if not (did and card_id):
+            return tool_row(ONBOARD_NAMED, outcomes, "3", False, code, int((time.time() - t0) * 1000),
+                            f"create_agent with agent_host and agent_name answered HTTP {code or '?'} without an "
+                            f"agent_did and an agent_card_id", {"agent_name": name})
+        ok, body, c2 = await rpc("theprotocol_getAgentCardById", {"card_id": str(card_id)}, jwt=jwt, timeout=20)
+        card = parse(body) if isinstance(body, dict) else {}
+        got = (card.get("card_data") or {}).get("name") if ok and isinstance(card, dict) else None
+        fail = None if got == name else (
+            f"the placeholder card is named {got!r}, not the agent_name sent ({name!r}): the outside view's run 1 "
+            f"found it named after the host" if ok else f"getAgentCardById answered HTTP {c2} for the new card")
+        tool_row(ONBOARD_NAMED, outcomes, "3", fail is None, code, int((time.time() - t0) * 1000), fail,
+                 {"agent_name": name, "card_name": got, "agent_card_id": str(card_id)})
+    finally:
+        await t.close()
+        if ONBOARD_MANUAL not in outcomes:
+            _nm(outcomes, ONBOARD_MANUAL, "the onboarding lifecycle created no agent, so no credential named a home")
+
+
+MANIFEST = "theprotocol_getDownloadsManifest"
+_HEX64 = re.compile(r"[0-9a-f]{64}")
+
+
+def manifest_findings(files: List[Dict[str, Any]], served: Dict[str, Optional[bytes]]
+                      ) -> Tuple[List[str], List[str], int]:
+    """(findings, unread, checked): each listed file held to its download (`served`: url -> the bytes, None when they
+    could not be read). A file served as stored matches the size and sha256 the manifest gives; a file rendered per
+    request gives neither (no download of it equals the stored file) and keeps its template's under keys of its own
+    (routers/downloads.downloads_manifest, V0650)."""
+    findings: List[str] = []
+    unread: List[str] = []
+    checked = 0
+    for e in files:
+        name, url = str(e.get("filename") or "?"), str(e.get("url") or "")
+        if e.get("available") is False:
+            continue
+        raw = served.get(url)
+        if raw is None:
+            unread.append(name)
+            continue
+        checked += 1
+        if e.get("rendered_per_request") is True:
+            if e.get("size_bytes") is not None or e.get("sha256") is not None:
+                findings.append(f"{name} is rendered per request, yet the manifest gives it a size or a sha256 "
+                                f"(size_bytes={e.get('size_bytes')!r}) that no download of it matches")
+            if not (isinstance(e.get("template_size_bytes"), int)
+                    and _HEX64.fullmatch(str(e.get("template_sha256") or ""))):
+                findings.append(f"{name} is rendered per request and the manifest names no template_size_bytes and "
+                                f"template_sha256")
+            continue
+        size, digest = e.get("size_bytes"), str(e.get("sha256") or "")
+        if size != len(raw):
+            findings.append(f"the manifest says {name} has {size!r} bytes, its download has {len(raw)}")
+        if digest != hashlib.sha256(raw).hexdigest():
+            findings.append(f"the manifest's sha256 for {name} ({digest[:12] or 'none'}) is not its download's")
+    return findings, unread, checked
+
+
+async def lifecycle_earn_downloads_as_served(rpc: Any, parse: Any, bag: Any, outcomes: Dict[str, dict]) -> None:
+    """§MCPTEST30 (V0650, tester batch 2 item 5, Guild order gwo_e3bad842b1a5943022b01d40): the outside view's V0649
+    re-check (the dev machine, 2026-10-31; order (n), session-release's 19a504ab8) checked each download against the
+    manifest and refused an honest CLAUDE.md: the manifest named 35621 bytes and the download had 36733, since the
+    manual is rendered per request. getDownloadsManifest is read and every file it lists downloaded inside the target:
+    a file served as stored must match its size and sha256, a file rendered per request must claim neither. Read only;
+    the row keeps file names and counts, never a file's bytes."""
+    b64 = getattr(bag, "http_b64_in_target", None)
+    if b64 is None:
+        return unmeasured(outcomes, MANIFEST, "1", "this flow carries no transport for a file's bytes from inside the "
+                                                   "target (bag.http_b64_in_target), so no download was read")
+    t0 = time.time()
+    # a public tool, with the run's developer token: the MCP endpoint answers 401 to a call without one (the trial pair
+    # nt261031x4: "answered HTTP 401 and lists 0 files")
+    ok, body, code = await rpc(MANIFEST, {}, jwt=bag.developer_jwt, timeout=30)
+    man = parse(body) if isinstance(body, dict) else {}
+    files = _rows(man, "files")
+    if not (ok and files):
+        return tool_row(MANIFEST, outcomes, "1", False, code, int((time.time() - t0) * 1000),
+                        f"getDownloadsManifest answered HTTP {code} and lists {len(files)} files", {})
+    served: Dict[str, Optional[bytes]] = {}
+    for e in files:
+        url = str(e.get("url") or "")
+        if e.get("available") is False or not url.startswith("/api/v1/downloads/"):
+            continue
+        st, enc = await b64(url)
+        try:
+            served[url] = base64.b64decode((enc or "").strip(), validate=True) if st == "200" else None
+        except (binascii.Error, ValueError):
+            served[url] = None
+    findings, unread, checked = manifest_findings(files, served)
+    ms = int((time.time() - t0) * 1000)
+    if not checked:
+        return unmeasured(outcomes, MANIFEST, "1", f"no file the manifest lists could be downloaded inside the target "
+                                                   f"({', '.join(unread) or 'none listed as available'})")
+    tool_row(MANIFEST, outcomes, "1", True, code, ms, None,
+             {"files": [str(e.get("filename")) for e in files], "checked": checked, "unread": unread,
+              "rendered_per_request": [str(e.get("filename")) for e in files if e.get("rendered_per_request") is True]})
+    if findings:
+        lc()._bugfind(outcomes, MANIFEST, "1", "getDownloadsManifest: " + "; ".join(findings))
+
+
 LIFECYCLES: List[Dict[str, Any]] = [
+    {"name": "earn_onboard_agent_name", "runner": lifecycle_earn_onboard_agent_name},
+    {"name": "earn_downloads_as_served", "runner": lifecycle_earn_downloads_as_served},
     {"name": "earn_cicd", "runner": lifecycle_earn_cicd},
     {"name": "earn_org", "runner": lifecycle_earn_org},
     {"name": "earn_support_review", "runner": lifecycle_earn_support_review},

@@ -23,7 +23,7 @@ from agentvault_registry.services.organization_service import (
     TeamNameTaken,
     InvitationService
 )
-from agentvault_registry.security import get_current_developer, get_current_developer_optional
+from agentvault_registry.security import get_current_developer, get_current_developer_optional, get_current_actor_for_read
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +136,14 @@ class MemberResponse(BaseModel):
     role: str
     joined_at: str
     is_active: bool
+    # V0650 (l): named by the owner to decide the approval requests agents post in the org's room.
+    can_approve: bool = False
+
+
+class MemberApproverUpdate(BaseModel):
+    """V0650 (l): name (or un-name) a member as an approver of the org room's approval requests (owner only)."""
+    can_approve: bool = Field(..., description="May this member decide the approval requests agents post in the "
+                                               "organization's room")
 
 
 class TeamMemberAdd(BaseModel):
@@ -801,7 +809,8 @@ async def list_organization_members(
                     developer_email=member.developer.email,
                     role=member.role,
                     joined_at=member.joined_at.isoformat(),
-                    is_active=member.is_active
+                    is_active=member.is_active,
+                    can_approve=bool(getattr(member, "can_approve", False)),
                 )
             )
     
@@ -1354,6 +1363,54 @@ async def update_org_member_role(
         role=member.role,
         joined_at=member.joined_at.isoformat(),
         is_active=member.is_active,
+        can_approve=bool(getattr(member, "can_approve", False)),
+    )
+
+
+@router.put("/{org_id}/members/{developer_id}/approver", response_model=MemberResponse,
+            summary="Name or un-name an approver of the room's approval requests (owner only)")
+async def update_org_member_approver(
+    org_id: str = Path(..., description="Organization ID"),
+    developer_id: int = Path(..., description="The member to name or un-name"),
+    payload: MemberApproverUpdate = Body(...),
+    current_developer: Annotated[Developer, Security(get_current_developer)] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """V0650 (l). Beside the owner, a named approver may decide the approval requests agents post in the org's room
+    (POST /api/v1/chat/conversations/{id}/approvals/decide). Only the owner names one, and only an active member can
+    be named; the flag is part of the membership row, so it ends when the membership does. Audited as
+    `chat.approval.approver_set`."""
+    from sqlalchemy.orm import selectinload
+    from agentvault_registry.services.admin_audit import log_chat_action
+
+    org = await get_organization_with_permission(org_id, current_developer, db)
+    if org.owner_id != current_developer.id:
+        raise HTTPException(status_code=403, detail="Only the organization's owner names approvers")
+    stmt = select(OrganizationMember).where(
+        OrganizationMember.organization_id == org_id,
+        OrganizationMember.developer_id == developer_id,
+        OrganizationMember.is_active == True,  # noqa: E712 — SQL comparison
+    ).options(selectinload(OrganizationMember.developer))
+    member = (await db.execute(stmt)).scalar_one_or_none()
+    if member is None:
+        raise HTTPException(status_code=404, detail="That developer is not an active member of this organization")
+    before = bool(member.can_approve)
+    member.can_approve = bool(payload.can_approve)
+    await log_chat_action(db, action="approval.approver_set", actor_type="developer",
+                          actor_id=str(current_developer.id), target_type="organization_member",
+                          target_id=member.id,
+                          details={"org_id": org_id, "developer_id": developer_id, "can_approve": member.can_approve,
+                                   "was": before})
+    await db.commit()
+    return MemberResponse(
+        id=member.id,
+        developer_id=member.developer_id,
+        developer_name=member.developer.name,
+        developer_email=member.developer.email,
+        role=member.role,
+        joined_at=member.joined_at.isoformat(),
+        is_active=member.is_active,
+        can_approve=member.can_approve,
     )
 
 
@@ -1533,6 +1590,45 @@ async def get_org_audit(
             }
             for e in evs
         ],
+    }
+
+
+@router.get("/{org_id}/mcp-audit", summary="The MCP tool calls of this organization's agents (owner or admin)")
+async def get_org_mcp_audit(
+    org_id: str = Path(..., description="Organization ID"),
+    limit: int = Query(50, ge=1, le=200, description="Rows per page"),
+    cursor: Optional[str] = Query(None, description="The next_cursor of the previous page"),
+    current_developer: Annotated[Developer, Security(get_current_developer)] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """V0650 (d). The MCP calls the organization's agents made on this registry with their own credentials, newest
+    first: the tool, which agent, when, its tier, outcome and latency, and whether the tool answered an error. Never
+    the call's arguments, its error text, the caller's address or user agent. Owner or admin only. `recording` says
+    whether this registry records MCP calls at all, so a quiet log is never read as an idle organization."""
+    from agentvault_registry.mcp import audit as _mcp_audit
+    from agentvault_registry.models import Agent
+    from agentvault_registry.routers import mcp_audit_log as mal
+
+    await get_organization_with_permission(org_id, current_developer, db, required_role="admin")
+    dids = [d for d in (await db.execute(select(Agent.did).where(Agent.organization_id == org_id))).scalars().all()
+            if d]
+    after = None
+    if cursor:
+        try:
+            after = mal.parse_org_cursor(cursor)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="cursor is not one this route issued")
+    rows = []
+    if dids:
+        rows = list((await db.execute(mal.org_mcp_audit_stmt(dids, limit + 1, after))).scalars().all())
+    page, more = rows[:limit], len(rows) > limit
+    return {
+        "org_id": org_id,
+        "recording": bool(getattr(_mcp_audit, "MCP_AUDIT_LOGGING_ENABLED", False)),
+        "agent_count": len(dids),
+        "rows": [mal.serialize_org_call_row(r) for r in page],
+        "next_cursor": mal.org_cursor(page[-1]) if more and page else None,
+        "limit": limit,
     }
 
 
@@ -1935,6 +2031,8 @@ class OrgWorkOrderCreate(BaseModel):
     min_reputation: Optional[float] = None
     deadline_seconds: Optional[int] = Field(None, ge=60, le=2592000)
     stake_required: Optional[float] = Field(None, ge=0)
+    # V0650 (f): the agent the task is meant for (a flag on the order, never a gate); checked by the Guild's post.
+    intended_worker_did: Optional[str] = Field(None, max_length=120)
 
 
 class OrgWorkAwardIn(BaseModel):
@@ -2014,6 +2112,8 @@ async def post_org_work_order(
         raise HTTPException(status_code=403, detail=str(exc))
 
     body_dict = payload.model_dump()
+    if body_dict.get("intended_worker_did") is None:   # V0650 (f): a body without it hashes as it did on V0649
+        body_dict.pop("intended_worker_did", None)
     me = developer_caller(current_developer.id)   # D6-777: the key is this member's, not the organization's
     cached, idem_err = await idempotency_lookup(f"org_work_order:{org_id}", idem, body_dict, principal=me)
     if idem_err:
@@ -2032,7 +2132,7 @@ async def post_org_work_order(
         title=payload.title, spec=payload.spec, bounty=float(amt),
         currency=payload.currency, required_skills=payload.required_skills,
         min_reputation=payload.min_reputation, deadline_seconds=payload.deadline_seconds,
-        stake_required=payload.stake_required,
+        stake_required=payload.stake_required, intended_worker_did=payload.intended_worker_did,
     )
     res = await _guild.post_order(order_body, treasury_agent, db)
     res["org_id"] = org_id
@@ -2361,6 +2461,27 @@ async def list_organization_agents(
         ],
         "count": len(agents),
     }
+
+
+@router.get("/{org_id}/presence", summary="Who of the organization's agents is here, and what they are doing")
+async def get_organization_presence(
+    org_id: str = Path(..., description="Organization ID"),
+    actor_dict: dict = Depends(get_current_actor_for_read),
+    db: AsyncSession = Depends(get_db),
+):
+    """V0650 (a). Every agent assigned to the organization (a revoked one is no longer present): its DID, its card's
+    name, its owner, when it was last active, its account status and its live status line (null once the line expired,
+    and for a suspended agent). Read by whoever the organization's room admits, by the room's own rule: an active member
+    (guests included) or an agent assigned to the organization. A developer JWT or an agent JWT."""
+    from agentvault_registry.services import agent_status_line as sl
+    from agentvault_registry.services import chat_service as cs
+    org = await OrganizationService.get_organization(db, org_id)
+    if org is None or not getattr(org, "is_active", True):
+        raise HTTPException(status_code=404, detail="Organization not found")
+    actor = cs.actor_from_auth(actor_dict)
+    if await cs.actor_org_role(db, org_id, actor) is None:
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    return await sl.org_presence(db, org_id)
 
 
 @router.get("/{org_id}/spend-approvals")

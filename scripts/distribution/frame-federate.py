@@ -513,8 +513,14 @@ def step2_peer(with_url: str, override_endpoint: Optional[str], own_td: str, log
         raise Refused(f"--with must be the peer's https console URL, not {with_url}.")
     st, card = http_json("GET", base + CARD_PATH)
     if st != 200 or not isinstance(card, dict):
-        raise Refused(f"{base}{CARD_PATH} answered {st or 'no connection'}; --with must be a frame's public console "
-                      f"(its registry card is served there).")
+        # §EXTTEST run 2: the reason travels in the sentence (it said "no connection" for a certificate the host did not
+        # trust, a peer on its edge's internal CA, while the card answered 200 to curl -k)
+        why = f"{st}" if st else f"no connection ({str(card)[:200]})"
+        hint = (" The peer's edge certificate is not trusted by this host (a frame stood up with --edge-tls internal "
+                "uses its own CA): point SSL_CERT_FILE at a bundle holding the system CAs and that CA."
+                if not st and "CERTIFICATE_VERIFY_FAILED" in str(card) else "")
+        raise Refused(f"{base}{CARD_PATH} answered {why}; --with must be a frame's public console "
+                      f"(its registry card is served there).{hint}")
     td, ep = card_facts(card)
     if td == own_td:
         raise Refused(f"{base} is this frame itself ({td}); a frame cannot federate with itself.")

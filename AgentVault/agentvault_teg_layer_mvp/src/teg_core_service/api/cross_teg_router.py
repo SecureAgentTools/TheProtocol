@@ -425,7 +425,10 @@ async def initiate_cross_teg_transfer(
     from ..core.internal_auth import teg_mtls_required, local_leg_caller_ok
     if teg_mtls_required():
         _svid = _extract_spiffe_from_header(http_request)
-        if not local_leg_caller_ok(_svid):
+        # §EXTTEST (V0649): the trust domain alone also admitted an AGENT's certificate of this frame's own domain (an
+        # external agent's inline SVID completes mTLS through nginx-federation); the caller must be a service identity
+        # too, the path-anchored rule every other local leg asks first (_validate_cross_teg_auth).
+        if not (_svid and is_internal_service_identity(_svid) and local_leg_caller_ok(_svid)):
             logger.warning(f"[CrossTEG] REFUSED /transfer: caller certificate {_svid} is not this TEG's own frame")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

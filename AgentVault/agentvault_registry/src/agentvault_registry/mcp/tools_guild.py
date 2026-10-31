@@ -4,6 +4,7 @@
 (post, bid, award, submit, verify, cancel, mine, cross-registry proxy). Wired via the AGORA
 late-block pattern in server.py. All money legs ride the guild's existing Δ=0 rails.
 """
+import json
 import logging
 import math
 from typing import Any, Dict, List, Optional, Tuple
@@ -101,7 +102,7 @@ def _number(name: str, value: Any) -> Tuple[Optional[float], Optional[Dict[str, 
 # ── Tier 2 (agent actions) ───────────────────────────────────────────────────
 async def guild_post_order(auth: MCPAuthContext, title: str, bounty: str, spec: str = "",
                            deadline_seconds: int = 86400, stake_required: str = "",
-                           min_reputation: str = "") -> Dict[str, Any]:
+                           min_reputation: str = "", intended_worker_did: str = "") -> Dict[str, Any]:
     """Post a task — the bounty is ESCROWED from your balance immediately (Δ=0 treasury hold)."""
     require_agent_auth(auth)
     if not title or not bounty:
@@ -116,6 +117,9 @@ async def guild_post_order(auth: MCPAuthContext, title: str, bounty: str, spec: 
             payload[name], refused = _number(name, value)
             if refused:
                 return refused
+    intended = str(intended_worker_did or "").strip()   # V0650 (f): the route checks it (an agent DID, not you)
+    if intended:
+        payload["intended_worker_did"] = intended
     return await _guild_post("/api/v1/guild/orders", payload, auth.raw_token)
 
 
@@ -143,20 +147,43 @@ async def guild_award(auth: MCPAuthContext, order_id: str, bid_id: int) -> Dict[
     return await _guild_post(f"/api/v1/guild/orders/{seg(order_id)}/award", {"bid_id": int(bid_id)}, auth.raw_token)
 
 
+def _commit_refs(value: Any) -> Tuple[Optional[List[Any]], Optional[Dict[str, Any]]]:
+    """V0650 (f): the commits a delivery links, or (None, refusal). None, '' or [] mean none; JSON text is read as
+    the list it must be (the arguments gate lets text through for an array); anything else is refused here, before
+    any request. The items go to the route as given, and the route checks each (a hex commit id, a repository named
+    without credentials)."""
+    if value is None or value == "" or value == []:
+        return None, None
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return None, {"error": "commits must be a list of {repo, commit} (got text that is not JSON)"}
+    if not isinstance(value, list):
+        return None, {"error": f"commits must be a list of {{repo, commit}} (got {type(value).__name__})"}
+    return (value or None), None
+
+
 async def guild_submit_work(auth: MCPAuthContext, order_id: str, deliverable_uri: str = "",
-                            deliverable_text: str = "") -> Dict[str, Any]:
-    """Deliver your awarded work (worker only). Provide a URI and/or text payload."""
+                            deliverable_text: str = "", commits: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """Deliver your awarded work (worker only). Provide a URI and/or text payload, and/or the commits it links."""
     require_agent_auth(auth)
     if not order_id:
         return {"error": "order_id is required"}
+    refs, refused = _commit_refs(commits)
+    if refused:
+        return refused
     deliverable: Dict[str, Any] = {}
     if deliverable_uri:
         deliverable["uri"] = deliverable_uri
     if deliverable_text:
         deliverable["text"] = deliverable_text[:8000]
-    if not deliverable:
-        return {"error": "Provide deliverable_uri and/or deliverable_text"}
-    return await _guild_post(f"/api/v1/guild/orders/{seg(order_id)}/submit", {"deliverable": deliverable}, auth.raw_token)
+    if not deliverable and not refs:
+        return {"error": "Provide deliverable_uri and/or deliverable_text, or commits"}
+    payload: Dict[str, Any] = {"deliverable": deliverable}
+    if refs:
+        payload["commits"] = refs
+    return await _guild_post(f"/api/v1/guild/orders/{seg(order_id)}/submit", payload, auth.raw_token)
 
 
 async def guild_verify(auth: MCPAuthContext, order_id: str, accept: bool = True, stars: int = 5,
@@ -243,7 +270,11 @@ GUILD_TOOL_SCHEMAS: List[Dict[str, Any]] = [
          "spec": {"type": "string", "description": "what does 'done' look like?", "default": ""},
          "deadline_seconds": {"type": "integer", "default": 86400},
          "stake_required": {"type": "string", "description": "optional collateral each bidder must lock", "default": ""},
-         "min_reputation": {"type": "string", "default": ""}, **_JWT},
+         "min_reputation": {"type": "string", "default": ""},
+         "intended_worker_did": {"type": "string", "maxLength": 120, "default": "",
+                                 "description": "optional: the DID of the agent this task is meant for. Anyone may "
+                                                "still bid; a bid from another agent is marked not_intended_worker"},
+         **_JWT},
       "required": ["title", "bounty"]}},
     {"name": "theprotocol_guildBid",
      "description": "THE GUILD: bid on an open task (locks the task's bid deposit if required; on_behalf_of_org_id bids as your AGORA-listed firm). Requires agent JWT.",
@@ -261,7 +292,17 @@ GUILD_TOOL_SCHEMAS: List[Dict[str, Any]] = [
      "description": "THE GUILD: deliver your awarded work (worker). Requires agent JWT.",
      "inputSchema": {"type": "object", "properties": {
          "order_id": {"type": "string"}, "deliverable_uri": {"type": "string", "default": ""},
-         "deliverable_text": {"type": "string", "default": ""}, **_JWT},
+         "deliverable_text": {"type": "string", "default": ""},
+         "commits": {"type": "array", "maxItems": 20, "default": [],
+                     "description": "optional: up to 20 commits the delivery links, stored with the deliverable "
+                                    "(the parties read them)",
+                     "items": {"type": "object", "properties": {
+                         "repo": {"type": "string", "maxLength": 300,
+                                  "description": "the repository: a URL or owner/name, without credentials"},
+                         "commit": {"type": "string", "pattern": "^[0-9a-fA-F]{7,64}$",
+                                    "description": "the commit id: 7 to 64 hex characters"}},
+                               "required": ["repo", "commit"]}},
+         **_JWT},
       "required": ["order_id"]}},
     {"name": "theprotocol_guildVerify",
      "description": "THE GUILD: accept (pay + rate ★, deposit released; remote workers paid over the 2PC rail) or reject (→ dispute + DDR record). Poster only. Requires agent JWT.",

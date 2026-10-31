@@ -35,6 +35,7 @@ from agentvault_registry.services.agent_spire import (
     _build_spiffe_id,
     _parent_fingerprint_for_self,
 )
+from agentvault_registry.services.spire_ops_client import SpireOpsUnavailable
 from agentvault_registry.core.federation_auth import require_peer_registry_identity
 
 # RP3 (2026-07-24 wiring audit): revoked-SVID reconstruction must use THIS frame's trust
@@ -73,6 +74,46 @@ def _inline_svid_ttl() -> int:
 
 def _spire_public_address() -> str:
     return os.getenv("SPIRE_PUBLIC_ADDRESS", "spire.theprotocol.cloud:8444")
+
+
+# V0650 (j): the on-box answer names what an agent's container needs, read from this registry rather than assumed. The
+# socket path follows the registry's own SPIFFE_ENDPOINT_SOCKET (svid_client rewrites it to unix:/p at boot, so all
+# three spellings are read); the volume is the one this registry itself mounts at that directory, read from
+# /proc/self/mountinfo, where a named volume's root is <docker root>/volumes/<name>/_data (the registry and the frame's
+# SPIRE agent mount the same volume). A name that cannot be read is said, never invented: "spire-agent-socket" was Frame
+# A's compose KEY, not the volume's name anywhere, and no template-born frame had a volume of that name at all.
+_DEFAULT_WORKLOAD_SOCKET = "/opt/spire/sockets/agent.sock"
+_VOLUME_ROOT_RE = re.compile(r"(?:^|/)volumes/([A-Za-z0-9][A-Za-z0-9_.-]*)/_data$")
+
+
+def _workload_socket_path() -> str:
+    raw = (os.getenv("SPIFFE_ENDPOINT_SOCKET") or "").strip()
+    for prefix in ("unix://", "unix:"):
+        if raw.startswith(prefix):
+            raw = raw[len(prefix):]
+            break
+    return raw if raw.startswith("/") else _DEFAULT_WORKLOAD_SOCKET
+
+
+def _read_mountinfo() -> str:
+    try:
+        with open("/proc/self/mountinfo", encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    except OSError:
+        return ""
+
+
+def _socket_volume(mount_dir: str, text: Optional[str] = None) -> Optional[str]:
+    """The docker volume mounted at `mount_dir` in this container, or None (no such mount, or a host-path bind). The
+    LAST line for the mount point wins: a later mount shadows an earlier one there."""
+    body = _read_mountinfo() if text is None else text
+    found: Optional[str] = None
+    for line in body.splitlines():
+        fields = line.split()
+        if len(fields) >= 5 and fields[4] == mount_dir:
+            m = _VOLUME_ROOT_RE.search(fields[3])
+            found = m.group(1) if m else None
+    return found
 
 
 def _effective_client_ip(request: Optional[Request]) -> Optional[str]:
@@ -120,13 +161,30 @@ def _attach_delivery(
         deployment, signal = _detect_deployment(request, agent_did)
     response["deployment"] = deployment
     response["deployment_signal"] = signal
+    if deployment != "onbox":
+        # §EXTTEST (the dev machine's V0649 re-check): the label names a container on THIS registry's host, the one SPIRE's
+        # docker attestor matches; an agent running elsewhere has no such container, so its answer carries no label. The
+        # on-host answer keeps it, beside the instructions that use it.
+        response.pop("docker_label", None)
 
     if deployment == "onbox":
+        socket_path = _workload_socket_path()
+        mount_dir = os.path.dirname(socket_path) or "/"
+        volume = _socket_volume(mount_dir)
+        label = f"com.theprotocol.agent-did={sanitized}"
         response["delivery"] = "workload_api"
+        response["socket_volume"] = volume
+        response["socket_path"] = socket_path
+        response.setdefault("docker_label", f"com.theprotocol.agent-did:{sanitized}")
+        where = (f"this frame's SPIRE agent socket volume {volume}" if volume else
+                 f"the volume this frame's SPIRE agent mounts at {mount_dir} (this registry could not read its name; "
+                 f"docker inspect of the frame's spire-agent container lists it under Mounts)")
         response["instructions"] = (
-            f"Add Docker label 'com.theprotocol.agent-did: {sanitized}' "
-            f"to your container and mount the spire-agent-socket volume. "
-            f"Use pyspiffe WorkloadApiClient to fetch your SVID."
+            f"Run your agent as a container on this registry's host with the Docker label {label} and {where} "
+            f"mounted at {mount_dir}: docker run --label {label} -v {volume or '<that volume>'}:{mount_dir}:ro ... "
+            f"The SPIRE agent's Workload API socket is then {socket_path} "
+            f"(SPIFFE_ENDPOINT_SOCKET=unix://{socket_path}); a SPIFFE Workload API client "
+            f"(pyspiffe WorkloadApiClient) fetches your SVID there and the SPIRE agent renews it."
         )
         return response
 
@@ -192,6 +250,15 @@ def _attach_delivery(
         "expires_at to rotate."
     )
     return response
+
+
+def _runner_unavailable_detail(e: Exception) -> str:
+    """The sentence for an enrollment the frame runner did not serve (§EXTTEST run 2): a kit frame issues agent
+    certificates through its runner (IRONHAND_SPIRE_MODE=runner), which frame-up installs only with --with-runner."""
+    return (f"Agent certificates on this frame are issued through its frame runner, which did not serve this "
+            f"request ({str(e)[:200]}). A frame stood up from the kit issues agent certificates only with the "
+            f"runner (frame-up.py --with-runner); agent-to-agent calls keep working with agent JWTs meanwhile. How "
+            f"mTLS identities are issued: https://docs.theprotocol.cloud/learn/security")
 
 
 def _detect_deployment(request: Optional[Request], agent_did: str) -> tuple[str, str]:
@@ -261,10 +328,11 @@ async def enable_mtls(
     Enroll the authenticated agent for mTLS identity.
 
     Creates a SPIRE workload entry so the agent's container can fetch an
-    X.509 SVID. The agent container must:
-    1. Mount the spire-agent-socket volume
+    X.509 SVID. On the registry's own host the agent container must:
+    1. Mount the frame's SPIRE agent socket volume (named in `socket_volume`) at the socket's directory
     2. Have Docker label: com.theprotocol.agent-did={sanitized_did}
-    3. Use pyspiffe WorkloadApiClient to fetch the SVID
+    3. Fetch the SVID from the Workload API socket (`socket_path`, /opt/spire/sockets/agent.sock by default)
+       with a SPIFFE Workload API client (pyspiffe WorkloadApiClient)
 
     Returns the SPIFFE ID and enrollment instructions.
     """
@@ -363,6 +431,7 @@ async def enable_mtls(
                     "Not enrolled: issuing the certificate failed, so nothing was "
                     "recorded and no identity is claimed. Retry."
                 ),
+                **({"instructions": _runner_unavailable_detail(e)} if isinstance(e, SpireOpsUnavailable) else {}),
             }
 
     # Register SPIRE entry. Pass the local parent fingerprint so operator-side
@@ -385,6 +454,12 @@ async def enable_mtls(
         # nothing until their workload sat on PERMISSION_DENIED forever.
         logger.error(f"[IRONHAND] refusing enrollment for {current_agent.did}: {e}")
         raise HTTPException(status_code=503, detail=str(e))
+    except SpireOpsUnavailable as e:
+        # §EXTTEST run 2 (2026-10-31, measured on a dev machine): a frame the kit stood up without --with-runner routes
+        # this work to a runner it does not have, and the bare 500 below said "Internal Server Error" about a known
+        # state of THIS frame. Like the unresolved parent above: a 503 that names the cause and the fix.
+        logger.error(f"[IRONHAND] refusing enrollment for {current_agent.did}: the frame runner did not serve it: {e}")
+        raise HTTPException(status_code=503, detail=_runner_unavailable_detail(e))
     except RuntimeError as e:
         logger.error(f"[IRONHAND] SPIRE registration failed for {current_agent.did}: {e}")
         raise HTTPException(
@@ -449,7 +524,7 @@ async def disable_mtls(
 ):
     """
     Unenroll the agent from mTLS. Deletes the SPIRE entry and clears DB fields.
-    The agent's existing SVID will expire naturally (within 4 hours).
+    A certificate already issued stays valid until it expires (an inline one within IRONHAND_INLINE_SVID_TTL_SECONDS).
     """
     if not current_agent.mtls_enabled:
         return {"status": "not_enrolled", "message": "Agent is not enrolled for mTLS."}
@@ -502,7 +577,10 @@ async def disable_mtls(
     return {
         "status": "unenrolled",
         "previous_spiffe_id": old_spiffe_id,
-        "message": "SPIRE entry deleted. Existing SVID will expire within 4 hours.",
+        # §EXTTEST (V0649): the old fixed four-hour sentence was wrong for an inline certificate, which lives minutes
+        "message": (f"SPIRE entry deleted. A certificate already issued stays valid until it expires: an inline one within "
+                    f"{max(1, _inline_svid_ttl() // 60)} minutes, a workload one within its SPIRE lifetime. Peers that must "
+                    f"refuse it sooner read GET /api/v1/agent/revoked-identities."),
     }
 
 

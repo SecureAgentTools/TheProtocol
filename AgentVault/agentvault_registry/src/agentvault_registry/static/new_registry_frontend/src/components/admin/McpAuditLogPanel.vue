@@ -49,7 +49,7 @@
         </button>
       </div>
 
-      <div class="mcp-filter-group">
+      <div v-if="scope !== 'org'" class="mcp-filter-group">
         <span class="mcp-filter-label">SERVER</span>
         <button
           v-for="opt in serverFilters"
@@ -91,6 +91,12 @@
           Refresh
         </button>
       </div>
+    </div>
+
+    <!-- V0650 (d): an org's log says when this registry records no MCP calls, so a quiet log never reads as an idle org -->
+    <div v-if="scope === 'org' && recording === false" class="mcp-warn" role="status" data-testid="mcp-org-not-recording">
+      <span class="mcp-warn-dot"></span>
+      <div class="mcp-warn-body">{{ t('mcpAuditPanel.org.notRecording', 'This registry does not record MCP calls (MCP audit logging is off), so this list stays empty whatever the agents do.') }}</div>
     </div>
 
     <!-- Status strip -->
@@ -139,7 +145,10 @@
             <td colspan="7">
               <div class="mcp-empty-state">
                 <div class="mcp-empty-title">No MCP tool calls yet.</div>
-                <div class="mcp-empty-body" v-if="scope === 'me'">
+                <div class="mcp-empty-body" v-if="scope === 'org'" data-testid="mcp-org-empty">
+                  {{ t('mcpAuditPanel.org.empty', "None of this organization's agents has called an MCP tool on this registry with its own credentials yet.") }}
+                </div>
+                <div class="mcp-empty-body" v-else-if="scope === 'me'">
                   Set up an MCP bridge in Claude Desktop or Claude Code, call any tool, and it
                   will land here within seconds. The audit row writer is fire-and-forget — your
                   MCP response will never be blocked by the logger.
@@ -164,7 +173,7 @@
               <span class="mcp-actor-pill" :class="`mcp-actor-pill--${row.actor_type}`">
                 {{ row.actor_type }}
               </span>
-              <span v-if="row.actor_id" class="mcp-actor-id">{{ shortActorId(row.actor_id) }}</span>
+              <span v-if="row.actor_id" class="mcp-actor-id" :title="row.actor_id">{{ (scope === 'org' && actorNames?.[row.actor_id]) || shortActorId(row.actor_id) }}</span>
             </td>
             <td class="mcp-cell-tool">
               <span v-if="row.event_type === 'admin_read_mcp_audit'" class="mcp-meta-label">
@@ -182,6 +191,8 @@
               <span class="mcp-outcome-pill" :class="`mcp-outcome-pill--${row.outcome}`">
                 {{ row.outcome }}
               </span>
+              <span v-if="row.is_error === true" class="mcp-outcome-pill mcp-outcome-pill--error" data-testid="mcp-tool-error">
+                {{ t('mcpAuditPanel.toolError', 'tool error') }}</span>
             </td>
             <td class="mcp-cell-lat">{{ row.latency_ms != null ? row.latency_ms.toFixed(1) + 'ms' : '—' }}</td>
             <td class="mcp-cell-detail">
@@ -299,12 +310,19 @@ import { useAuthStore } from '@/stores/auth'
 import {
   getMyMcpAuditLog,
   getAdminMcpAuditLog,
+  getOrgMcpAuditLog,
   type McpAuditRow,
   type McpAuditPage,
 } from '@/services/api/mcpAuditLog'
+import { useI18n } from '@/composables/useI18n'
 
 interface Props {
-  scope: 'me' | 'admin'
+  /** V0650 (d): 'org' reads an organization's agents' calls (owner or admin), keyed by orgId. */
+  scope: 'me' | 'admin' | 'org'
+  /** Required when scope === 'org'. */
+  orgId?: string
+  /** scope 'org': agent DID -> a name to show (agent names are not unique: the DID stays in the title). */
+  actorNames?: Record<string, string>
   /** Required when scope === 'admin'. Developer id (numeric string) or agent DID. */
   actorId?: string
   /** Human label for the subject (used in the self-watch warning). */
@@ -325,6 +343,8 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const auth = useAuthStore()
+const { t } = useI18n()
+const recording = ref<boolean | null>(null)
 
 // ─── Filter state ───────────────────────────────────────────────────────
 const filterOutcome = ref<'' | 'success' | 'failure' | 'error'>('')
@@ -380,6 +400,12 @@ const errorMessage = ref<string>('')
 
 // ─── Fetcher ───────────────────────────────────────────────────────────
 async function doFetch(): Promise<McpAuditPage> {
+  if (props.scope === 'org') {
+    if (!props.orgId) {
+      throw new Error('orgId required for org scope')
+    }
+    return await getOrgMcpAuditLog({ org_id: props.orgId, cursor: currentCursor.value, limit: props.pageSize })
+  }
   if (props.scope === 'admin') {
     if (!props.actorId) {
       throw new Error('actorId required for admin scope')
@@ -411,6 +437,7 @@ watch(polled.data, (page) => {
   if (!page) return
   rows.value = page.rows
   nextCursor.value = page.next_cursor
+  recording.value = typeof page.recording === 'boolean' ? page.recording : null
 }, { immediate: true })
 
 watch(polled.error, (err) => {
@@ -445,6 +472,18 @@ watch(() => props.actorId, () => {
   rows.value = []
   nextCursor.value = null
   if (props.scope === 'admin' && props.actorId) {
+    void polled.refetch()
+  }
+})
+
+// V0650 (d): another organization is another log
+watch(() => props.orgId, () => {
+  cursorStack.value = []
+  currentCursor.value = null
+  rows.value = []
+  nextCursor.value = null
+  recording.value = null
+  if (props.scope === 'org' && props.orgId) {
     void polled.refetch()
   }
 })
@@ -540,7 +579,9 @@ function formatDetails(d: any): string {
 
 function exportCsv() {
   const ts = csvFilenameTimestamp()
-  const scopeLabel = props.scope === 'me' ? 'me' : `admin-${(props.actorId || 'unknown').slice(0, 12)}`
+  const scopeLabel = props.scope === 'me' ? 'me'
+    : props.scope === 'org' ? `org-${(props.orgId || 'unknown').slice(0, 12)}`
+    : `admin-${(props.actorId || 'unknown').slice(0, 12)}`
   downloadCsv(
     filteredRows.value,
     [

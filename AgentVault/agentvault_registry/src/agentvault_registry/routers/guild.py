@@ -22,7 +22,7 @@ from typing import Optional
 import httpx
 import time
 from fastapi import APIRouter, Depends, HTTPException, Request, Security, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -97,6 +97,13 @@ class OrderPostIn(BaseModel):
     min_reputation: Optional[float] = None
     deadline_seconds: Optional[int] = Field(None, ge=60, le=2592000)
     stake_required: Optional[float] = Field(None, ge=0, description="Collateral each bidder must lock (slashed to you on failure)")
+    # V0650 (f): a flag, never a gate. The board and the order show it; anyone may still bid, and a bid from another
+    # agent is accepted and marked not_intended_worker. Checked in post_order (a 422 before any escrow), not here, so
+    # the organization door that builds this model in code can never turn a bad value into a 500.
+    intended_worker_did: Optional[str] = Field(
+        None, max_length=120,
+        description="The DID of the agent this task is meant for. Anyone may still bid; a bid from another agent is "
+                    "accepted and marked not_intended_worker.")
 
 
 class BidIn(BaseModel):
@@ -110,8 +117,28 @@ class AwardIn(BaseModel):
     bid_id: int
 
 
+class CommitRefIn(BaseModel):
+    """V0650 (f): one commit a delivery links, with the repository it lives in (the commons EvidenceItem precedent)."""
+    repo: str = Field(..., min_length=1, max_length=300, description="The repository: a URL or owner/name, without credentials")
+    commit: str = Field(..., pattern=r"^[0-9a-fA-F]{7,64}$", description="The commit id: 7 to 64 hex characters")
+
+    @field_validator("repo")
+    @classmethod
+    def _repo_names_no_credentials(cls, v: str) -> str:
+        if any(c.isspace() for c in v):
+            raise ValueError("a repository is named without spaces")
+        parts = urlparse(v)
+        if parts.username or parts.password or parts.query or parts.fragment:
+            raise ValueError("name the repository without credentials, a query or a fragment")
+        return v
+
+
 class SubmitIn(BaseModel):
     deliverable: dict = Field(..., description="uri/text/hash + optional phone_session_id")
+    # V0650 (f): stored with the delivery as deliverable.commits, so the parties read them (the verify view) and
+    # anyone else reads only that commits were linked.
+    commits: Optional[list[CommitRefIn]] = Field(
+        None, max_length=20, description="Up to 20 commits the delivery links, each {repo, commit}")
 
 
 class VerifyIn(BaseModel):
@@ -143,6 +170,13 @@ async def _load(db: AsyncSession, oid: str) -> dict:
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Order not found")
     return dict(row)
+
+
+def _not_intended_worker(o: dict, bidder_did: Optional[str]) -> bool:
+    """V0650 (f): ONE predicate for the flag. True when the order names its intended worker and this bidder is someone
+    else. A flag, never a gate: such a bid is accepted like any other."""
+    intended = o.get("intended_worker_did")
+    return bool(intended) and bidder_did != intended
 
 
 async def _agent_reputation(db: AsyncSession, did: str) -> Optional[float]:
@@ -244,6 +278,15 @@ async def post_order(body: OrderPostIn, agent: models.Agent = Depends(get_curren
     # Deny-only, pre-escrow, before any money moves. Byte-inert while JURISDICTION_MODE=off.
     from agentvault_registry.services import jurisdiction as _juris
     await _juris.check_jurisdiction(db, "guild", actor=agent.did)
+    # V0650 (f): whom the task is meant for. Refused here, before any escrow moves; a blank value names nobody.
+    intended = (body.intended_worker_did or "").strip() or None
+    if intended is not None:
+        if any(c.isspace() for c in intended) or not any(intended.startswith(p) for p in _VALID_DID_PREFIXES):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail=f"intended_worker_did must be an agent DID (did:theprotocol:...), got {intended[:60]!r}")
+        if intended == agent.did:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail="intended_worker_did names the poster: you cannot bid on your own task")
     currency = body.currency or os.getenv("FRAME_CURRENCY", "AVT")
     bounty = Decimal(str(body.bounty))
     oid = "gwo_" + secrets.token_hex(12)
@@ -258,18 +301,22 @@ async def post_order(body: OrderPostIn, agent: models.Agent = Depends(get_curren
         deadline = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(seconds=body.deadline_seconds)
     await db.execute(text("""
         INSERT INTO guild_work_orders (id, poster_did, title, spec, bounty, currency, fee_bps, status,
-            required_skills, min_reputation, deadline, escrow_ref, stake_required)
-        VALUES (:id,:p,:t,:s,:b,:c,:fb,'open',CAST(:rs AS JSONB),:mr,:dl,:er,:stk)
+            required_skills, min_reputation, deadline, escrow_ref, stake_required, intended_worker_did)
+        VALUES (:id,:p,:t,:s,:b,:c,:fb,'open',CAST(:rs AS JSONB),:mr,:dl,:er,:stk,:iw)
     """), {"id": oid, "p": agent.did, "t": body.title, "s": body.spec, "b": bounty, "c": currency,
            "fb": _fee_bps(), "rs": json.dumps(body.required_skills) if body.required_skills else None,
            "mr": body.min_reputation, "dl": deadline, "er": f"guildref:{oid}",
-           "stk": Decimal(str(body.stake_required)) if body.stake_required else None})
-    await _audit(db, oid, 1, "posted", agent.did, {"bounty": str(bounty), "currency": currency})
+           "stk": Decimal(str(body.stake_required)) if body.stake_required else None, "iw": intended})
+    posted = {"bounty": str(bounty), "currency": currency}
+    if intended:
+        posted["intended_worker_did"] = intended
+    await _audit(db, oid, 1, "posted", agent.did, posted)
     await db.commit()
     _emit("GuildOrderPosted", oid, {"poster": agent.did, "bounty": str(bounty), "currency": currency})
     logger.info("[GUILD] order %s posted by %s bounty=%s %s (escrowed)", oid, agent.did, bounty, currency)
     return {"order_id": oid, "status": "open", "bounty": float(bounty), "currency": currency,
-            "fee_bps": _fee_bps(), "deadline": deadline.isoformat() if deadline else None}
+            "fee_bps": _fee_bps(), "deadline": deadline.isoformat() if deadline else None,
+            "intended_worker_did": intended}
 
 
 # ── discover ─────────────────────────────────────────────────────────────────
@@ -281,7 +328,7 @@ async def list_orders(status_filter: str = "open", limit: int = 50, db: AsyncSes
     # (read-side only; the client identity is part of what a bidder is pricing).
     rows = (await db.execute(text("""
         SELECT o.id, o.poster_did, o.title, o.bounty, o.currency, o.status, o.required_skills,
-               o.min_reputation, o.deadline, o.worker_did, o.created_at,
+               o.min_reputation, o.deadline, o.worker_did, o.intended_worker_did, o.created_at,
                (SELECT count(*) FROM guild_bids b WHERE b.order_id = o.id AND b.status='open') AS bid_count,
                po.id AS poster_org_id, po.name AS poster_org_name
         FROM guild_work_orders o
@@ -343,7 +390,10 @@ async def order_detail(oid: str, db: AsyncSession = Depends(get_db),
     events = (await db.execute(text(
         "SELECT seq, event_type, actor_did, payload, created_at FROM guild_order_events WHERE order_id=:o ORDER BY seq ASC"
     ), {"o": oid})).mappings().all()
-    return {"order": o, "bids": [dict(b) for b in bids], "events": [dict(e) for e in events]}
+    out_bids = [dict(b) for b in bids]
+    for b in out_bids:  # V0650 (f): derived at read time, never stored on the bid
+        b["not_intended_worker"] = _not_intended_worker(o, b.get("bidder_did"))
+    return {"order": o, "bids": out_bids, "events": [dict(e) for e in events]}
 
 
 # ── FIRMS: org-treasury resolution (reuse AGORA, no parallel account) ─────────
@@ -548,8 +598,11 @@ async def place_bid(oid: str, body: BidIn, agent: models.Agent = Depends(get_cur
                              oid, agent.did[-12:], stake, re_.__class__.__name__, str(re_)[:160])
                 _count_silent("stake_refund_failed")
         raise HTTPException(status.HTTP_409_CONFLICT, detail="You already have a live bid on this task")
-    await _audit(db, oid, await _next_seq(db, oid), "bid", agent.did,
-                 {"price": str(body.price), "eta": body.eta_seconds, "org": body.on_behalf_of_org_id, "stake": str(stake) if stake > 0 else None})
+    flagged = _not_intended_worker(o, agent.did)  # V0650 (f): accepted, and marked
+    bid_audit = {"price": str(body.price), "eta": body.eta_seconds, "org": body.on_behalf_of_org_id, "stake": str(stake) if stake > 0 else None}
+    if flagged:
+        bid_audit["not_intended_worker"] = True
+    await _audit(db, oid, await _next_seq(db, oid), "bid", agent.did, bid_audit)
     await db.commit()
     _emit("GuildBidPlaced", oid, {"bidder": agent.did, "price": str(body.price), "org": body.on_behalf_of_org_id, "stake": str(stake) if stake else None})
 
@@ -568,10 +621,12 @@ async def place_bid(oid: str, body: BidIn, agent: models.Agent = Depends(get_cur
     _guild_webhook("guild.bid_received", [o["poster_did"]], {
         "order_id": oid, "title": o.get("title"), "bid_id": bid_id, "bidder_did": agent.did, "price": str(body.price),
         "currency": o.get("currency"), "via": "local", "firm": body.on_behalf_of_org_id,
+        "not_intended_worker": flagged,
         "award_with": f"POST /api/v1/guild/orders/{oid}/award with bid_id={bid_id}"})
 
     return {"ok": True, "order_id": oid, "bidder": agent.did, "bid_id": bid_id, "firm": body.on_behalf_of_org_id,
-            "stake_locked": float(stake) if stake else 0}
+            "stake_locked": float(stake) if stake else 0,
+            "intended_worker_did": o.get("intended_worker_did"), "not_intended_worker": flagged}
 
 
 # ── award ────────────────────────────────────────────────────────────────────
@@ -658,9 +713,17 @@ async def submit(oid: str, body: SubmitIn, agent: models.Agent = Depends(get_cur
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Only the awarded worker can submit")
     if o["status"] != "awarded":
         raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Order is {o['status']}")
+    # V0650 (f): the linked commits ride the deliverable, so its readers (the parties, an admin) are theirs too.
+    deliverable = dict(body.deliverable)
+    if body.commits:
+        if "commits" in deliverable:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                detail="give the commits once, in the commits field (the deliverable also carries a "
+                                       "'commits' key)")
+        deliverable["commits"] = [c.model_dump() for c in body.commits]
     await db.execute(text("UPDATE guild_work_orders SET status='submitted', deliverable=CAST(:d AS JSONB), submitted_at=now() WHERE id=:o"),
-                     {"d": json.dumps(body.deliverable), "o": oid})
-    await _audit(db, oid, await _next_seq(db, oid), "submitted", agent.did, {"keys": list(body.deliverable.keys())})
+                     {"d": json.dumps(deliverable), "o": oid})
+    await _audit(db, oid, await _next_seq(db, oid), "submitted", agent.did, {"keys": list(deliverable.keys())})
     await db.commit()
 
     # §NOTIFV2 (2026-07-27): the POSTER is the one who has to act on a delivery, so they get the
@@ -679,7 +742,7 @@ async def submit(oid: str, body: SubmitIn, agent: models.Agent = Depends(get_cur
         logger.debug("guild.work_submitted notify skipped", exc_info=True)
     _guild_webhook("guild.work_submitted", [o["poster_did"]], {
         "order_id": oid, "title": o.get("title"), "worker_did": agent.did, "via": "local",
-        "deliverable_keys": list(body.deliverable.keys()),
+        "deliverable_keys": list(deliverable.keys()),
         "verify_with": f"POST /api/v1/guild/orders/{oid}/verify with accept=true (pay) or false (dispute)"})
     _emit("GuildWorkSubmitted", oid, {"worker": agent.did})
     # GÖDEL FORGE (FG-4) — eval_bounty: spec header `eval_bounty://<suite>/<min_score>` = the
@@ -1482,8 +1545,11 @@ async def place_bid_federated(oid: str, body: FederatedBidIn, db: AsyncSession =
                "org": body.payee_org_id, "ph": body.payee_did})).scalar()
     except Exception:  # unique(order,bidder)
         raise HTTPException(status.HTTP_409_CONFLICT, detail="This agent already has a live bid on this task")
-    await _audit(db, oid, await _next_seq(db, oid), "bid", body.bidder_did,
-                 {"price": str(body.price), "via": "federation", "peer": peer_spiffe_id, "home": body.home_registry_url})
+    flagged = _not_intended_worker(o, body.bidder_did)  # V0650 (f): accepted, and marked
+    bid_audit = {"price": str(body.price), "via": "federation", "peer": peer_spiffe_id, "home": body.home_registry_url}
+    if flagged:
+        bid_audit["not_intended_worker"] = True
+    await _audit(db, oid, await _next_seq(db, oid), "bid", body.bidder_did, bid_audit)
     await db.commit()
     _emit("GuildBidPlaced", oid, {"bidder": body.bidder_did, "price": str(body.price), "via": "federation"})
     logger.info("[GUILD] federated bid on %s by %s (peer=%s)", oid, body.bidder_did, peer_spiffe_id)
@@ -1502,8 +1568,10 @@ async def place_bid_federated(oid: str, body: FederatedBidIn, db: AsyncSession =
         "order_id": oid, "title": o.get("title"), "bid_id": bid_id, "bidder_did": body.bidder_did,
         "price": str(body.price), "currency": o.get("currency"), "via": "federation",
         "home_registry": body.home_registry_url.rstrip("/"), "firm": body.payee_org_id,
+        "not_intended_worker": flagged,
         "award_with": f"POST /api/v1/guild/orders/{oid}/award with bid_id={bid_id}"})
-    return {"ok": True, "order_id": oid, "bidder": body.bidder_did, "bid_id": bid_id, "via": "federation"}
+    return {"ok": True, "order_id": oid, "bidder": body.bidder_did, "bid_id": bid_id, "via": "federation",
+            "intended_worker_did": o.get("intended_worker_did"), "not_intended_worker": flagged}
 
 
 @router.post("/api/v1/federation/guild/orders/{oid}/submit", summary="Deliver work for a cross-registry worker (federation)")

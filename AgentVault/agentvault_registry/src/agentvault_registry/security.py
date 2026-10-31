@@ -1952,6 +1952,29 @@ async def get_current_actor_for_read(
     return {"kind": "developer", "developer": developer}
 
 
+async def get_current_actor_for_read_or_key(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    token: str = Depends(oauth2_scheme_required),
+) -> dict:
+    """V0650 (m): get_current_actor_for_read, plus a developer API key (`avreg_`).
+
+    The chat read routes decoded JWTs only, so a developer API key, which is what the MCP bridges, the CLI and the
+    sessions' tools present, answered 401 there. A key now resolves exactly as on every other developer route
+    (verify_access_token_required, then get_current_developer): the key acts as its developer, a revoked or expired key
+    is refused 401, an MCP-scoped key is held to the routes it may reach and its scopes are published for the gates. A
+    JWT, developer or agent, goes through get_current_actor_for_read unchanged. Read routes only: no write route takes
+    this.
+    """
+    if token.startswith("avreg_"):
+        developer_id = await verify_access_token_required(request=request, token=token, db=db)
+        developer = await get_current_developer(db=db, developer_id=developer_id)
+        if hasattr(developer, "is_active") and not developer.is_active:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Developer account is inactive")
+        return {"kind": "developer", "developer": developer}
+    return await get_current_actor_for_read(db=db, token=token)
+
+
 async def get_current_actor_for_read_optional(
     db: AsyncSession = Depends(get_db),
     authorization: Optional[str] = Header(None),

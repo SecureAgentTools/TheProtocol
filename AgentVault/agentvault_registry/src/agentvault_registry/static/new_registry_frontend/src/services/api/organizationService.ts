@@ -222,6 +222,23 @@ export interface OrgSettingsError extends Error {
  * Organization Service
  * Handles all organization and team related API calls
  */
+/** V0650 (a): one agent of an organization's presence. */
+export interface OrgPresenceAgent {
+  did: string
+  name: string | null
+  owner_developer_id: number | null
+  last_active_at: string | null
+  account_status: string
+  status: { text: string; set_at: string | null; expires_at: string; expires_in_seconds: number } | null
+}
+
+export interface OrgPresence {
+  organization_id: string
+  as_of: string
+  agents: OrgPresenceAgent[]
+  count: number
+}
+
 class OrganizationService {
   private basePath = '/organizations'
 
@@ -862,6 +879,13 @@ class OrganizationService {
 
   /** E3 — the org money/denial roll-up: spend per agent (velocity truth), B1 denials,
    *  approvals by status, treasury flow (flows_available=false when the ES is unreachable). */
+  /** V0650 (a)/(d): the organization's agents with their live status lines (GET .../{orgId}/presence; whoever the
+   *  organization's room admits). A line past its expiry, and a suspended agent's, reads null. */
+  async getOrgPresence(orgId: string): Promise<OrgPresence> {
+    const response = await apiClient.get<OrgPresence>(`${this.basePath}/${encodeURIComponent(orgId)}/presence`)
+    return response.data
+  }
+
   async getOrgActivityRollup(orgId: string, days = 7): Promise<any> {
     const response = await apiClient.get(`${this.basePath}/${orgId}/activity-rollup`, { params: { days } })
     return response.data

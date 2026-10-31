@@ -8,7 +8,8 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from agentvault_registry.api_tests.contracts import (
-    earned_ad_agents, earned_ad_developers, earned_ad_devtools, earned_ad_federation, earned_ad_platform,
+    earned_ad_agents, earned_ad_chat_approvals, earned_ad_developers, earned_ad_devtools, earned_ad_ephemeral,
+    earned_ad_federation, earned_ad_platform,
 )
 
 LIFECYCLES: List[Dict[str, Any]] = [
@@ -17,4 +18,6 @@ LIFECYCLES: List[Dict[str, Any]] = [
     *earned_ad_platform.LIFECYCLES,    # broadcasts, a bundle report, an emission policy, the API tester, a canary
     *earned_ad_federation.LIFECYCLES,  # fixture peers, an invitation and the compliance mode of the run's own
     *earned_ad_devtools.LIFECYCLES,    # CI/CD, organization invitations, a support review and agent tools
+    *earned_ad_ephemeral.LIFECYCLES,   # only on a target torn down after its run: a federation licence of the run's own
+    *earned_ad_chat_approvals.LIFECYCLES,  # V0650 (l): approvals in an organization room of the run's own (pairs only)
 ]

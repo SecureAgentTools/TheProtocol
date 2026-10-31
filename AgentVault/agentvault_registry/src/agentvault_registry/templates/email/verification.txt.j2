@@ -2,7 +2,7 @@
 {% set kicker = "EMAIL VERIFICATION" %}
 {% set headline = "Confirm Your Identity" %}
 {% block body %}
-Operator {{ username }}, welcome to TheProtocol.
+Hello {{ username }}, welcome to TheProtocol.
 
 To activate your developer account, verify your email address using the link below. This link expires in {{ expiry_hours | default(24) }} hour{{ '' if expiry_hours == 1 else 's' }}.
 

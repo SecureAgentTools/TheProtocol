@@ -8,6 +8,7 @@ by the runner to skip / filter / report.
 """
 from __future__ import annotations
 
+import re
 import time
 import logging
 from dataclasses import dataclass, field
@@ -113,6 +114,24 @@ def silent_legs(state: Any) -> Optional[Tuple[List[str], List[str]]]:
     return silent, [str(k) for k in state if str(k) not in silent]
 
 
+# §MCPTEST30 (V0649, agentvault2-d3, 2026-10-31): a flag a passing check's own state sets at its TOP level when its read
+# answered an error or nothing (`silent`, beside the per-leg form silent_legs judges) or when it found nothing to check
+# (`no_agents`, `no_did`, `empty_list`, ...). The census of 2026-10-31: 269 such `...] = True` then `return True`
+# branches in 92 of the 167 test files (225 `silent`, 44 an empty population), and a passed row kept no state, so how
+# often a pass rode one could not be read anywhere.
+_NOTHING_FLAG = re.compile(r"^(silent|no_[a-z0-9_]+|empty[a-z0-9_]*|missing_[a-z0-9_]+)$")
+
+
+def measured_nothing(state: Any) -> List[str]:
+    """The top-level flags of a check's state that say its pass measured nothing (sorted; [] for none). REPORTED on the
+    row (`measured_nothing`) and counted in the summary (`passed_on_nothing`), never a verdict yet: as U1's vacuity
+    and V0549's silent legs did, the census of the first runs earns a ceiling before it gates (his reading of a pass
+    on nothing, 2026-10-19: "completly cheated")."""
+    if not isinstance(state, dict):
+        return []
+    return sorted(str(k) for k, v in state.items() if v is True and isinstance(k, str) and _NOTHING_FLAG.match(k))
+
+
 def _leg_is_silent(v: Any) -> bool:
     """A leg marked {"silent": True}, or one the test kept as an answer's KEYS where the keys are the admin
     dispatcher's error envelope ({status_code, upstream_error, ...}): the copy-pasted helper reads that dict as an
@@ -138,6 +157,9 @@ def _legs_only(state: Any) -> Any:
     sl = silent_legs(state)
     if sl:
         out["silent_legs"] = sl[0]
+    mn = measured_nothing(state)
+    if mn:
+        out["measured_nothing"] = mn
     return out or None
 
 

@@ -98,3 +98,13 @@ async def test_a_strangers_resends_cannot_flood_or_kill_the_link(mail, monkeypat
     b = await auth_secure.resend_verification_email(email="d@test", db=_Db())
     assert a == b and "If that email is registered" in a["message"]
     assert mail == ["tok-1"] and dev.email_verification_token == "tok-1"
+
+
+async def test_a_claimed_window_still_sends(mail):
+    """§EXTTEST (V0649): the login gate claims the window before it answers, and its background send passes claimed=True;
+    without that flag the send meets the gate's own claim and mails nothing (the control)."""
+    dev = _dev(20)
+    assert await auth_secure._verification_resend_allowed(dev.id)
+    assert await auth_secure._issue_fresh_verification_email(_Db(), dev, source="login_gate") == "cooldown"
+    assert await auth_secure._issue_fresh_verification_email(_Db(), dev, source="login_gate", claimed=True) == "sent"
+    assert mail == ["tok-1"]

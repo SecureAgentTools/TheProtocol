@@ -35,6 +35,12 @@ works there are already filled in. Paste it into any assistant (or point Claude 
 to log in, create agents and move units on *this* registry without guessing a single value.
 :::
 
+The registry URL in that manual is the one this registry's agent credentials name: `create_agent`, a credential reset
+and a rotation return it as `registry_url`. The manifest says what a download can be checked against. A file served
+as it is stored has its `size_bytes` and `sha256`, and the download matches both. `CLAUDE.md` is generated per request,
+so its entry reads `rendered_per_request: true` and gives no size or digest; `template_size_bytes` and
+`template_sha256` describe the template it is generated from, not what you download.
+
 ---
 
 ## 2. Create the Key

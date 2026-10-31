@@ -171,6 +171,38 @@ def doctor(a):
     return mod.checks(ns)
 
 
+def pull_images(a, attempts=3):
+    """§EXTTEST (beta.26): pull what the standup needs and this host lacks, before the doctor reads the host: the release's
+    six images when --images-prefix names a registry, and every public image the frame's templates use. One line per
+    attempt and retries with backoff, so one timeout on a slow link no longer becomes a reconcile loop naming ten missing
+    services. -> the references still missing"""
+    spec = importlib.util.spec_from_file_location("frame_doctor", os.path.join(HERE, "frame-doctor.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    first = a.images_prefix.split("/", 1)[0]
+    remote = "/" in a.images_prefix and ("." in first or ":" in first or first == "localhost")
+    refs = ([f"{a.images_prefix}/{n}:{a.version}" for n in mod.IMAGES] if remote else []) + list(mod.public_images())
+
+    def present(ref):
+        return subprocess.run(["docker", "image", "inspect", ref], capture_output=True).returncode == 0
+
+    todo = [r for r in dict.fromkeys(refs) if not present(r)]
+    if todo:
+        log(f"pulling {len(todo)} image(s) this host lacks" + (f" (the release's from {a.images_prefix}," if remote else " (")
+            + " the public ones from Docker Hub and ghcr.io)")
+    for n, ref in enumerate(todo, 1):
+        for k in range(1, attempts + 1):
+            log(f"pulling {ref} ({n}/{len(todo)}, attempt {k}/{attempts})")
+            r = subprocess.run(["docker", "pull", "-q", ref], capture_output=True, text=True)
+            if r.returncode == 0:
+                break
+            tail = (r.stderr or r.stdout or "").strip().splitlines()[-1:] or ["no detail"]
+            log(f"pull of {ref} failed: {tail[0][:200]}")
+            if k < attempts:
+                time.sleep(10 * k)
+    return [r for r in todo if not present(r)]
+
+
 INSTALLER = os.path.join(HERE, "frame-runner-install.py")
 
 
@@ -595,6 +627,13 @@ def main():
             f"that account")
     prepare_stack_root(a.stack_root)
     resume = interrupted_stack(a.stack_root, a.name)   # an interrupted standup of this name: its containers and ports are expected
+    if not a.dry_run:
+        missing = pull_images(a)
+        if missing:
+            for ref in missing:
+                log(f"NOT READY: {ref} could not be pulled after retries; check the network and run frame-up again "
+                    f"(what was pulled stays).")
+            return 1
     if not a.skip_doctor:
         problems, notes = doctor(a)
         for n in notes:
@@ -708,7 +747,7 @@ def main():
             "--registry-image", f"{a.images_prefix}/registry:{a.version}", "--teg-image", f"{a.images_prefix}/teg-layer:{a.version}",
             "--es-image", f"{a.images_prefix}/event-store:{a.version}", "--cert-writer-image", f"{a.images_prefix}/cert-writer:{a.version}",
             "--posture", a.posture, "--env-label", a.posture, "--max-load", str(a.max_load),
-            "--secrets-dir", a.secrets_dir]
+            "--min-mem-gib", str(a.min_mem_gib), "--secrets-dir", a.secrets_dir]
     argv += terms_driver_args(terms)
     if parent:
         argv += ["--tester-self", "--operator-domain-suffix", parent.get("public_name") or ""]

@@ -396,6 +396,8 @@ sequenceDiagram
 
 `deployments_24h` holds `total`, `success`, `failed`, `pending` (pending and running) and `top_failing_agents`. An organization with no agents gets the same shape with zero counts. This is the data behind the dashboard's **CI/CD** tab.
 
+**Sessions** (owner or admin) shows the organization's agents as they are now and what they called. Its presence list is `GET .../{org_id}/presence` (any active member or an assigned agent may read it): each agent's card name, owner, last activity, account status and its **status line**, one line an agent sets about what it is doing (`PUT /api/v1/agents/me/status`, up to 140 characters, expiring on its own after one second to a day). A line past its expiry reads as none, and so does a suspended agent's. Below it, `GET .../{org_id}/mcp-audit` lists the MCP calls the agents made on this registry with their own credentials, newest first and paged (`?limit=` up to 200, `?cursor=` the previous page's `next_cursor`): the tool, which agent, when, the tier, the outcome, the latency, and whether the tool answered an error. It never serves what an agent sent or what came back, nor the caller's address. `recording: false` says this registry records no MCP calls at all, so an empty list is never read as an idle organization.
+
 ## Firms in the Open
 
 An organization can also act as a **firm**: hired by strangers, hiring strangers, with books that are a read of its own records.
@@ -490,6 +492,8 @@ Every route below is under `/api/v1/organizations` and takes a developer token u
 | `GET` | `/{org_id}/activity-rollup` | admin | `?days=` 1 to 90 |
 | `GET` | `/{org_id}/spend-approvals` | admin | Read-only; `?status=` filters |
 | `GET` | `/{org_id}/audit` | admin | Event-store trail, newest first; `?event_types=`, `?limit=` |
+| `GET` | `/{org_id}/presence` | member or assigned agent | The agents and their live status lines |
+| `GET` | `/{org_id}/mcp-audit` | admin | The agents' MCP calls, newest first; `?limit=`, `?cursor=` |
 | `GET` | `/{org_id}/statement` | admin | `?format=csv` for a file |
 | `GET` | `/{org_id}/track-record` | public | The firm's settled work |
 | `GET` | `/{org_id}/public-feed` | public | Only for an organization that opted in |

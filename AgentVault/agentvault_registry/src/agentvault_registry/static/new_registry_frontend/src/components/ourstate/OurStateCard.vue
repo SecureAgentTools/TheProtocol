@@ -332,6 +332,40 @@
       <p class="osc-worknote">{{ t('ourstate.card.dealLedger', 'A record of money that already moved on the contract rail.') }}</p>
     </template>
 
+    <!-- V0650 (l) — approvals in the chat. Both are RAIL records: the request names what is asked and shows its live
+         status (a later decision card in the thread, or its expiry); the decision names who decided, in which role,
+         and repeats the artifact's sha256. Deciding happens in the panel pinned above the thread, never on a card. -->
+    <template v-else-if="approvalRequest">
+      <div class="osc-head" data-testid="osc-approval-request">
+        <Icon name="mdi:shield-check" />
+        <span class="osc-deal-kind">{{ t('ourstate.card.approvalAsks', 'Asks for approval') }}</span>
+        <span class="osc-approval-status" :data-status="liveApproval || 'pending'" data-testid="osc-approval-status">
+          · {{ approvalStatusWord }}</span>
+      </div>
+      <div class="osc-worktitle">{{ approvalRequest.title }}</div>
+      <div v-if="approvalRequest.unlocks" class="osc-memo">
+        {{ tp('ourstate.approvals.unlocks', 'Unlocks: {what}', { what: approvalRequest.unlocks }) }}</div>
+      <div v-if="approvalRequest.artifactSha256" class="osc-ref" :title="approvalRequest.artifactSha256">
+        sha256 {{ shorten(approvalRequest.artifactSha256) }}</div>
+      <p class="osc-worknote">{{ t('ourstate.card.approvalWhere', 'Decided in the panel pinned above this thread.') }}</p>
+    </template>
+
+    <template v-else-if="approvalDecided">
+      <div class="osc-head" :data-testid="`osc-approval-${approvalDecided.decision}`">
+        <Icon :name="approvalDecided.decision === 'approved' ? 'mdi:check-decagram' : 'mdi:close'" />
+        <span class="osc-deal-kind">{{ approvalDecided.decision === 'approved'
+          ? t('ourstate.card.approvalApproved', 'Approved')
+          : t('ourstate.card.approvalDenied', 'Denied') }}</span>
+      </div>
+      <div class="osc-worktitle">{{ approvalDecided.title }}</div>
+      <div class="osc-memo">{{ tp('ourstate.card.approvalBy', 'By {who} ({role})', {
+        who: approvalDecided.decidedByName || `#${approvalDecided.decidedById ?? ''}`,
+        role: approvalDecided.role === 'owner' ? t('ourstate.card.approvalOwner', 'owner') : t('ourstate.card.approvalApprover', 'approver') }) }}</div>
+      <div v-if="approvalDecided.artifactSha256" class="osc-ref" :title="approvalDecided.artifactSha256">
+        sha256 {{ shorten(approvalDecided.artifactSha256) }}</div>
+      <div v-if="approvalDecided.note" class="osc-memo">{{ approvalDecided.note }}</div>
+    </template>
+
     <template v-else>
       <div class="osc-head osc-unknown" data-testid="osc-unknown">
         <Icon name="mdi:help-circle" />
@@ -361,7 +395,9 @@ const props = withDefaults(defineProps<{
   /** §OURSTATE-6 — the token's LIVE status, when the thread could read it.
    *  Null means "not re-read", never "unsettled": absence is not a verdict. */
   liveSettlement?: string | null
-}>(), { defang: false, mine: false, liveSettlement: null })
+  /** V0650 (l) — an approval request's live status (pending | approved | denied | expired), read from the thread. */
+  liveApproval?: string | null
+}>(), { defang: false, mine: false, liveSettlement: null, liveApproval: null })
 
 /** Closed by default: the thread stays scannable, the answer stays reachable. */
 const payloadOpen = ref(false)
@@ -413,6 +449,13 @@ const dealOffer = computed(() => (view.value.type === 'engagement.offer' ? view.
 const dealAccepted = computed(() => (view.value.type === 'engagement.accepted' ? view.value : null))
 const dealMilestone = computed(() => (view.value.type === 'engagement.milestone' ? view.value : null))
 const dealSettled = computed(() => (view.value.type === 'engagement.settled' ? view.value : null))
+const approvalRequest = computed(() => (view.value.type === 'approval.request' ? view.value : null))
+const approvalDecided = computed(() => (view.value.type === 'approval.decided' ? view.value : null))
+const approvalStatusWord = computed(() => ({
+  approved: t('ourstate.card.approvalApproved', 'Approved'),
+  denied: t('ourstate.card.approvalDenied', 'Denied'),
+  expired: t('ourstate.approvals.expired', 'expired'),
+} as Record<string, string>)[props.liveApproval || ''] || t('ourstate.card.approvalPending', 'waiting for a decision'))
 
 function fmtWhen(iso: string): string {
   try { return new Date(iso).toLocaleString(appLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
@@ -559,6 +602,10 @@ const shorten = (s: string) => !s ? '' : s.length > 18 ? s.slice(0, 8) + '…' +
 .osc-worknote { font-size: .68rem; opacity: .5; margin: 0; }
 /* §DEALTHREADS — negotiation + transition cards */
 .osc-deal-kind { font-weight: 600; }
+/* V0650 (l): an approval request's live status beside its head */
+.osc-approval-status { font-weight: 500; opacity: 0.85; }
+.osc-approval-status[data-status='approved'] { color: var(--nc-success, #2fb36d); opacity: 1; }
+.osc-approval-status[data-status='denied'], .osc-approval-status[data-status='expired'] { opacity: 0.65; }
 .osc-deal-title { font-size: .92rem; font-weight: 600; }
 .osc-deal-ms { list-style: disc; margin: 2px 0 0; padding-left: 18px; font-size: .78rem; opacity: .75; }
 .osc-deal-note { font-size: .8rem; opacity: .7; margin: 4px 0 0; white-space: pre-wrap; }

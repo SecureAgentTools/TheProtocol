@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 from .arguments import argument_problems  # §MCPTEST30 V0524: arguments checked against the inputSchema
 from .arguments import ToolArgumentsRefused, refuse_unbindable  # §MCPTEST30 V0545: arguments bound before the call
 from .audit import emit_mcp_audit
+from .protocol_version import negotiate_protocol_version
 from .tool_aliases import resolve_alias  # §AGORAWORDS (V0419)
 from .tool_switches import filter_listed, listed as _tool_listed   # W3: the registry's switches decide the listing
 
@@ -1496,7 +1497,7 @@ def _if_listed(bare: str, text: str = None) -> str:
 async def _handle_initialize(params: Any) -> Dict[str, Any]:
     """MCP initialize handshake."""
     return {
-        "protocolVersion": MCP_SERVER_INFO["protocolVersion"],
+        "protocolVersion": negotiate_protocol_version(params),
         "capabilities": MCP_SERVER_INFO["capabilities"],
         "serverInfo": {
             "name": MCP_SERVER_INFO["name"],
@@ -2479,6 +2480,27 @@ AGENT_TOOL_SCHEMAS.extend(GUILD_TOOL_SCHEMAS)
 ALL_TOOL_SCHEMAS.extend(GUILD_TOOL_SCHEMAS)
 
 # ---------------------------------------------------------------------------
+# V0650 (a) (2026-10-31): an agent's status line and its organization's presence (mcp/tools_presence.py), late-wired.
+# Both tier 2 for the inline agent_jwt swap; the presence read forwards whatever token the context holds.
+# ---------------------------------------------------------------------------
+from .tools_presence import (  # noqa: E402
+    PRESENCE_TOOL_SCHEMAS,
+    get_organization_presence as _presence_org,
+    set_my_agent_status as _presence_set,
+)
+
+# a literal dict: the CI tier gate (.forgejo/checks/mcp_audit_tier_coverage.py) reads the dispatch keys by AST
+TOOL_DISPATCH.update({
+    "theprotocol_setMyAgentStatus": _presence_set,
+    "theprotocol_getOrganizationPresence": _presence_org,
+})
+_PRESENCE_T2 = {"theprotocol_setMyAgentStatus", "theprotocol_getOrganizationPresence"}
+TIER2_TOOLS.update(_PRESENCE_T2)
+AUTH_REQUIRED_TOOLS.update(_PRESENCE_T2)
+AGENT_TOOL_SCHEMAS.extend(PRESENCE_TOOL_SCHEMAS)
+ALL_TOOL_SCHEMAS.extend(PRESENCE_TOOL_SCHEMAS)
+
+# ---------------------------------------------------------------------------
 # §MEMBERSHIP (2026-10-02): membership and the commons (mcp/tools_commons.py), the same late-wiring pattern. Tier 1 by
 # absence: getMembershipStats, getCommonsSeasons, getCommonsSeason. The six admin tools are on the admin server.
 # ---------------------------------------------------------------------------
@@ -2514,6 +2536,34 @@ DISCOVERY_TOOL_SCHEMAS.extend(COMMONS_PUBLIC_TOOL_SCHEMAS)
 AGENT_TOOL_SCHEMAS.extend(COMMONS_AGENT_TOOL_SCHEMAS)
 DEVELOPER_TOOL_SCHEMAS.extend(COMMONS_DEVELOPER_TOOL_SCHEMAS)
 ALL_TOOL_SCHEMAS.extend(COMMONS_PUBLIC_TOOL_SCHEMAS + COMMONS_DEVELOPER_TOOL_SCHEMAS + COMMONS_AGENT_TOOL_SCHEMAS)
+
+# ---------------------------------------------------------------------------
+# V0650 (l) (2026-10-31): approvals in the chat (mcp/tools_chat_approvals.py), the same late-wiring pattern. The status
+# tool is tier 2 for the inline agent_jwt swap and forwards whatever token the context holds (a member of the room
+# reads it either way); deciding is tier 3, a developer credential (an agent context is refused).
+# ---------------------------------------------------------------------------
+from .tools_chat_approvals import (  # noqa: E402
+    CHAT_APPROVAL_AGENT_TOOL_SCHEMAS,
+    CHAT_APPROVAL_DEVELOPER_TOOL_SCHEMAS,
+    decide_chat_approval as _approval_decide,
+    get_chat_approval_status as _approval_status,
+    request_chat_approval as _approval_request,
+)
+
+# a literal dict: the CI tier gate (.forgejo/checks/mcp_audit_tier_coverage.py) reads the dispatch keys by AST
+TOOL_DISPATCH.update({
+    "theprotocol_requestChatApproval": _approval_request,
+    "theprotocol_getChatApprovalStatus": _approval_status,
+    "theprotocol_decideChatApproval": _approval_decide,
+})
+_APPROVAL_T2 = {"theprotocol_requestChatApproval", "theprotocol_getChatApprovalStatus"}
+_APPROVAL_T3 = {"theprotocol_decideChatApproval"}
+TIER2_TOOLS.update(_APPROVAL_T2)
+TIER3_TOOLS.update(_APPROVAL_T3)
+AUTH_REQUIRED_TOOLS.update(_APPROVAL_T2 | _APPROVAL_T3)
+AGENT_TOOL_SCHEMAS.extend(CHAT_APPROVAL_AGENT_TOOL_SCHEMAS)
+DEVELOPER_TOOL_SCHEMAS.extend(CHAT_APPROVAL_DEVELOPER_TOOL_SCHEMAS)
+ALL_TOOL_SCHEMAS.extend(CHAT_APPROVAL_AGENT_TOOL_SCHEMAS + CHAT_APPROVAL_DEVELOPER_TOOL_SCHEMAS)
 
 
 # ---------------------------------------------------------------------------

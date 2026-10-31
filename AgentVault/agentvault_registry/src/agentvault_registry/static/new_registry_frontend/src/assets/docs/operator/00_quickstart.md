@@ -3,7 +3,8 @@
 **Audience**: anyone who wants a registry of their own
 **Checked against the source**: 2026-10-16 (the frame kit 1.0.0-beta.20: `scripts/distribution/` and
 `templates/frame-test/`; the registry's auth, onboarding, treasury and operator routes); the standalone build, its
-environment file, its ledger and the bundle again 2026-10-22 (the frame kit 1.0.0-beta.22)
+environment file, its ledger and the bundle again 2026-10-22 (the frame kit 1.0.0-beta.22); the frame section and the
+release images again 2026-10-31 (the frame kit 1.0.0-beta.27, on a clean host)
 
 A registry of your own comes in three shapes. They are different stacks, so pick one before you run anything:
 
@@ -13,8 +14,9 @@ A registry of your own comes in three shapes. They are different stacks, so pick
 | Frame | your host, under your own DNS name | the full sovereign stack: its own SPIRE server, ledger, unit and mTLS gateways, with monitoring, an auditor and a federated directory; it federates with other frames by invitation | [A Frame on Your Own Host](#a-frame-on-your-own-host) |
 | Cloud operator | the host of the frame you join | a registry inside that frame's trust domain, unit and ledger, provisioned by the frame | [A Cloud Operator Under a Frame](#a-cloud-operator-under-a-frame) |
 
-All three run the same application images. There is no public image registry: the kit builds the images on your host
-(`scripts/distribution/build.sh`), and a cloud operator runs the images of the frame that provisions it.
+All three run the same application images. Each release's six images are public and pull without an account from
+`images.theprotocol.cloud/theprotocol` (see Releases, images and updates); the kit can also build them
+on your host (`scripts/distribution/build.sh`). A cloud operator runs the images of the frame that provisions it.
 [Run Your Own Registry](/docs/17) explains what each shape gives and what it gives up.
 
 ---
@@ -155,10 +157,11 @@ issuance and accounts for every unit (chapter 01, *The Ledger and the Supply Aud
 ## Register a Developer and Create an Agent
 
 ```bash
-# 1. Register (the password needs 12 characters with upper and lower case, a digit and a special character)
+# 1. Register (the password needs 12 characters with upper and lower case, a digit and a special character;
+#    tos_accepted records the person's acceptance of the terms; a registry that requires invites also wants "invite_code")
 curl -s -X POST http://localhost:8000/api/v1/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"name": "my-developer", "email": "dev@example.com", "password": "<your password>"}'
+  -d '{"name": "my-developer", "email": "dev@example.com", "password": "<your password>", "tos_accepted": true, "age_confirmed": true}'
 
 # 2. Log in (form-encoded) and keep the access_token
 curl -s -X POST http://localhost:8000/api/v1/auth/login \
@@ -203,13 +206,16 @@ Alertmanager and Grafana come as a second compose file, `docker-compose.monitori
 
 A frame is the whole sovereign stack under your own DNS name: registry, TEG, ledger, its own SPIRE server, the mTLS
 gateways, the auditor, the federated directory and the monitoring kit. It federates with other frames through the
-invitation rail. You need one Linux host with 8 GiB of free memory and 20 GB of free disk, a DNS name that resolves to
-it, ports 80 and 443 open for the edge's Let's Encrypt certificate, and an SMTP account. Run the scripts as root: they
+invitation rail. You need one Linux host with 8 GiB of free memory (16 GB of RAM is comfortable) and 20 GB of free
+disk, Python 3.10 or newer with the Docker SDK (`python3-docker`, or `pip install docker`), a DNS name that resolves to
+it, ports 80 and 443 open for the edge's Let's Encrypt certificate (or `--edge-tls internal` on a test host), and an SMTP
+account (or `--posture sandbox`, which mails nobody). Run the scripts as root: they
 write under the stack root (`--stack-root`, default `/opt/theprotocol/stack`) and drive Docker.
 
 ```bash
 cd scripts/distribution
-./build.sh
+./build.sh       # or skip the build: frame-up pulls a release's six images with
+                 #   --images-prefix images.theprotocol.cloud/theprotocol --version <release> (pass both to the doctor too)
 ./frame-doctor.py --public-name frame.example.org
 ./frame-up.py --name myframe --public-name frame.example.org --ticker MYF --currency-name "My Unit" \
     --admin-email admin@example.org --location-label "Lisbon" --lat 38.7223 --lng -9.1393 \

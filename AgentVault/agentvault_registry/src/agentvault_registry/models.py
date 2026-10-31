@@ -2296,6 +2296,9 @@ class OrganizationMember(Base):
         Integer, ForeignKey("developers.id"), nullable=True
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # V0650 (l) (mig 0198): a named approver may decide the approval requests agents post in the org's room, beside
+    # the owner. It is a column of the membership row, so the authority ends when the membership does.
+    can_approve: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=sa.false())
     
     # Relationships
     organization: Mapped["Organization"] = relationship(
@@ -2536,6 +2539,20 @@ class AgentSpendPolicy(Base):
     def __repr__(self):
         return f"<AgentSpendPolicy(agent_did='{self.agent_did}', per_tx={self.max_per_tx}, per_day={self.max_per_day})>"
 
+
+
+class AgentStatusLine(Base):
+    """V0650 (a) (mig 0199): an agent's one-line status, set by the agent and expiring on its own. A line past
+    `expires_at` reads as no line at all. One row per agent; it goes with the agent. The attribute is `status_text`, not
+    `text`: this module imports sqlalchemy's `text`, and a class attribute of that name would shadow it here."""
+    __tablename__ = "agent_status_lines"
+
+    agent_did: Mapped[str] = mapped_column(
+        String, ForeignKey("agents.did", ondelete="CASCADE"), primary_key=True
+    )
+    status_text: Mapped[str] = mapped_column(String(140), nullable=False)
+    set_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 class AgentDelegationGrant(Base):
     """IRONKEY L3-D2 — a principal delegates a permission subset TO an agent (on-behalf-of).
@@ -5980,6 +5997,9 @@ class GuildWorkOrder(Base):
     deadline: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     awarded_bid_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     worker_did: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    # V0650 (f) (mig 0200): the agent the poster meant the task for. A flag, never a gate: anyone may bid, and a bid
+    # from another agent is marked not_intended_worker (derived at read time; nothing is stored on the bid).
+    intended_worker_did: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     escrow_ref: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     deliverable: Mapped[Optional[dict]] = mapped_column(PG_JSONB, nullable=True)
     dispute_id: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
@@ -6516,6 +6536,9 @@ class ChatMessage(Base):
     # (conversation, remote_seq) index is the idempotent receive.
     remote_seq: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     origin_registry: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    # V0650 (h) (mig 0201): the principals the body @mentions, [{key, ptype, developer_id, agent_did, token}], resolved
+    # at insert against the thread's participants (services/chat_mentions.py); NULL when it names nobody.
+    mentions: Mapped[Optional[list]] = mapped_column(PG_JSONB, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False)
     edited_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -6525,6 +6548,7 @@ class ChatMessage(Base):
         UniqueConstraint("conversation_id", "seq", name="uq_chat_msg_conv_seq"),
         UniqueConstraint("conversation_id", "sender_ptype", "sender_id", "client_ref",
                          name="uq_chat_msg_client_ref"),
+        Index("ix_chat_msg_mentioned", "conversation_id", "seq", postgresql_where=sa.text("mentions IS NOT NULL")),
     )
 
 
@@ -6552,6 +6576,50 @@ class ChatFederationOutbox(Base):
     __table_args__ = (
         UniqueConstraint("conversation_id", "seq", "peer_base_url", name="uq_chat_fed_outbox_target"),
         Index("ix_chat_fed_outbox_due", "delivered_at", "next_attempt_at"),
+    )
+
+
+class ChatApproval(Base):
+    """V0650 (l) (mig 0198): one approval request an agent posted in its organization's room, and its decision.
+
+    The record, not the chat log, is the authority: a room's disappearing timer deletes messages, and the decision
+    with its proof (who, when, how, the registry's signed statement) must outlive the cards that show it. `status` is
+    pending|approved|denied|expired; a pending row past `expires_at` reads as expired everywhere and can never be
+    approved. Who may decide is re-derived on every decision (the org owner or an active member with can_approve);
+    agents never decide. Nothing here moves money."""
+    __tablename__ = "chat_approvals"
+
+    id: Mapped[str] = mapped_column(String(44), primary_key=True)                     # apr_<hex>
+    conversation_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
+    org_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    requester_agent_did: Mapped[str] = mapped_column(String(255), nullable=False)
+    client_ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_message_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    unlocks: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    artifact_sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    artifact_label: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    production_impact: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=sa.false())
+    facts: Mapped[dict] = mapped_column(PG_JSONB, nullable=False)
+    facts_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", server_default="pending")
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    decided_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_by_developer_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("developers.id", ondelete="SET NULL"), nullable=True)
+    decided_by_role: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    decision_note: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    decision_via: Mapped[Optional[dict]] = mapped_column(PG_JSONB, nullable=True)
+    presence_method: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    presence_challenge_id: Mapped[Optional[str]] = mapped_column(String(44), nullable=True)
+    decision_statement: Mapped[Optional[dict]] = mapped_column(PG_JSONB, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("requester_agent_did", "client_ref", name="uq_chat_approval_client_ref"),
     )
 
 

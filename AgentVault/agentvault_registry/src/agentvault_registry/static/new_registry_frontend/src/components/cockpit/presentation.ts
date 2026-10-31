@@ -97,6 +97,18 @@ export function buildPresentation(facts: Record<string, any>, t: T): PresentedLi
 
   push('verb', t('cockpit.shown.action', 'Action'), String(facts.verb || facts.action_type || facts.action || ''))
 
+  // V0650 (l): a decision on approval requests in an org room names what it decides, request by request, and the
+  // artifacts' hashes; the decider confirms exactly these lines.
+  if (facts.action === 'chat.approval') {
+    push('decision', t('cockpit.shown.decision', 'Decision'),
+         facts.decision === 'approve' ? t('cockpit.shown.approve', 'Approve') : t('cockpit.shown.deny', 'Deny'))
+    const titles = Array.isArray(facts.titles) ? facts.titles.map((x: unknown) => String(x)).filter(Boolean) : []
+    push('requests', t('cockpit.shown.requests', 'Requests'), titles.join(' · '))
+    const shas = Array.isArray(facts.artifact_sha256) ? facts.artifact_sha256.map((x: unknown) => String(x).slice(0, 12)) : []
+    push('artifacts', t('cockpit.shown.artifacts', 'Artifacts (sha256)'), shas.join(' · '))
+    if (facts.production_impact) push('production', t('cockpit.shown.production', 'Affects production'), t('cockpit.shown.yes', 'Yes'))
+  }
+
   // §MEMBERSHIP: a binding vote (kind governance.vote) or a commons ballot (kind commons.ballot) carries what it
   // decides; the member signs exactly these lines, so each one is part of what they are held to. Only those two
   // kinds get them: a money decision renders exactly the lines it always had.

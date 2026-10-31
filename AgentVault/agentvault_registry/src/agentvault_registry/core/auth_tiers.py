@@ -33,11 +33,18 @@ def _agent_calls() -> Set[Any]:
 
 def _either_calls() -> Set[Any]:
     from agentvault_registry import security
-    out = {security.get_current_actor_for_read, security.get_current_actor_for_read_optional}
+    out = {security.get_current_actor_for_read, security.get_current_actor_for_read_optional,
+           security.get_current_actor_for_read_or_key}   # V0650 (m): the chat reads, which also take a developer key
     try:
         from agentvault_registry.routers import agent_logs
         out.add(agent_logs.get_auth_context)
     except Exception:  # noqa: BLE001 — a registry without the router simply has no such route
+        pass
+    try:
+        # V0650 (l): the approval reads take an agent JWT, a developer JWT or a developer key
+        from agentvault_registry.routers import chat as _chat
+        out.add(_chat._approval_reader)
+    except Exception:  # noqa: BLE001
         pass
     return out
 

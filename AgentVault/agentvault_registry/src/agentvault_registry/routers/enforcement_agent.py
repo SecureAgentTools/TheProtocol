@@ -35,7 +35,7 @@ router = APIRouter(tags=["Enforcement Agent"])
 
 class BondDepositRequest(BaseModel):
     """Optional override for bond amount (uses policy default if omitted)."""
-    amount: Optional[int] = Field(None, gt=0, description="Amount to lock, in the frame's unit; defaults to the policy amount (50)")
+    amount: Optional[int] = Field(None, gt=0, description="Amount to lock, in the frame's unit; defaults to the registry's policy amount (GET /api/v1/reputation-bond/config)")
 
 
 # ── Endpoints ────────────────────────────────────────────────────────
@@ -227,8 +227,9 @@ async def get_bond_status(
                     "config": state["config"]},
         )
     prog = bond.get("progress") or {}
+    _row = await _rb.load_bond(db, current_agent.did)   # §EXTTEST (V0649): the id was a literal None
     return {
-        "bond_id": None,
+        "bond_id": _row.id if _row is not None else None,
         "status": bond["status"],
         "amount": bond["amount"],
         "currency": bond["currency"],

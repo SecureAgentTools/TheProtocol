@@ -207,6 +207,9 @@ class ConnectionManager:
 
     REDIS_BROADCAST_CHANNEL = f"{_registry_ws_prefix()}:broadcast"
     REDIS_TOPIC_PREFIX = f"{_registry_ws_prefix()}:topic:"
+    # V0650 (g): the one topic that wakes waiting GET /chat/sync calls. Its `chat:` prefix keeps it off the socket:
+    # topic_allowed refuses every chat: topic but a developer's own chat:dev:<id>.
+    CHAT_WAKE_TOPIC = "chat:wake"
 
     def __init__(self):
         # Store connections by user_id
@@ -220,6 +223,58 @@ class ConnectionManager:
         self._pubsub_task: Optional[asyncio.Task] = None
         self._subscribed_channels: Set[str] = set()
         self._pubsub_lock: asyncio.Lock = asyncio.Lock()
+        # V0650 (g): principal key ('dev:<id>' / 'agt:<did>') -> the Futures of this worker's waiting sync calls
+        self._chat_waiters: Dict[str, Set[asyncio.Future]] = {}
+
+    # ------------------------------------------------------------------
+    # V0650 (g): waiting sync calls (GET /api/v1/chat/sync?wait=)
+    # ------------------------------------------------------------------
+
+    def chat_waiter_add(self, key: str) -> asyncio.Future:
+        """Arm one waiter for a principal on this worker; the caller removes it (chat_waiter_remove) in a finally."""
+        fut = asyncio.get_running_loop().create_future()
+        self._chat_waiters.setdefault(key, set()).add(fut)
+        return fut
+
+    def chat_waiter_remove(self, key: str, fut: asyncio.Future) -> None:
+        waiting = self._chat_waiters.get(key)
+        if waiting is not None:
+            waiting.discard(fut)
+            if not waiting:
+                self._chat_waiters.pop(key, None)
+
+    def chat_waiter_count(self, key: str) -> int:
+        return len(self._chat_waiters.get(key, ()))
+
+    def _wake_local_chat(self, keys) -> int:
+        """Resolve this worker's waiters for these principals; a waiter already resolved stays as it is."""
+        woken = 0
+        for key in keys or ():
+            for fut in list(self._chat_waiters.get(str(key), ())):
+                if not fut.done():
+                    fut.set_result(True)
+                    woken += 1
+        return woken
+
+    async def chat_wake_subscribe(self) -> None:
+        """Have this worker hear wakes published by the others (once per worker; the listener starts with it)."""
+        await self._ensure_topic_subscribed(self.CHAT_WAKE_TOPIC)
+
+    async def wake_chat(self, keys) -> None:
+        """A message reached these principals: wake their waiting sync calls here, and publish the keys for every other
+        worker. The publisher does not subscribe the channel itself (broadcast_to_subscribers would): a worker hears
+        wakes only once one of its own calls waits. A failed publish costs the other workers' waiters their bound."""
+        keys = sorted({str(k) for k in (keys or ()) if k})
+        if not keys:
+            return
+        self._wake_local_chat(keys)
+        r = await self._get_redis()
+        if r is None:
+            return
+        try:
+            await r.publish(f"{self.REDIS_TOPIC_PREFIX}{self.CHAT_WAKE_TOPIC}", json.dumps({"payload": {"keys": keys}}))
+        except Exception as e:  # noqa: BLE001
+            logger.debug("[WS] chat wake publish failed: %s", e)
 
     # ------------------------------------------------------------------
     # Redis Pub/Sub helpers
@@ -583,6 +638,9 @@ class ConnectionManager:
 
     async def _local_broadcast_to_subscribers(self, topic: str, message: dict):
         """Send a message to local connections subscribed to a topic (no Redis publish)."""
+        if topic == self.CHAT_WAKE_TOPIC:     # V0650 (g): a wake for waiting sync calls, never a socket message
+            self._wake_local_chat((message or {}).get("keys") or [])
+            return
         message["timestamp"] = datetime.now(timezone.utc).isoformat()
         message["id"] = f"msg_{datetime.now(timezone.utc).timestamp()}"
 

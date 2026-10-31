@@ -1715,9 +1715,6 @@ async def populate_dynamic_values(
             ) and method in ("POST", "PUT", "PATCH"):
                 is_expected_failure = True
                 expected_failure_reason = "POST/PUT body required — runner sends empty body (no per-endpoint template yet)"
-            elif status_code == 500 and (original_path or "").startswith("/admin/simulation/"):
-                is_expected_failure = True
-                expected_failure_reason = "Simulation endpoint requires specific frame state"
             elif status_code == 400 and response_data and (
                 "agent did not found" in str(response_data).lower()
                 or "agent not found" in str(response_data).lower()
@@ -1750,12 +1747,6 @@ async def populate_dynamic_values(
             ):
                 is_expected_failure = True
                 expected_failure_reason = "License state-dep — already in target state (revoked/suspended), idempotent healthy"
-            elif status_code == 500 and (original_path or "") == "/teg/treasury/cross-teg-fund":
-                is_expected_failure = True
-                expected_failure_reason = "Cross-TEG treasury funding restricted to Registry-A — sandbox isn't origin"
-            elif status_code == 500 and (original_path or "") == "/teg/staking/stake":
-                is_expected_failure = True
-                expected_failure_reason = "TEG lock proxy 500 — sandbox state-dep / TEG flake"
             elif status_code == 403 and (original_path or "") == "/operators/request-revocation":
                 is_expected_failure = True
                 expected_failure_reason = "Operator revocation requires caller to be active operator — admin dev isn't one"
@@ -3911,6 +3902,79 @@ def _two_factor_result(method: str, path: str, auth_type: str, r: httpx.Response
     }
 
 
+_TEMPLATE_PURCHASE = "/pipeline-templates/{template_id}/purchase"
+
+
+def pick_free_official_template(listed: Any) -> Optional[Dict[str, Any]]:
+    """The first template the frame lists at price 0 with no author (an official one), else None. V0649 (agentvault2-13):
+    the MCP tester's two conditions (earned_ad_devtools, V0641, agentvault2-66 with agentvault2-aa): price 0, so the
+    purchase makes no TEG call and emits nothing; no author, so no developer's listing statistics move (a purchase counts
+    a download on its template, which no route lowers)."""
+    rows = (listed.get("templates") or listed.get("items") or []) if isinstance(listed, dict) else listed
+    for r in rows if isinstance(rows, list) else []:
+        if not isinstance(r, dict) or not (r.get("id") or r.get("template_id")) or r.get("author_did"):
+            continue
+        try:
+            price = float(str(r.get("price_teg") or 0))
+        except ValueError:
+            continue
+        if price == 0:
+            return r
+    return None
+
+
+async def _template_purchase_row(method: str, path: str, auth_type: str, dev_token: Optional[str],
+                                 agent_did: Optional[str]) -> Dict[str, Any]:
+    """V0649 (agentvault2-13; his approval 2026-10-30, "c is also approved", lifted P8.28b's pre-skip): the purchase row
+    buys a free official template with the sweep's own agent, as the MCP tester has since V0641. Until V0648 the
+    contract sent a placeholder buyer to template "99999" and PASSED on the 404 ("Agent did:theprotocol:placeholder not
+    found", read on sbx-alpha 2026-10-30, expected_failure), and the legacy chain behind it pre-skipped the route as
+    unbuilt. A step before the purchase that fails makes the row NOT MEASURED with that step's sentence; the purchase is
+    the measurement: 200 carrying the template's config and no transaction (a free template moves nothing), else a
+    failure carrying the route's sentence. A repeat answers 200 "Template already purchased" with the config: the same
+    pass, said by the route."""
+    from agentvault_registry.api_tests.base import not_measured_result, _refusal_sentence
+
+    def _nm(reason: str) -> Dict[str, Any]:
+        return not_measured_result(method, path, auth_type, "fixture", reason)
+
+    if not dev_token:
+        return _nm("buys with the sweep's own agent, and the sweep held no developer token")
+    if not agent_did:
+        return _nm("buys with the sweep's own agent, and the sweep holds no agent of its own")
+    hdr = {"Authorization": f"Bearer {dev_token}"}
+    async with httpx.AsyncClient(base_url=API_TEST_TARGET_URL, timeout=API_TEST_INNER_TIMEOUT) as c:
+        r = await c.get("/api/v1/pipeline-templates", headers=hdr)
+        if r.status_code != 200:
+            return _nm(f"the frame's template list answered {r.status_code}: {_refusal_sentence(_json_or_text(r))}")
+        tpl = pick_free_official_template(_json_or_text(r))
+        if tpl is None:
+            return _nm("this frame lists no free official pipeline template (price 0, no author); a purchase counts a "
+                       "download on its template, so the sweep buys only an official one")
+        tid = str(tpl.get("id") or tpl.get("template_id"))
+        t0 = time.time()
+        r = await c.post(f"/api/v1/pipeline-templates/{tid}/purchase", headers=hdr, json={"buyer_did": agent_did})
+        ms = (time.time() - t0) * 1000
+    data = _json_or_text(r)
+    ok = r.status_code == 200 and isinstance(data, dict) and "template_config" in data
+    healthy = ok and not data.get("transaction_id")
+    if healthy:
+        error = None
+    elif ok:
+        error = (f"the free template's purchase answered transaction_id {data.get('transaction_id')!r}: a free one "
+                 "carries its config and moves nothing")
+    else:
+        error = f"HTTP {r.status_code}: {_refusal_sentence(data)}"
+    return {
+        "path": path, "method": method, "authRequired": auth_type,
+        "healthy": healthy, "statusCode": r.status_code, "responseTime": round(ms, 1),
+        "responseData": {"fields": sorted(data.keys())} if isinstance(data, dict) else {"fields": []},
+        "timestamp": datetime.now(timezone.utc).isoformat(), "error": error,
+        "actualAuthUsed": "developer", "expected_failure": False, "expected_failure_reason": None,
+        "dispatched_via": "template_purchase_fixture",
+    }
+
+
 async def _two_factor_row(method: str, path: str, auth_type: str, admin_token: Optional[str]) -> Dict[str, Any]:
     """§SUITES1018 batch 8 (part 2): one 2FA row, on the sweep's own fixture account (_TWO_FACTOR_ROWS). The account is
     reset to off through the admin's emergency route when an earlier row left 2FA on, signed in, and set up and
@@ -5112,6 +5176,18 @@ async def test_endpoint(
         return await _two_factor_row("POST", unquote(path).split("?", 1)[0], endpoint_test.get("auth", "developer"),
                                      _tf_admin)
 
+    # V0649 (agentvault2-13): the template purchase is bought for real by the sweep's own agent, before any contract
+    # (its contract passed on a placeholder's 404; _template_purchase_row)
+    if (method or "").upper() == "POST" and unquote(path).split("?", 1)[0] == _TEMPLATE_PURCHASE:
+        if "registry-test" in API_TEST_TARGET_URL:
+            _tp_dev, _ = await get_sandbox_tokens()
+        else:
+            await _sandbox_tokens.refresh_from_redis()
+            _tp_dev = _sandbox_tokens.get("developer") or endpoint_test.get("developer_token")
+        _tp_agent = str(DYNAMIC_VALUES.get("agent_did") or _sandbox_tokens.get("agent_did") or "")
+        return await _template_purchase_row("POST", _TEMPLATE_PURCHASE, endpoint_test.get("auth", "developer"),
+                                            _tp_dev, _tp_agent)
+
     # ── AAA+ contract dispatch ─────────────────────────────────────────
     # If this endpoint has a registered contract, try it FIRST. Contract
     # returns None on "unknown status" → fall through to legacy inline chain.
@@ -5443,13 +5519,7 @@ async def test_endpoint(
 
     # GROUP8: /onboard/register — removed from endpoints_registry.py (410 GONE, no longer tested)
     
-    # P8.28b: Skip purchase — not fully implemented, Commander approved
-    if original_path == "/pipeline-templates/{template_id}/purchase" and method == "POST":
-        logger.info("PRE-SKIP: /pipeline-templates/{template_id}/purchase — not fully implemented, Commander approved")
-        from agentvault_registry.api_tests.base import not_measured_result
-        return not_measured_result(method, original_path, endpoint_test.get("auth", "none"), "unbuilt",
-                                   "Template purchase not fully implemented. Commander approved pre-skip pending further "
-                                   "backend work.")
+    # P8.28b's pre-skip of the template purchase is gone (V0649: _template_purchase_row measures it, before any contract)
 
     # GROUP8: /auth/generate-api-key — removed from endpoints_registry.py (legacy 404, no longer tested)
 
@@ -7340,9 +7410,6 @@ async def test_endpoint(
         _did = DYNAMIC_VALUES.get("agent_did", "AGENT_NOT_ONBOARDED")
         body = {"agent_dids": [_did], "format": "json"}
         logger.info(f"GROUP10: Bulk export body forced with agent DID {_did}")
-    if original_path == "/pipeline-templates/{template_id}/purchase" and method == "POST":
-        if body and isinstance(body, dict):
-            body["agent_did"] = DYNAMIC_VALUES.get("agent_did", "AGENT_NOT_ONBOARDED")
 
     # Special handling for agent logs - create test agent first
     if original_path == "/agents/{agent_did}/logs" and method == "POST":
@@ -8339,8 +8406,6 @@ async def test_endpoint(
                         _ef, _er = True, "Endpoint requires query param (agent_did) — runner doesn't synthesize query params"
                     elif _sc == 422 and method in ("POST", "PUT", "PATCH"):
                         _ef, _er = True, "POST/PUT body required — runner sends empty body (no template yet)"
-                    elif _sc == 500 and (original_path or "").startswith("/admin/simulation/"):
-                        _ef, _er = True, "Simulation endpoint requires specific frame state"
                     elif _sc == 404 and original_path == "/agents/reputation-bond/status" and _rd and "no reputation bond" in str(_rd).lower():
                         _ef, _er = True, "Reputation bond not deposited — agent needs to call /deposit first (working as designed)"
                     elif _sc == 400 and _rd and (
@@ -8372,10 +8437,6 @@ async def test_endpoint(
                         "/admin/federation/licenses/{license_id}/revoke",
                     ):
                         _ef, _er = True, "License state-dep — already in target state (revoked/suspended), idempotent healthy"
-                    elif _sc == 500 and (original_path or "") == "/teg/treasury/cross-teg-fund":
-                        _ef, _er = True, "Cross-TEG treasury funding restricted to Registry-A — sandbox isn't origin"
-                    elif _sc == 500 and (original_path or "") == "/teg/staking/stake":
-                        _ef, _er = True, "TEG lock proxy 500 — sandbox state-dep / TEG flake"
                     elif _sc == 403 and (original_path or "") == "/operators/request-revocation":
                         _ef, _er = True, "Operator revocation requires caller to be active operator — admin dev isn't one"
                     elif _sc == 503 and (original_path or "") == "/teg/balance" and _rd and "teg service unavailable" in str(_rd).lower():
@@ -8710,9 +8771,6 @@ async def test_endpoint(
                 elif response.status_code in (504, 524) or (response.status_code is None and "timeout" in str(response_data).lower()):
                     is_expected_failure = True
                     expected_failure_reason = "Long-running endpoint exceeded BFF 10s timeout — endpoint may still be valid"
-                elif response.status_code == 500 and (original_path or "").startswith("/admin/simulation/"):
-                    is_expected_failure = True
-                    expected_failure_reason = "Simulation endpoint requires specific frame state"
                 elif response.status_code == 400 and response_data and (
                     "agent did not found" in str(response_data).lower()
                     or "agent not found" in str(response_data).lower()
@@ -9122,8 +9180,6 @@ async def test_endpoint(
                 or (original_path or "").startswith("/community/")
             ) and method in ("POST", "PUT", "PATCH"):
                 _ef, _er = True, "POST/PUT body required — runner sends empty body (no per-endpoint template yet)"
-            elif _sc == 500 and (original_path or "").startswith("/admin/simulation/"):
-                _ef, _er = True, "Simulation endpoint requires specific frame state"
             elif _sc == 400 and _rd and (
                 "agent did not found" in str(_rd).lower()
                 or "agent not found" in str(_rd).lower()
@@ -9151,10 +9207,6 @@ async def test_endpoint(
                 "/admin/federation/licenses/{license_id}/revoke",
             ):
                 _ef, _er = True, "License state-dep — already in target state (revoked/suspended), idempotent healthy"
-            elif _sc == 500 and (original_path or "") == "/teg/treasury/cross-teg-fund":
-                _ef, _er = True, "Cross-TEG treasury funding restricted to Registry-A — sandbox isn't origin"
-            elif _sc == 500 and (original_path or "") == "/teg/staking/stake":
-                _ef, _er = True, "TEG lock proxy 500 — sandbox state-dep / TEG flake"
             elif _sc == 403 and (original_path or "") == "/operators/request-revocation":
                 _ef, _er = True, "Operator revocation requires caller to be active operator — admin dev isn't one"
             elif _sc == 403 and (original_path or "") == "/onboard/agents/{agent_did}/reset-credentials" and _rd and "invalid password" in str(_rd).lower():

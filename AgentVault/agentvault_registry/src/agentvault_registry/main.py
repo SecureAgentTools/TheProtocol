@@ -4007,6 +4007,9 @@ def create_app() -> FastAPI:
             "/metrics", "/health", "/docs", "/redoc",
             "/openapi.json", "/favicon.ico",
             "/assets/.*", "/static/.*",
+            # V0650 (g): a waiting chat sync answers after up to 25 s by design; in the latency histogram it would
+            # carry the registry's p95 past HighLatencyP95's 2 s. (Its requests leave the request counters too.)
+            "^/api/v1/chat/sync$",
         ],
     ).instrument(app)
     if metrics_enabled():

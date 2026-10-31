@@ -211,6 +211,11 @@
       <button class="ost-loaderr-btn" data-testid="ost-loaderr-back" @click="router.push(base)">{{ t('common.back', 'Back') }}</button>
     </div>
 
+    <!-- V0650 (l) — approvals pinned ABOVE the history: outside the scroll, so the messages move underneath and the
+         requests stay put (his words: "it should stay locked above the chat window"). Org rooms only; decisions go
+         with the developer token, never the speaking agent's. -->
+    <OurChatApprovals v-if="kind === 'org'" ref="approvalsPanel" :conversation-id="convId" :token="token" />
+
     <div ref="scrollEl" class="ost-scroll" data-testid="ost-messages">
       <ReadFailedNotice v-if="olderFailed" dense :retry="loadOlder"
                         :text="t('ourstate.thread.olderFailed', 'Older messages could not be read just now.')"
@@ -253,6 +258,7 @@
             <Icon name="mdi:lifebuoy" /> {{ supportRowText(m) }}</div>
           <OurStateCard v-else-if="m.kind === 'card'" :card="m.card" :defang="myState === 'pending'"
                         :live-settlement="liveSettle[m.card?.refs?.token_id] || null"
+                        :live-approval="liveApproval[m.card?.data?.approval_id] || null"
                         :mine="isMine(m)" @pay="openPayDoor" @open-agent="openAgentDetail"
                         @open-work="openWorkDoor" @applet-door="openAppletDoor"
                         @open-trade="openTradeDoor"
@@ -771,6 +777,8 @@ import OurStateIdentity from '@/components/ourstate/OurStateIdentity.vue'
 import UserAvatar from '@/components/common/UserAvatar.vue'
 import AgentSwitchList from '@/components/pocket/AgentSwitchList.vue'
 import OurStateCard from '@/components/ourstate/OurStateCard.vue'
+import OurChatApprovals from '@/views/pocket/OurChatApprovals.vue'
+import { liveApprovalStatus, touchesApprovals } from '@/services/chat/approvals'
 import TrustLinesRow from '@/components/ourstate/TrustLinesRow.vue'
 import ActingContextNotice from '@/components/common/ActingContextNotice.vue'
 import PocketSend from '@/views/pocket/PocketSend.vue'
@@ -834,6 +842,8 @@ const err = ref('')
 const menuOpen = ref(false)
 const muted = ref(false)
 const scrollEl = ref<HTMLElement | null>(null)
+// V0650 (l): the pinned approvals panel, told when an approval card arrives in the thread
+const approvalsPanel = ref<{ refresh: () => Promise<void> } | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
 
 const isAgentThread = computed(() => kind.value === 'agent_service')
@@ -923,11 +933,12 @@ async function loadOlder() {
 useChatStream({
   onMessage: (env) => { if (env.conversation_id === convId.value) ingest(env.message) },
   onPing: (env) => { if (env.conversation_id === convId.value) ingest(env.message) },
-  onResync: () => { void load() },
+  onResync: () => { void load(); void approvalsPanel.value?.refresh() },
 })
 
 function ingest(m: any) {
   if (!m || messages.value.some(x => x.id === m.id)) return
+  if (touchesApprovals(m)) void approvalsPanel.value?.refresh()
   messages.value = [...messages.value, m].sort((a, b) => a.seq - b.seq)
   lastSeq.value = Math.max(lastSeq.value, Number(m.seq || 0))
   void chatApi.markRead(token.value, convId.value, lastSeq.value).catch(() => {})
@@ -1614,6 +1625,8 @@ const timerOpen = ref(false)
    A failed read leaves the map empty and the card falls back to its stored
    word — never to a comforting one. */
 const liveSettle = ref<Record<string, string>>({})
+// V0650 (l): each approval request card's live status, read from the thread itself (a later approval.decided card)
+const liveApproval = computed<Record<string, string>>(() => liveApprovalStatus(messages.value, Date.now()))
 
 async function refreshSettlements() {
   const pending = messages.value

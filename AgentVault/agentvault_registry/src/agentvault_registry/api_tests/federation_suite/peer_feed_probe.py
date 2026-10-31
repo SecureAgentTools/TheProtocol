@@ -27,6 +27,7 @@ _PROBE = r'''
 import glob, json, ssl, sys
 import httpx
 base, path = sys.argv[1].rstrip("/"), sys.argv[2]
+echo = [k for k in (sys.argv[3] if len(sys.argv) > 3 else "").split(",") if k]   # values a test asks for by name
 
 def context(with_cert):
     c = ssl.create_default_context()
@@ -56,6 +57,9 @@ for name, with_cert in (("peer", True), ("stranger", False)):
             body = None
         detail = body.get("detail") if isinstance(body, dict) else None
         print(json.dumps({"name": name, "status": r.status_code, "items": count(body),
+                          "keys": sorted(body)[:40] if isinstance(body, dict) else None,
+                          "values": {k: body.get(k) for k in echo} if isinstance(body, dict) and r.status_code == 200
+                          else None,
                           "detail": str(detail)[:160] if detail is not None else None}))
     except Exception as e:
         print(json.dumps({"name": name, "error": type(e).__name__, "msg": str(e)[:160]}))
@@ -74,10 +78,13 @@ def read_answers(out: str) -> Dict[str, Dict[str, Any]]:
     return rows
 
 
-def verdict(rows: Dict[str, Dict[str, Any]], feed: str) -> Tuple[bool, str, Dict[str, Any]]:
-    """(passed, sentence, evidence). Raises PreconditionUnmet when the probe could not decide."""
+def verdict(rows: Dict[str, Dict[str, Any]], feed: str, want_keys: Tuple[str, ...] = ()
+            ) -> Tuple[bool, str, Dict[str, Any]]:
+    """(passed, sentence, evidence). Raises PreconditionUnmet when the probe could not decide. A feed answers a list a
+    peer can count; an answer that is one object (tester batch 2 item 4: policy-compliance, sync-status) names the keys
+    it must carry (`want_keys`) instead."""
     peer, stranger = rows.get("peer") or {}, rows.get("stranger") or {}
-    ev = {"peer": {k: peer.get(k) for k in ("status", "items", "detail", "error")},
+    ev = {"peer": {k: peer.get(k) for k in ("status", "items", "keys", "values", "detail", "error")},
           "stranger": {k: stranger.get(k) for k in ("status", "detail", "error")}}
     if peer.get("error") and peer.get("error") not in ("SSLError", "ConnectError", "ReadError", "RemoteProtocolError"):
         raise PreconditionUnmet(f"the probe could not ask sandbox-A's {feed} ({peer.get('error')}: {peer.get('msg')})")
@@ -88,12 +95,17 @@ def verdict(rows: Dict[str, Dict[str, Any]], feed: str) -> Tuple[bool, str, Dict
         return False, (f"sandbox-B's registry, with its own SVID, could not read sandbox-A's {feed} at the address its "
                        f"peer row names ({peer.get('status') or peer.get('error')}: {peer.get('detail') or peer.get('msg')}): "
                        "the path the sync worker takes is closed"), ev
-    if peer.get("items") is None:
+    if want_keys:
+        missing = [k for k in want_keys if k not in (peer.get("keys") or [])]
+        if missing:
+            return False, f"sandbox-A's {feed} answered 200 without {missing}, which a peer reads", ev
+    elif peer.get("items") is None:
         return False, f"sandbox-A's {feed} answered 200 without a list a peer could read", ev
     if not (stranger.get("error") or (stranger.get("status") or 0) in (400, 401, 403, 495, 496)):
         raise PreconditionUnmet(f"the stranger's read of the {feed} answered neither a refusal nor a failed handshake: {ev}")
-    return True, (f"sandbox-B's registry read sandbox-A's {feed} with its own SVID ({peer['items']} item(s)), and a "
-                  "caller with no certificate was refused"), ev
+    what = f"{len(want_keys)} named key(s)" if want_keys else f"{peer['items']} item(s)"
+    return True, (f"sandbox-B's registry read sandbox-A's {feed} with its own SVID ({what}), and a caller with no "
+                  "certificate was refused"), ev
 
 
 async def _source_name(rig: FederationTestRig) -> Optional[str]:
@@ -117,7 +129,11 @@ async def _peer_base_url(rig: FederationTestRig, name: str) -> Optional[str]:
     return None
 
 
-async def peer_feed_row(rig: FederationTestRig, path: str, feed: str) -> AssertionResult:
+async def peer_feed_row(rig: FederationTestRig, path: str, feed: str, want_keys: Tuple[str, ...] = (),
+                        echo: Tuple[str, ...] = (),
+                        check: Optional[Any] = None) -> AssertionResult:
+    """The feed read as a peer reads it. `want_keys`: the keys a one-object answer must carry; `echo`: the values of
+    those keys the probe may print (never a card, never a secret); `check(values)`: a sentence when they are wrong."""
     t0 = time.monotonic()
     name = await _source_name(rig)
     if not name:
@@ -126,11 +142,15 @@ async def peer_feed_row(rig: FederationTestRig, path: str, feed: str) -> Asserti
     if not base:
         raise PreconditionUnmet(f"sandbox-B has no ACTIVE peer row named {name!r} with an address")
     container = SANDBOX_REGISTRIES[READER].container
-    rc, out = exec_in_container(container, ["python", "-c", _PROBE, base, path], timeout=90)
+    rc, out = exec_in_container(container, ["python", "-c", _PROBE, base, path, ",".join(echo)], timeout=90)
     rows = read_answers(out)
     if "peer" not in rows:
         raise PreconditionUnmet(f"the probe ran nothing in {container!r} (rc={rc}): {(out or '')[:200]}")
-    passed, sentence, ev = verdict(rows, feed)
+    passed, sentence, ev = verdict(rows, feed, want_keys)
+    if passed and check is not None:
+        why = await check(rows["peer"].get("values") or {})
+        if why:
+            passed, sentence = False, why
     ev["target"] = base
     return AssertionResult(passed=passed, description=sentence, budget_sec=0.0,
                            elapsed_sec=time.monotonic() - t0, polling_attempts=1, last_state=ev,

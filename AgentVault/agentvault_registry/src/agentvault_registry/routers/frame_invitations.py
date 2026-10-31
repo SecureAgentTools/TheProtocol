@@ -145,6 +145,15 @@ def _schedule_compliance_baseline(peer_id: int, side: str) -> None:
 # Emergency kill switch — if set to "true", public POST returns 503.
 _PUBLIC_DISABLED_ENV = "FRAME_INVITATIONS_PUBLIC_DISABLED"
 
+# V0650 (k), order gwo_8f8ee5ff285a9c43af26b725: two SANDBOX frames on one host federate with each other. Default off, and
+# inert unless the frame's birth declaration says FRAME_POSTURE=sandbox (same_host_lane_open). While open, an anonymous
+# invitation from the private network may name a bundle host on an RFC1918/ULA address, and the peer-console calls also
+# trust the host's internal edge CA (the PEM file named).
+_SAME_HOST_ENV = "FRAME_INVITATIONS_SAME_HOST_PEERS"
+_PEER_CA_ENV = "FRAME_INVITATIONS_PEER_CA_FILE"
+_SAME_HOST_REFUSED = "refused: this frame does not declare FRAME_POSTURE=sandbox"
+_TRUTHY = ("1", "true", "yes", "on")
+
 # Outbound callback timeout (approve → remote /finalize)
 _CALLBACK_TIMEOUT_SECONDS = 15.0
 
@@ -155,6 +164,69 @@ _CALLBACK_TIMEOUT_SECONDS = 15.0
 
 def _public_disabled() -> bool:
     return os.getenv(_PUBLIC_DISABLED_ENV, "").strip().lower() in ("1", "true", "yes")
+
+
+def same_host_lane_open(env: Optional[Dict[str, str]] = None) -> bool:
+    """V0650 (k): the same-host lane's own lock, and nothing else's. Open only when the opt-in is set AND the frame's birth
+    declaration (core.frame_posture, the one reader of FRAME_POSTURE) is sandbox. It is not "this frame is a sandbox" for
+    any other purpose: REGISTRY_ENVIRONMENT, which the MCP tester reads before it stages money-moving fixtures, is
+    deliberately not part of it (the stack's frame template contract keeps kit files from setting it to sandbox)."""
+    source = os.environ if env is None else env
+    if (source.get(_SAME_HOST_ENV) or "").strip().lower() not in _TRUTHY:
+        return False
+    from agentvault_registry.core.frame_posture import declared_posture
+    return declared_posture(source) == "sandbox"
+
+
+def _same_host_peers() -> "tuple[bool, str]":
+    """V0650 (k): (open, state) of the same-host opt-in: 'off', 'on', or the refusal when it is set on a frame that does
+    not declare FRAME_POSTURE=sandbox (said once per read, as a WARNING: a switch that is set and does nothing must say
+    so)."""
+    if os.getenv(_SAME_HOST_ENV, "").strip().lower() not in _TRUTHY:
+        return False, "off"
+    if not same_host_lane_open():
+        logger.warning("[FRAME-INVITE] %s is set but refused: this frame does not declare FRAME_POSTURE=sandbox",
+                       _SAME_HOST_ENV)
+        return False, _SAME_HOST_REFUSED
+    return True, "on"
+
+
+def _same_host_caller(request: Request) -> bool:
+    """V0650 (k): may this anonymous invitation take the same-host lane? Only under the honored opt-in, and only when the
+    address our own edge observed (core.client_ip.effective_client_ip: the LAST X-Forwarded-For element, then X-Real-IP,
+    then the peer; never the forgeable first element _get_client_ip reads) is on the private network (RFC1918/ULA). A
+    loopback or unknown origin never is (an MCP relay arrives as loopback)."""
+    honored, _state = _same_host_peers()
+    if not honored:
+        return False
+    from agentvault_registry.core.client_ip import effective_client_ip
+    from agentvault_registry.services.frame_trust_manager import _address_is_lan_private
+    try:
+        ip = effective_client_ip(request)
+    except Exception:  # noqa: BLE001 — an origin that cannot be read is not the private network
+        return False
+    return bool(ip) and _address_is_lan_private(str(ip))
+
+
+def _peer_console_verify():
+    """V0650 (k): what the peer-console calls verify against: True (the public roots), or, under the honored opt-in with
+    a readable FRAME_INVITATIONS_PEER_CA_FILE, the system roots plus that file (the host's internal edge CA, which a
+    sandbox's 'tls internal' edge chains to). A file that cannot be read or holds no certificate keeps True, said."""
+    honored, _state = _same_host_peers()
+    path = os.getenv(_PEER_CA_ENV, "").strip()
+    if not honored or not path:
+        return True
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            pem = fh.read()
+    except OSError as exc:
+        logger.warning("[FRAME-INVITE] %s is not readable (%s): the public roots only", _PEER_CA_ENV, type(exc).__name__)
+        return True
+    ctx = _verify_context_with_bundle(pem)
+    if ctx is None:
+        logger.warning("[FRAME-INVITE] %s holds no usable certificate: the public roots only", _PEER_CA_ENV)
+        return True
+    return ctx
 
 
 def _local_trust_domain() -> str:
@@ -442,9 +514,16 @@ async def create_frame_invitation(
     # and get a generic refusal, never the probe's own error (it was a status oracle from inside our network); a
     # federation admin may name an internal host and sees the detail (the standup's federate step, same-host frames).
     internal_ok = _may_name_internal_bundle(caller)
-    ok, err = await mgr.probe_bundle_endpoint(payload.bundle_endpoint_url, allow_internal=internal_ok)
+    # V0650 (k): the same-host lane (opt-in, sandbox only, a caller on the private network): an RFC1918/ULA bundle host
+    # passes, every other internal range stays refused, and the refusal stays the generic one.
+    same_host = (not internal_ok) and _same_host_caller(request)
+    probe_kw: Dict[str, Any] = {"allow_internal": internal_ok}
+    if same_host:
+        probe_kw["allow_private"] = True
+    ok, err = await mgr.probe_bundle_endpoint(payload.bundle_endpoint_url, **probe_kw)
     if not ok:
-        logger.info(f"[FRAME-INVITE] bundle probe refused for {initiator_td} (federation admin: {internal_ok}): {err}")
+        logger.info(f"[FRAME-INVITE] bundle probe refused for {initiator_td} (federation admin: {internal_ok}, "
+                    f"same-host lane: {same_host}): {err}")
         raise HTTPException(
             status_code=422,
             detail=(f"Bundle endpoint probe failed: {err or 'unreachable'}" if internal_ok else
@@ -858,7 +937,7 @@ async def create_outbound_frame_invitation(
     except Exception as _lic_exc:  # noqa: BLE001 — a licence problem never costs the invitation; it is logged
         logger.warning("[frame_invitations.outbound] licence facts not attached: %s", _lic_exc)
     try:
-        async with httpx.AsyncClient(timeout=_CALLBACK_TIMEOUT_SECONDS, verify=True) as client:
+        async with httpx.AsyncClient(timeout=_CALLBACK_TIMEOUT_SECONDS, verify=_peer_console_verify()) as client:
             r = await client.post(f"{target}/api/v1/federation/frame-invitations", json=payload)
     except Exception as e:  # noqa: BLE001 — the sentence is the point
         raise HTTPException(status_code=502, detail=f"the peer at {target} could not be reached: {type(e).__name__}: {str(e)[:160]}")
@@ -933,6 +1012,7 @@ async def list_frame_invitations(
             "public_enabled": not _public_disabled(),
             "local_trust_domain": _local_trust_domain(),
             "local_bundle_endpoint_url": _local_bundle_endpoint_url(),
+            "same_host_peers": _same_host_peers()[1],     # V0650 (k): off | on | refused: ...
         },
     }
 
@@ -1038,10 +1118,11 @@ def _finalize_targets(invitation: "models.FrameInvitation", verify_bundle_body: 
     if "cert" in mtls_kwargs:
         legs.append(("mtls", f"{base}{path}", mtls_kwargs))
     public = _public_url_from_federation_url(base)
+    peer_verify = _peer_console_verify()   # V0650 (k): True, or under the honored opt-in the roots plus the edge CA
     if public and public != base:
-        legs.append(("public", f"{public}{path}", {"verify": True}))
+        legs.append(("public", f"{public}{path}", {"verify": peer_verify}))
     elif not legs:
-        legs.append(("public", f"{base}{path}", {"verify": True}))
+        legs.append(("public", f"{base}{path}", {"verify": peer_verify}))
     return legs
 
 

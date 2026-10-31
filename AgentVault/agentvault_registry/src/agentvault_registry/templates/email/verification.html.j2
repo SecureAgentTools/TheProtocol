@@ -2,7 +2,7 @@
 {% set kicker = "// EMAIL VERIFICATION" %}
 {% set headline = "Confirm Your Identity" %}
 {% block body %}
-<p>Operator <strong>{{ username }}</strong>, welcome to <strong>TheProtocol</strong>.</p>
+<p>Hello <strong>{{ username }}</strong>, welcome to <strong>TheProtocol</strong>.</p>
 <p>To activate your developer account, verify your email address using the link below. This link expires in <strong>{{ expiry_hours | default(24) }} hour{{ '' if expiry_hours == 1 else 's' }}</strong>.</p>
 {% with cta_url=verification_link, cta_label="VERIFY EMAIL" %}{% include '_partials/cta_button.html' %}{% endwith %}
 {% with notice="If you did not create an account on TheProtocol, disregard this message. No action is required and your identity is safe." %}{% include '_partials/info_box.html' %}{% endwith %}

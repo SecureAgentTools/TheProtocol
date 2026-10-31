@@ -104,11 +104,16 @@ def down(a, name, ask=True):
     # exactly this frame's: its <name>-<ts> stack dirs and what carries its compose project labels (never a name prefix:
     # `--name a` must leave a frame named `a-b` alone, §TESTBED P0 a)
     stacks = frame_names.stack_dirs(a.stack_root, name)
+    # §EXTTEST (beta.26): a standup that failed before rendering its compose leaves a <name>-<ts> dir without one, and its
+    # secrets dir; both were invisible here ("nothing of a frame named ..."), and frame-up neither resumed nor removed them
+    unfinished = [d for d in frame_names.stack_dirs(a.stack_root, name, need_file=None) if d not in stacks]
+    has_secrets = os.path.isdir(os.path.join(a.stack_root, f"{name}-secrets")) and not a.keep_secrets
     res = frame_names.frame_resources(name, a.stack_root)
     containers = res["containers"]
-    if not stacks and not containers and not res["volumes"] and not res["networks"]:
-        print(f"nothing of a frame named {name} on this host (no stack dir under {a.stack_root}, no containers, volumes or networks)."); return 0
-    print(f"frame {name}: stack dirs {stacks or 'none'}, containers {len(containers)}, volumes {len(res['volumes'])}, networks {len(res['networks'])}")
+    if not stacks and not unfinished and not has_secrets and not containers and not res["volumes"] and not res["networks"]:
+        print(f"nothing of a frame named {name} on this host (no stack dir under {a.stack_root}, no secrets dir, no containers, volumes or networks)."); return 0
+    print(f"frame {name}: stack dirs {stacks or 'none'}, unfinished stack dirs {unfinished or 'none'}, secrets dir "
+          f"{'yes' if has_secrets else 'no'}, containers {len(containers)}, volumes {len(res['volumes'])}, networks {len(res['networks'])}")
     if ask and not a.yes and sys.stdin.isatty():
         if input("remove all of it, volumes included? [y/N] ").strip().lower() != "y":
             return 1
@@ -167,7 +172,7 @@ def down(a, name, ask=True):
         r = run(["docker", "network", "rm", n])
         if r.returncode != 0:
             print(f"network {n}: not removed ({(r.stderr or r.stdout).strip()[-160:]})")
-    for s in stacks:
+    for s in stacks + unfinished:
         shutil.rmtree(os.path.join(a.stack_root, s), ignore_errors=True)
     for stray in (f"/etc/nginx/{name}-spire-bundle.pem",):   # written by standups before 2026-09-18 on an own host; removed with the frame
         if os.path.isfile(stray):

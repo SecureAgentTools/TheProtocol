@@ -277,10 +277,17 @@ async def run_federation_suite(
         f"[FederationSuite] probes={summary['probe_stats']['total_probes']} "
         f"meter={summary['probe_meter_self_test']} "
         f"vacuous={summary.get('vacuous', 0)} "
+        f"passed_on_nothing={summary.get('passed_on_nothing', 0)} "
         f"skip_census={summary.get('skip_census')}"
     )
     for complaint in summary.get("skip_complaints", []):
         logger.warning(f"[FederationSuite] SKIP GATE: {complaint}")
+    # §MCPTEST30 (V0650): a pass on nothing beyond the census (nothing_ceiling); red where the census was taken
+    _gate = "NOTHING GATE" if summary.get("nothing_gated") else "NOTHING (reported, no ceiling here)"
+    for complaint in summary.get("nothing_complaints", []):
+        logger.warning(f"[FederationSuite] {_gate}: {complaint}")
+    _over = {n: c for n, c in zip(summary.get("nothing_offenders", []), summary.get("nothing_complaints", []))
+             if summary.get("nothing_gated")}
 
     # Format outcomes into APITestBase results shape
     results = []
@@ -291,10 +298,10 @@ async def run_federation_suite(
             "path": "/admin/api-test/test-flow",
             "method": "POST",
             "authRequired": "developer",
-            "healthy": o.state == "passed",
+            "healthy": o.state == "passed" and o.spec.name not in _over,
             "statusCode": 200 if o.state in ("passed", "failed") else 0,
             "responseData": o.to_dict(),
-            "error": o.failure_detail or o.error_repr,
+            "error": o.failure_detail or o.error_repr or _over.get(o.spec.name),
             "expected_failure": o.state == "skipped",
             "expected_red": o.spec.expected_red,
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -307,7 +314,7 @@ async def run_federation_suite(
         # Vacuity is REPORTED but deliberately not gating yet — the census from
         # the first real run is what earns a ceiling.
         "success": (summary["failed"] == 0 and summary["errored"] == 0
-                    and summary.get("skips_ok", True)),
+                    and summary.get("skips_ok", True) and summary.get("nothing_ok", True)),
         "total_steps": len(outcomes),
         "successful_steps": summary["passed"],
         "error": None,

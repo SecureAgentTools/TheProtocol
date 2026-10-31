@@ -5,7 +5,7 @@ which is a magnet for people who want free storage, a malware drop, or a way to
 put an executable in front of someone mid-negotiation. So this module is mostly
 refusals, and each one is deliberate:
 
-  * **A closed type allowlist, not a blocklist.** Images, PDF, and plain text.
+  * **A closed type allowlist, not a blocklist.** Images, PDF, plain text and Markdown.
     A blocklist is a promise to have thought of everything.
   * **SVG is refused by name.** It is a script container that browsers render
     as an image, and "it is just a picture" is exactly how it gets through.
@@ -58,7 +58,11 @@ ALLOWED_MIME = {
     "image/gif": ".gif",
     "application/pdf": ".pdf",
     "text/plain": ".txt",
+    # V0650 (i): Markdown is text, held to text/plain's rules (no magic number; refused when it sniffs as an image or a
+    # PDF), and like every file served only as a download (octet-stream, attachment, nosniff, sandbox), never rendered.
+    "text/markdown": ".md",
 }
+TEXT_MIME = frozenset({"text/plain", "text/markdown"})
 # Named refusals for the types people will actually try, so the answer is a
 # sentence rather than a shrug.
 NAMED_REFUSALS = {
@@ -146,11 +150,11 @@ async def store(db: AsyncSession, *, conversation_id: str, uploader_key: str,
                         f"accepted: {', '.join(sorted(ALLOWED_MIME))}")
 
     sniffed = _sniff(data)
-    if declared == "text/plain":
+    if declared in TEXT_MIME:
         # Text has no magic number; refuse anything that sniffs as something
-        # else wearing a .txt label.
+        # else wearing a .txt (or .md) label.
         if sniffed is not None:
-            raise _err(415, f"this file says text/plain but its contents are {sniffed}")
+            raise _err(415, f"this file says {declared} but its contents are {sniffed}")
     elif sniffed != declared:
         raise _err(415, f"this file says {declared} but its contents are "
                         f"{sniffed or 'not a recognised image or PDF'}")

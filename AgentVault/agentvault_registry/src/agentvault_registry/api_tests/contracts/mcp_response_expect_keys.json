@@ -2,7 +2,7 @@
   "theprotocol_adminDownloadOperatorBundle": [
     "application_id",
     "content_type",
-    "encoded_preview_hex",
+    "sha256",
     "size_bytes"
   ],
   "theprotocol_adminGetDeveloperToken": [

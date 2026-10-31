@@ -43,6 +43,7 @@ Usage:
 """
 import base64
 import binascii
+import hashlib
 import logging
 import os
 from datetime import timedelta
@@ -2616,7 +2617,11 @@ async def backfill_pull_tokens(auth: MCPAuthContext) -> Dict[str, Any]:
 
 
 async def admin_download_operator_bundle(auth: MCPAuthContext, application_id: str) -> Dict[str, Any]:
-    """Admin: download an operator's bundle (signed config + license)."""
+    """Admin: download an operator's bundle (signed config + license).
+
+    §MCPTEST30 (V0650, agentvault2-d3): the answer names the bundle (type, size, its sha256), never its bytes. It carried
+    the first 100 bytes as hex (encoded_preview_hex): the start of a gzip of the operator's credentials, decompressible,
+    in every MCP caller's transcript. A digest lets a caller check a download it makes through the route itself."""
     if not application_id:
         return {"error": "application_id is required"}
     require_admin_auth(auth)
@@ -2628,7 +2633,8 @@ async def admin_download_operator_bundle(auth: MCPAuthContext, application_id: s
                 headers={"Authorization": f"Bearer {effective_token}"},
             )
         if r.status_code == 200:
-            return {"application_id": application_id, "content_type": r.headers.get("content-type"), "size_bytes": len(r.content), "encoded_preview_hex": r.content[:100].hex()}
+            return {"application_id": application_id, "content_type": r.headers.get("content-type"),
+                    "size_bytes": len(r.content), "sha256": hashlib.sha256(r.content).hexdigest()}
         return {"error": f"HTTP {r.status_code}: {refusal_reason(r)}"}
     except Exception as e:
         logger.error(f"adminDownloadOperatorBundle error: {e}", exc_info=True)
@@ -3309,11 +3315,20 @@ async def upload_registry_card_icon(auth: MCPAuthContext, icon_b64: str, content
         return {"error": format_tool_exception(e)}
 
 
-async def distribute_from_fee_collector(auth: MCPAuthContext, amount: str, reason: str) -> Dict[str, Any]:
-    """HIGHLY DESTRUCTIVE: distribute AVT from fee_collector to treasury/staking pool. Admin only."""
-    if not amount or not reason:
-        return {"error": "amount and reason are required"}
-    return await _admin_post(auth, "/api/v1/admin/fee-collector/distribute", json_body={"amount": amount, "reason": reason})
+async def distribute_from_fee_collector(auth: MCPAuthContext, target_agent_did: str, amount: str, reason: str,
+                                        reference_id: Optional[str] = None) -> Dict[str, Any]:
+    """HIGHLY DESTRUCTIVE: pay units from this frame's fee account to an agent, by hand (one TEG transfer, no fee).
+    Admin only (admin_treasury).
+
+    V0650 (agentvault2-d3, tester batch 1): the route has always required `target_agent_did` (400 "Missing
+    target_agent_did") and this tool never sent it, so no call through MCP could succeed; the route reads a raw body, so
+    the request-shape gate (tests/test_mcp_tool_requests_meet_their_routes.py) could not see it."""
+    if not target_agent_did or not amount or not reason:
+        return {"error": "target_agent_did, amount and reason are required"}
+    body: Dict[str, Any] = {"target_agent_did": target_agent_did, "amount": amount, "reason": reason}
+    if reference_id:
+        body["reference_id"] = reference_id
+    return await _admin_post(auth, "/api/v1/admin/fee-collector/distribute", json_body=body)
 
 
 async def generate_invite_codes(auth: MCPAuthContext, count: int = 1, note: Optional[str] = None) -> Dict[str, Any]:
@@ -4597,7 +4612,7 @@ ADMIN_TOOL_SCHEMAS = [
     {"name": "theprotocol_searchAdminEvents", "description": "Search admin events by event type. Admin only.", "inputSchema": {"type": "object", "properties": {"event_type": {"type": "string"}, "limit": {"type": "integer", "default": 50, "minimum": 1, "maximum": 500}}}},
     {"name": "theprotocol_getEventsAggregate", "description": "All events for a specific aggregate_id. Admin only.", "inputSchema": {"type": "object", "properties": {"aggregate_id": {"type": "string"}}, "required": ["aggregate_id"]}},
     {"name": "theprotocol_uploadRegistryCardIcon", "description": "DESTRUCTIVE: upload icon for Registry Card. Admin only.", "inputSchema": {"type": "object", "properties": {"icon_b64": {"type": "string"}, "content_type": {"type": "string", "default": "image/png"}}, "required": ["icon_b64"]}},
-    {"name": "theprotocol_distributeFromFeeCollector", "description": "HIGHLY DESTRUCTIVE: distribute units from fee_collector. Admin only.", "inputSchema": {"type": "object", "properties": {"amount": {"type": "string"}, "reason": {"type": "string"}}, "required": ["amount", "reason"]}},
+    {"name": "theprotocol_distributeFromFeeCollector", "description": "HIGHLY DESTRUCTIVE: pay units from this frame's fee account to an agent, by hand (one TEG transfer, no fee). Admin only (admin_treasury).", "inputSchema": {"type": "object", "properties": {"target_agent_did": {"type": "string", "description": "The agent paid"}, "amount": {"type": "string"}, "reason": {"type": "string", "description": "manual_payout, staking_reward, dispute_compensation, ..."}, "reference_id": {"type": "string"}}, "required": ["target_agent_did", "amount", "reason"]}},
     {"name": "theprotocol_generateInviteCodes", "description": "Generate N invite codes. Admin only.", "inputSchema": {"type": "object", "properties": {"count": {"type": "integer", "default": 1, "minimum": 1, "maximum": 100}, "note": {"type": "string"}}}},
     {"name": "theprotocol_validateInviteCodeAdmin", "description": "Validate invite code (admin context). Admin only.", "inputSchema": {"type": "object", "properties": {"code": {"type": "string"}}, "required": ["code"]}},
     {"name": "theprotocol_revokeInviteCode", "description": "DESTRUCTIVE: revoke an invite code. Admin only.", "inputSchema": {"type": "object", "properties": {"code": {"type": "string"}}, "required": ["code"]}},

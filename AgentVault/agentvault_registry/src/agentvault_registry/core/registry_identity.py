@@ -66,7 +66,7 @@ logger = logging.getLogger(__name__)
 
 # His word 2026-10-02: the tag family from V0549 on is TheProtocolReleaseVNNNN (the earlier families stay on the images
 # that carry them). Both version parsers read only the trailing V(\d+) (release_channel, cloud_provisioner).
-BUNDLED_IMAGE_TAG = "TheProtocolReleaseV0648"
+BUNDLED_IMAGE_TAG = "TheProtocolReleaseV0650"
 
 
 def get_software_version() -> str:

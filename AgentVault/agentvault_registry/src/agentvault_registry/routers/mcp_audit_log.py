@@ -276,3 +276,86 @@ async def admin_get_mcp_audit_log(
         "queried_actor_id": actor_id,
         "self_watched": actor_id != self_id,
     }
+
+
+# ---------------------------------------------------------------------------
+# V0650 (d) (2026-10-31, agentvault2-14): an organization's MCP calls, for its owners and admins
+# (GET /api/v1/organizations/{org_id}/mcp-audit, in routers/organizations.py). Pure helpers, so the statement, the
+# cursor and the row shape are tested without a database.
+# ---------------------------------------------------------------------------
+
+from datetime import datetime as _datetime  # noqa: E402
+
+# The calls themselves (an admin-read meta row is about a developer's log, never an agent's call)
+_MCP_CALL_EVENT_TYPES = (SecurityEventType.MCP_TOOL_INVOKED, SecurityEventType.MCP_TOOL_FAILED)
+ORG_ROW_KEYS = ("id", "timestamp", "event_type", "actor_type", "actor_id", "target_id", "tier", "outcome", "severity",
+                "latency_ms", "is_admin_server", "is_error", "actor_ip", "user_agent", "request_id", "details",
+                "error_message")
+_WITHHELD = ("actor_ip", "user_agent", "request_id", "details", "error_message")
+
+
+def org_mcp_audit_stmt(agent_dids, limit: int, after=None):
+    """The MCP call rows of these agents, newest first, ordered on (timestamp, id) so rows sharing an instant are
+    neither lost nor repeated at a page edge. `after` = (timestamp, id) of the last row already served."""
+    stmt = select(SecurityAuditLog).where(
+        SecurityAuditLog.actor_type == "agent",
+        SecurityAuditLog.actor_id.in_(list(agent_dids)),
+        SecurityAuditLog.target_type == "mcp_tool",
+        SecurityAuditLog.event_type.in_(_MCP_CALL_EVENT_TYPES),
+    )
+    if after is not None:
+        ts, rid = after
+        stmt = stmt.where(or_(SecurityAuditLog.timestamp < ts,
+                              and_(SecurityAuditLog.timestamp == ts, SecurityAuditLog.id < rid)))
+    return stmt.order_by(SecurityAuditLog.timestamp.desc(), SecurityAuditLog.id.desc()).limit(limit)
+
+
+def org_cursor(row: SecurityAuditLog) -> str:
+    """An opaque `timestamp|id` cursor: it needs no row lookup, so it survives the retention purge of the row it
+    names."""
+    return f"{row.timestamp.isoformat()}|{row.id}"
+
+
+def parse_org_cursor(value: str):
+    ts_s, sep, rid = str(value or "").partition("|")
+    if not sep or not rid or len(rid) > 36:
+        raise ValueError("not a cursor this route issued")
+    ts = _datetime.fromisoformat(ts_s)
+    if ts.tzinfo is not None:
+        raise ValueError("not a cursor this route issued")
+    return ts, rid
+
+
+def serialize_org_call_row(row: SecurityAuditLog) -> Dict[str, Any]:
+    """An ALLOWLIST: the tool, who called it, when, its tier, outcome and latency, and whether the tool answered an
+    error (a refused tool is stored as outcome success with result_summary.isError). The caller's address, user agent,
+    request id, the call's arguments and its error text are never served here: an organization's admin reads that
+    its agents called a tool, not what they sent it."""
+    from agentvault_registry.mcp.audit_sanitizer import redact_text_shapes
+    tier = latency = admin_server = is_error = None
+    if row.details:
+        try:
+            d = json.loads(row.details)
+        except Exception:  # noqa: BLE001
+            d = None
+        if isinstance(d, dict):
+            tier, latency, admin_server = d.get("tier"), d.get("latency_ms"), d.get("is_admin_server")
+            rs = d.get("result_summary")
+            if isinstance(rs, dict) and isinstance(rs.get("isError"), bool):
+                is_error = rs["isError"]
+    out = {
+        "id": row.id,
+        "timestamp": row.timestamp.isoformat() + "Z" if row.timestamp else None,
+        "event_type": row.event_type.value if hasattr(row.event_type, "value") else str(row.event_type),
+        "actor_type": row.actor_type,
+        "actor_id": row.actor_id,
+        "target_id": redact_text_shapes(row.target_id) if row.target_id else row.target_id,
+        "tier": str(tier) if tier is not None else None,
+        "outcome": row.outcome,
+        "severity": row.severity,
+        "latency_ms": latency if isinstance(latency, (int, float)) else None,
+        "is_admin_server": bool(admin_server) if admin_server is not None else None,
+        "is_error": is_error,
+    }
+    out.update({k: None for k in _WITHHELD})
+    return out

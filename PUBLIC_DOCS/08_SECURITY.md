@@ -200,6 +200,12 @@ registry then decides how the certificate reaches the agent:
   `expires_at` to rotate. Where inline delivery is off, the answer is `"status": "not_enrolled"` and nothing is
   recorded: no entry, no flag, no change to the agent's card.
 
+On a frame stood up from the frame kit, both ways go through the frame runner, which `frame-up.py --with-runner`
+installs. Without the runner, `enable-mtls` answers `503` with a sentence naming it (on the host) or `not_enrolled`
+(elsewhere), and records nothing; agent-to-agent calls keep working with agent tokens. On the host, the agent's
+container mounts the frame's SPIRE agent socket volume (`docker inspect <frame>-spire-agent` names it) and asks the
+socket `/opt/spire/sockets/agent.sock`.
+
 A cloud operator has no SPIRE server of its own: its registry asks its frame for these certificates over the
 federation lane. `GET /api/v1/agent/mtls-status` shows the agent's enrollment; `POST /api/v1/agent/disable-mtls`
 deletes its entry and emits `AgentMtlsRevoked`. An administrator's revoke (`POST /api/v1/admin/ironhand/revoke/{did}`)

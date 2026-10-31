@@ -19,6 +19,7 @@ Both are unauthenticated. The admin-tier bridge is still public code — the
 admin TOOLS it proxies require an admin developer JWT at runtime, gating
 happens server-side.
 """
+import hashlib
 import logging
 import os
 from datetime import datetime, timezone
@@ -27,6 +28,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse
 
+from agentvault_registry.core.public_url import credential_home_url
 from agentvault_registry.core.public_url import public_base_url as _shared_public_base_url
 
 logger = logging.getLogger(__name__)
@@ -47,6 +49,11 @@ _BRIDGE_FILES = {
     "mcp-stdio-bridge-admin.js": ("mcp-stdio-bridge-admin.js", "Admin MCP bridge (Node.js, stdio): a small set of admin tools (a developer token for an administrator, a generic admin request, reads of the event store, Prometheus and Grafana). Every call needs an admin developer token."),
     "CLAUDE.md":                 ("operator-CLAUDE.md",        "Operator manual for an AI assistant: how to sign in, create agents and move units on this registry, served with this registry's own address and settings filled in."),
 }
+# The downloads rendered per request (this registry's address and a live-facts block with the minute filled in): no
+# download of them is byte-equal to the file on disk, so the manifest gives no size or digest for them, only the
+# template's under keys of their own (§EXTTEST, the dev machine's V0649 re-check: the manifest said 35621 bytes, the
+# download had 36733, and a client that checked one against the other refused an honest file).
+_RENDERED = frozenset({"CLAUDE.md"})
 
 
 def _public_base_url(request: Request) -> str:
@@ -57,6 +64,16 @@ def _public_base_url(request: Request) -> str:
     Behaviour here is unchanged.
     """
     return _shared_public_base_url(request)
+
+
+def _manual_base_url(request: Request) -> str:
+    """The registry URL the manual is filled in with: the one every agent credential this registry issues names
+    (core/public_url.credential_home_url: create_agent's registry_url, a reset, a rotation, a spawn, a restore), so a
+    client that reads both meets one address. The request's public base only when this node has no public address
+    configured. (§EXTTEST, the dev machine's V0649 re-check: on EU the credential said https://theprotocol.cloud and the
+    manual https://eu.theprotocol.cloud. Both serve EU, but the console decides "this registry or another" by a
+    credential's origin, so the console's own origin is the one the credentials keep, and now the manual's too.)"""
+    return credential_home_url() or _public_base_url(request)
 
 
 def _live_facts_block(base_url: str) -> str:
@@ -165,7 +182,7 @@ async def download_operator_claude_md(request: Request):
         logger.error(f"[downloads] Missing operator manual at {path}")
         raise HTTPException(503, "Operator manual not bundled in this image")
 
-    base_url = _public_base_url(request)
+    base_url = _manual_base_url(request)
     text = path.read_text(encoding="utf-8")
     # ORDER MATTERS. Substitute the template body FIRST, then splice in the facts
     # block — otherwise the substitution also rewrites the block's own explanatory
@@ -194,15 +211,29 @@ async def download_operator_claude_md(request: Request):
     summary="List available downloads + their descriptions",
 )
 async def downloads_manifest():
-    """Discovery endpoint: a client can list what is available without hardcoding it."""
+    """Discovery endpoint: a client can list what is available without hardcoding it, and check what it downloaded.
+
+    A file served as it is stored gives its size and sha256: the download matches both. A file rendered per request
+    (CLAUDE.md) says so (rendered_per_request) and gives no size or digest, since no download of it equals the stored
+    file; the template it is rendered from keeps its own size and digest under template_size_bytes and
+    template_sha256, for a check of the build input, never of a download."""
     files = []
     for url_name, (fname, desc) in _BRIDGE_FILES.items():
         p = _DOWNLOADS_DIR / fname
-        files.append({
+        data = p.read_bytes() if p.exists() else None
+        entry = {
             "filename": url_name,
             "description": desc,
-            "available": p.exists(),
-            "size_bytes": p.stat().st_size if p.exists() else 0,
+            "available": data is not None,
             "url": f"/api/v1/downloads/{url_name}",
-        })
+            "rendered_per_request": url_name in _RENDERED,
+        }
+        if url_name in _RENDERED:
+            entry.update(size_bytes=None, sha256=None,
+                         template_size_bytes=len(data) if data is not None else None,
+                         template_sha256=hashlib.sha256(data).hexdigest() if data is not None else None)
+        else:
+            entry.update(size_bytes=len(data) if data is not None else None,
+                         sha256=hashlib.sha256(data).hexdigest() if data is not None else None)
+        files.append(entry)
     return {"files": files}

@@ -58,17 +58,31 @@ export interface McpAuditRow {
   user_agent: string | null
   details: McpAuditDetails | null
   error_message: string | null
+  /** V0650 (d), org scope only: the tool answered an error (a refused tool is recorded as outcome success). */
+  is_error?: boolean | null
 }
 
 export interface McpAuditPage {
   rows: McpAuditRow[]
   next_cursor: string | null
   limit: number
+  /** V0650 (d), org scope only: false when this registry records no MCP calls at all. */
+  recording?: boolean
+  agent_count?: number
 }
 
 export interface McpAuditQuery {
   limit?: number
   cursor?: string | null
+}
+
+/** V0650 (d): GET /api/v1/organizations/{org_id}/mcp-audit, the MCP calls of an organization's agents (owner or admin).
+ *  Rows are an allowlist: the call's arguments, error text, address and user agent are never served. */
+export async function getOrgMcpAuditLog(q: McpAuditQuery & { org_id: string }): Promise<McpAuditPage> {
+  const params: Record<string, any> = { limit: q.limit ?? 50 }
+  if (q.cursor) params.cursor = q.cursor
+  const { data } = await apiClient.get(`/organizations/${encodeURIComponent(q.org_id)}/mcp-audit`, { params })
+  return data as McpAuditPage
 }
 
 /** GET /api/v1/me/mcp-audit-log — caller's own MCP audit history.

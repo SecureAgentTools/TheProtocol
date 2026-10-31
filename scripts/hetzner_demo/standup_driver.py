@@ -85,6 +85,39 @@ IMAGE_MAP = {
     # Left unmapped on purpose; revisit at R1 if SVID writing misbehaves.
 }
 
+# §EXTTEST (kit 1.0.0-beta.26): the helper images the stages `docker run` (compose through docker:cli, certificates through
+# alpine/openssl). A clean host has neither, so the run PULLS them before its preflight instead of refusing on them.
+# V0650 (agentvault2-7c): the openssl helper by digest, the one the registry's provisioner runs (FRAME_OPENSSL_IMAGE's
+# default in frame_test_provisioner.py since V0650), so a pull here is the image the frame later uses, never a newer :latest
+HELPER_IMAGES = ("docker:cli", "alpine/openssl@sha256:045a40a53b8e283cff95052e0c39f256b7467d48c7445260d4f180fc0e767999")
+
+
+def _image_present(img):
+    return subprocess.run(["docker", "image", "inspect", img], capture_output=True).returncode == 0
+
+
+def _pullable(img):
+    """True for a reference `docker pull` can resolve: a public helper, or a name whose first component is a registry host
+    (images.theprotocol.cloud/theprotocol/registry:<v>). A local build's name (agentvault2-registry-a:latest) is not."""
+    first = img.split("/", 1)[0]
+    return img in HELPER_IMAGES or ("/" in img and ("." in first or ":" in first or first == "localhost"))
+
+
+def pull_missing(images, attempts=3):
+    """Pull every missing, pullable image, retrying a slow or flaky link, one progress line per attempt. -> still missing"""
+    todo = [i for i in dict.fromkeys(images) if i and not _image_present(i) and _pullable(i)]
+    for n, img in enumerate(todo, 1):
+        for k in range(1, attempts + 1):
+            log(f"pulling {img} ({n}/{len(todo)}, attempt {k}/{attempts})")
+            r = subprocess.run(["docker", "pull", "-q", img], capture_output=True, text=True)
+            if r.returncode == 0:
+                break
+            tail = (r.stderr or r.stdout or "").strip().splitlines()[-1:] or ["no detail"]
+            log(f"pull of {img} failed: {tail[0][:200]}")
+            if k < attempts:
+                time.sleep(10 * k)
+    return [i for i in dict.fromkeys(images) if i and not _image_present(i)]
+
 PORTS = {"registry":     int(os.getenv("FRAME_TEST_PORT_REGISTRY",     "8150")),
          "teg":          int(os.getenv("FRAME_TEST_PORT_TEG",          "8162")),
          "es":           int(os.getenv("FRAME_TEST_PORT_EVENTSTORE",   "8261")),
@@ -408,6 +441,9 @@ def port_free(p):
 # ── stages ────────────────────────────────────────────────────────────────
 
 def preflight(args):
+    # §EXTTEST (beta.26): pull what a clean host lacks (the helpers; the release images when they name a registry) first,
+    # so the preflight judges the host and not its image cache. `--plan` stays read-only and reports them missing.
+    pull_missing(list(HELPER_IMAGES) + [args.registry_image, args.teg_image, args.es_image, args.cert_writer_image])
     problems, facts = preflight_problems(args)
     if problems:
         for p in problems:
@@ -432,13 +468,18 @@ def preflight_problems(args):
         for line in f:
             if line.startswith("MemAvailable"):
                 avail_kb = int(line.split()[1])
-    if avail_kb < 15 * 1024 * 1024:   # the standing gate (load < 40, >= 15 GB) — was 8 GiB
-        problems.append(f"MemAvailable={avail_kb//1024//1024}GiB < 15GiB (the standing build/recreate gate)")
+    # §EXTTEST (beta.26): 15 GiB stays the standing gate on the network's own busy host (the default); frame-up passes the
+    # floor its doctor checked (--min-mem-gib, 8 by default), so a kit host is no longer refused after a green doctor.
+    min_gib = float(getattr(args, "min_mem_gib", None) or 15)
+    if avail_kb < min_gib * 1024 * 1024:
+        problems.append(f"MemAvailable={avail_kb//1024//1024}GiB < {min_gib:g}GiB (--min-mem-gib)")
     if not getattr(args, "own_host", False) and not os.path.islink("/host-stack"):
         problems.append("/host-stack symlink missing (ln -sfn /opt/theprotocol/stack /host-stack)")
     if not os.path.isdir(TEMPLATES):
         problems.append(f"templates missing: {TEMPLATES}")
-    for img in set(IMAGE_MAP.values()) | {"docker:cli", "alpine/openssl:latest", args.cert_writer_image}:
+    # §EXTTEST (beta.26): the EFFECTIVE images, never IMAGE_MAP's defaults: frame-up's --registry/--teg/--es-image reach
+    # IMAGE_MAP only at the provision stage, after this check, so a clean host was refused for the build host's names.
+    for img in {args.registry_image, args.teg_image, args.es_image, args.cert_writer_image} | set(HELPER_IMAGES):
         rc = subprocess.run(["docker", "image", "inspect", img],
                             capture_output=True).returncode
         if rc != 0:
@@ -1846,8 +1887,10 @@ def admin_pass(args, jwt, mint=True, on_minted=None, minted_before="0"):
             "location_label": args.location_label,
             "latitude": args.lat,
             "longitude": args.lng,
+            # §EXTTEST run 2: the card's links take whitepaper/docs/blog/... and refuse "website" (422, "Extra inputs are
+            # not permitted"); the operator's own site is operator.url
+            **({"url": args.website} if args.website else {}),
         },
-        "links": {"website": args.website},
     }
     # Cosmetic flare axes (catalogs in core/registry_identity.py). The overlay is
     # only rendered on top of an encirclement, so sending one without the other
@@ -2246,7 +2289,8 @@ def build_ctx(args, ts, prov):
     #      (the registry container does). With no relay, require_email_verification=True is the
     #      §OPGUIDE-2 lockout: every self-registered account is permanently locked out.
     #      So: supply FRAME_MAIL_SERVER/ADDRESS/TOKEN to keep verification on (what PRODUCTION
-    #      wants), or leave them unset and the frame runs invite-gated with verification OFF
+    #      wants), or leave them unset and the frame runs with verification OFF (registration stays open:
+    #      the template's BETA_INVITE_REQUIRED=false, the reputation bond is the spam gate)
     #      (what a sandbox wants). Never half-configured — the validator refuses that too.
     # findings row 174 — parsed ONCE so the vhost lanes and the JSON entries cannot disagree
     _peer_ledgers: dict = {}
@@ -2285,7 +2329,7 @@ def build_ctx(args, ts, prov):
         # findings row 181 — a PRODUCTION posture without a relay is a frame that cannot mail.
         # The else-branch below is correct and stays (verification ON with no relay is the
         # §OPGUIDE-2 lockout), but a production standup that silently lands here comes up
-        # mail-dead AND invite-gated while wearing production's limiter and flags, and nothing
+        # mail-dead, with verification off, while wearing production's limiter and flags, and nothing
         # says so — measured on EU/ASIA, which ran for a day with MAIL_SERVER=mailpit, a host
         # that does not resolve from the frame's own network (row 173). Refuse it at the input
         # instead of discovering it when the first registrant gets no mail.
@@ -2294,11 +2338,12 @@ def build_ctx(args, ts, prov):
                 "FRAME_MAIL_ADDRESS and FRAME_MAIL_TOKEN (optionally FRAME_MAIL_PORT, default "
                 "587). Without them the frame cannot send mail at all — not verification, not "
                 "password reset, not frame invitations, not operator applications — and it "
-                "would come up invite-gated with verification OFF. Use --posture sandbox for a "
+                "would come up with verification OFF. Use --posture sandbox for a "
                 "frame that is deliberately mail-less.")
             raise SystemExit(2)
         ctx.require_email_verification = False
-        log("no FRAME_MAIL_* relay supplied — email verification OFF (invite-gated frame)")
+        log("no FRAME_MAIL_* relay supplied — email verification OFF (registration stays open; the reputation bond "
+            "is the spam gate)")
     log(f"public_hostname: {ctx.public_hostname}")
     if args.grant_host_reach:
         ctx.grant_host_reach = True
@@ -3595,6 +3640,9 @@ def build_parser():
     ap.add_argument("--identity-net-external", action="store_true", default=False,
                     help="treat --identity-net as pre-existing (external) instead of creating it per frame")
     ap.add_argument("--max-load", type=float, default=40.0, help="§ONESHOT: the standing gate is load < 40 (was 110)")
+    ap.add_argument("--min-mem-gib", type=float, default=float(os.getenv("FRAME_MIN_MEM_GIB") or 15),
+                    help="§EXTTEST: the preflight's memory floor (MemAvailable, GiB): 15 on the network's own host; "
+                         "frame-up passes the floor its doctor checked")
     ap.add_argument("--enable-vhost", action=argparse.BooleanOptionalAction, default=True)
     ap.add_argument("--admin-pass", action=argparse.BooleanOptionalAction, default=True,
                     help="card+logo+show-mint after the emission gate")

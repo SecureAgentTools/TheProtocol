@@ -23,6 +23,7 @@ TOOLS = [f"theprotocol_tool{i:03d}" for i in range(230)] + [
     "theprotocol_searchTools", "theprotocol_describeTools", "theprotocol_invokeTool", "theprotocol_listToolsets",
     "theprotocol_getNetworkStats", "theprotocol_getMyBalance", "theprotocol_getAgentProfile",
     "theprotocol_exportTegTransactions", "theprotocol_agentBulkExport"]
+VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 GATEWAY = ["theprotocol_searchTools", "theprotocol_describeTools", "theprotocol_invokeTool", "theprotocol_listToolsets",
            "theprotocol_getNetworkStats"]
 WALLET = GATEWAY + ["theprotocol_getMyBalance", "theprotocol_tool001", "theprotocol_tool002"]
@@ -88,7 +89,13 @@ class Fake:
             return self._er(rid, -32602, "Invalid params")
         if m == "initialize":
             caps = {"tools": {}, "resources": {}, "tasks": {}} if "admin" in path else {"tools": {}, "resources": {}, "prompts": {}, "tasks": {}}
-            return self._ok(rid, {"protocolVersion": "2025-11-25", "capabilities": caps, "serverInfo": {"name": "TP", "version": "1"}})
+            # V0649's rule (mcp/protocol_version.py): a supported version is echoed, anything else gets the latest;
+            # the seeded defect is V0648's own constant whatever was asked
+            asked = params.get("protocolVersion")
+            pv = asked if asked in VERSIONS and not self.d.get("constant_version") else VERSIONS[0]
+            if self.d.get("echo_anything"):
+                pv = asked
+            return self._ok(rid, {"protocolVersion": pv, "capabilities": caps, "serverInfo": {"name": "TP", "version": "1"}})
         if m == "ping":
             return self._ok(rid, {})
         if m == "tools/list":
@@ -241,6 +248,10 @@ def test_a_conformant_server_leaves_every_row_green():
     ("foreign_export_completes", "tasks: owner rules hold", "BUG-FIND: an owner-only export of ANOTHER developer's agent was exported"),
     ("selection_leaks", "toolsets: per-credential selection", "BUG-FIND: one credential's toolset selection"),
     ("admin_gate_open", "admin: surface and gate", "BUG-FIND: a NON-admin credential ran an admin tool"),
+    ("constant_version", "initialize: version negotiation",
+     "BUG-FIND (conformance): public initialize asked for 2025-06-18 and answered '2025-11-25'"),
+    ("echo_anything", "initialize: version negotiation",
+     "BUG-FIND (conformance): public initialize asked for 1999-01-01 (no server supports it) and answered '1999-01-01'"),
 ])
 def test_each_seeded_defect_reddens_exactly_its_row(defect, row, needle):
     red = _red(_run(Fake(**{defect: True})))

@@ -759,10 +759,17 @@ async def lifecycle_earned_bond(rpc: RpcCall, parse: ParseResult, bag: Any, outc
     if ok:
         _check(outcomes, tool, None if (_d(r).get("bond_id") and str(_d(r).get("status")) == "locked") else
                f"the answer is not a locked bond (status {_d(r).get('status')!r})")
+        deposit_id = _d(r).get("bond_id")
 
         def _locked(inner: dict) -> Optional[str]:
-            return None if str(inner.get("status") or "") == "locked" else (
-                f"getMyReputationBondStatus reads status {inner.get('status')!r} after the deposit")
+            if str(inner.get("status") or "") != "locked":
+                return f"getMyReputationBondStatus reads status {inner.get('status')!r} after the deposit"
+            # V0650 (tester batch 1 item 3, gwo_2015b757c94ce69138500df6): the outside view found bond_id a literal
+            # None in this read (external test run 1, fixed in V0649); the read names the bond the deposit made
+            if deposit_id is not None and str(inner.get("bond_id")) != str(deposit_id):
+                return (f"getMyReputationBondStatus names bond_id {inner.get('bond_id')!r}, not the deposit's "
+                        f"{deposit_id!r}")
+            return None
         await ef.step(rpc, parse, "theprotocol_getMyReputationBondStatus", "2", {"agent_jwt": bag.sentinel_jwt},
                       bag.developer_jwt, outcomes, record_as_separate=False, verify_against=tool,
                       verify_against_check=_locked)

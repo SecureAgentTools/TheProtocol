@@ -3,7 +3,8 @@
 **Checked against the source**: 2026-10-16 (the registry's `core/release_channel.py`,
 `background_tasks/release_channel_checker.py` and `routers/admin_release_channel.py`; the kit's `release_channel.py`,
 `frame-update.py` and `frame-up.py`; the release publisher; the operator CLI's `update`, `backup` and `restore`); the
-operator CLI 1.1.8's `update` and `frame-update.py --rollback` again 2026-10-22 (the frame kit 1.0.0-beta.22)
+operator CLI 1.1.8's `update` and `frame-update.py --rollback` again 2026-10-22 (the frame kit 1.0.0-beta.22); the
+channel's public state again 2026-10-31 (the frame kit 1.0.0-beta.27)
 
 A registry you run is updated by you, in a window you choose. What the network gives you is a **signed release
 channel** that says what is out and how to get it, and a **notification** on your own registry when a stable release
@@ -19,8 +20,9 @@ registry software version it carries, the kit tarball's sha256 and URL, the dige
 version it upgrades from, a rollback note, and release notes. The registry's admin page shows the oldest version a
 release upgrades from; `frame-update.py` and the CLI do not check it, so read it before you apply.
 
-Until the public release the document is not published (the URL answers 404) and the public image namespace is
-closed; a registry that checks the channel then reads "not published or unreachable" and notifies nobody.
+The channel is public since 2026-10-27: the document answers at `https://theprotocol.cloud/downloads/frame-kit/latest.json`
+and the six images pull without an account. A registry that cannot reach it reads "not published or unreachable" and
+notifies nobody.
 
 ## Images
 

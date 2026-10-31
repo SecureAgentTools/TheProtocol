@@ -32,6 +32,7 @@ import OrgSetupChecklist from '@/components/organizations/OrgSetupChecklist.vue'
 import OrgWorkOrders from '@/components/organizations/OrgWorkOrders.vue'
 import OrgBooks from '@/components/organizations/OrgBooks.vue'
 import OrgActivityRollup from '@/components/organizations/OrgActivityRollup.vue'
+import OrgSessionsPanel from '@/components/organizations/OrgSessionsPanel.vue'
 import { useI18n } from '@/composables/useI18n'
 
 const { t, tp } = useI18n()
@@ -45,7 +46,7 @@ const uiStore = useUIStore()
 
 // ── UI State ──────────────────────────────────────────────────────────────────
 const selectedOrgId = ref('')
-const activeTab = ref<'teams' | 'activity' | 'members' | 'agents' | 'room' | 'authority' | 'cicd' | 'treasury' | 'governance' | 'settings' | 'audit'>('teams')
+const activeTab = ref<'teams' | 'activity' | 'sessions' | 'members' | 'agents' | 'room' | 'authority' | 'cicd' | 'treasury' | 'governance' | 'settings' | 'audit'>('teams')
 const showCreateOrgModal = ref(false)
 const showEditOrgModal = ref(false)
 const showCreateTeamModal = ref(false)
@@ -195,6 +196,9 @@ const tabs = computed(() => [
   // parked approvals, treasury flow. The screen an org admin lives in.
   ...(myRole.value === 'owner' || myRole.value === 'admin'
     ? [{ id: 'activity', label: 'ACTIVITY' }] : []),
+  // V0650 (d) — the org's agents: presence, the room door, and their MCP calls (owner/admin)
+  ...(myRole.value === 'owner' || myRole.value === 'admin'
+    ? [{ id: 'sessions', label: 'SESSIONS' }] : []),
   { id: 'members', label: 'MEMBERS', count: orgStore.membersFailed ? undefined : orgStore.members.length },
   { id: 'agents',  label: 'AGENTS',  count: orgAgentsRead.value ? orgAgents.value.length : undefined },
   // §CHATDESK C3 — the org's ROOM: the card (switch/policy/door) + the moderation
@@ -1273,6 +1277,12 @@ async function executeDeleteOrg() {
           <!-- ══ ACTIVITY TAB (E3 — org money/denial roll-up) ════════════ -->
           <div v-show="activeTab === 'activity'" class="tab-body">
             <OrgActivityRollup :org-id="org.id" :active="activeTab === 'activity'" />
+          </div>
+
+          <!-- ══ SESSIONS TAB (V0650 (d): presence, the room door, MCP calls) ══ -->
+          <div v-show="activeTab === 'sessions'" class="tab-body">
+            <OrgSessionsPanel :org-id="org.id" :active="activeTab === 'sessions'"
+                              @go="(tab: string) => { activeTab = tab as any }" />
           </div>
 
           <!-- ══ TEAMS TAB ═══════════════════════════════════════════════ -->

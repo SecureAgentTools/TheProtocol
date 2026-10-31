@@ -125,6 +125,10 @@ ROUTE_CONSTRAINTS: Dict[str, Dict[str, Dict[str, Any]]] = {
         'description': {"maxLength": 500},
         'url': {"maxLength": 500},
     },
+    'theprotocol_decideChatApproval': {
+        'challenge_id': {"maxLength": 44},
+        'note': {"maxLength": 500},
+    },
     'theprotocol_depositReputationBond': {
         'amount': {"exclusiveMinimum": 0},
     },
@@ -266,6 +270,15 @@ ROUTE_CONSTRAINTS: Dict[str, Dict[str, Dict[str, Any]]] = {
         'confirmation': {"maxLength": 64},
         'password': {"maxLength": 512, "minLength": 1},
         'reason': {"maxLength": 500},
+    },
+    'theprotocol_requestChatApproval': {
+        'artifact_label': {"maxLength": 200},
+        'artifact_sha256': {"maxLength": 71},
+        'client_ref': {"maxLength": 64, "minLength": 8},
+        'expires_in_seconds': {"maximum": 604800, "minimum": 60},
+        'reason': {"maxLength": 2000},
+        'title': {"maxLength": 200, "minLength": 1},
+        'unlocks': {"maxLength": 500},
     },
     'theprotocol_rotateFederationLicenseSelf': {
         'reason': {"maxLength": 64, "minLength": 1},

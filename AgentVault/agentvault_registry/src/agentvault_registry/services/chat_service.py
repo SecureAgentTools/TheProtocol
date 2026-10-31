@@ -30,6 +30,7 @@ the production-proven retry rail.
 from __future__ import annotations
 
 import asyncio
+import base64
 import datetime
 import json
 import logging
@@ -37,7 +38,7 @@ import uuid
 from decimal import Decimal, InvalidOperation
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
-from sqlalchemy import select, text as sa_text
+from sqlalchemy import DateTime, bindparam, select, text as sa_text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -106,6 +107,14 @@ PREVIEW_LEN = 160
 PAGE_MAX = 50
 LIST_MAX = 50
 SYNC_MAX = 200
+# V0650 (g): GET /chat/sync?wait= waits up to SYNC_WAIT_MAX_S for something new. Its cursor stays SYNC_SETTLE_S behind
+# "now" and remembers the ids it already returned inside that overlap (at most SYNC_SEEN_MAX), so a message stamped
+# before it committed is still found and none is returned twice. SYNC_WAITERS_PER_PRINCIPAL bounds the waiting calls
+# of one principal on one worker.
+SYNC_WAIT_MAX_S = 25
+SYNC_SETTLE_S = 2.0
+SYNC_SEEN_MAX = 32
+SYNC_WAITERS_PER_PRINCIPAL = 4
 SERVICE_INFLIGHT_STALE_S = 180  # a crashed worker's flag ages out, never bricks a thread
 
 PAIR_KINDS = ("dm", "agent_service")
@@ -163,6 +172,11 @@ RAIL_ONLY_CARDS = frozenset({
     # is not a record of anything.
     "engagement.offer", "engagement.accepted",
     "engagement.milestone", "engagement.settled",
+    # V0650 (l) — approvals in the chat (services/chat_approvals.py). The request is posted by the approval rail for
+    # the asking agent, the decision by the same rail for the developer who decided. RAIL-ONLY for the receipt's
+    # reason: an approval a client could type would let anyone "approve", and one forgeable makes every real one
+    # worthless. The record in `chat_approvals` is the authority; these cards show it.
+    "approval.request", "approval.decided",
 })
 # §DOCSFIX D6-556 (2026-10-16): the rail that writes each rail-only card, and what its card records, for the refusal
 # a client meets when it types one. The refusal named the service-call rail for all eight.
@@ -175,6 +189,8 @@ RAIL_ONLY_WRITERS = {
     "engagement.accepted": ("the contract rail", "a contract transition"),
     "engagement.milestone": ("the contract rail", "a contract transition"),
     "engagement.settled": ("the contract rail", "a contract transition"),
+    "approval.request": ("the chat approval rail", "an approval request"),
+    "approval.decided": ("the chat approval rail", "an approval decision"),
 }
 LATER_PHASE_CARDS = frozenset({"topup.offer"})
 # The one value that means "resolved, and open". Anything else — including the
@@ -534,6 +550,12 @@ def validate_card(card: Any, *, rail_author: bool = False,
             return "share.certificate: data.certificate_id is required — the artifact is its identifier"
         if not isinstance(data.get("digest"), str) or len(data["digest"]) != 64:
             return "share.certificate: data.digest must be the sha256 of the signed claim"
+    elif ctype in ("approval.request", "approval.decided"):
+        # V0650 (l): rail-authored, so this validates SHAPE; the authority is that only the approval rail posts them.
+        from .chat_approvals import validate_card_data as _approval_card_problem
+        problem = _approval_card_problem(ctype, data)
+        if problem:
+            return problem
     elif ctype in ("contract.offer", "guild.order"):
         # §OURSTATE-2 WORK cards: POINTERS, never authority. The card carries a
         # reference to an engagement that ALREADY exists on the contracts /
@@ -702,6 +724,11 @@ def _card_sentence(card: dict) -> str:
         return f"Settled \u2014 {m} released" if m else "Settled"
     if t == "topup.offer":
         return f"Top-up offer{': ' + m if m else ''}"
+    if t == "approval.request":
+        return f"Asks for approval: {_clip(d.get('title'), 90)}" if d.get("title") else "Asks for approval"
+    if t == "approval.decided":
+        word = "Approved" if d.get("decision") == "approved" else "Denied"
+        return f"{word}: {_clip(d.get('title'), 90)}" if d.get("title") else word
     return _clip(str(t).replace(".", " ").replace("_", " ").capitalize(), 60)
 
 
@@ -1329,8 +1356,9 @@ async def create_conversation(db: AsyncSession, actor: Actor, kind: str,
     (conversation, created, my_row).
 
     Requests folder: a first message from a stranger lands the TARGET row
-    'pending'. Not strangers: your own agents (and your agents' owner), and any
-    agent_service target — a service agent's published card IS its public offer,
+    'pending'. Not strangers: your own agents (and your agents' owner), the
+    principals of an organization you are in (its active members and the agents
+    assigned to it; V0650 (c)), and any agent_service target — a service agent's published card IS its public offer,
     so a service thread never sits in a requests queue no runtime will answer.
     Blocks: caller-blocks-target refuses loudly (the blocker knows); target-
     blocks-caller proceeds with the target row born 'left' — a silent void.
@@ -1394,9 +1422,14 @@ async def create_conversation(db: AsyncSession, actor: Actor, kind: str,
 
     target_state = "active"
     intro_receipt: Optional[dict] = None
+    # V0650 (c): two principals of one live organization are colleagues, not strangers: their first direct message
+    # opens active, as a household's does, without the stranger budget or the contact policy. Asked only when it can
+    # matter (a dm, not a household, not blocked), so a blocked pair and an existing thread cost no extra read.
+    same_org = (kind == "dm" and not same_household and not blocks["b_blocks_a"]
+                and (await shared_org_id(db, actor.key, target_key)) is not None)
     if blocks["b_blocks_a"]:
         target_state = "left"          # the silent void — sender sees a normal thread
-    elif kind == "dm" and not same_household:
+    elif kind == "dm" and not (same_household or same_org):
         # Stranger: land as a request, behind the per-day gate.
         gate_key = f"stranger:{actor.key}"
         if not await _rate_gate(gate_key, RL_STRANGER_LIMIT, RL_STRANGER_WINDOW_S):
@@ -1548,6 +1581,9 @@ async def insert_message(db: AsyncSession, conv: Conversation,
         # rows (moderation system rows, service records) bypass — a room
         # operator's act must be recordable even in a room they just locked.
         await room_posting_gate(db, conv, my_row, sender)
+    # V0650 (h): the principals the body @mentions, stored with the message (none read for a rail or a body with no "@")
+    from agentvault_registry.services import chat_mentions as _mentions
+    mentions = await _mentions.mentions_for(db, conv.id, sender, kind, body, rail_author)
 
     pv = preview_for(kind, body, card, getattr(sender, "display_name", None))
     row = (await db.execute(sa_text("""
@@ -1563,7 +1599,8 @@ async def insert_message(db: AsyncSession, conv: Conversation,
     msg = ChatMessage(
         conversation_id=conv.id, seq=seq, sender_ptype=sender.ptype,
         sender_id=sender.sender_id, kind=kind, body=body, card=card,
-        reply_to=reply_to, client_ref=client_ref)
+        reply_to=reply_to, client_ref=client_ref, mentions=mentions,
+        created_at=message_clock())   # V0650 (g): stamped once it holds its seq, not at its transaction's start
     db.add(msg)
     # Sending implies having read up to your own message — otherwise your own
     # sends count into YOUR unread badge forever (battery E2 caught exactly that).
@@ -1615,12 +1652,13 @@ def serialize_message(m: ChatMessage) -> dict:
         return {"id": m.id, "conversation_id": m.conversation_id, "seq": m.seq,
                 "sender_ptype": m.sender_ptype, "sender_id": m.sender_id,
                 "kind": "system", "body": None, "card": None, "deleted": True,
-                "reply_to": None, "client_ref": m.client_ref,
+                "reply_to": None, "client_ref": m.client_ref, "mentions": [],
                 "created_at": m.created_at.isoformat() if m.created_at else None}
     return {"id": m.id, "conversation_id": m.conversation_id, "seq": m.seq,
             "sender_ptype": m.sender_ptype, "sender_id": m.sender_id,
             "kind": m.kind, "body": m.body, "card": m.card, "deleted": False,
             "reply_to": m.reply_to, "client_ref": m.client_ref,
+            "mentions": list(getattr(m, "mentions", None) or []),   # V0650 (h)
             "created_at": m.created_at.isoformat() if m.created_at else None,
             "edited_at": m.edited_at.isoformat() if m.edited_at else None}
 
@@ -1852,7 +1890,10 @@ async def list_conversations(db: AsyncSession, actor: Actor, state: str = "activ
 
 
 async def list_messages(db: AsyncSession, conversation_id: str, actor: Actor,
-                        before_seq: Optional[int] = None, limit: int = 40, join: bool = False) -> dict:
+                        before_seq: Optional[int] = None, limit: int = 40, join: bool = False,
+                        *, mentions: Optional[str] = None) -> dict:
+    if mentions not in (None, "me"):
+        raise ChatError(422, "mentions takes one value: me")
     conv = await _get_conversation(db, conversation_id)
     # auto_join=True: the household rule — a developer reads the thread their
     # agent is active in (and vice versa); the materialized row carries their
@@ -1865,6 +1906,9 @@ async def list_messages(db: AsyncSession, conversation_id: str, actor: Actor,
         ChatMessage.seq > int(my_row.hidden_before_seq or 0))
     if before_seq is not None:
         q = q.where(ChatMessage.seq < int(before_seq))
+    if mentions == "me":
+        # V0650 (h): only the messages that @mention the caller (JSONB containment, served by ix_chat_msg_mentioned)
+        q = q.where(ChatMessage.mentions.isnot(None), ChatMessage.mentions.contains([{"key": actor.key}]))
     q = q.order_by(ChatMessage.seq.desc()).limit(limit)
     msgs = list(reversed((await db.execute(q)).scalars().all()))
 
@@ -1938,6 +1982,9 @@ async def list_messages(db: AsyncSession, conversation_id: str, actor: Actor,
                 (datetime.datetime.now(datetime.timezone.utc) - conv.service_inflight_at).total_seconds() < SERVICE_INFLIGHT_STALE_S,
             "messages": out,
             "page_bound": limit,
+            # V0650 (h), the §DIRFEED rule: a registry that does not know the filter drops it and answers the whole
+            # page, so the answer says which filter it applied (None when none was asked)
+            "applied_filters": {"mentions": "me"} if mentions else None,
             # §OURSTATE-6 — the two facts a reader is entitled to before they
             # type anything: how long this stays here, and whose machine it
             # stays on. The hosting line is the E2EE spike's honest
@@ -2032,14 +2079,109 @@ async def burn_for_me(db: AsyncSession, conversation_id: str, actor: Actor) -> d
     return {"conversation_id": conv.id, "hidden_before_seq": my_row.hidden_before_seq}
 
 
-async def sync_since(db: AsyncSession, actor: Actor, since: Optional[str]) -> dict:
-    """Polling catch-up for clients and agent runtimes: every message in my
-    active threads since a timestamp, hidden floors respected, bound stated."""
+def message_clock() -> datetime.datetime:
+    """V0650 (g): the time every writer stamps a chat message with, right after it takes the message's seq, and the
+    time the sync cursor's horizon is read from (one clock for both). The column's server default is the writer's
+    TRANSACTION start: service_call inserts its service.result in a transaction that opened before a loopback buy of
+    up to 150 s, so that row was dated minutes before anyone could see it, behind any time cursor."""
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _as_utc(dt: datetime.datetime) -> datetime.datetime:
+    """An aware UTC datetime (SQLite hands back naive ones; a since without an offset reads as UTC, as asyncpg reads it)."""
+    return dt.replace(tzinfo=datetime.timezone.utc) if dt.tzinfo is None else dt.astimezone(datetime.timezone.utc)
+
+
+_CURSOR_REFUSAL = ("cursor is not one this registry gave out: pass back next_cursor exactly as a sync answer "
+                   "returned it")
+
+
+def encode_sync_cursor(t: datetime.datetime, i: Optional[str],
+                       seen: List[Tuple[str, datetime.datetime]]) -> str:
+    """The opaque next_cursor: a keyset (t, i) and the ids already returned at or after t (url-safe base64 JSON)."""
+    raw = json.dumps({"v": 1, "t": _as_utc(t).isoformat(), "i": i,
+                      "s": [[mid, _as_utc(mt).isoformat()] for mid, mt in seen]}, separators=(",", ":"))
+    return base64.urlsafe_b64encode(raw.encode()).decode().rstrip("=")
+
+
+def decode_sync_cursor(cursor: str) -> Tuple[datetime.datetime, Optional[str], List[Tuple[str, datetime.datetime]]]:
+    """(t, i, seen) of a cursor this registry gave out; anything else is the caller's 422, never a 500."""
     try:
-        ts = (datetime.datetime.fromisoformat(since) if since
-              else datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=24))
-    except ValueError:
-        raise ChatError(422, "since must be an ISO timestamp")
+        if not isinstance(cursor, str) or not cursor or len(cursor) > 4096:
+            raise ValueError("size")
+        d = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+        if not isinstance(d, dict) or d.get("v") != 1:
+            raise ValueError("version")
+        t = _as_utc(datetime.datetime.fromisoformat(d["t"]))
+        i = d.get("i")
+        if i is not None and (not isinstance(i, str) or not i or len(i) > 64):
+            raise ValueError("keyset id")
+        s = d.get("s") or []
+        if not isinstance(s, list) or len(s) > SYNC_SEEN_MAX:
+            raise ValueError("seen")
+        seen = []
+        for item in s:
+            if (not isinstance(item, list) or len(item) != 2 or not isinstance(item[0], str)
+                    or not item[0] or len(item[0]) > 64):
+                raise ValueError("seen item")
+            seen.append((item[0], _as_utc(datetime.datetime.fromisoformat(item[1]))))
+    except (ValueError, KeyError, TypeError):     # binascii, JSON and Unicode decode errors are ValueErrors too
+        raise ChatError(422, _CURSOR_REFUSAL)
+    return t, i, seen
+
+
+def next_sync_cursor(prev_t: datetime.datetime, prev_i: Optional[str],
+                     prev_seen: List[Tuple[str, datetime.datetime]],
+                     rows: List[Tuple[str, datetime.datetime]], truncated: bool,
+                     now: datetime.datetime) -> Tuple[datetime.datetime, Optional[str],
+                                                      List[Tuple[str, datetime.datetime]]]:
+    """Where the next sync starts, from what this one returned (`rows`, in order) and when it read (`now`).
+
+    It stays SYNC_SETTLE_S behind `now` (the horizon h): a message is stamped when it takes its seq and becomes visible
+    at its commit, so the next call re-reads [h, now] and skips the ids it already returned there. A truncated page whose
+    last row is older than h continues from that row instead. It never moves back. Above SYNC_SEEN_MAX remembered ids,
+    the oldest go and the keyset moves to the newest of them (a burst that size inside the overlap shortens it). Only
+    times are compared here, never ids: the database orders ids, and its collation is its own."""
+    h = now - datetime.timedelta(seconds=SYNC_SETTLE_S)
+    if truncated and rows and rows[-1][1] < h:
+        t, i = rows[-1][1], rows[-1][0]           # after the previous position by construction
+    elif h > prev_t or (h == prev_t and prev_i is None):
+        t, i = h, None
+    else:
+        t, i = prev_t, prev_i
+    kept: Dict[str, datetime.datetime] = {}
+    for mid, mt in list(prev_seen) + list(rows):
+        if mt >= t:                                # still inside what the next query reads (skipping it is safe)
+            kept[mid] = mt
+    if len(kept) > SYNC_SEEN_MAX:
+        ordered = sorted(kept.items(), key=lambda kv: kv[1])
+        dropped = ordered[:len(ordered) - SYNC_SEEN_MAX]
+        t, i = dropped[-1][1], dropped[-1][0]
+        kept = {mid: mt for mid, mt in ordered[len(ordered) - SYNC_SEEN_MAX:] if mt >= t}
+    return t, i, sorted(kept.items(), key=lambda kv: kv[1])
+
+
+async def sync_since(db: AsyncSession, actor: Actor, since: Optional[str], *,
+                     cursor: Optional[str] = None) -> dict:
+    """Polling catch-up for clients and agent runtimes: every message in my
+    active threads since a timestamp, or after a cursor, hidden floors respected, bound stated. Every answer carries
+    next_cursor (V0650 (g)): pass it back and nothing is missed or returned twice, including a message that committed
+    after a later one."""
+    if cursor and since:
+        raise ChatError(422, "give since or cursor, not both")
+    now = message_clock()                      # read BEFORE the query: the horizon may only trail what it saw
+    if cursor:
+        prev_t, prev_i, prev_seen = decode_sync_cursor(cursor)
+        window = ("m.created_at >= :ts" if prev_i is None
+                  else "(m.created_at > :ts OR (m.created_at = :ts AND m.id > :tid))")
+    else:
+        try:
+            ts = (datetime.datetime.fromisoformat(since) if since
+                  else now - datetime.timedelta(hours=24))
+        except ValueError:
+            raise ChatError(422, "since must be an ISO timestamp")
+        prev_t, prev_i, prev_seen = _as_utc(ts), None, []
+        window = "m.created_at > :ts"          # the legacy since: a row exactly at since is not returned
 
     if actor.ptype == "developer":
         reach = _dev_reach_clause()
@@ -2047,26 +2189,38 @@ async def sync_since(db: AsyncSession, actor: Actor, since: Optional[str]) -> di
     else:
         reach = "(p.ptype = 'agent' AND lower(p.agent_did) = lower(:med))"
         params = {"med": actor.agent_did}
-    params.update({"ts": ts, "lim": SYNC_MAX})
+    params.update({"ts": prev_t, "lim": SYNC_MAX})
+    binds = [bindparam("ts", type_=DateTime(timezone=True))]
+    if prev_i is not None:
+        params["tid"] = prev_i
+    skip = ""
+    if prev_seen:
+        skip = "AND m.id NOT IN :seen"
+        params["seen"] = [mid for mid, _ in prev_seen]
+        binds.append(bindparam("seen", expanding=True))
 
-    rows = (await db.execute(sa_text(f"""
+    stmt = sa_text(f"""
         SELECT m.id, m.conversation_id, m.seq, m.sender_ptype, m.sender_id, m.kind,
                m.body, m.card, m.reply_to, m.client_ref, m.created_at, m.deleted_at
         FROM chat_messages m
         JOIN conversation_participants p ON p.conversation_id = m.conversation_id
         WHERE ({reach}) AND p.state = 'active'
-          AND m.created_at > :ts
+          AND {window} {skip}
           AND m.seq > COALESCE(p.hidden_before_seq, 0)
-        ORDER BY m.created_at ASC
+        ORDER BY m.created_at ASC, m.id ASC
         LIMIT :lim
-    """), params)).all()
+    """).bindparams(*binds).columns(created_at=DateTime(timezone=True), deleted_at=DateTime(timezone=True))
+    rows = (await db.execute(stmt, params)).all()
 
     msgs = []
+    returned: List[Tuple[str, datetime.datetime]] = []
     seen = set()
     for r in rows:
         if r[0] in seen:            # dev + their agent both in a thread → one copy
             continue
         seen.add(r[0])
+        if r[10] is not None:
+            returned.append((r[0], _as_utc(r[10])))
         deleted = r[11] is not None
         msgs.append({"id": r[0], "conversation_id": r[1], "seq": int(r[2]),
                      "sender_ptype": r[3], "sender_id": r[4],
@@ -2075,9 +2229,61 @@ async def sync_since(db: AsyncSession, actor: Actor, since: Optional[str]) -> di
                      "card": None if deleted else r[7],
                      "deleted": deleted,
                      "reply_to": r[8], "client_ref": r[9],
-                     "created_at": r[10].isoformat() if r[10] else None})
-    return {"since": ts.isoformat(), "messages": msgs,
-            "truncated": len(rows) >= SYNC_MAX, "bound": SYNC_MAX}
+                     "created_at": _as_utc(r[10]).isoformat() if r[10] else None})
+    truncated = len(rows) >= SYNC_MAX
+    nt, ni, ns = next_sync_cursor(prev_t, prev_i, prev_seen, returned, truncated, now)
+    return {"since": prev_t.isoformat(), "messages": msgs,
+            "truncated": truncated, "bound": SYNC_MAX,
+            "next_cursor": encode_sync_cursor(nt, ni, ns)}
+
+
+async def sync_wait(db: AsyncSession, actor: Actor, *, since: Optional[str] = None,
+                    cursor: Optional[str] = None, wait_s: int = 0) -> dict:
+    """V0650 (g): sync_since, or, with wait_s > 0, a long-poll: answer at once when something is there, else wait up to
+    wait_s seconds for a message to one of the caller's threads and answer it, or answer empty at the bound.
+
+    While it waits it holds no database connection (the request's session is handed back, as §WSPOOL does for a socket)
+    and runs no query: one Future in this worker's ConnectionManager, woken by fan_out_message, the post-commit point
+    every send reaches, here or (over Redis) on another worker. The waiter is armed BEFORE each query, so a message that
+    commits between the query and the wait still wakes it. A wake that brings nothing for this caller (a thread where its
+    row is not active) keeps it waiting. Without Redis a wake from another worker is not heard: the call ends at the
+    bound and the next call returns the message (no loss)."""
+    if not wait_s:
+        out = await sync_since(db, actor, since, cursor=cursor)
+        out.update({"wait_s": 0, "waited_ms": 0, "woken": False})
+        return out
+    from agentvault_registry.routers.websocket import _release_ws_session, manager
+    key = actor.key
+    if manager.chat_waiter_count(key) >= SYNC_WAITERS_PER_PRINCIPAL:
+        raise ChatError(429, f"at most {SYNC_WAITERS_PER_PRINCIPAL} waiting sync calls per caller at a time on this "
+                             f"worker: let one end, or call without wait")
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    deadline = started + float(wait_s)
+    woken = False
+    fut = manager.chat_waiter_add(key)
+    try:
+        try:
+            await manager.chat_wake_subscribe()
+        except Exception as e:  # noqa: BLE001 — without the channel, a wake from this worker still arrives
+            logger.debug("[CHAT] sync wait: the wake channel is not subscribed: %s", e)
+        out = await sync_since(db, actor, since, cursor=cursor)
+        while not out["messages"]:
+            await _release_ws_session(db)          # no connection held while idle
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
+            done, _ = await asyncio.wait({fut}, timeout=remaining)
+            if not done:
+                break                              # the bound: the empty answer, no further query
+            woken = True
+            manager.chat_waiter_remove(key, fut)
+            fut = manager.chat_waiter_add(key)     # re-armed before the query that follows the wake
+            out = await sync_since(db, actor, since, cursor=cursor)
+    finally:
+        manager.chat_waiter_remove(key, fut)
+    out.update({"wait_s": int(wait_s), "waited_ms": int((loop.time() - started) * 1000), "woken": woken})
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -2225,6 +2431,20 @@ async def fan_out_message(conv_id: str, conv_kind: str, message: dict,
     if sender_owner_dev_id is not None and int(sender_owner_dev_id) not in dev_targets:
         dev_targets[int(sender_owner_dev_id)] = True   # WS sync only, never notify
 
+    # V0650 (g): wake the sync calls waiting for this message, on this worker and (over Redis) on every other: the
+    # developers a WS send reaches (owners and the sender's household) and the agent recipients themselves.
+    if manager is not None:
+        try:
+            wake = getattr(manager, "wake_chat", None)
+            if wake is not None:
+                keys = {principal_key("developer", d) for d in dev_targets}
+                keys |= {principal_key("agent", r.get("agent_did")) for r in recipients
+                         if r.get("ptype") == "agent" and r.get("agent_did")}
+                if keys:
+                    await wake(keys)
+        except Exception as e:  # noqa: BLE001 — a missed wake costs a waiting call its bound, never a message
+            logger.debug("[CHAT] sync wake for message %s failed: %s", message.get("id"), e)
+
     notices: List[int] = []
     for dev_id, muted in dev_targets.items():
         if manager is not None:
@@ -2364,6 +2584,38 @@ async def _agent_org_id(db: AsyncSession, did: str) -> Optional[str]:
         "SELECT organization_id FROM agents WHERE lower(did) = lower(:d)"
     ), {"d": did})).first()
     return row[0] if row and row[0] else None
+
+
+async def shared_org_id(db: AsyncSession, key_a: str, key_b: str) -> Optional[str]:
+    """V0650 (c): an organization both principals belong to now, or None. A developer belongs through an active
+    organization_members row (the room's own rule, org_role_of), an agent through its agents.organization_id
+    (_agent_org_id); the organization itself must be active (open_org_room's gate). A principal on another registry
+    belongs to no organization here."""
+    async def orgs_of(key: str) -> set:
+        t, i = _split_key(key)
+        if t == "developer":
+            try:
+                dev = int(i)
+            except (TypeError, ValueError):
+                return set()
+            rows = (await db.execute(sa_text(
+                "SELECT organization_id FROM organization_members "
+                "WHERE developer_id = :d AND is_active = true"), {"d": dev})).all()
+            return {str(r[0]) for r in rows if r and r[0]}
+        if t == "agent" and i:
+            org = await _agent_org_id(db, i)
+            return {str(org)} if org else set()
+        return set()
+
+    if _split_key(key_a)[0] == "remote" or _split_key(key_b)[0] == "remote":
+        return None
+    common = (await orgs_of(key_a)) & (await orgs_of(key_b))
+    if not common:
+        return None
+    row = (await db.execute(sa_text(
+        "SELECT id FROM organizations WHERE id = ANY(:ids) AND is_active = true ORDER BY id LIMIT 1"),
+        {"ids": sorted(common)})).first()
+    return str(row[0]) if row else None
 
 
 async def actor_org_role(db: AsyncSession, org_id: str, actor: Actor) -> Optional[str]:
@@ -3202,7 +3454,8 @@ async def insert_remote_message(db: AsyncSession, conv: Conversation,
     msg = ChatMessage(
         id=str(uuid.uuid4()), conversation_id=conv.id, seq=int(seq),
         sender_ptype="remote", sender_id=sender_key,
-        kind=kind, body=body, card=card, client_ref=client_ref)
+        kind=kind, body=body, card=card, client_ref=client_ref,
+        created_at=message_clock())   # V0650 (g): stamped once it holds its seq
     db.add(msg)
     try:
         await db.flush()

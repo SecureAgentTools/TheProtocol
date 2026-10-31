@@ -37,6 +37,7 @@ import re
 import datetime as _dt
 import time
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from agentvault_registry.api_tests.multiframe_helpers import (
@@ -567,10 +568,7 @@ async def ensure_bonded(rig, label: str, did: str) -> Optional[str]:
     if (cfg.get("mode") or "off") != "enforce":
         return "skipped:mode=%s" % (cfg.get("mode") or "off")
     if not cfg.get("treasury_backstop"):
-        raise PreconditionUnmet(
-            f"{label} enforces the reputation bond but does not backstop from its "
-            f"treasury, so this suite cannot mint a usable fixture (bond it from a "
-            f"wallet agent, or set REPUTATION_BOND_TREASURY_BACKSTOP)")
+        return await _bond_from_own_funds(rig, label, did, cfg)
     admin = label if label.endswith("-admin") else label + "-admin"
     try:
         r = await rig.mcp(admin).call(
@@ -586,6 +584,48 @@ async def ensure_bonded(rig, label: str, did: str) -> Optional[str]:
     if status_str not in ("locked", "matured"):
         raise PreconditionUnmet(
             f"bond backstop for {did} on {label} left status={status_str!r} "
+            f"(bonded statuses are locked/matured): {str(body)[:200]}")
+    return status_str
+
+
+async def _bond_from_own_funds(rig, label: str, did: str, cfg: Dict[str, Any]) -> str:
+    """A tier that enforces the bond WITHOUT the treasury backstop (production's posture from V0649 on; the sandbox's
+    once sbx-beta follows it): the fixture is funded with its bond from the treasury (the canonical fund-agent rail,
+    reason admin_grant) and bonds itself from that balance (the developer's own deposit rail, funder_did = the agent).
+    V0650 (tester batch 1 item 4, agentvault2-d3, Guild order gwo_2015b757c94ce69138500df6): before it, this suite raised
+    PreconditionUnmet on such a tier, so it could not measure a frame posed as production is. Moves units: treasury to
+    the agent (TokensTransferred), the agent to the treasury's escrow (the bond); both legs conserve supply. The funding
+    carries a 1 % margin, so a fee on the deposit could not strand the fixture short of its bond."""
+    try:
+        bond = Decimal(str(cfg.get("amount")))
+    except (InvalidOperation, ValueError, TypeError):
+        bond = Decimal(0)
+    if bond <= 0:
+        raise PreconditionUnmet(f"{label} enforces the reputation bond without the treasury backstop and its bond "
+                                f"config names no amount ({cfg.get('amount')!r}), so no fixture can be funded for it")
+    admin = label if label.endswith("-admin") else label + "-admin"
+    fund = (bond + bond / 100).quantize(Decimal("0.000001"))
+    try:
+        r = await rig.mcp(admin).call("adminRequest", {
+            "method": "POST", "endpoint": "/api/v1/teg/treasury/fund-agent",
+            "body": {"target_agent_did": did, "amount": str(fund), "reason": "admin_grant",
+                     "reference_id": f"fedsuite-bond-{did.rsplit(':', 1)[-1][:40]}"}}, timeout=60)
+    except Exception as e:                                   # noqa: BLE001
+        raise PreconditionUnmet(f"funding {did}'s bond on {label} failed: {e}")
+    body = r.get("response") if isinstance(r, dict) and "response" in r else r
+    if isinstance(r, dict) and (r.get("ok") is False or int(r.get("status_code") or 200) >= 400):
+        raise PreconditionUnmet(f"funding {did}'s bond on {label} was refused: {str(body)[:200]}")
+    try:
+        r = await rig.mcp(admin).call("adminRequest", {
+            "method": "POST", "endpoint": f"/api/v1/developers/me/agents/{did}/reputation-bond",
+            "body": {"funder_did": did}}, timeout=60)
+    except Exception as e:                                   # noqa: BLE001
+        raise PreconditionUnmet(f"the bond deposit for {did} on {label} failed: {e}")
+    body = r.get("response") if isinstance(r, dict) and "response" in r else r
+    status_str = body.get("status") if isinstance(body, dict) else None
+    if status_str not in ("locked", "matured"):
+        raise PreconditionUnmet(
+            f"the bond deposit for {did} on {label} left status={status_str!r} "
             f"(bonded statuses are locked/matured): {str(body)[:200]}")
     return status_str
 

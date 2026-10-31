@@ -2319,6 +2319,24 @@ async def _http_in_target(container: str, method: str, path: str, *, body: Optio
     return (code if rc == 0 else ""), text
 
 
+async def _http_get_b64_in_target(container: str, path: str, *, timeout: int = 20) -> Tuple[str, str]:
+    """§MCPTEST30 (V0650): one GET to the target from inside its own container, the body base64-encoded there: a file's
+    bytes (the registry card's icon, earned_ad_pair_last), which the text transport above would mangle. Returns
+    (http_code, base64 body); the code is '' when no status came back, which is the transport, not the product. The path
+    is plain URL characters only (it is placed in a shell command)."""
+    if not re.fullmatch(r"/[A-Za-z0-9._~/%+-]*", path or ""):
+        return "", ""
+    url = f"http://localhost:8000{path}"
+    cmd = (f"curl -sS --max-time {int(timeout)} '{url}' | base64 -w0; "
+           f"curl -sS -o /dev/null --max-time {int(timeout)} -w '\\n{_HTTP_MARKER}%{{http_code}}--' '{url}'")
+    try:
+        rc, out = await asyncio.to_thread(exec_in_container, container, ["sh", "-c", cmd], 2 * timeout + 5)
+    except Exception as e:                                             # noqa: BLE001
+        return "", f"exec raised {type(e).__name__}"
+    text, code = _split_http_body_code(out or "")
+    return (code if rc == 0 else ""), text.strip()
+
+
 def _sql_literal(v: Any) -> str:
     """A bound value as a SQL literal that cannot leave its place: a bool as itself, an int in parentheses (a negative
     one after a minus would otherwise open a `--` comment), None as NULL, a string as base64 the server decodes (the
@@ -4710,6 +4728,9 @@ _SYNTHETIC_ROW_PREFIXES = ("mcp_protocol: ", "owner_scoping: ", "pagination: ", 
                            "admin_effect: ",
                            # §MCPTEST30 (V0556): a thread read by an agent that is no participant (mcp_lifecycles._CHAT)
                            "chat: ",
+                           # §MCPTEST30 (V0650): a creation rail the MCP bridges cannot drive (earned_ad_devtools'
+                           # earn_onboard_agent_name: the onboarding route's Bootstrap-Token header)
+                           "onboarding: ",
                            # §MCPTEST30 (V0636): a refusal an earned lifecycle keeps beside the tool's success
                            # (earned_fixtures.refusal_step), filed under its own name, never the tool's
                            "refusal: ",
@@ -5227,6 +5248,8 @@ class TestFlowMcpLifecycle(APITestBase):
         bag.mint_throwaway = functools.partial(_mint_throwaway_developer, target.a_registry_container)  # type: ignore[assignment]
         # §MCPTEST30 V0528: REST from inside the target, for what no MCP tool takes (a key's scopes)
         bag.http_in_target = functools.partial(_http_in_target, target.a_registry_container)  # type: ignore[assignment]
+        # §MCPTEST30 (V0650): a file's bytes from inside the target (Phase 8's registry icon, earned_ad_pair_last)
+        bag.http_b64_in_target = functools.partial(_http_get_b64_in_target, target.a_registry_container)  # type: ignore[assignment]
         # §MEMBERSHIP (V0551): a lifecycle whose steps span both bridges (the commons season: an admin opens, closes and
         # cancels it, an agent submits to it) calls the admin bridge through the bag; its admin rows wait in
         # bag.admin_lifecycle_rows and join the admin sweep's lifecycle rows in PHASE 6, where admin tools are judged.
@@ -6394,6 +6417,26 @@ class TestFlowMcpLifecycle(APITestBase):
             await _mcp_record(phase="Phase 7 · §ENFPROP refusal")
         except Exception as e:  # noqa: BLE001
             logger.warning(f"phase-7 enforcement refusal raised (non-fatal): {e!r}")
+
+        # 4a3. PHASE 8 · the frame's own state, LAST (§MCPTEST30 V0650, tester batch 1 items 1c and 1d, agentvault2-d3):
+        # the registry card's icon and the pair's own operators (revoked as the very last step), only where the target
+        # is torn down after its run; after every other phase, so nothing of the run still uses what they change, and
+        # before the census closes, so their answers are scanned too (api_tests/contracts/earned_ad_pair_last.py)
+        try:
+            from agentvault_registry.api_tests.contracts import earned_ad_pair_last as _last
+            _last_rows = await _last.run_last(_rpc, _parse_rpc_result, bag)
+            for _lname, _d in _last.phase8_rows(_last_rows, {o.tool_name for o in outcomes}):
+                outcomes.append(ContractOutcome(
+                    tool_name=_lname, contract_tier=_d.get("contract_tier") or "admin_effect",
+                    healthy=bool(_d.get("healthy")), status_code=int(_d.get("status_code") or 0),
+                    elapsed_ms=int(_d.get("elapsed_ms") or 0), skip_reason=_d.get("skip_reason"),
+                    fail_reason=_d.get("fail_reason"), has_explicit_contract=True,
+                    args_used={}, result_excerpt=_d.get("result_excerpt") or {},
+                ))
+            lifecycle_outcomes.update(_last_rows)   # the summary's lists read them too (unjudged_read_backs)
+            await _mcp_record(phase="Phase 8 · the frame's own state, last")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"phase-8 frame's own state raised (non-fatal): {e!r}")
 
         # 4b. PHASE 3 teardown — best-effort cleanup of fixture entities
         try:

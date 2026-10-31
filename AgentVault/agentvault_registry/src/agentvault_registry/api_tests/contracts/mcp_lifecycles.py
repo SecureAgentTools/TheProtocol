@@ -3009,6 +3009,19 @@ async def _mtls_not_delivered(rpc: RpcCall, parse: ParseResult, sentinel_jwt: st
     outcomes[name] = {**row, "tool_name": name}
 
 
+def external_label_finding(answer: Dict[str, Any]) -> Optional[str]:
+    """§MCPTEST30 (V0650, tester batch 2 item 5, Guild order gwo_e3bad842b1a5943022b01d40): the outside view's V0649
+    re-check (the dev machine, 2026-10-31; order (n) (d), session-release's 19a504ab8) enrolled an agent of its own
+    and read a docker_label in the answer. The label names a container on this registry's host, the one SPIRE's docker
+    attestor matches; an agent the route calls external has no such container, and V0650 leaves the label out of its
+    answer. None where the answer names no deployment (an older image) or calls the agent on the host."""
+    dep = answer.get("deployment") if isinstance(answer, dict) else None
+    if dep in (None, "", "onbox") or "docker_label" not in answer:
+        return None
+    return (f"enableMtls answered an enrolment it calls {dep!r} (signal {answer.get('deployment_signal')!r}) with a "
+            f"docker_label: a container on this registry's host, which an agent running elsewhere does not have")
+
+
 async def lifecycle_mtls_toggle(rpc: RpcCall, parse: ParseResult,
                                   bag: Any, outcomes: Dict[str, dict]) -> None:
     """enableMtls → getMyMtlsStatus (verify enrolled=true) →
@@ -3026,6 +3039,9 @@ async def lifecycle_mtls_toggle(rpc: RpcCall, parse: ParseResult,
                                      dev_jwt, outcomes, expect_status="any")
     if ok_e and isinstance(enabled, dict) and enabled.get("status") == "not_enrolled":
         return await _mtls_not_delivered(rpc, parse, sentinel_jwt, dev_jwt, enabled, outcomes)
+    label = external_label_finding(enabled) if ok_e and isinstance(enabled, dict) else None
+    if label:
+        _bugfind(outcomes, "theprotocol_enableMtls", "2", label)
 
     await _exec_step(rpc, parse, "theprotocol_getMyMtlsStatus", "2",
                       {"agent_jwt": sentinel_jwt},
@@ -3035,9 +3051,22 @@ async def lifecycle_mtls_toggle(rpc: RpcCall, parse: ParseResult,
                       verify_against="theprotocol_enableMtls",
                       verify_against_check=verify_mtls_flip(True, "enableMtls"))
 
-    await _exec_step(rpc, parse, "theprotocol_disableMyMtls", "2",
-                      {"agent_jwt": sentinel_jwt},
-                      dev_jwt, outcomes, expect_status="any")
+    ok_d, disabled = await _exec_step(rpc, parse, "theprotocol_disableMyMtls", "2",
+                                      {"agent_jwt": sentinel_jwt},
+                                      dev_jwt, outcomes, expect_status="any")
+    if ok_d and isinstance(disabled, dict) and disabled.get("message"):
+        # V0650 (tester batch 1 item 3, Guild order gwo_2015b757c94ce69138500df6): the outside view read "Existing SVID
+        # will expire within 4 hours" from a frame whose inline certificates live minutes (external test run 1, fixed in
+        # V0649); the sentence names this frame's own inline lifetime, read in the target's process
+        try:
+            from agentvault_registry.routers.agent_mtls import _inline_svid_ttl
+            want = f"within {max(1, _inline_svid_ttl() // 60)} minutes"
+        except Exception:                                              # noqa: BLE001 — an older image: nothing to compare
+            want = ""
+        msg = str(disabled.get("message"))
+        if want and (want not in msg or "4 hours" in msg):
+            _bugfind(outcomes, "theprotocol_disableMyMtls", "2",
+                     f"disableMyMtls says {msg[:160]!r}, not this frame's inline certificate lifetime ({want!r})")
 
     await _exec_step(rpc, parse, "theprotocol_getMyMtlsStatus", "2",
                       {"agent_jwt": sentinel_jwt},
@@ -3529,9 +3558,13 @@ async def lifecycle_self_revocation_safe(rpc: RpcCall, parse: ParseResult,
     # Send an obviously-sandbox-test reason. If the call surprisingly
     # succeeds, the sandbox is destroyed — but the wrapper / endpoint
     # is designed to require dev tier and the admin path is gated.
-    await _exec_step(rpc, parse, "theprotocol_requestSelfRevocation", "3",
-                      {"reason": "phase-5 sandbox-only test — do NOT actually revoke"},
-                      dev_jwt, outcomes, expect_status="any")
+    # §MCPTEST30 (tester batch 2 item 1): a refusal row held to the rule's sentence. It accepted any answer under the
+    # tool's own name (the router: "lifecycle recorded a 403 as healthy ... the success path was not measured"); the
+    # runner is the frame's admin, never a federation operator, and this lifecycle never runs on an operator
+    await _ef.refusal_step(rpc, parse, "theprotocol_requestSelfRevocation", "3",
+                           {"reason": "phase-5 sandbox-only test — do NOT actually revoke"},
+                           dev_jwt, outcomes, "a developer that is no federation operator", codes=(403,),
+                           text="not an active operator")
 
 
     # listAdminFrameInvitations already covered in misc_admin
@@ -3856,14 +3889,18 @@ async def lifecycle_misc_safe(rpc: RpcCall, parse: ParseResult,
                            {"achievement_type": "phase5-no-such-achievement", "agent_did": bag.sentinel_did},
                            dev_jwt, outcomes, "an achievement type that does not exist", codes=(404,),
                            text="unknown achievement type")
-    # an intake body without its required fields: the route refuses it at validation, so no request is ever filed
-    await _exec_step(rpc, parse, "theprotocol_requestFrame", "3",
-                      {"request_data": {"phase5": True}},
-                      dev_jwt, outcomes, expect_status="any")
+    # an intake body without its required fields: the route refuses it at validation, so no request is ever filed. A
+    # refusal row since §MCPTEST30 V0650: the tool's own success is earned_ad_pair_last's (Phase 8, the pairs only), and
+    # an any-answer under the tool's own name would have stood beside it unjudged (misc_safe runs on the frame only)
+    await _ef.refusal_step(rpc, parse, "theprotocol_requestFrame", "3", {"request_data": {"phase5": True}},
+                           dev_jwt, outcomes, "an intake body without its required fields", codes=(422,),
+                           text="Field required")
     # a licence key that matches no licence: the route authenticates the key it rotates and refuses, so nothing rotates
-    await _exec_step(rpc, parse, "theprotocol_rotateFederationLicenseSelf", "3",
-                      {"federation_license_key": "phase6-not-a-licence-key", "reason": "scheduled_rotation"},
-                      dev_jwt, outcomes, expect_status="any")
+    # (a refusal row since tester batch 2 item 1, held to the sentence: it accepted any answer under the tool's name)
+    await _ef.refusal_step(rpc, parse, "theprotocol_rotateFederationLicenseSelf", "3",
+                           {"federation_license_key": "phase6-not-a-licence-key", "reason": "scheduled_rotation"},
+                           dev_jwt, outcomes, "a licence key that matches no licence", codes=(401,),
+                           text="not recognised")
     # getMyApiKeyDetail (BUG-FIND-4 broken endpoint per E2E; expects 4xx)
     api_key_id = bag.flow_values.get("api_key_id")
     if api_key_id:
@@ -4927,9 +4964,41 @@ async def _p_initialize(raw, outcomes, admin_jwt: str) -> None:
             problems.append(f"{label}: serverInfo lacks a name or a version")
         ev[label] = {"protocolVersion": pv, "capabilities": sorted(caps), "server": si.get("name")}
     _proto(outcomes, "initialize", not problems, "200", t0, fail="; ".join(problems), evidence=ev)
+    await _proto_guard(outcomes, "initialize: version negotiation", _p_version_negotiation(raw, outcomes, admin_jwt))
     t1 = time.time()
     code, p, _ = await raw(_jbody("ping"))
     _proto(outcomes, "ping", _res(p) == {}, code, t1, fail=f"ping answered HTTP {code}: {str(p)[:160]}")
+
+
+# V0649 (agentvault2-7c's §EXTTEST run 2, measured from a dev machine 2026-10-31 01:46Z): both servers answered
+# initialize with their own constant whatever the client asked, so a client pinned to 2025-06-18 got 2025-11-25 and a
+# reason to disconnect. The MCP lifecycle rule: a server that supports the requested version answers with that same
+# version, otherwise with another version it supports. 2025-06-18 is the version that client asked for (published,
+# and in the server's list since V0649); the second ask names no version any server supports.
+_OLDER_VERSION = "2025-06-18"
+_NO_SUCH_VERSION = "1999-01-01"
+
+
+async def _p_version_negotiation(raw, outcomes, admin_jwt: str) -> None:
+    t0 = time.time()
+    problems: List[str] = []
+    ev: Dict[str, Any] = {}
+    for label, path, jwt in (("public", "/mcp/rpc", ""), ("admin", "/mcp/admin/rpc", admin_jwt)):
+        got = {}
+        for asked in (_OLDER_VERSION, _NO_SUCH_VERSION):
+            params = {"protocolVersion": asked, "capabilities": {}, "clientInfo": {"name": "mcp-tester", "version": "1"}}
+            code, p, _ = await raw(_jbody("initialize", params), path=path, jwt=jwt)
+            r = _res(p)
+            got[asked] = r.get("protocolVersion") if str(code).startswith("2") and isinstance(r, dict) else f"HTTP {code}"
+        ev[label] = got
+        if got[_OLDER_VERSION] != _OLDER_VERSION:
+            problems.append(f"BUG-FIND (conformance): {label} initialize asked for {_OLDER_VERSION} and answered "
+                            f"{got[_OLDER_VERSION]!r}: a server that supports the requested version answers with it")
+        nv = got[_NO_SUCH_VERSION]
+        if not (isinstance(nv, str) and _DATED.match(nv)) or nv == _NO_SUCH_VERSION:
+            problems.append(f"BUG-FIND (conformance): {label} initialize asked for {_NO_SUCH_VERSION} (no server supports it) "
+                            f"and answered {nv!r}: it must answer another version it supports")
+    _proto(outcomes, "initialize: version negotiation", not problems, "200", t0, fail="; ".join(problems), evidence=ev)
 
 
 async def _p_tools_list(raw, outcomes) -> List[str]:
@@ -6781,6 +6850,98 @@ async def _commons_member_vote(rpc: RpcCall, parse: ParseResult, bag: Any, outco
     return {**peer, "voted": None, "why": "the member's ballot was not taken"}
 
 
+async def _ledger_liquid(bag: Any, parse: ParseResult, did: str) -> Optional[Any]:
+    """The event store's own projection of `did`'s liquid balance (refreshed), or None when it cannot be read."""
+    from decimal import Decimal, InvalidOperation
+    ok, body, _code = await bag.rpc_admin("theprotocol_adminQueryEventStore",
+                                          {"path": f"/api/v1/projections/balance/{did}", "params": {"refresh": "true"}},
+                                          jwt=bag.developer_jwt, timeout=30)
+    a = parse(body) if ok and isinstance(body, dict) else {}
+    a = a.get("response") if isinstance(a, dict) and isinstance(a.get("response"), dict) else a
+    try:
+        return Decimal(str(a.get("liquid_balance"))) if isinstance(a, dict) and a.get("liquid_balance") is not None \
+            else None
+    except (InvalidOperation, ValueError):
+        return None
+
+
+async def _commons_pay_on_a_pair(rpc: RpcCall, parse: ParseResult, bag: Any, outcomes: Dict[str, dict], sid: int,
+                                 voted: int, dev_jwt: str, events: Any) -> bool:
+    """§MCPTEST30 (tester batch 2 item 3, gwo_e3bad842b1a5943022b01d40): on a target torn down after its run only, the
+    closed season this run opened is PAID. Its one award (the member's ballot for the second developer's submission) is
+    first held to write-off's rule (a refusal row: only a payment that failed or never answered is written off, and a
+    healthy target never gives a run one), then paid: the answer, the season and the award read paid, and the
+    recipient's balance on the event store's own projection grew by what was funded (a move the ledger never recorded is
+    the drift a delta of 0.0 cannot see). Returns whether the season READS paid afterwards (its cancel is then a
+    refusal), whatever the checks found."""
+    import asyncio
+    from decimal import Decimal, InvalidOperation
+    pay, write_off = "theprotocol_adminCommonsPaySeason", "theprotocol_adminCommonsWriteOffAward"
+    ok, detail = await _exec_step(rpc, parse, "theprotocol_getCommonsSeason", "1", {"season_id": sid}, dev_jwt,
+                                  outcomes, record_as_separate=False)
+    sub = next((x for x in ((detail or {}).get("submissions") or []) if isinstance(x, dict) and x.get("id") == voted),
+               None) if ok and isinstance(detail, dict) else None
+    award = (sub or {}).get("award") if isinstance((sub or {}).get("award"), dict) else None
+    did = (sub or {}).get("submitter_did")
+    if not (award and isinstance(award.get("id"), int) and did and award.get("status") == "pending"):
+        _ef.effect_unmeasured(outcomes, pay, f"the closed season {sid} names no pending award for submission {voted} "
+                                             f"(it reads {award!r})")
+        return False
+    await _ef.refusal_step(bag.rpc_admin, parse, write_off, "admin",
+                           {"season_id": sid, "award_id": award["id"], "reason": "MCP tester: the award was never sent"},
+                           dev_jwt, outcomes, "an award that was never sent", codes=(409,), text="award_not_failed")
+    before = await _ledger_liquid(bag, parse, did)
+
+    def _dec(v: Any) -> Optional[Decimal]:
+        try:
+            return Decimal(str(v))
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+
+    def _paid(a: dict) -> Optional[str]:
+        season = a.get("season") if isinstance(a.get("season"), dict) else {}
+        pays = [p for p in (a.get("payments") or []) if isinstance(p, dict) and p.get("recipient_did") == did]
+        if season.get("status") != "paid" or a.get("unpaid_awards") != 0:
+            return f"the answer reads season status={season.get('status')!r}, unpaid_awards={a.get('unpaid_awards')!r}"
+        if not (pays and pays[0].get("status") == "paid" and _dec(pays[0].get("funded")) == _dec(award.get("amount"))):
+            return f"the answer pays the recipient {pays[:1]!r}, not the award's {award.get('amount')!r} in full"
+        return None
+    ok_pay, _ans = await _ef.effect(bag, parse, pay, {"season_id": sid}, outcomes, check=_paid,
+                                    expect_events=["CommonsAwardPaid"])
+    name = _ef.effect_name(pay)
+    ok, after_detail = await _exec_step(rpc, parse, "theprotocol_getCommonsSeason", "1", {"season_id": sid}, dev_jwt,
+                                        outcomes, record_as_separate=False)
+    # whether the season IS paid decides the cancel that follows, whatever this step's checks say (a paid season's cancel
+    # is refused; reading a failed check as unpaid would send a cancel at a settled season and blame the cancel)
+    season_paid = bool(ok and isinstance(after_detail, dict) and after_detail.get("status") == "paid")
+    if not ok_pay:
+        return season_paid      # the pay's own row says what was wrong
+    sub2 = next((x for x in ((after_detail or {}).get("submissions") or []) if isinstance(x, dict)
+                 and x.get("id") == voted), {}) if ok and isinstance(after_detail, dict) else {}
+    a2 = sub2.get("award") if isinstance(sub2.get("award"), dict) else {}
+    why = None
+    if not season_paid or a2.get("status") != "paid":
+        why = (f"getCommonsSeason reads season status={(after_detail or {}).get('status')!r}, award "
+               f"status={a2.get('status')!r} after the payment")
+    else:
+        want = _dec(a2.get("funded_amount"))
+        after = None
+        for i in range(6):
+            after = await _ledger_liquid(bag, parse, did)
+            if before is not None and after is not None and want is not None and after - before == want:
+                break
+            if i < 5:
+                await asyncio.sleep(4)
+        if before is None or after is None:
+            why = "the recipient's balance on the event store could not be read before and after the payment"
+        elif want is None or after - before != want:
+            why = (f"the event store's projection of the recipient moved by {after - before}, not the {want} funded: "
+                   f"the ledger did not record the payment")
+    if why:
+        _bugfind(outcomes, name, "admin_effect", f"adminCommonsPaySeason: {why}")
+    return season_paid
+
+
 async def lifecycle_commons_season(rpc: RpcCall, parse: ParseResult, bag: Any, outcomes: Dict[str, dict]) -> None:
     """getCommonsSeasons -> adminCommonsOpenSeason (seed 1, one day) -> getCommonsSeason -> submitCommonsWork (the
     sentinel) -> getMyCommonsSeason (the submission is its developer's) -> castCommonsBallot on it (own_submission, or
@@ -6854,6 +7015,7 @@ async def lifecycle_commons_season(rpc: RpcCall, parse: ParseResult, bag: Any, o
         _commons_unmeasured(outcomes, "NOT MEASURED: the run could not open a season of its own")
         return
     member: Dict[str, Any] = {}
+    paid = False
     try:
         def _open_with_budget(inner: dict) -> Optional[str]:
             if inner.get("status") != "open" or inner.get("id") != sid:
@@ -6933,16 +7095,37 @@ async def lifecycle_commons_season(rpc: RpcCall, parse: ParseResult, bag: Any, o
         else:
             healthy, why, ev = judge_commons_tally(inner, member["voted"])
             _commons_row(outcomes, COMMONS_TALLY_CHECK, healthy, 200, t_close, evidence=ev, fail=why)
+            # §MCPTEST30 (tester batch 2 item 3): on a pair, the closed season is paid (its write-off held to its rule)
+            from agentvault_registry.api_tests.contracts.earned_ad_ephemeral import ephemeral_target
+            if ephemeral_target():
+                paid = await _commons_pay_on_a_pair(rpc, parse, bag, outcomes, sid, member["voted"], dev_jwt, events)
     finally:
-        ok, inner = await _exec_step(rpc_admin, parse, "theprotocol_adminCommonsCancelSeason", "admin",
-                                     {"season_id": sid, "reason": "MCP tester season, cancelled by the run that opened it"},
-                                     dev_jwt, admin_rows)
-        if ok:
-            ok, inner = await _exec_step(rpc, parse, "theprotocol_getCommonsSeason", "1", {"season_id": sid}, dev_jwt,
-                                         outcomes, record_as_separate=False)
-            if ok and isinstance(inner, dict) and inner.get("status") != "cancelled":
-                _bug_find(admin_rows, "theprotocol_adminCommonsCancelSeason",
-                          f"season {sid} reads status={inner.get('status')!r} after its cancel")
+        cancel_sid: Optional[int] = sid
+        if paid:
+            # a paid season is settled: its cancel is refused (a refusal row), and the cancel's own success is measured
+            # on a second, empty season of the run's own (a pair only, where no person's season shares the slot)
+            await _ef.refusal_step(rpc_admin, parse, "theprotocol_adminCommonsCancelSeason", "admin",
+                                   {"season_id": sid, "reason": "MCP tester: a paid season, which no cancel may undo"},
+                                   dev_jwt, outcomes, "a season that was paid", codes=(409,), text="season_settled")
+            ok2, s2 = await _exec_step(rpc_admin, parse, "theprotocol_adminCommonsOpenSeason", "admin",
+                                       {"title": f"{COMMONS_TESTER_TITLE} {tag} (to cancel)", "duration_days": 1,
+                                        "seed": "1"}, dev_jwt, admin_rows, record_as_separate=False)
+            cancel_sid = s2.get("id") if ok2 and isinstance(s2, dict) and isinstance(s2.get("id"), int) else None
+            if cancel_sid is None:
+                admin_rows["theprotocol_adminCommonsCancelSeason"] = _not_measured(
+                    "theprotocol_adminCommonsCancelSeason", "admin", "NOT MEASURED: the run's season was paid (a cancel "
+                    "is refused there, its refusal row) and no second season of its own could be opened to cancel")
+        if cancel_sid is not None:
+            ok, inner = await _exec_step(rpc_admin, parse, "theprotocol_adminCommonsCancelSeason", "admin",
+                                         {"season_id": cancel_sid,
+                                          "reason": "MCP tester season, cancelled by the run that opened it"},
+                                         dev_jwt, admin_rows)
+            if ok:
+                ok, inner = await _exec_step(rpc, parse, "theprotocol_getCommonsSeason", "1", {"season_id": cancel_sid},
+                                             dev_jwt, outcomes, record_as_separate=False)
+                if ok and isinstance(inner, dict) and inner.get("status") != "cancelled":
+                    _bug_find(admin_rows, "theprotocol_adminCommonsCancelSeason",
+                              f"season {cancel_sid} reads status={inner.get('status')!r} after its cancel")
         # a step that failed before the ballot or the close leaves the probe's rows unwritten: name them
         _commons_unmeasured(outcomes, "NOT MEASURED: the season lifecycle stopped before this step (an earlier step "
                                       "failed; its own row says which)")

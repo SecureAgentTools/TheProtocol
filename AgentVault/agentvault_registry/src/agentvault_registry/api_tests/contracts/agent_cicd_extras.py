@@ -87,7 +87,10 @@ class CreatePipelineTemplate:
 
 @Endpoint(method="POST", path="/pipeline-templates/{template_id}/purchase", auth="developer", category="agent_cicd", idempotent=False)
 class PurchasePipelineTemplate:
-    """Buy a marketplace template (AVT)."""
+    """Buy a marketplace template. V0649 (agentvault2-13): the API tester's router measures this route before any
+    contract (_template_purchase_row: a free official template, the sweep's own agent); for any other runner the buyer is
+    the sweep's own agent and only a 200 passes (a placeholder buyer's 404 passed here until V0648)."""
     def body(self, ctx):
-        return {"buyer_did": "did:theprotocol:placeholder", "payment_method": "tokens"}
-    expected_status = [200, 201, 400, 404]
+        from agentvault_registry.routers.admin_api_test import DYNAMIC_VALUES
+        return {"buyer_did": DYNAMIC_VALUES.get("agent_did") or "did:theprotocol:placeholder"}
+    expected_status = [200]

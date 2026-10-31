@@ -110,16 +110,28 @@ export interface CreatedAgent { did: string; clientId: string; clientSecret: str
 
 /**
  * An agent made over the API (setup for a lifecycle that is not about creating one): the bootstrap token, then
- * create_agent with an endpoint under .invalid (never dialled). The secret stays in memory; the ledger keeps the DID.
+ * create_agent with the agent's own card, whose endpoint is under .invalid (never dialled). V0650 (e): a bare
+ * agent_host on a special-use name is refused (400), because no card could ever be read there; an agent that serves
+ * nothing sends its card itself, in the stub's own shape. The secret stays in memory; the ledger keeps the DID.
  */
 export async function createAgentApi(api: Api, dev: Developer, hint = 'fesuite'): Promise<CreatedAgent> {
   const bt = await api.json('POST', '/api/v1/onboard/bootstrap/request-token', { token: dev.token, body: { agent_type_hint: hint } })
   const bootstrap = bt.body?.bootstrap_token
   if (bt.status !== 200 || !bootstrap) throw new Error(`bootstrap token answered ${bt.status}`)
-  const host = `https://${PREFIX}-${crypto.randomBytes(3).toString('hex')}.invalid`
+  const slug = `${PREFIX}-${crypto.randomBytes(3).toString('hex')}`
+  const host = `https://${slug}.invalid`
+  const card = {
+    protocolVersion: '1.0', agentVersion: '1.0.0', humanReadableId: slug, name: slug,
+    description: `A ${hint} agent the console suite made; it serves nothing.`,
+    url: host, preferredTransport: 'JSONRPC',
+    supportedInterfaces: [{ url: host, protocolBinding: 'JSONRPC', protocolVersion: '1.0' }],
+    securitySchemes: { agent_jwt: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
+    security: [{ agent_jwt: [] }],
+    provider: { name: PREFIX }, capabilities: { streaming: false },
+  }
   const r = await api.json('POST', '/api/v1/onboard/create_agent', {
     headers: { 'Bootstrap-Token': bootstrap },
-    body: { agent_did_method: 'theprotocol', agent_host: host },
+    body: { agent_did_method: 'theprotocol', agent_card: card },
   })
   if (!r.body?.agent_did || !r.body?.client_secret) throw new Error(`create_agent answered ${r.status}`)
   ledger('agent', { did: r.body.agent_did, owner: dev.email, via: 'api' })

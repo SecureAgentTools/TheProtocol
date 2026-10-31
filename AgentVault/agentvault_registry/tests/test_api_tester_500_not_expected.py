@@ -30,11 +30,13 @@ EXPECTED = {"is_expected_failure", "_ef", "_ef_cm", "expected_failure"}
 FIXED = ("/pipeline-templates", "/deployments", "/agents/{agent_did}/pipelines", "/agents/{agent_did}/logs",
          "/staking/unstake", "/contracts/malpractice", "/governance/proposals", "/agents/{agent_did}/export",
          "/admin/docker-stats", "/federation/disputes/settlements", "/federation/disputes/peer-slash-config", "/oauth/",
-         "/staking/rewards/", "/bridge/", "/organizations/invitations/{token}/accept")
-# the rules left that read a 500 as expected: the simulation console (4; its reads answered 200 or 503, its writes are
-# not measured), the cross-TEG treasury fund (3) and the TEG lock (3), which move or hold value; each is measured on
-# its own before its rule goes; this number may only go down
-CEILING = 10
+         "/staking/rewards/", "/bridge/", "/organizations/invitations/{token}/accept",
+         # V0649 (agentvault2-13, 2026-10-30): the last ten, each measured on sbx-alpha through its own API tester first:
+         # the six simulation reads answered 200 (its writes are side effects the sweep never sends), the lock 200, and
+         # the cross-TEG fund is never called (NOT MEASURED: it needs a live counterparty; refused 403/400 before any move)
+         "/admin/simulation/", "/teg/treasury/cross-teg-fund", "/teg/staking/stake")
+# no rule reads a 500 as expected any more (V0649); this number may only stay at 0
+CEILING = 0
 
 
 def _is_status(node):

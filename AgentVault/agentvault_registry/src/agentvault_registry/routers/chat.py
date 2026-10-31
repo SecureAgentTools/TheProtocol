@@ -29,7 +29,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
 from ..models import Agent, Conversation
-from ..security import get_current_actor_for_read, get_current_agent
+from ..security import (get_current_actor_for_read, get_current_actor_for_read_or_key, get_current_agent,
+                        get_current_developer, oauth2_scheme_required)
 from ..services import chat_service as cs
 
 logger = logging.getLogger(__name__)
@@ -196,7 +197,8 @@ async def _send_and_fan_out(db: AsyncSession, conv, my_row, actor: cs.Actor,
                             kind: str, body: Optional[str], card: Optional[dict],
                             client_ref: str, reply_to: Optional[str] = None,
                             *, rail_author: bool = False, is_ping: bool = False,
-                            sender_override: Optional[cs.Actor] = None) -> dict:
+                            sender_override: Optional[cs.Actor] = None,
+                            extra_before_commit=None) -> dict:
     """Rate-gate, insert, then fan out POST-COMMIT. Returns the serialized
     message. A duplicate client_ref returns the original and fans out nothing."""
     gate_key = f"msg:{actor.key}"
@@ -226,6 +228,16 @@ async def _send_and_fan_out(db: AsyncSession, conv, my_row, actor: cs.Actor,
                 raise cs.ChatError(503, "this message could not be queued for the other registry, so nothing was "
                                         "sent; retry") from e
         queue = _queue
+    if extra_before_commit is not None:
+        # V0650 (l): a record that must exist WITH its card (an approval request) is written in the message's own
+        # transaction, after the federation delivery rows, so neither can exist without the other.
+        _fed_queue = queue
+
+        async def _both(m):
+            if _fed_queue is not None:
+                await _fed_queue(m)
+            await extra_before_commit(m)
+        queue = _both
     msg, duplicate = await cs.insert_message(
         db, conv, my_row, sender, kind, body, card, client_ref, reply_to,
         rail_author=rail_author, before_commit=queue)
@@ -349,7 +361,7 @@ async def list_conversations(
     state: Literal["active", "requests"] = Query("active"),
     cursor: Optional[str] = Query(None),
     limit: int = Query(30, ge=1, le=cs.LIST_MAX),
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """Inbox (active) or the Requests lane (pending). A developer's inbox spans
@@ -366,12 +378,14 @@ async def get_messages(
     limit: int = Query(40, ge=1, le=cs.PAGE_MAX),
     join: bool = Query(False, description="§TWOAGENT G1 (V0437): an agent's OWNER opening its cross-registry thread "
                                           "for the first time is announced to the other side; true confirms it"),
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    mentions: Optional[Literal["me"]] = Query(
+        None, description="me: only the messages that @mention you (your handle, your card name or your DID)"),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     actor = cs.actor_from_auth(actor_dict)
     return await cs.list_messages(db, conversation_id, actor,
-                                  before_seq=before_seq, limit=limit, join=join)
+                                  before_seq=before_seq, limit=limit, join=join, mentions=mentions)
 
 
 @router.post("/conversations/{conversation_id}/messages", status_code=201)
@@ -786,7 +800,7 @@ async def service_call(
 @router.get("/blocks")
 @chat_errors
 async def get_blocks(
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     actor = cs.actor_from_auth(actor_dict)
@@ -824,19 +838,33 @@ async def remove_block(
 @chat_errors
 async def sync(
     since: Optional[str] = Query(None, description="ISO timestamp; default = 24h ago"),
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    cursor: Optional[str] = Query(None, max_length=4096,
+                                  description="next_cursor from the previous answer (instead of since)"),
+    wait: int = Query(0, ge=0, le=cs.SYNC_WAIT_MAX_S,
+                      description="Seconds to wait for something new when nothing is there yet (0 to 25)"),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """Polling catch-up for clients and agent runtimes: everything in your
-    active threads since a timestamp, bounds stated in the body."""
+    active threads since a timestamp, bounds stated in the body.
+
+    Every answer carries `next_cursor`: pass it as `cursor` on the next call and nothing is missed or returned twice.
+    With `wait` (up to 25 seconds) the call answers as soon as something new reaches one of your threads, or answers
+    empty at the bound, so a client can stay current without polling. Your own sends are included, as before.
+
+    \f
+    V0650 (g), order gwo_e0c0c8b4d1a5c6a016077567: the long-poll (services.chat_service.sync_wait). While a call waits
+    it holds no database connection and runs no query; fan_out_message wakes it, on any worker over Redis. A registry
+    before V0650 answers without next_cursor, which is how a client tells that wait and cursor were not understood.
+    """
     actor = cs.actor_from_auth(actor_dict)
-    return await cs.sync_since(db, actor, since)
+    return await cs.sync_wait(db, actor, since=since, cursor=cursor, wait_s=wait)
 
 
 @router.get("/unread-count")
 @chat_errors
 async def unread_count(
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -871,7 +899,7 @@ class RoomActionBody(BaseModel):
 @router.get("/org-rooms")
 @chat_errors
 async def org_rooms(
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """The rooms section: every org you belong to, with its room's live state
@@ -938,7 +966,7 @@ async def room_op(
 @chat_errors
 async def room_members(
     conversation_id: str,
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """Room member sheet (org rooms only): who has opened the room, their LIVE
@@ -951,7 +979,7 @@ async def room_members(
 @chat_errors
 async def away_digest(
     limit: int = Query(30, ge=1, le=cs.LIST_MAX),
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -982,7 +1010,7 @@ class HandleClaim(BaseModel):
 @router.get("/handles/me")
 @chat_errors
 async def my_handle(
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """Your claimed handle, or null. Absence is not an error."""
@@ -1021,7 +1049,7 @@ class PulseConfig(BaseModel):
 @router.get("/pulse/me")
 @chat_errors
 async def my_pulse(
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """Your own pulse, including the settings, so the switch and what it
@@ -1132,7 +1160,7 @@ async def upload_attachment(
 @chat_errors
 async def download_attachment(
     attachment_id: str,
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """Stream a file back to a PARTICIPANT of its thread.
@@ -1267,7 +1295,7 @@ async def set_retention(
 @router.get("/retention/status")
 @chat_errors
 async def retention_status(
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """What the sweeper last did. A timer nobody enforces is a claim, so the
@@ -1295,7 +1323,7 @@ class SupportOpen(BaseModel):
 @chat_errors
 async def support_state(
     conversation_id: str,
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """The TICKET behind a support thread: status, category, and whether it is
@@ -1408,7 +1436,7 @@ class ReviewGrantBody(BaseModel):
 @chat_errors
 async def support_review_state(
     conversation_id: str,
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """The banner's data: every grant on this conversation, live flag included.
@@ -1501,7 +1529,7 @@ async def support_review_revoke(
 @router.get("/fiat-door")
 @chat_errors
 async def fiat_door(
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -1525,7 +1553,7 @@ async def fiat_door(
 @router.get("/away/authority")
 @chat_errors
 async def my_away_authority(
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """What YOUR stand-in may commit: the same derivation a counterparty sees.
@@ -1556,7 +1584,7 @@ async def my_away_authority(
 @chat_errors
 async def conversation_authority(
     conversation_id: str,
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -1624,7 +1652,7 @@ class ContactPolicyUpdate(BaseModel):
 @router.get("/contact-policy/me")
 @chat_errors
 async def get_my_contact_policy(
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """What you declare AND what the registry will enforce, returned
@@ -1781,7 +1809,7 @@ async def _reengage_mirror(db: AsyncSession, conv, my_row, actor: "cs.Actor", ke
 @router.get("/federation/status")
 @chat_errors
 async def federation_status(
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """Is cross-registry chat on here, which peers can it reach, and what has
@@ -1801,3 +1829,366 @@ async def federation_status(
             "peers": sorted(peers.keys()), "pending": int(pending),
             "given_up": int(stuck), "worker": await outbox_stats(),
             "note": "dm only; rooms and money rails do not federate in this version"}
+
+
+# ---------------------------------------------------------------------------
+# V0650 (l) — approvals in the chat (services/chat_approvals.py holds the rules)
+# ---------------------------------------------------------------------------
+
+class ApprovalRequestBody(BaseModel):
+    client_ref: str = Field(..., min_length=8, max_length=64,
+                            description="Your idempotency key: a repeat returns the original request")
+    title: str = Field(..., min_length=1, max_length=200, description="What is asked, in one line")
+    reason: Optional[str] = Field(None, max_length=2000, description="Why")
+    unlocks: Optional[str] = Field(None, max_length=500, description="The action an approval unlocks")
+    expires_in_seconds: int = Field(3600, ge=60, le=604800,
+                                    description="How long the request stays decidable (60 s to 7 days)")
+    artifact_sha256: Optional[str] = Field(None, max_length=71,
+                                           description="sha256 of the artifact the approval is about (64 hex)")
+    artifact_label: Optional[str] = Field(None, max_length=200, description="A human name for that artifact")
+    production_impact: bool = Field(False, description="Declared by you: the action touches production")
+
+
+class ApprovalDecideBody(BaseModel):
+    decision: Literal["approve", "deny"]
+    approval_ids: list[str] = Field(..., min_length=1, max_length=50,
+                                    description="The requests to decide: one, several, or every one shown")
+    challenge_id: Optional[str] = Field(None, max_length=44,
+                                        description="An approved presence challenge, when the room asks for one")
+    note: Optional[str] = Field(None, max_length=500)
+    surface: Optional[str] = Field(None, max_length=40, description="Where the decision was made (client-stated)")
+
+
+def approval_errors(fn):
+    """chat_errors, plus the approval rail's refusals; a 428 step-up answer is a JSON body, never a stringified
+    detail (the RFC 7807 layer would flatten a dict)."""
+    @functools.wraps(fn)
+    async def wrapper(*args, **kwargs):
+        from fastapi.responses import JSONResponse
+        from ..services import chat_approvals as ca
+        try:
+            return await fn(*args, **kwargs)
+        except cs.ChatError as e:
+            raise HTTPException(status_code=e.status_code, detail=e.detail)
+        except ca.ApprovalError as e:
+            if e.body is not None:
+                return JSONResponse(status_code=e.status_code, content=e.body)
+            raise HTTPException(status_code=e.status_code, detail=e.detail)
+    return wrapper
+
+
+def _approvals_switched_on() -> None:
+    from ..services import chat_approvals as ca
+    if not ca.enabled():
+        raise cs.ChatError(501, "approvals in the chat are switched off on this registry (CHAT_APPROVALS_ENABLED)")
+
+
+async def _approval_room(db: AsyncSession, conversation_id: str):
+    """The room an approval lives in: an organization's room this registry hosts, with chat on."""
+    from ..services import chat_approvals as ca
+    conv = await cs._get_conversation(db, conversation_id)
+    if conv.kind != "org" or not conv.org_id:
+        raise cs.ChatError(409, "approvals are asked and decided in an organization's room; this conversation is not one")
+    if getattr(conv, "host_registry", None):
+        raise cs.ChatError(409, "this room is a mirror of another registry's; approvals live in a room this registry hosts")
+    org = await ca.org_facts(db, conv.org_id)
+    if org is None:
+        raise cs.ChatError(404, "this room's organization no longer exists")
+    return conv, org
+
+
+async def _approval_reader(request: Request, db: AsyncSession = Depends(get_db),
+                           token: str = Depends(oauth2_scheme_required)) -> dict:
+    """The chat routes' dual-principal read (an agent JWT or a developer JWT), plus a developer API key (`avreg_`):
+    the MCP bridges and the CLI present one, and get_current_actor_for_read decodes JWTs only, so a session reading an
+    approval's status through MCP would be refused 401. Only the approval reads take this; the other chat routes are
+    unchanged."""
+    if token.startswith("avreg_"):
+        from ..security import verify_access_token_required
+        developer_id = await verify_access_token_required(request=request, token=token, db=db)
+        developer = await get_current_developer(db=db, developer_id=developer_id)
+        return {"kind": "developer", "developer": developer}
+    return await get_current_actor_for_read(db=db, token=token)
+
+
+def _mcp_relay_attested(request: Request) -> bool:
+    """Did this registry's own MCP server relay the call (its HMAC proof over the presented API key)?"""
+    import hmac as _hmac
+    from ..security import MCP_RELAY_HEADER, mcp_relay_proof
+    proof = request.headers.get(MCP_RELAY_HEADER) or ""
+    auth = request.headers.get("authorization") or ""
+    token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+    if not proof or not token:
+        return False
+    return _hmac.compare_digest(proof, mcp_relay_proof(token))
+
+
+@router.post("/conversations/{conversation_id}/approvals", status_code=201,
+             summary="Ask the organization's owner for an approval (agents only)")
+@approval_errors
+async def request_approval(
+    conversation_id: str,
+    req: ApprovalRequestBody,
+    current_agent: Agent = Security(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Post an approval request into your organization's room. The registry writes the request's record and an
+    `approval.request` card in one transaction; the org's owner or a named approver decides it (POST
+    `.../approvals/decide`), and the decision arrives as an `approval.decided` card in the thread, on `/chat/sync`
+    and in `GET /chat/approvals/{id}`. A repeat `client_ref` returns the original request. Agents only: the caller is
+    the asking agent.
+    """
+    import datetime as _dt
+    import hashlib as _hl
+    from ..models import ChatApproval
+    from ..services import chat_approvals as ca
+    from ..services.admin_audit import log_chat_action
+
+    _approvals_switched_on()
+    conv, org = await _approval_room(db, conversation_id)
+    if not org["chat_enabled"]:
+        raise cs.ChatError(409, "this organization's chat is switched off")
+    did = current_agent.did
+    actor = await _named_sender(db, cs.Actor("agent", agent_did=did,
+                                             display_name=getattr(current_agent, "name", None) or did))
+    my_row = await cs.resolve_membership(db, conv, actor, announce_ok=True)
+    if my_row.state != "active":
+        raise cs.ChatError(409, "you are not active in this conversation")
+    # The card is rail-authored, so insert_message skips the room's speech gates: ask them here, because a muted
+    # agent or an announce-only room must not be a way to post anyway.
+    await cs.room_posting_gate(db, conv, my_row, actor)
+
+    title = " ".join(req.title.split())
+    if not title:
+        raise cs.ChatError(422, "title must say what is asked")
+    sha = ca.normalize_sha256(req.artifact_sha256)
+    existing = await ca.by_client_ref(db, did, req.client_ref)
+    if existing is not None:
+        if existing.conversation_id != conv.id:
+            raise cs.ChatError(409, "this client_ref already names an approval request in another conversation")
+        return {"approval": ca.serialize(existing, await ca.db_now(db), requester_name=actor.display_name),
+                "duplicate": True}
+    if org["owner_id"] is None:
+        raise cs.ChatError(409, "nobody can decide here: the organization has no owner")
+    if await ca.pending_count(db, conv.id, did) >= ca.max_pending():
+        raise cs.ChatError(429, f"you already have {ca.max_pending()} undecided approval requests in this room; "
+                                "wait for a decision or let one expire")
+
+    now = await ca.db_now(db)
+    aid = ca.new_id()
+    expires_at = now + _dt.timedelta(seconds=int(req.expires_in_seconds))
+    reason = (req.reason or "").strip() or None
+    unlocks = (req.unlocks or "").strip() or None
+    label = (req.artifact_label or "").strip() or None
+    facts = ca.request_facts(
+        approval_id=aid, conversation_id=conv.id, org_id=conv.org_id, requester_agent_did=did, title=title,
+        reason=reason, unlocks=unlocks, artifact_sha256=sha, artifact_label=label,
+        production_impact=req.production_impact, created_at=now, expires_at=expires_at, client_ref=req.client_ref)
+    row = ChatApproval(
+        id=aid, conversation_id=conv.id, org_id=conv.org_id, requester_agent_did=did, client_ref=req.client_ref,
+        title=title, reason=reason, unlocks=unlocks, artifact_sha256=sha, artifact_label=label,
+        production_impact=bool(req.production_impact), facts=facts, facts_digest=ca.digest(facts),
+        status="pending", created_at=now, expires_at=expires_at)
+    card = ca.request_card(row)
+
+    async def _with_record(m):
+        row.request_message_id = m.id
+        db.add(row)
+        await db.flush()
+        await log_chat_action(db, action="approval.requested", actor_type="agent", actor_id=did,
+                              target_type="chat_approval", target_id=aid,
+                              details={"conversation_id": conv.id, "org_id": conv.org_id, "title": title[:120],
+                                       "artifact_sha256": sha, "production_impact": bool(req.production_impact),
+                                       "expires_at": ca.iso(expires_at)})
+
+    msg_ref = "aprq-" + _hl.sha1(f"{did}|{req.client_ref}".encode()).hexdigest()[:40]
+    msg = await _send_and_fan_out(db, conv, my_row, actor, "card", None, card, msg_ref,
+                                  rail_author=True, extra_before_commit=_with_record)
+    saved = await ca.by_client_ref(db, did, req.client_ref)
+    if saved is None:
+        raise cs.ChatError(500, "the approval request was not recorded; nothing was asked, try again")
+    return {"approval": ca.serialize(saved, now, requester_name=actor.display_name), "message": msg,
+            "duplicate": saved.id != aid}
+
+
+@router.get("/conversations/{conversation_id}/approvals", summary="The approval requests of a room")
+@approval_errors
+async def list_approvals(
+    conversation_id: str,
+    status_filter: Literal["pending", "decided", "all"] = Query("pending", alias="status"),
+    limit: int = Query(50, ge=1, le=200),
+    actor_dict: dict = Depends(_approval_reader),
+    db: AsyncSession = Depends(get_db),
+):
+    """Any active member of the room may read its approval requests. `can_decide` says whether the caller may decide
+    them (the org's owner or a named approver), and `presence` which decisions ask for a phone confirmation."""
+    from ..services import chat_approvals as ca
+    _approvals_switched_on()
+    actor = cs.actor_from_auth(actor_dict)
+    conv, org = await _approval_room(db, conversation_id)
+    await cs.resolve_membership(db, conv, actor)
+    rows = await ca.list_for_conversation(db, conv.id, status_filter, limit)
+    now = await ca.db_now(db)
+    agents, devs = await ca.names_for(db, rows)
+    role = None
+    if actor.ptype == "developer":
+        role = await ca.decider_role(db, conv.org_id, actor.developer_id, org["owner_id"])
+    return {
+        "conversation_id": conv.id,
+        "status": status_filter,
+        "items": [ca.serialize(r, now, requester_name=agents.get(r.requester_agent_did),
+                               decider_name=devs.get(r.decided_by_developer_id)) for r in rows],
+        "can_decide": role is not None,
+        "my_role": role,
+        "presence": ca.presence_policy(ca.registry_presence(), org["settings"]),
+        "server_time": ca.iso(now),
+    }
+
+
+@router.get("/approvals/{approval_id}", summary="One approval request, its decision and the proof")
+@approval_errors
+async def get_approval(
+    approval_id: str,
+    wait: int = Query(0, ge=0, le=20, description="Seconds to wait while it is still pending (0 = answer now)"),
+    actor_dict: dict = Depends(_approval_reader),
+    db: AsyncSession = Depends(get_db),
+):
+    """The record and, once decided, its proof: who decided, when, in which role, how (the credential kind and
+    whether this registry's MCP server relayed it, attested; the surface, as the client stated it), the presence
+    proof when one was asked for, and the registry's signed statement (its public key travels beside it, outside the
+    signed object). Any active member of the room may read it. `wait` holds the answer up to 20 seconds while the
+    request is pending, so a session learns the decision about a second after the click."""
+    from ..services import chat_approvals as ca
+    _approvals_switched_on()
+    actor = cs.actor_from_auth(actor_dict)
+    row = await ca.fetch(db, approval_id)
+    if row is None:
+        raise cs.ChatError(404, "approval request not found")
+    conv = await cs._get_conversation(db, row.conversation_id)
+    await cs.resolve_membership(db, conv, actor)
+    if wait:
+        row = await ca.wait_until_decided(db, approval_id, wait)
+        if row is None:
+            raise cs.ChatError(404, "approval request not found")
+    now = await ca.db_now(db)
+    agents, devs = await ca.names_for(db, [row])
+    out = ca.serialize(row, now, requester_name=agents.get(row.requester_agent_did),
+                       decider_name=devs.get(row.decided_by_developer_id), include_proof=True)
+    if row.decision_statement and row.decision_statement.get("signature"):
+        try:
+            from ..services.attestation_signer import get_pubkey_b64
+            out["decision"]["statement_pubkey_b64"] = get_pubkey_b64()
+        except Exception:  # noqa: BLE001 — the key is also served by the attestation rail
+            out["decision"]["statement_pubkey_b64"] = None
+    return out
+
+
+@router.post("/conversations/{conversation_id}/approvals/decide",
+             summary="Approve or deny approval requests (the org's owner or a named approver)")
+@approval_errors
+async def decide_approvals(
+    conversation_id: str,
+    req: ApprovalDecideBody,
+    request: Request,
+    current_developer=Security(get_current_developer),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Decide one request, several, or every one shown (Approve all). Only requests that are pending and unexpired are
+    decided; every other id is reported in `skipped` by name (not_found, expired, already_approved, already_denied).
+    Who may decide is read live: the organization's owner, or an active member the owner named an approver. Agents
+    never decide (this route takes a developer credential only). When the room's presence setting asks for it, an
+    approval needs a phone confirmation: the answer is then 428 with a challenge, and the same call is sent again with
+    `challenge_id` once the phone approved it. Denying never asks.
+    """
+    import json as _json
+    from sqlalchemy import text as _sql
+    from ..config import settings as _st
+    from ..models import ChatApproval
+    from ..security import presented_api_key_id, presented_api_key_scopes
+    from ..services import chat_approvals as ca
+    from ..services.admin_audit import log_chat_action
+
+    _approvals_switched_on()
+    conv, org = await _approval_room(db, conversation_id)
+    dev = current_developer
+    role = await ca.decider_role(db, conv.org_id, int(dev.id), org["owner_id"])
+    if role is None:
+        raise cs.ChatError(403, "only the organization's owner or a named approver decides approval requests")
+    dev_name = (getattr(dev, "name", None) or getattr(dev, "username", None) or f"developer {dev.id}")
+    actor = cs.Actor("developer", developer_id=int(dev.id), display_name=dev_name)
+    my_row = await cs.resolve_membership(db, conv, actor, announce_ok=True)
+
+    ids = list(dict.fromkeys(i.strip() for i in req.approval_ids if i and i.strip()))
+    if not ids:
+        raise cs.ChatError(422, "approval_ids must name at least one request")
+    rows = (await db.execute(select(ChatApproval).where(
+        ChatApproval.conversation_id == conv.id, ChatApproval.id.in_(ids)).with_for_update())).scalars().all()
+    now = await ca.db_now(db)
+    decidable, skipped = ca.partition_for_decision(rows, ids, now)
+    if not decidable:
+        code, sentence, already = ca.refusal_when_nothing_decided(skipped, req.decision)
+        if already:
+            return {"decision": ca.DECISIONS[req.decision], "decided": [], "skipped": skipped, "already": True}
+        raise cs.ChatError(code, sentence)
+
+    policy = ca.presence_policy(ca.registry_presence(), org["settings"])
+    presence = None
+    if any(ca.presence_required(policy, req.decision, r.production_impact) for r in decidable):
+        presence = await ca.require_device_presence(db, dev, decision=req.decision, rows=decidable,
+                                                    conversation_id=conv.id, challenge_id=req.challenge_id)
+    via = ca.via_record(api_key_id=presented_api_key_id(), api_key_scopes=presented_api_key_scopes(),
+                        mcp_relay=_mcp_relay_attested(request), surface=req.surface)
+    word = ca.DECISIONS[req.decision]
+    note = (req.note or "").strip() or None
+    statements = {}
+    for r in decidable:
+        stmt = ca.build_statement(r, decision=req.decision, decided_at=now, decider_id=int(dev.id),
+                                  decider_name=dev_name, role=role, via=via, presence=presence,
+                                  registry=str(getattr(_st, "REGISTRY_NAME", "") or ""))
+        res = await db.execute(_sql(
+            "UPDATE chat_approvals SET status = :st, decided_at = :t, decided_by_developer_id = :d, "
+            "decided_by_role = :role, decision_note = :n, decision_via = CAST(:via AS JSONB), "
+            "presence_method = :pm, presence_challenge_id = :pc, decision_statement = CAST(:stmt AS JSONB) "
+            "WHERE id = :id AND status = 'pending' AND expires_at > now() RETURNING id"),
+            {"st": word, "t": now, "d": int(dev.id), "role": role, "n": note, "via": _json.dumps(via),
+             "pm": (presence or {}).get("method"), "pc": (presence or {}).get("challenge_id"),
+             "stmt": _json.dumps(stmt), "id": r.id})
+        if res.first() is None:
+            skipped[r.id] = "expired"      # the belt: a request that expired under us is never decided
+            continue
+        statements[r.id] = stmt
+    if not statements:
+        await db.rollback()
+        code, sentence, already = ca.refusal_when_nothing_decided(skipped, req.decision)
+        raise cs.ChatError(code if code != 200 else 409, sentence)
+    await log_chat_action(db, action=f"approval.{word}", actor_type="developer", actor_id=str(dev.id),
+                          target_type="chat_approval", target_id=",".join(sorted(statements))[:255],
+                          details={"conversation_id": conv.id, "org_id": conv.org_id, "role": role,
+                                   "count": len(statements), "skipped": skipped, "via": via,
+                                   "presence_method": (presence or {}).get("method")})
+    await db.commit()
+
+    decided_rows = [await ca.fetch(db, aid, fresh=True) for aid in statements]
+    decided_rows = [r for r in decided_rows if r is not None]
+    agents, _ = await ca.names_for(db, decided_rows)
+    out = [ca.serialize(r, now, requester_name=agents.get(r.requester_agent_did), decider_name=dev_name)
+           for r in decided_rows]
+    # The cards follow the record (the org-receipt discipline): a card that fails to post is logged, and the record
+    # (GET /chat/approvals/{id}) stays the authority.
+    for r in decided_rows:
+        try:
+            card = ca.decided_card(r, statements[r.id])
+            msg, dup = await cs.insert_message(db, conv, my_row, actor, "card", None, card,
+                                               client_ref=f"aprdec-{r.id}", reply_to=r.request_message_id,
+                                               rail_author=True)
+            if not dup:
+                payload = cs.serialize_message(msg)
+                payload["sender_name"] = dev_name
+                recipients = await cs.recipients_snapshot(db, conv, actor)
+                cs.deliver(conv.id, conv.kind, payload, recipients, dev_name,
+                           sender_owner_dev_id=int(dev.id))
+        except Exception as e:  # noqa: BLE001 — the decision is committed; its card is a display
+            logger.warning("[CHATAPPROVAL] the decided card for %s was not posted: %s", r.id, e)
+    return {"decision": word, "decided": out, "skipped": skipped, "already": False}

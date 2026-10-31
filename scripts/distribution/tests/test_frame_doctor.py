@@ -77,3 +77,22 @@ def test_checks_refuses_a_compose_older_than_2_24(monkeypatch):
                         else (0, "27.0.0\n", ""))
     problems, _ = fd.checks(_args("internal"))
     assert [p for p in problems if "docker compose 2.20.2 is too old" in p]
+
+
+def test_a_finished_frame_is_named_as_running_not_interrupted(tmp_path):
+    """§EXTTEST run 2: the doctor called a finished, running frame 'an interrupted standup ... frame-up resumes it'."""
+    (tmp_path / "devframe-1700000000").mkdir()
+    assert not fd.finished_frame(str(tmp_path), "devframe")
+    (tmp_path / "devframe-1700000001").mkdir()
+    (tmp_path / "devframe-1700000001" / "frame-up.json").write_text("{}")
+    assert fd.finished_frame(str(tmp_path), "devframe")
+    assert not fd.finished_frame(str(tmp_path), "other")
+
+
+def test_a_dangling_compose_link_is_found(tmp_path, monkeypatch):
+    """§EXTTEST run 2, finding 1: Docker Desktop's links in a WSL distribution point at nothing while it is stopped."""
+    plugins = tmp_path / ".docker" / "cli-plugins"
+    plugins.mkdir(parents=True)
+    (plugins / "docker-compose").symlink_to(tmp_path / "nowhere" / "docker-compose")
+    monkeypatch.setattr(fd.os.path, "expanduser", lambda p: str(tmp_path / p[2:]) if p.startswith("~/") else p)
+    assert str(plugins / "docker-compose") in fd.dangling_compose_links()

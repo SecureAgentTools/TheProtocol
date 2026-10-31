@@ -65,10 +65,16 @@ for i in $(seq 1 "$DEMO_COUNT"); do
     -H 'Content-Type: application/json' -d '{}' | jq -r '.bootstrap_token // .token // empty')"
   [ -n "$btok" ] || { echo "  bootstrap failed for $name" >&2; continue; }
 
-  # 2) Create agent (Option C: agent_host stub card).
+  # 2) Create agent. A demo agent serves nothing, so it sends its card itself, with an endpoint on a reserved name
+  #    the card pull-sync never dials (V0650 refuses an agent_host on such a name: no card could ever be read there).
+  body="$(jq -nc --arg n "$name" '{agent_did_method: "theprotocol", agent_card: {protocolVersion: "1.0",
+    agentVersion: "1.0.0", humanReadableId: $n, name: $n, description: "A demo agent seeded by seed-demo.sh: it serves nothing.",
+    url: ("https://" + $n + ".agents.local"), preferredTransport: "JSONRPC",
+    supportedInterfaces: [{url: ("https://" + $n + ".agents.local"), protocolBinding: "JSONRPC", protocolVersion: "1.0"}],
+    securitySchemes: {agent_jwt: {type: "http", scheme: "bearer", bearerFormat: "JWT"}}, security: [{agent_jwt: []}],
+    provider: {name: "seed-demo"}, capabilities: {streaming: false}}}')"
   created="$(curl -fsS -X POST "$API/onboard/create_agent" \
-    -H "Bootstrap-Token: $btok" -H 'Content-Type: application/json' \
-    -d "{\"agent_did_method\":\"theprotocol\",\"agent_host\":\"https://example.invalid/$name\"}")"
+    -H "Bootstrap-Token: $btok" -H 'Content-Type: application/json' -d "$body")"
   did="$(echo "$created" | jq -r '.agent_did // .did // empty')"
   [ -n "$did" ] || { echo "  create_agent failed for $name: $(echo "$created" | jq -c . 2>/dev/null || echo "$created")" >&2; continue; }
   echo "  created $name → $did"

@@ -481,3 +481,14 @@ def test_a_rerun_invites_again_only_when_every_earlier_row_is_spent():
             _row("c", "revoked", f"[outbound] target {T}; sent by x", "3")]
     assert ff.pick_resumable(rows, T) is None
     assert ff.pick_resumable([], T) is None
+
+
+def test_an_untrusted_peer_certificate_is_named_in_the_refusal(monkeypatch):
+    """§EXTTEST run 2: the card fetch said 'no connection' for a certificate the host did not trust (a peer on its edge's
+    internal CA); the refusal now carries the reason and the SSL_CERT_FILE hint."""
+    import pytest
+    reason = "URLError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate"
+    monkeypatch.setattr(ff, "http_json", lambda method, url, **kw: (0, reason))
+    with pytest.raises(ff.Refused) as exc:
+        ff.step2_peer("https://sandbox-b.devframe.example", None, "sandbox.devframe.example", log=lambda *a, **k: None)
+    assert "CERTIFICATE_VERIFY_FAILED" in str(exc.value) and "SSL_CERT_FILE" in str(exc.value)

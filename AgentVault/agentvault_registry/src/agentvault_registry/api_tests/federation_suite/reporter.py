@@ -4,7 +4,9 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any, Dict, List
 
-from agentvault_registry.api_tests.federation_suite.decorator import TestOutcome
+from agentvault_registry.api_tests.federation_suite.decorator import TestOutcome, measured_nothing
+from agentvault_registry.api_tests.federation_suite.nothing_ceiling import gated as _nothing_gated
+from agentvault_registry.api_tests.federation_suite.nothing_ceiling import nothing_verdict
 from agentvault_registry.api_tests.federation_suite.skip_codes import (
     classify_skip, code_meanings, skip_verdict, UNCLASSIFIED,
 )
@@ -103,6 +105,14 @@ def aggregate(outcomes: List[TestOutcome]) -> Dict[str, Any]:
         {"name": o.spec.name, "category": o.spec.category, "severity": o.spec.severity}
         for o in outcomes if o.state == "vacuous"
     ]
+    # §MCPTEST30 (V0649): passes whose own state says they measured nothing (decorator.measured_nothing), reported
+    passed_on_nothing = [
+        {"name": o.spec.name, "category": o.spec.category, "flags": measured_nothing(o.last_state)}
+        for o in outcomes if o.state == "passed" and measured_nothing(o.last_state)
+    ]
+    # §MCPTEST30 (V0650): and judged against the census that earned the ceiling (nothing_ceiling), on the pairs
+    nothing_ok, nothing_complaints, nothing_offenders, nothing_cleared = nothing_verdict(
+        passed_on_nothing, [o.spec.name for o in outcomes if o.state == "passed"])
     probe_counts = [o.probe_count for o in outcomes if o.state in ("passed", "vacuous")]
     probe_stats = {
         "total_probes": sum(o.probe_count for o in outcomes),
@@ -128,6 +138,13 @@ def aggregate(outcomes: List[TestOutcome]) -> Dict[str, Any]:
         "skip_complaints": skip_complaints,
         "unread_skips": unread_skips,
         "vacuous_tests": vacuous_tests,
+        "passed_on_nothing": len(passed_on_nothing),
+        "passed_on_nothing_tests": passed_on_nothing,
+        "nothing_ok": nothing_ok,
+        "nothing_gated": _nothing_gated(),
+        "nothing_complaints": nothing_complaints,
+        "nothing_offenders": nothing_offenders,
+        "nothing_cleared": nothing_cleared,
         "probe_stats": probe_stats,
         "by_category": by_category,
         "by_severity": by_severity,

@@ -202,6 +202,18 @@ _PATTERNS: List[Tuple[str, "re.Pattern[str]", str]] = [
         "recurs and is a top-up, not a blocker",
     ),
     (
+        # §MCPTEST30 (V0650, tester batch 2 item 4; agentvault2-d3, 2026-10-31): the cross-frame settlement's reject test
+        # (tests/test_cross_registry_settlement_reject.py) on a frame whose origin names its internal federation proxy.
+        # Read on the V0649 pair proof (nt261031x2) and the trial pair nt261031x3: a pair carries no
+        # CROSS_REGISTRY_SETTLEMENT_DELIVERY and publishes no dialable federation address, so the home refuses every
+        # slash request it would send; it skipped there unread (unclassified) since V0639. The standing sandbox runs it.
+        "settlement_origin_internal",
+        re.compile(r"as the settlement's origin, an address no peer holds", re.I),
+        "the frame that ruled names its internal federation proxy as a cross-frame settlement's origin "
+        "(CROSS_REGISTRY_SETTLEMENT_DELIVERY off, or no dialable federation address, as on the nightly pairs), so every "
+        "peer refuses its slash request and the home's half of the path cannot run there; the sandbox runs it",
+    ),
+    (
         "fixture_absent",
         re.compile(r"fixture .* (absent|missing)|no such (agent|developer|container)", re.I),
         "a named fixture this test reads does not exist on the tier",
@@ -263,6 +275,9 @@ BASELINE_SKIPS: Dict[str, int] = {
     # seed is spent. Tightening to today's 0 would buy a red run the first time a
     # sweep drains the operator, which is how a gate earns the right to be ignored.
     "operator_treasury_unfundable": 3,
+    # §MCPTEST30 (V0650): ONE test can produce it (the settlement's reject test, where its origin names an internal
+    # address), so a second would mean a row nobody has accounted for.
+    "settlement_origin_internal": 1,
 }
 
 # ─── Codes that TRADE, and the ceiling that actually binds them ─────────────

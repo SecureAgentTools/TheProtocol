@@ -88,15 +88,24 @@ _NEVER_INVOKE_REASONS: Dict[str, str] = {
                                         "takes no target that could be faked",
     "theprotocol_tegCrossTegFund": "never invoked by tester: a one-way cross-TEG capital move; a refusal for an "
                                    "unknown target is not proven to precede the debit",
-    "theprotocol_tegTreasuryReceive": "never invoked by tester: moves value (agent -> treasury)",
-    "theprotocol_distributeFromFeeCollector": "never invoked by tester: moves value (fee_collector -> treasury / "
-                                              "lock payout pool)",
-    "theprotocol_federationRequestAdmission": "never invoked by tester: creates a PeerRegistry row and a compliance "
+    "theprotocol_tegTreasuryReceive": "never invoked by the sweep: moves value (agent -> treasury). On the nightly and "
+                                      "proof pairs (MCP_TESTER_EPHEMERAL_TARGET) earn_ephemeral_value returns a unit "
+                                      "from an agent of the run's own and reads it back on the registry and the ledger",
+    "theprotocol_distributeFromFeeCollector": "never invoked by the sweep: moves value (the fee account -> an agent). "
+                                              "On the nightly and proof pairs earn_ephemeral_value pays an agent of "
+                                              "the run's own 0.01 and reads it back on the registry and the ledger",
+    "theprotocol_federationRequestAdmission": "never invoked by the sweep: creates a PeerRegistry row and a compliance "
                                               "record for the named network before it is contacted, so a probe "
-                                              "would plant a peer every night",
-    "theprotocol_generateFederationLicense": "never invoked by tester: a well-formed call mints a real federation "
+                                              "would plant a peer every night (no route removes one). On a target "
+                                              "torn down after its run (MCP_TESTER_EPHEMERAL_TARGET: the nightly and "
+                                              "proof pairs) earn_ephemeral_peers admits a peer row of the run's own "
+                                              "and measures it (admin_effect: federationRequestAdmission)",
+    "theprotocol_generateFederationLicense": "never invoked by the sweep: a well-formed call mints a real federation "
                                              "licence and takes no target that could be faked; its request shape is "
-                                             "pinned offline by tests/test_mcp_tool_requests_meet_their_routes.py",
+                                             "pinned offline by tests/test_mcp_tool_requests_meet_their_routes.py. "
+                                             "On a target torn down after its run (MCP_TESTER_EPHEMERAL_TARGET: the "
+                                             "nightly and proof pairs) earn_ephemeral_licences generates a licence of "
+                                             "the run's own and measures it (admin_effect: generateFederationLicense)",
 }
 
 
@@ -540,7 +549,8 @@ async def lifecycle_admin_destructive_safe(rpc: RpcCall, parse: ParseResult,
         ("theprotocol_disableDeveloper2FA", {"developer_id": fake_dev, "reason": "phase-6 sweep probe"}),
         ("theprotocol_disableWebhookAdmin", {"webhook_id": "phase6-no-such-webhook"}),
         ("theprotocol_dismissBundleReport", {"report_id": 999999, "resolution": "phase6-probe"}),
-        ("theprotocol_distributeFromFeeCollector", {"amount": "0", "reason": "phase-6 sweep"}),
+        ("theprotocol_distributeFromFeeCollector", {"target_agent_did": "did:theprotocol:phase6-no-such", "amount": "0",
+                                                    "reason": "phase-6 sweep"}),
         ("theprotocol_eagerBootstrapApiTest", {}),
         ("theprotocol_enableWebhookAdmin", {"webhook_id": "phase6-no-such-webhook"}),
         ("theprotocol_federationCliAudit", {"action": "phase6-probe", "cli_version": "0", "actor_host": "phase6",

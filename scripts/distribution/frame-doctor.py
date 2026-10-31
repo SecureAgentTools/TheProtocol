@@ -10,6 +10,7 @@ Every check answers with one sentence a person can act on. Nothing is written. E
                       [--edge-https-port 443] [--edge-http-port 80] [--min-mem-gib 8] [--min-disk-gb 20]
 """
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -21,8 +22,56 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 EXPORT_ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 IMAGES = ("registry", "teg-layer", "event-store", "auditor", "directory", "cert-writer")
-PUBLIC_IMAGES = ("docker:cli", "alpine/openssl:latest", "ghcr.io/spiffe/spire-server:1.15.3",
+PUBLIC_IMAGES = ("docker:cli", "alpine/openssl@sha256:045a40a53b8e283cff95052e0c39f256b7467d48c7445260d4f180fc0e767999", "ghcr.io/spiffe/spire-server:1.15.3",
                  "ghcr.io/spiffe/spire-agent:1.15.3", "nginx:1.30.5-alpine")
+# the helper images the standup driver `docker run`s (its HELPER_IMAGES: two names, kept in step by hand)
+DRIVER_HELPERS = ("docker:cli", "alpine/openssl@sha256:045a40a53b8e283cff95052e0c39f256b7467d48c7445260d4f180fc0e767999")
+
+
+def public_images():
+    """§EXTTEST (beta.26): every public image a standup pulls, read from the kit's own templates (the frame compose's literal
+    `image:` lines, its ${FT_*_IMAGE} lines resolved from the env template's literal defaults, the edge's Caddy) plus the
+    driver's helpers; the release's own images ({{...}} placeholders, or no default at all) are not public. PUBLIC_IMAGES
+    stays the fallback when the templates cannot be read."""
+    try:
+        tdir = os.path.join(EXPORT_ROOT, "templates", "frame-test")
+        env = {}
+        for line in open(os.path.join(tdir, "frame-test.env.tmpl"), encoding="utf-8"):
+            m = re.match(r"^(FT_[A-Z0-9_]*IMAGE)=(\S+)\s*$", line)
+            if m:
+                env[m.group(1)] = m.group(2)
+        text = open(os.path.join(tdir, "docker-compose.frame-test.yml.tmpl"), encoding="utf-8").read()
+        text += "\n" + open(os.path.join(HERE, "frame-edge.compose.yml.tmpl"), encoding="utf-8").read()
+        out = []
+        for ref in re.findall(r"^\s*image:\s*(\S+)\s*$", text, re.M):
+            m = re.fullmatch(r"\$\{(FT_[A-Z0-9_]*IMAGE)(?::-[^}]*)?\}", ref)
+            if m:
+                ref = env.get(m.group(1), "")
+            if ref and "{{" not in ref and "$" not in ref:
+                out.append(ref)
+        return tuple(dict.fromkeys(list(DRIVER_HELPERS) + out)) or PUBLIC_IMAGES
+    except OSError:
+        return PUBLIC_IMAGES
+
+
+def dangling_compose_links():
+    """The docker CLI plugin links named docker-compose that point at nothing (§EXTTEST run 2, finding 1)."""
+    out = []
+    for d in (os.path.expanduser("~/.docker/cli-plugins"), "/usr/local/lib/docker/cli-plugins", "/usr/local/libexec/docker/cli-plugins",
+              "/usr/lib/docker/cli-plugins", "/usr/libexec/docker/cli-plugins"):
+        p = os.path.join(d, "docker-compose")
+        if os.path.islink(p) and not os.path.exists(p):
+            out.append(p)
+    return out
+
+
+def finished_frame(stack_root, name):
+    """True when a standup of this name finished (its newest stack dir holds frame-up.json): its ports are its own."""
+    try:
+        dirs = sorted(d for d in os.listdir(stack_root or "/opt/theprotocol/stack") if re.fullmatch(re.escape(name) + r"-[0-9]+", d))
+    except OSError:
+        return False
+    return bool(dirs) and os.path.isfile(os.path.join(stack_root or "/opt/theprotocol/stack", dirs[-1], "frame-up.json"))
 
 
 def run(argv, timeout=60):
@@ -136,12 +185,19 @@ def checks(a):
             problems.append(f"`{tool}` is not on PATH: {hint}.")
     if sys.version_info < (3, 10):
         problems.append(f"python3 is {sys.version.split()[0]}; the frame driver needs 3.10 or newer.")
+    if importlib.util.find_spec("docker") is None:   # §EXTTEST (beta.26): the driver imports the Python Docker SDK
+        problems.append("the Python Docker SDK is missing (the standup driver imports it): install python3-docker "
+                        "(Debian, Ubuntu) or run `pip install docker`.")
     rc, out, err = run(["docker", "version", "--format", "{{.Server.Version}}"])
     if rc != 0:
         problems.append(f"the Docker daemon does not answer ({err.splitlines()[-1] if err else 'no detail'}): start it, and run this as a user who may use it.")
     rc, out, err = run(["docker", "compose", "version", "--short"])
     if rc != 0:
-        problems.append("`docker compose` (the v2 plugin) is missing: install docker-compose-plugin.")
+        dangling = dangling_compose_links()
+        problems.append("`docker compose` (the v2 plugin) does not run: " + (
+            f"{', '.join(dangling)} point(s) at nothing (Docker Desktop leaves such links in a WSL distribution while it is "
+            "stopped, and they hide an installed plugin): start Docker Desktop, or link the installed one into "
+            "~/.docker/cli-plugins/docker-compose" if dangling else "install docker-compose-plugin."))
     elif compose_version_problem(out):
         problems.append(compose_version_problem(out))
     # the export tree
@@ -155,8 +211,11 @@ def checks(a):
     for name in IMAGES:
         ref = f"{a.images_prefix}/{name}:{a.version}"
         if run(["docker", "image", "inspect", ref])[0] != 0:
-            problems.append(f"image {ref} is not on this host: run `./build.sh` in scripts/distribution first (or name --images-prefix/--version).")
-    missing_public = [ref for ref in PUBLIC_IMAGES if run(["docker", "image", "inspect", ref])[0] != 0]
+            if "/" in a.images_prefix:   # a registry prefix: frame-up pulls the release's images itself (since beta.26)
+                notes.append(f"image {ref} is not on this host yet: frame-up pulls it (with retries).")
+            else:
+                problems.append(f"image {ref} is not on this host: run `./build.sh` in scripts/distribution first (or name --images-prefix/--version).")
+    missing_public = [ref for ref in public_images() if run(["docker", "image", "inspect", ref])[0] != 0]
     if missing_public:
         notes.append(f"{len(missing_public)} public image(s) will be pulled at standup ({', '.join(missing_public)}): the host needs Docker Hub and ghcr.io.")
     # the host
@@ -164,7 +223,8 @@ def checks(a):
         mem = {l.split(":")[0]: int(l.split()[1]) for l in open("/proc/meminfo") if l.startswith(("MemAvailable", "MemTotal"))}
         avail_gib = mem.get("MemAvailable", 0) / 1048576
         if avail_gib < a.min_mem_gib:
-            problems.append(f"MemAvailable is {avail_gib:.1f} GiB; a frame (32 containers) needs at least {a.min_mem_gib} GiB free.")
+            problems.append(f"MemAvailable is {avail_gib:.1f} GiB; a frame (32 containers) needs at least {a.min_mem_gib:g} GiB free "
+                            f"(name another floor with --min-mem-gib).")
     except OSError:
         notes.append("memory could not be read (/proc/meminfo).")
     root = a.stack_root if os.path.isdir(a.stack_root) else os.path.dirname(a.stack_root.rstrip("/")) or "/"
@@ -186,7 +246,10 @@ def checks(a):
     for label, port in edges + lanes:
         if not port_free(port):
             if port in held:
-                notes.append(f"port {port} ({label}) is held by an interrupted standup of {a.name}: frame-up resumes it (frame-down first for a fresh one).")
+                if finished_frame(getattr(a, "stack_root", ""), a.name):
+                    notes.append(f"port {port} ({label}) is held by {a.name}, a frame already running here: frame-down first to stand it up again.")
+                else:
+                    notes.append(f"port {port} ({label}) is held by an interrupted standup of {a.name}: frame-up resumes it (frame-down first for a fresh one).")
             else:
                 problems.append(f"port {port} ({label}) is already listening on this host: free it or choose another with the matching option.")
     if len({a.edge_https_port, a.edge_http_port, a.federation_port, a.bundle_port, a.ledger_port}) != 5:

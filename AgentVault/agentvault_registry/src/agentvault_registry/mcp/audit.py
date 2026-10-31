@@ -831,6 +831,12 @@ _TIER_2_TOOLS.update({
     "theprotocol_unblockChatPrincipal",
 })
 
+# V0650 (a) (2026-10-31) — an agent's status line and its organization's presence (mcp/tools_presence.py).
+_TIER_2_TOOLS.update({
+    "theprotocol_setMyAgentStatus",
+    "theprotocol_getOrganizationPresence",
+})
+
 # §MEMBERSHIP (2026-10-02) — membership and the commons (mcp/tools_commons.py); the six admin tools are on the admin
 # server, whose rows are tier "admin".
 _TIER_1_TOOLS.update({
@@ -845,4 +851,13 @@ _TIER_2_TOOLS.update({
 _TIER_3_TOOLS.update({
     "theprotocol_getMyMembership",
     "theprotocol_getMyCommonsSeason",
+})
+
+# V0650 (l) (2026-10-31) — approvals in the chat (mcp/tools_chat_approvals.py).
+_TIER_2_TOOLS.update({
+    "theprotocol_requestChatApproval",
+    "theprotocol_getChatApprovalStatus",
+})
+_TIER_3_TOOLS.update({
+    "theprotocol_decideChatApproval",
 })

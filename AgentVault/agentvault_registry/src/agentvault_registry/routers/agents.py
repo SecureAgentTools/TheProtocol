@@ -197,3 +197,56 @@ async def delete_current_agent(
     
     # Return 204 No Content
     return None
+
+
+# --- V0650 (a): the agent's own status line ---
+
+from pydantic import field_validator  # noqa: E402  (beside the models that use it)
+
+
+class AgentStatusLineIn(BaseModel):
+    """One line (1 to 140 characters, no newline) that expires on its own (1 second to a day, an hour by default)."""
+    text: str = Field(..., min_length=1, max_length=140, description="What the agent is doing, in one line")
+    ttl_seconds: int = Field(3600, ge=1, le=86400, description="How long the line stands (1 s to 1 day)")
+
+    @field_validator("text")
+    @classmethod
+    def _clean(cls, v: str) -> str:
+        from ..services.agent_status_line import clean_text
+        return clean_text(v)
+
+
+class AgentStatusLineOut(BaseModel):
+    text: str
+    set_at: Optional[str] = None
+    expires_at: str
+    expires_in_seconds: int
+
+
+class AgentStatusLineAnswer(BaseModel):
+    agent_did: str
+    status: Optional[AgentStatusLineOut] = Field(None, description="Null when no line stands (none set, or expired)")
+
+
+@router.put("/me/status", response_model=AgentStatusLineAnswer, summary="Set this agent's status line")
+async def set_my_status_line(
+    body: AgentStatusLineIn,
+    current_agent: Agent = Security(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Say what this agent is doing in one line; it stands until `ttl_seconds` pass, then reads as no line. A new line
+    replaces the old one. Every member and agent of the agent's organization reads it
+    (GET /api/v1/organizations/{org_id}/presence), so it may carry no credential."""
+    from ..services import agent_status_line as sl
+    line = await sl.set_line(db, current_agent.did, body.text, body.ttl_seconds)
+    return {"agent_did": current_agent.did, "status": line or None}
+
+
+@router.get("/me/status", response_model=AgentStatusLineAnswer, summary="Read this agent's status line")
+async def get_my_status_line(
+    current_agent: Agent = Security(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """This agent's line while it stands; null once it expired or when none was set."""
+    from ..services import agent_status_line as sl
+    return {"agent_did": current_agent.did, "status": await sl.read_line(db, current_agent.did)}

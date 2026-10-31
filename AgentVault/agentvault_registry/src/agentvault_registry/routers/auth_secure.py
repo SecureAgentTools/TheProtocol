@@ -125,6 +125,25 @@ async def _verification_resend_allowed(developer_id: int) -> bool:
         return True
 
 
+_BACKGROUND_MAILS: set = set()   # the login gate's background sends, held so the loop cannot collect them mid-flight
+
+
+async def _verification_mail_in_background(developer_id: int, *, source: str) -> None:
+    """§EXTTEST (V0649): the login gate's verification mail, sent after the answer, in a session of its own, the window
+    already claimed. An inline send held the login for the SMTP round trip (about 30 s on EU, 2026-10-30 18:38Z)."""
+    from agentvault_registry.database import AsyncSessionLocal
+    try:
+        async with AsyncSessionLocal() as bg_db:
+            developer = await developer_crud.get_developer_by_id(bg_db, developer_id=developer_id)
+            if developer is None or developer.is_verified:
+                await _verification_resend_release(developer_id)
+                return
+            await _issue_fresh_verification_email(bg_db, developer, source=source, claimed=True)
+    except Exception:  # noqa: BLE001 — a background mail never raises into the loop
+        logger.exception(f"[VerificationResend:{source}] dev={developer_id} background send raised")
+        await _verification_resend_release(developer_id)
+
+
 def _verification_token_still_good(developer: Developer, now: datetime) -> bool:
     """The current token has at least a quarter of its window (and 15 minutes) left, so re-mailing IT is enough."""
     exp = developer.verification_token_expires
@@ -141,6 +160,7 @@ async def _issue_fresh_verification_email(
     developer: Developer,
     *,
     source: str,
+    claimed: bool = False,
 ) -> str:
     """Mail the developer's verification link: "sent", "cooldown" or "not_sent".
 
@@ -160,7 +180,8 @@ async def _issue_fresh_verification_email(
     """
     from agentvault_registry.security import generate_verification_token
 
-    if not await _verification_resend_allowed(developer.id):
+    # claimed=True: the caller already holds this window (the login gate claims it before answering, §EXTTEST V0649)
+    if not claimed and not await _verification_resend_allowed(developer.id):
         logger.info(f"[VerificationResend:{source}] dev={developer.id} cooldown — nothing sent, token kept")
         return "cooldown"
 
@@ -413,6 +434,9 @@ async def register_developer(
                 )
                 if email_sent:
                     logger.info(f"Verification email sent for {created_developer.email}")
+                    # §EXTTEST (V0649): registration's mail opens the resend window too; without it the first login a
+                    # minute later found no window and mailed the same link again (EU, 2026-10-30 18:37:40Z, 18:38:40Z)
+                    await _verification_resend_allowed(created_developer.id)
                 else:
                     logger.error(f"Verification email delivery failed for {created_developer.email} (SMTP error — check MAIL_FROM/MAIL_USERNAME config)")
             except Exception as email_exc:
@@ -536,11 +560,20 @@ async def login_for_access_token(
     # expired or lost tokens with no extra clicks. Rate-limited by the existing
     # 10/minute on /auth/login.
     if settings.REQUIRE_EMAIL_VERIFICATION and not developer.is_verified:
+        # §EXTTEST (V0649): the login answers at once and the mail leaves in the background. The window is claimed HERE,
+        # so the answer tells the truth ("on its way" or "cooldown") and the background send skips its own claim.
         outcome = "not_sent"
         try:
-            outcome = await _issue_fresh_verification_email(
-                db, developer, source="login_gate"
-            )
+            if not (settings.MAIL_SERVER and settings.MAIL_USERNAME and settings.MAIL_FROM):
+                outcome = "not_sent"
+            elif await _verification_resend_allowed(developer.id):
+                import asyncio as _aio_bg
+                task = _aio_bg.create_task(_verification_mail_in_background(developer.id, source="login_gate"))
+                _BACKGROUND_MAILS.add(task)
+                task.add_done_callback(_BACKGROUND_MAILS.discard)
+                outcome = "sent"
+            else:
+                outcome = "cooldown"
         except Exception:
             logger.exception(
                 f"[login_gate] dev={developer.id} auto-resend raised; "
@@ -554,9 +587,9 @@ async def login_for_access_token(
 
         if outcome == "sent":
             detail = (
-                "Please verify your email address. We just sent your "
-                "verification link to your inbox — check there (including "
-                "spam) and click the link to activate your account."
+                "Please verify your email address. A verification link is on "
+                "its way to your inbox: check there (including spam) and click "
+                "the link to activate your account."
             )
         elif outcome == "cooldown":
             detail = (

@@ -14,7 +14,20 @@ const readline = require('readline');
 const API_BASE = process.env.THEPROTOCOL_API_URL || 'https://api.theprotocol.cloud';
 const API_KEY = process.env.THEPROTOCOL_API_KEY || '';
 const REGISTRY = process.env.THEPROTOCOL_REGISTRY || 'A';
-const SERVER_NAME = `theprotocol-admin${REGISTRY !== 'A' ? '-' + REGISTRY.toLowerCase() : ''}`;
+// A neutral name: this bridge talks to whichever registry THEPROTOCOL_API_URL names, production or not.
+const SERVER_NAME = process.env.THEPROTOCOL_SERVER_NAME || `theprotocol-mcp-admin-bridge${REGISTRY !== 'A' ? '-' + REGISTRY.toLowerCase() : ''}`;
+
+// The protocol versions this bridge answers initialize with: the registry's own table (AgentVault
+// agentvault_registry/src/agentvault_registry/mcp/protocol_version.py, SUPPORTED_PROTOCOL_VERSIONS), newest first, and its
+// one rule: the client's own version when it is supported, else the newest. tests/bridges/bridge_initialize.test.mjs
+// holds this table equal to the registry's and answers each version through the running bridge (§EXTTEST, the dev
+// machine's V0649 re-check: a client that asked 2025-06-18 was answered 2024-11-05).
+const SUPPORTED_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
+function negotiateProtocolVersion(params) {
+  const requested = params && typeof params === 'object' ? params.protocolVersion : undefined;
+  return (typeof requested === 'string' && SUPPORTED_PROTOCOL_VERSIONS.includes(requested))
+    ? requested : SUPPORTED_PROTOCOL_VERSIONS[0];
+}
 
 const TOOLS = [
   {
@@ -156,7 +169,7 @@ function handleMessage(msg) {
     send({
       jsonrpc: '2.0', id,
       result: {
-        protocolVersion: '2024-11-05',
+        protocolVersion: negotiateProtocolVersion(params),
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: SERVER_NAME, version: '1.0.0' }
       }

@@ -211,3 +211,36 @@ async def log_session_action(
         details=details,
         error_message=error_message,
     )
+
+
+async def log_chat_action(
+    db: AsyncSession,
+    *,
+    action: str,
+    actor_type: str,
+    actor_id: Optional[str] = None,
+    actor_ip: Optional[str] = None,
+    target_type: Optional[str] = None,
+    target_id: Optional[str] = None,
+    outcome: str = "success",
+    severity: str = "info",
+    details: Optional[Dict[str, Any]] = None,
+    error_message: Optional[str] = None,
+) -> None:
+    """V0650 (l) security_audit_logs row for the chat approval rail — recorded as `chat.<action>` (an agent's
+    approval request, a developer's decision, an owner naming an approver). Same best-effort contract: never raises,
+    commits with the caller, so call it before the caller's own commit."""
+    await _log_action(
+        db,
+        prefix="chat",
+        action=action,
+        actor_type=actor_type,
+        actor_id=actor_id,
+        actor_ip=actor_ip,
+        target_type=target_type,
+        target_id=target_id,
+        outcome=outcome,
+        severity=severity,
+        details=details,
+        error_message=error_message,
+    )

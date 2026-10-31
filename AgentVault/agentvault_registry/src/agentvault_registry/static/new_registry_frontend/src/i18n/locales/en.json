@@ -7836,7 +7836,15 @@
       "dealSettledPart": "Milestone settled",
       "dealSettledHome": "Paid cross-registry to the provider's home:",
       "dealLedger": "A record of money that already moved on the contract rail.",
-      "nothingCharged": "Nothing was charged."
+      "nothingCharged": "Nothing was charged.",
+      "approvalAsks": "Asks for approval",
+      "approvalWhere": "Decided in the panel pinned above this thread.",
+      "approvalApproved": "Approved",
+      "approvalDenied": "Denied",
+      "approvalBy": "By {who} ({role})",
+      "approvalOwner": "owner",
+      "approvalApprover": "approver",
+      "approvalPending": "waiting for a decision"
     },
     "help": {
       "audit": "local background check — public data only, posts nothing",
@@ -8089,6 +8097,25 @@
       "grantsUnknown": "Support-review state could not be read just now — an honest gap, not a \"nobody\".",
       "noRetention": "No disappearing timer — messages stay until deleted or burned.",
       "hostCopies": "The operators of {reg}, which hosts this thread, and of {copies}, which keeps a copy — it is not end-to-end encrypted."
+    },
+    "approvals": {
+      "readFailed": "Approval requests could not be read just now.",
+      "waiting": "{n} waiting for a decision",
+      "approveAll": "Approve all ({n})",
+      "whoDecides": "The organization's owner or a named approver decides these.",
+      "unlocks": "Unlocks: {what}",
+      "why": "Why",
+      "production": "Affects production",
+      "approve": "Approve",
+      "deny": "Deny",
+      "expired": "expired",
+      "leftHours": "{h} h {m} min left",
+      "leftMinutes": "{m} min {s} s left",
+      "leftSeconds": "{s} s left",
+      "confirmTitle": "Confirm this decision",
+      "confirmLead": "This room asks for a confirmation on your phone before an approval counts.",
+      "confirmDenied": "You declined on your phone. Nothing was decided.",
+      "confirmExpired": "This confirmation expired. Press Approve again for a new one."
     }
   },
   "ourstate.away.digestHead": "While you were away",
@@ -11451,7 +11478,14 @@
       "choiceFor": "For",
       "registry": "Registry",
       "season": "Commons season",
-      "points": "Points given"
+      "points": "Points given",
+      "decision": "Decision",
+      "approve": "Approve",
+      "deny": "Deny",
+      "requests": "Requests",
+      "artifacts": "Artifacts (sha256)",
+      "production": "Affects production",
+      "yes": "Yes"
     },
     "state": {
       "empty": "Nothing here right now.",
@@ -13675,5 +13709,32 @@
     "toForensics": "Ledger Forensics",
     "totals": "{types} event types · {rows} rows in the table · the registry's code emits {reg}, the TEG's {teg}",
     "yes": "yes"
+  },
+  "orgSessions": {
+    "lede": "Your organization's agents: who is here, what each says it is doing, and the MCP tools they called on this registry.",
+    "loading": "Reading…",
+    "presenceFailed": "The presence of the organization could not be read just now.",
+    "noAgents": "No agent is assigned to this organization.",
+    "noStatus": "no live status",
+    "lastActive": "active {ago} ago",
+    "neverActive": "never active",
+    "ownerId": "owner #{id}",
+    "room": {
+      "open": "Open the organization's room",
+      "none": "This organization has no room yet.",
+      "toTab": "Room settings",
+      "failed": "The organization's room could not be read just now."
+    },
+    "audit": {
+      "title": "MCP calls of the organization's agents",
+      "lede": "Each call an agent made on this registry with its own credentials: the tool, when, the tier and the outcome. Never what the agent sent."
+    }
+  },
+  "mcpAuditPanel": {
+    "org": {
+      "notRecording": "This registry does not record MCP calls (MCP audit logging is off), so this list stays empty whatever the agents do.",
+      "empty": "None of this organization's agents has called an MCP tool on this registry with its own credentials yet."
+    },
+    "toolError": "tool error"
   }
 }

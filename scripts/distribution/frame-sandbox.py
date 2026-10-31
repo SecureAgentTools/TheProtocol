@@ -468,17 +468,192 @@ def federated(a_fr, b_fr):
     return bool(na and nb) and peer_statuses(a_fr).get(nb) == "ACTIVE" and peer_statuses(b_fr).get(na) == "ACTIVE"
 
 
+# V0650 (k), the kit half (agentvault2-7c, 2026-10-31): two sandboxes of one frame federate on one host. V0650's registry
+# opens a same-host lane (FRAME_INVITATIONS_SAME_HOST_PEERS, honored only while the frame declares FRAME_POSTURE=sandbox):
+# an anonymous invitation from a private address may name a bundle host on a private address, and the outbound legs verify
+# the peer console against the system roots plus FRAME_INVITATIONS_PEER_CA_FILE (the host edge's internal CA). What only the
+# kit can give it, in each sandbox's own carriers: the peers' public names resolvable inside its registry and its SPIRE
+# server (Docker's resolver never reads the host's /etc/hosts, so host-gateway entries), the edge's root mounted read-only,
+# and the two env lines (raw names: the template maps neither, so the env_file carries them). REGISTRY_ENVIRONMENT stays
+# unset (R42: a kit frame never states sandbox to the tester).
+PEER_CA_HOST_DIR = os.path.join("kit", "peer-ca")
+PEER_CA_MOUNT = "/run/peer-ca"
+PEER_CA_FILE = "frame-edge-ca.pem"
+EDGE_ROOT_IN_CONTAINER = "/data/caddy/pki/authorities/local/root.crt"
+
+
+def _service_block(lines, service):
+    """(start, end) line indexes of a top-level compose service `  <service>:` (end exclusive), or None."""
+    head = f"  {service}:"
+    start = next((i for i, line in enumerate(lines) if line.rstrip() == head), None)
+    if start is None:
+        return None
+    end = next((i for i in range(start + 1, len(lines)) if re.match(r"^(  \S|\S)", lines[i])), len(lines))
+    return start, end
+
+
+def same_host_compose(text, registry, spire, names, ca_host_dir=None):
+    """The rendered compose with the peers' names resolvable in the registry and the SPIRE server (host-gateway) and, when
+    ca_host_dir is given, the edge's root mounted read-only into the registry. Returns (text, lines added). Idempotent;
+    raises ValueError when a block or an anchor the template renders is missing, never a partial edit."""
+    lines = text.split("\n")
+    added = 0
+    wanted = [f'      - "{n}:host-gateway"' for n in sorted(set(names))]
+    blk = _service_block(lines, registry)
+    if blk is None:
+        raise ValueError(f"no service {registry} in the compose")
+    s, e = blk
+    anchor = next((i for i in range(s, e) if lines[i].strip() == '- "host.docker.internal:host-gateway"'), None)
+    if anchor is None:
+        raise ValueError(f"{registry} has no host.docker.internal extra_hosts line to extend")
+    vol_at = next((i for i in range(s, e) if lines[i].rstrip().endswith(":/opt/data-tls:ro") or ":/opt/data-tls:ro " in lines[i]), None)
+    if ca_host_dir and vol_at is None:
+        raise ValueError(f"{registry} has no /opt/data-tls mount to place the edge root beside")
+    spire_blk = _service_block(lines, spire)
+    if spire_blk is None:
+        raise ValueError(f"no service {spire} in the compose")
+    have = {lines[i].strip() for i in range(s, e)}
+    add_hosts = [w for w in wanted if w.strip() not in have]
+    vol = f"      - {ca_host_dir}:{PEER_CA_MOUNT}:ro" if ca_host_dir else None
+    add_vol = bool(vol) and vol.strip() not in have
+    # edit bottom-up inside the registry block so the indexes found above stay valid
+    edits = sorted([(anchor + 1, add_hosts)] + ([(vol_at + 1, [vol])] if add_vol else []), key=lambda t: t[0], reverse=True)
+    for at, new in edits:
+        lines[at:at] = new
+        added += len(new)
+    s, e = _service_block(lines, spire)
+    eh = next((i for i in range(s, e) if lines[i].rstrip() == "    extra_hosts:"), None)
+    if eh is None:
+        va = next((i for i in range(s, e) if lines[i].rstrip() == "    volumes:"), None)
+        if va is None:
+            raise ValueError(f"{spire} has no volumes: line to place extra_hosts before")
+        lines[va:va] = ["    extra_hosts:"] + wanted
+        added += len(wanted)
+    else:
+        have = {lines[i].strip() for i in range(s, e)}
+        new = [w for w in wanted if w.strip() not in have]
+        lines[eh + 1:eh + 1] = new
+        added += len(new)
+    return "\n".join(lines), added
+
+
+def edge_root_pem(parent):
+    """The parent edge's internal CA root (Caddy's 'tls internal'), or None when the edge runs ACME or holds none yet."""
+    edge = parent.get("edge") or {}
+    if edge.get("tls") != "internal":
+        return None
+    container = edge.get("container") or f"{parent['name']}-edge"
+    r = subprocess.run(["docker", "exec", container, "cat", EDGE_ROOT_IN_CONTAINER], capture_output=True, text=True, timeout=60)
+    pem = r.stdout if r.returncode == 0 else ""
+    return pem if "-----BEGIN CERTIFICATE-----" in pem else None
+
+
+def host_bundle(stack_dir, pem):
+    """The system roots plus the edge's root, for the host-side calls frame-federate makes to a sandbox console (its
+    refusal names SSL_CERT_FILE); written beside the edge's own files, 644 (certificates, no key)."""
+    paths = ssl.get_default_verify_paths()
+    for cand in (paths.cafile, paths.openssl_cafile, "/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt"):
+        if cand and os.path.isfile(cand):
+            roots = open(cand).read()
+            break
+    else:
+        roots = ""
+    out = os.path.join(stack_dir, "edge", "ca-with-edge-root.pem")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, "w") as f:
+        f.write(roots.rstrip("\n") + "\n" + pem)
+    os.chmod(out, 0o644)
+    return out
+
+
+def env_declares(text, key, value):
+    """Whether an env file sets key to value (bare or quoted)."""
+    for line in text.splitlines():
+        if line.startswith(f"{key}="):
+            return line.split("=", 1)[1].strip().strip("\"'") == value
+    return False
+
+
+def prepare_same_host(a_fr, b_fr, parent, progress):
+    """V0650 (k), the kit half: each sandbox's own carriers (its rendered compose and .env.frame-test) open the registry's
+    same-host lane, then its SPIRE server and registry are recreated. Returns the host bundle for frame-federate, or None
+    when the edge runs ACME. Idempotent: a second run changes nothing and recreates nothing."""
+    pem = edge_root_pem(parent)
+    names = [a_fr.rec["public_name"], b_fr.rec["public_name"]]
+    for fr in (a_fr, b_fr):
+        sd = fr.rec["stack_dir"]
+        envp = os.path.join(sd, ".env.frame-test")
+        env = open(envp).read()
+        if not env_declares(env, "FRAME_POSTURE", "sandbox"):
+            raise StepFailed(f"{fr.name}'s .env.frame-test does not declare FRAME_POSTURE=sandbox: the same-host lane opens "
+                             "only for a sandbox (frame-up --posture sandbox)")
+        ca_dir = None
+        if pem:
+            ca_dir = os.path.join(sd, PEER_CA_HOST_DIR)
+            os.makedirs(ca_dir, exist_ok=True)
+            os.chmod(ca_dir, 0o755)
+            fp = os.path.join(ca_dir, PEER_CA_FILE)
+            if not (os.path.isfile(fp) and open(fp).read() == pem):
+                with open(fp, "w") as f:
+                    f.write(pem)
+            os.chmod(fp, 0o644)
+        cp = os.path.join(sd, "docker-compose.frame-test.yml")
+        old = open(cp).read()
+        try:
+            new, n = same_host_compose(old, f"{fr.name}-registry", f"{fr.name}-spire-server", names, ca_dir)
+        except ValueError as exc:
+            raise StepFailed(f"{fr.name}: {exc}")
+        pairs = [("FRAME_INVITATIONS_SAME_HOST_PEERS", "true")]
+        if pem:
+            pairs.append(("FRAME_INVITATIONS_PEER_CA_FILE", f"{PEER_CA_MOUNT}/{PEER_CA_FILE}"))
+        env_changes = [k for k, v in pairs if not env_declares(env, k, v)]
+        if not n and not env_changes:
+            progress.note(f"{fr.name}: the same-host lane is open already")
+            continue
+        if n:
+            bak = cp + ".bak-pre-samehost"
+            if not os.path.exists(bak):
+                shutil.copy2(cp, bak)
+            with open(cp, "w") as f:
+                f.write(new)
+            chk = subprocess.run(["docker", "compose", "-f", "docker-compose.frame-test.yml", "--env-file", ".env.frame-test",
+                                  "config", "-q"], cwd=sd, capture_output=True, text=True, timeout=120)
+            if chk.returncode != 0:
+                with open(cp, "w") as f:
+                    f.write(old)
+                raise StepFailed(f"{fr.name}: the edited compose does not validate, so it was put back: "
+                                 f"{(chk.stderr or chk.stdout)[-300:]}")
+        upsert_env(envp, pairs)
+        r = subprocess.run(["docker", "compose", "-f", "docker-compose.frame-test.yml", "--env-file", ".env.frame-test", "up", "-d",
+                            "--no-deps", "--force-recreate", f"{fr.name}-spire-server", f"{fr.name}-registry"],
+                           cwd=sd, capture_output=True, text=True, timeout=600)
+        if r.returncode != 0:
+            raise StepFailed(f"recreating {fr.name}'s SPIRE server and registry failed: {(r.stderr or r.stdout)[-300:]}")
+        for _ in range(60):
+            if fr.healthy():
+                break
+            time.sleep(5)
+        else:
+            raise StepFailed(f"{fr.name}-registry was recreated but does not answer /health after 300 s")
+        progress.note(f"{fr.name}: the same-host lane is open ({n} compose lines: the peers' names"
+                      f"{' and the edge root, mounted read-only' if pem else ''}; env: {', '.join(env_changes) or 'unchanged'}); "
+                      "its SPIRE server and registry were recreated")
+    return host_bundle(parent["stack_dir"], pem) if pem else None
+
+
 def step_federate(a, a_fr, b_fr, parent, progress):
     if federated(a_fr, b_fr):
         progress.skip("federate", f"{a_fr.name} and {b_fr.name} hold each other as active peers")
         return
     progress.start("federate")
+    bundle = prepare_same_host(a_fr, b_fr, parent, progress)
     port = parent.get("public_https_port") or (parent.get("edge") or {}).get("public_https_port") or (parent.get("edge") or {}).get("https_port") or 443
     peer_console = f"https://{b_fr.rec['public_name']}" + ("" if int(port) == 443 else f":{port}")
     argv = [sys.executable, "-u", os.path.join(HERE, "frame-federate.py"), "--stack-dir", a_fr.rec["stack_dir"],
             "--with", peer_console, "--admin-secret-file", os.path.join(a_fr.rec["secrets_dir"], f".{a_fr.name}_frame_admin.secret.json"),
             "--description", f"{a_fr.name} and {b_fr.name}: the sandbox pair of {parent['name']}", "--timeout-min", str(a.federate_timeout_min)]
-    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    env = dict(os.environ, **({"SSL_CERT_FILE": bundle} if bundle else {}))
+    proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, env=env)
     tail, approved = [], {"id": None}
     stop = threading.Event()
 

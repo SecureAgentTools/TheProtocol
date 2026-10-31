@@ -84,6 +84,11 @@ DEFAULT_TRUST_DOMAIN = os.getenv("FRAME_TEST_TRUST_DOMAIN", "frame-test.sandbox"
 DEFAULT_REGISTRY_NAME = os.getenv("FRAME_TEST_REGISTRY_NAME", "frame-test")
 
 DEFAULT_WORKERS_REG = int(os.getenv("FRAME_TEST_WORKERS_REG", "4"))
+# §EXTTEST run 2 (V0650): the x509pop helper image pinned by digest; it was the moving alpine/openssl:latest, the one unpinned
+# image a kit standup ran (the release's own images are pulled by digest). FRAME_OPENSSL_IMAGE overrides it; the kit that
+# carries this release names the same reference in its helper lists.
+OPENSSL_IMAGE = os.getenv("FRAME_OPENSSL_IMAGE",
+                          "alpine/openssl@sha256:045a40a53b8e283cff95052e0c39f256b7467d48c7445260d4f180fc0e767999")
 DEFAULT_WORKERS_TEG = int(os.getenv("FRAME_TEST_WORKERS_TEG", "4"))
 DEFAULT_WORKERS_ES = int(os.getenv("FRAME_TEST_WORKERS_ES", "2"))
 
@@ -572,7 +577,7 @@ def _run_openssl(script: str, mount_dir_host: str, timeout: int = 60) -> tuple[i
     client = _docker_client()
     try:
         container = client.containers.run(
-            "alpine/openssl:latest",
+            OPENSSL_IMAGE,
             command=["sh", "-c", script],
             volumes={
                 mount_dir_host: {"bind": "/work", "mode": "rw"},

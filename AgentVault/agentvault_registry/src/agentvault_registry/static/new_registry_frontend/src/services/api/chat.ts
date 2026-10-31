@@ -19,6 +19,8 @@ import type { BlockTarget } from '@/services/chat/counterparty'
 export interface ChatApiError extends Error {
   status: number
   detail: string
+  /** The answer's whole JSON body (V0650 (l)): a 428 step-up answer carries its challenge here, not in `detail`. */
+  body?: any
 }
 
 async function call(method: string, path: string, token: string | null, body?: any): Promise<any> {
@@ -35,6 +37,7 @@ async function call(method: string, path: string, token: string | null, body?: a
     const err = new Error(typeof detail === 'string' ? detail : JSON.stringify(detail)) as ChatApiError
     err.status = r.status
     err.detail = err.message
+    err.body = data
     throw err
   }
   return data
@@ -198,6 +201,21 @@ export const chatApi = {
   // §TWOAGENT G1 household/V0436: a block names a developer, an agent OR a principal on a peer registry by its address
   block(token: string, target: BlockTarget) { return call('POST', '/blocks', token, target) },
   unblock(token: string, target: BlockTarget) { return call('DELETE', '/blocks', token, target) },
+
+  // V0650 (l) — approvals in the chat. The decision always goes with the DEVELOPER token (agents never decide), and a
+  // 428 answer carries the phone challenge in err.body (parseStepUp reads it).
+  listApprovals(token: string, conversationId: string, status: 'pending' | 'decided' | 'all' = 'pending', limit = 50) {
+    const q = new URLSearchParams({ status, limit: String(limit) })
+    return call('GET', `/conversations/${conversationId}/approvals?${q}`, token)
+  },
+  getApproval(token: string, approvalId: string, wait = 0) {
+    return call('GET', `/approvals/${encodeURIComponent(approvalId)}?wait=${Math.max(0, Math.min(20, wait))}`, token)
+  },
+  decideApprovals(token: string, conversationId: string,
+                  body: { decision: 'approve' | 'deny'; approval_ids: string[]; challenge_id?: string;
+                          note?: string; surface?: string }) {
+    return call('POST', `/conversations/${conversationId}/approvals/decide`, token, body)
+  },
 
   sync(token: string, sinceIso?: string) {
     const q = sinceIso ? `?since=${encodeURIComponent(sinceIso)}` : ''

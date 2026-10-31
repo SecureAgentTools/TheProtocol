@@ -1667,7 +1667,6 @@ class APITestBase:
             # P8.26b: Skip deprecated/unimplemented endpoints
             _SKIP_ENDPOINTS = {
                 "/teg/batch-transfer": "Batch transfer intentionally not implemented (501)",
-                "/pipeline-templates/{template_id}/purchase": "Template purchase not fully implemented — Commander approved PRE-SKIP",
             }
             if path in _SKIP_ENDPOINTS:
                 logger.info(f"P8.26b SKIP: {path} — {_SKIP_ENDPOINTS[path]}")

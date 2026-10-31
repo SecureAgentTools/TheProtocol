@@ -2436,6 +2436,37 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         notes="EVTYPES2: probed on sbx-alpha; see the section header.",
         success_path_unmeasured="held back: a settlement exists only for a ruled dispute against another registry's agent, and approving slashes it (V0641: NOT_DRIVEN)",
     ),
+    # V0650 (l), approvals in the chat (agentvault2-d3, tester batch 1, Guild order gwo_2015b757c94ce69138500df6): the
+    # sweep pins each tool's refusal of a room or a request that is not the caller's; the success path is a room of the
+    # run's own, earned only on the nightly and proof pairs (earned_ad_chat_approvals)
+    "theprotocol_requestChatApproval": McpContract(
+        tier="2",
+        requires_fixtures=["sentinel_jwt"],
+        arguments={"agent_jwt": "${sentinel_jwt}", "conversation_id": "phase6-no-such-room",
+                   "title": "phase-6 probe", "client_ref": "phase6-probe-ref-0001"},
+        expect_status="error_4xx",
+        expect_error_message_contains="conversation not found",
+        success_path_unmeasured="the success path is an organization room of the run's own, earned only on the "
+                                "nightly and proof pairs (earned_ad_chat_approvals)",
+    ),
+    "theprotocol_getChatApprovalStatus": McpContract(
+        tier="2",
+        requires_fixtures=["sentinel_jwt"],
+        arguments={"agent_jwt": "${sentinel_jwt}", "approval_id": "apr_phase6_no_such"},
+        expect_status="error_4xx",
+        expect_error_message_contains="approval request not found",
+        success_path_unmeasured="a request exists only in an organization room of the run's own, earned only on the "
+                                "nightly and proof pairs (earned_ad_chat_approvals)",
+    ),
+    "theprotocol_decideChatApproval": McpContract(
+        tier="3",
+        arguments={"conversation_id": "phase6-no-such-room", "decision": "approve",
+                   "approval_ids": ["apr_phase6_no_such"]},
+        expect_status="error_4xx",
+        expect_error_message_contains="conversation not found",
+        success_path_unmeasured="a decision needs a request in an organization room of the run's own, earned only on "
+                                "the nightly and proof pairs (earned_ad_chat_approvals)",
+    ),
     "theprotocol_assignAgentToOrg": McpContract(
         tier="3",
         arguments={"org_id": "00000000-0000-4000-8000-000000000000", "agent_did": "did:theprotocol:00000000-0000-4000-8000-000000000000"},
@@ -2503,14 +2534,15 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
     ),
     "theprotocol_bridgeRedeem": McpContract(
         tier="admin",
+        # §MCPTEST30 (tester batch 2 item 2, agentvault2-d3): read on V0649: the wrapper can never succeed. The route
+        # acts for the agent the wrapped units were minted to (require_agent_permission), while this admin tool sends the
+        # admin's developer token (401 "Could not validate agent credentials") and an agent_did the route does not
+        # declare. Left as it is on his D8 decision (tests/test_mcp_tool_requests_meet_their_routes.py KNOWN).
         success_path_unmeasured=(
-            "§FANCLAIM 2026-09-07 — REFUSAL PATH ONLY. The sole call this suite makes "
-            "is the admin destructive-safe probe against a deliberately-nonexistent "
-            "target under expect_status='any', so what is measured is the REFUSAL. "
-            "Before this contract existed the tool held none at all, so the coverage "
-            "fan's row reported `has_explicit_contract=True` and the SUCCESS path — redeeming a real bridge transaction — is exercised by nothing. Pairs "
-            "with bridgeIssueWrapped: only meaningful on a transaction that lifecycle "
-            "created, and it moves supply."
+            "the success path, redeeming a real bridge transaction, is exercised by nothing, and this wrapper cannot reach "
+            "it: an admin tool at an agent route (it sends the admin's token; the route answers 401 for any caller that "
+            "is no agent), left as it is because the Token Bridge is on the D8 retire list, his decision; its refusal is "
+            "the admin destructive-safe probe's"
         ),
         notes="FANCLAIM: money rail; refusal measured, success deliberately not swept.",
     ),

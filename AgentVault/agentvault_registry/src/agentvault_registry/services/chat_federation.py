@@ -919,7 +919,8 @@ async def receive_delivery(db: AsyncSession, envelope: dict, peer_identity: str)
         sender_ptype=sender_ptype, sender_id=sender_local,
         kind=kind, body=m_in.get("body"), card=m_in.get("card"),
         client_ref=str(m_in.get("client_ref") or f"fed-{remote_seq}"),
-        remote_seq=remote_seq, origin_registry=host)
+        remote_seq=remote_seq, origin_registry=host,
+        created_at=cs.message_clock())   # V0650 (g): stamped once it holds its seq
     db.add(msg)
     try:
         await db.commit()

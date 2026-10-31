@@ -241,8 +241,9 @@ class TestFixes:
                     "extract_field": "pipelines.0.id"  # First pipeline's UUID
                 })
         
-        # P8.24b: Template purchase/download needs an existing template
-        elif path in ("/pipeline-templates/{template_id}/purchase", "/pipeline-templates/{template_id}/download"):
+        # P8.24b: Template download needs an existing template (V0649: the purchase buys an official one the frame
+        # lists, routers/admin_api_test._template_purchase_row, and makes none)
+        elif path == "/pipeline-templates/{template_id}/download":
             if not self.dynamic_values.get("created_template_id"):
                 prerequisites.append({
                     "method": "POST",

@@ -271,6 +271,12 @@ class Throwaways:
         return {"did": did, "name": name, "client_id": cid, "client_secret": csec, "agent_jwt": agent_jwt,
                 "owner_jwt": owner_jwt, "developer_id": dev.get("developer_id")}
 
+    def adopt(self, did: str, owner_jwt: str) -> None:
+        """An agent a step made outside agent() (another creation rail): close() returns what it holds and deletes it
+        as the others (V0650, agentvault2-d3)."""
+        if did and all(d != did for d, _j in self._agents):
+            self._agents.append((did, owner_jwt))
+
     def owner_changed(self, did: str, owner_jwt: str) -> None:
         """A step handed the agent to another developer of the run: close() deletes it as that one."""
         self._agents = [(d, owner_jwt if d == did else j) for d, j in self._agents]

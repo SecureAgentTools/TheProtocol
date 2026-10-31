@@ -71,11 +71,12 @@ Create them as `svc-canary`, through the normal onboarding rail:
 BT=$(curl -sX POST "$REG/api/v1/onboard/bootstrap/request-token" -H "Authorization: Bearer $SVC_JWT" \
      -H 'Content-Type: application/json' -d '{"agent_type_hint":"canary_agent"}' | jq -r .bootstrap_token)
 curl -sX POST "$REG/api/v1/onboard/create_agent" -H "Bootstrap-Token: $BT" -H 'Content-Type: application/json' \
-  -d '{"agent_did_method":"theprotocol","agent_host":"https://canary-<reg>-sender.agents.local"}'
+  -d '{"agent_did_method":"theprotocol","agent_card":{"protocolVersion":"1.0","agentVersion":"1.0.0","humanReadableId":"canary-<reg>-sender","name":"canary-<reg>-sender","description":"Canary sender: a service agent that serves nothing.","url":"https://canary-<reg>-sender.agents.local","preferredTransport":"JSONRPC","supportedInterfaces":[{"url":"https://canary-<reg>-sender.agents.local","protocolBinding":"JSONRPC","protocolVersion":"1.0"}],"securitySchemes":{"agent_jwt":{"type":"http","scheme":"bearer","bearerFormat":"JWT"}},"security":[{"agent_jwt":[]}],"provider":{"name":"svc-canary"},"capabilities":{"streaming":false}}}'
 ```
 
-`.agents.local` is a reserved name the card pull-sync never dials, which is what you want for an agent that serves
-nothing. Keep the `client_secret` from the response (it is shown once) in a file only root can read, and **read the
+A canary serves nothing, so it sends its card itself, with an endpoint under `.agents.local`, a reserved name the card
+pull-sync never dials. An `agent_host` on a reserved name is refused (`400`): the registry could never read a card
+there. Keep the `client_secret` from the response (it is shown once) in a file only root can read, and **read the
 card back** (`GET $REG/api/v1/agent-cards/<did>` as `svc-canary`): if `unlisted` is not `true`, stop and fix step 1
 rather than continuing with a listed canary.
 

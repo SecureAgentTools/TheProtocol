@@ -142,6 +142,10 @@ ANNOTATION_OVERRIDES: Dict[str, Dict[str, bool]] = {
     "adminCommonsStrikeSubmission": {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": False},
     "adminCommonsWriteOffAward":    {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": False},
     "adminCommonsCancelSeason":     {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": False},
+    # V0650 (l): a decision is final (a repeat of the same decision answers already: true), and it may unlock what an
+    # agent asked for, so a client should confirm it; a request repeats idempotently on its client_ref
+    "decideChatApproval":  {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True, "openWorldHint": False},
+    "requestChatApproval": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
     # invokeTool proxies ANY tool — flag conservatively (the inner tool's own
     # annotations are what a careful client should consult via describeTools).
     "invokeTool": {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": False},

@@ -42,6 +42,7 @@ router = APIRouter(prefix="/onboard", tags=["Onboarding"])
 # middleware; that is what made all 65 limits here meaningless.
 from agentvault_registry.middleware.rate_limiter import shared_limiter as limiter
 from agentvault_registry.core.card_stub import STUB_CARD_DESCRIPTION
+from agentvault_registry.background_tasks.agent_card_pullsync import reserved_tld_of  # V0650 (e)
 from agentvault_registry.core.public_url import credential_home_url  # §FEFRAME W1
 
 # Initialize logger
@@ -640,9 +641,15 @@ class CreateAgentRequest(BaseModel):
         None,
         description="LEGACY: Complete Agent Card JSON conforming to A2A schema. Deprecated in favor of agent_host (Option C). Mutually exclusive with agent_host.",
     )
+    # §EXTTEST (V0649): the manuals always sent agent_name and the schema dropped it silently (the placeholder card was
+    # named after the host); it now names the placeholder card until the agent serves its own.
+    agent_name: Optional[str] = Field(
+        None, max_length=100,
+        description="Name of the placeholder card until the agent serves its own card at agent_host (Option C).",
+    )
     agent_host: Optional[AnyHttpUrl] = Field(
         None,
-        description="OPTION C: Public hostname where the agent will serve /.well-known/agent-card.json. Server builds a stub card; the pull-sync worker populates the real fields once the agent is deployed. Mutually exclusive with agent_card.",
+        description="OPTION C: Public hostname where the agent will serve /.well-known/agent-card.json. Server builds a stub card; the pull-sync worker populates the real fields once the agent is deployed. Mutually exclusive with agent_card. Sent without agent_card, a host on a special-use name (.invalid, .test, .example, .local, .localhost) is refused (400): no card could ever be read there.",
     )
 
     @model_validator(mode="after")
@@ -677,7 +684,7 @@ def _slug_from_url(url: str) -> str:
     return slug[:60]
 
 
-def _build_stub_card_data(agent_host: str, provider_name: Optional[str]) -> Dict[str, Any]:
+def _build_stub_card_data(agent_host: str, provider_name: Optional[str], name: Optional[str] = None) -> Dict[str, Any]:
     """Build a minimal v1.0 AgentCard pointing at the agent's well-known host.
 
     The pull-sync worker (Phase 3) will overwrite agent-owned fields once the
@@ -690,7 +697,7 @@ def _build_stub_card_data(agent_host: str, provider_name: Optional[str]) -> Dict
         "protocolVersion": "1.0",
         "humanReadableId": slug,
         "agentVersion": "1.0.0",
-        "name": slug,
+        "name": (name or "").strip() or slug,   # §EXTTEST (V0649): the creator's agent_name, else the host's slug
         "description": STUB_CARD_DESCRIPTION,
         "url": host,  # v0.3 alias for backwards-compat
         "preferredTransport": "JSONRPC",
@@ -811,6 +818,25 @@ async def create_agent(
             detail="Invalid proof-of-work solution"
         )
     
+    # V0650 (e): an agent_host on a special-use name (the pull-sync's own set) is refused before anything is minted.
+    # No public DNS resolves it, so the registry could never read the agent's card there and the agent would keep its
+    # placeholder card for good. Asked after the token and proof-of-work checks (an unknown token still answers 401),
+    # and only on the stub path: a caller that sends its card (the Forge, older clients) is not asked to be reachable.
+    if creation_request.agent_host is not None and creation_request.agent_card is None:
+        host_url = str(creation_request.agent_host)
+        tld = reserved_tld_of(host_url)
+        if tld:
+            logger.info(f"create_agent: refused agent_host {host_url!r} (special-use .{tld}); nothing created")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(f"agent_host {host_url} ends in .{tld}, a special-use name (RFC 6761/6762) that no public DNS "
+                        "resolves, so this registry could never read the agent's card from it and the agent would keep "
+                        "a placeholder card for good. Name the public host the agent will serve "
+                        "/.well-known/agent-card.json on (it need not be up yet), or, for an agent that serves "
+                        "nothing, send its card as agent_card. Nothing was created; the bootstrap token stays valid "
+                        "until it expires."),
+            )
+
     # Generate agent DID
     try:
         agent_did = await mint_unique_agent_did(db, creation_request.agent_did_method, site="create_agent")
@@ -871,6 +897,7 @@ async def create_agent(
         card_data_to_persist = _build_stub_card_data(
             str(creation_request.agent_host),
             provider_name,
+            name=creation_request.agent_name,
         )
 
     # ─── Q-C W5 (2026-05-12) — did-jwt EdDSA keygen, Commander Q3/Q4 ────────

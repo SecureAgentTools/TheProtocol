@@ -55,7 +55,7 @@ def test_a_flip_that_did_not_land_is_a_bug_find_on_the_mutation():
     assert after_enable({"enrolled": False, "docker_label": None, "spiffe_id": None}) is not None
 
 
-def _drive(status_answers, enable_code="200", disable_code="200"):
+def _drive(status_answers, enable_code="200", disable_code="200", disable_message=None):
     """Run the lifecycle over a fake transport: enable, a status read, disable, a status read."""
     calls = []
     reads = iter(status_answers)
@@ -69,7 +69,10 @@ def _drive(status_answers, enable_code="200", disable_code="200"):
         if tool == "theprotocol_enableMtls":
             return enable_code.startswith("2"), body({"status": "enrolled"}), enable_code
         if tool == "theprotocol_disableMyMtls":
-            return disable_code.startswith("2"), body({"status": "unenrolled"}), disable_code
+            said = {"status": "unenrolled"}
+            if disable_message is not None:
+                said["message"] = disable_message
+            return disable_code.startswith("2"), body(said), disable_code
         code, obj = next(reads)
         if code == "0":   # the transport's timeout: no body, no status
             return False, {"_raw": ""}, "0"
@@ -112,6 +115,32 @@ def test_a_timed_out_read_back_verifies_nothing_and_records_nothing():
     assert calls.count("theprotocol_getMyMtlsStatus") == 4, "each read-back asked once more, never a third time"
     assert "theprotocol_getMyMtlsStatus" not in out, "a read that never answered is no row of the tool"
     assert out["theprotocol_enableMtls"]["healthy"] is True, "an unverified flip is not called a failure"
+
+
+# V0650 (tester batch 1 item 3, agentvault2-d3, Guild order gwo_2015b757c94ce69138500df6): the outside view read
+# "Existing SVID will expire within 4 hours" from a frame whose inline certificates live minutes (external test run 1,
+# fixed in V0649); the disable step now holds the sentence to the frame's own inline lifetime.
+_V0648_SAID = "SPIRE entry deleted. Existing SVID will expire within 4 hours."
+_V0649_SAID = ("SPIRE entry deleted. A certificate already issued stays valid until it expires: an inline one within "
+               "30 minutes, a workload one within its SPIRE lifetime. Peers that must refuse it sooner read GET "
+               "/api/v1/agent/revoked-identities.")
+
+
+def test_the_old_four_hour_sentence_is_a_bug_find_on_disable(monkeypatch):
+    monkeypatch.delenv("IRONHAND_INLINE_SVID_TTL_SECONDS", raising=False)     # 1800 s: "within 30 minutes"
+    out, _ = _drive([("200", {"enrolled": True}), ("200", {"enrolled": False})], disable_message=_V0648_SAID)
+    row = out["theprotocol_disableMyMtls"]
+    assert row["healthy"] is False and "within 30 minutes" in row["fail_reason"], row
+
+
+def test_the_sentence_that_names_the_frames_own_lifetime_passes(monkeypatch):
+    monkeypatch.delenv("IRONHAND_INLINE_SVID_TTL_SECONDS", raising=False)
+    out, _ = _drive([("200", {"enrolled": True}), ("200", {"enrolled": False})], disable_message=_V0649_SAID)
+    assert out["theprotocol_disableMyMtls"]["healthy"] is True
+    # CONTROL: the same sentence on a frame whose inline certificates live 10 minutes is the wrong sentence there
+    monkeypatch.setenv("IRONHAND_INLINE_SVID_TTL_SECONDS", "600")
+    out, _ = _drive([("200", {"enrolled": True}), ("200", {"enrolled": False})], disable_message=_V0649_SAID)
+    assert out["theprotocol_disableMyMtls"]["healthy"] is False
 
 
 def test_the_status_contract_runs_on_its_own():
