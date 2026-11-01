@@ -17,6 +17,12 @@ no persistence as AdminBroadcast row). Critical-banner / bell items for
 these are short-lived by design — they're operational notifications, not
 admin announcements.
 
+V0652 (af) (order gwo_3b80091fe506da824c40f903): each also goes out as its catalog type (org.invitation_received,
+org.invitation_accepted to the inviter, org.member_joined, org.member_left), so it reaches the bell and, where the
+person's preferences say so, their devices; the live toast stays. And every developer id is read with
+local_developer_id: a peer frame's bridged event names no developer of ours (its developer 12 is not our 12), which
+the joined and removed reactors had not asked.
+
 Env gate: REACTOR_ORG_LIFECYCLE_NOTIFICATION_ENABLED (default true).
 """
 import logging
@@ -54,6 +60,17 @@ async def _org_name(db, organization_id: str) -> str:
     return (row[0] if row else None) or organization_id
 
 
+async def _dev_name(db, dev_id: int) -> str:
+    """V0652 (af): a person's name for a notice ("Developer #12" said nothing to anybody)."""
+    try:
+        r = (await db.execute(select(models.Developer.name).where(models.Developer.id == int(dev_id)))).first()
+        if r and r[0]:
+            return str(r[0])
+    except Exception:  # noqa: BLE001 — a label
+        pass
+    return f"Developer #{dev_id}"
+
+
 async def _notify_user(dev_id: int, title: str, message: str, notification_type: str = "info") -> None:
     try:
         await broadcast_notification(
@@ -64,6 +81,13 @@ async def _notify_user(dev_id: int, title: str, message: str, notification_type:
         )
     except Exception as e:
         logger.warning(f"[Reactor:OrgLifecycle] notify user {dev_id} failed: {e}")
+
+
+async def _notice(type_key: str, dev_id: int, title: str, message: str) -> None:
+    """V0652 (af): the typed notice beside the toast: the bell, and the devices the person's preferences allow. Never
+    raises (notify() never does), and it is the handler's last step for its person, after the toast."""
+    from agentvault_registry.background_tasks import push_notify
+    await push_notify.notify(type_key, [int(dev_id)], title=title, message=message, click="/ui#/organization")
 
 
 class OrgMemberInvitedReactor(EventStoreReactor):
@@ -88,6 +112,7 @@ class OrgMemberInvitedReactor(EventStoreReactor):
             message=f"You've been invited to join the organization '{oname}'.",
             notification_type="info",
         )
+        await _notice("org.invitation_received", int(invitee_dev_id), f"Invitation to {oname}", f"You've been invited to join the organization '{oname}'.")
 
 
 class OrgMemberJoinedReactor(EventStoreReactor):
@@ -97,22 +122,34 @@ class OrgMemberJoinedReactor(EventStoreReactor):
 
     async def handle_event(self, event_data: dict) -> None:
         org_id = event_data.get("organization_id") or event_data.get("org_id")
-        joined_dev_id = event_data.get("developer_id")
+        joined_dev_id = local_developer_id(event_data, "developer_id")   # V0652 (af): ours, never a peer's id
         if not org_id or not joined_dev_id:
             return
+        inviter_id = local_developer_id(event_data, "invited_by")
         async with get_db_context() as db:
             oname = await _org_name(db, org_id)
             admin_ids = await _org_admin_dev_ids(db, org_id)
-        # Notify admins — not the joiner themselves.
+            joiner = await _dev_name(db, joined_dev_id)
+        # V0652 (af): the one who invited them hears that it was accepted
+        if inviter_id and int(inviter_id) != int(joined_dev_id):
+            await _notify_user(
+                int(inviter_id),
+                title=f"{joiner} accepted your invitation",
+                message=f"{joiner} joined the organization '{oname}'.",
+                notification_type="info",
+            )
+            await _notice("org.invitation_accepted", int(inviter_id), f"{joiner} accepted your invitation", f"{joiner} joined the organization '{oname}'.")
+        # Notify admins — not the joiner themselves (nor the inviter, told above).
         for aid in admin_ids:
-            if int(aid) == int(joined_dev_id):
+            if int(aid) == int(joined_dev_id) or (inviter_id and int(aid) == int(inviter_id)):
                 continue
             await _notify_user(
                 int(aid),
                 title=f"New member in {oname}",
-                message=f"Developer #{joined_dev_id} joined your organization '{oname}'.",
+                message=f"{joiner} joined your organization '{oname}'.",
                 notification_type="info",
             )
+            await _notice("org.member_joined", int(aid), f"New member in {oname}", f"{joiner} joined your organization '{oname}'.")
 
 
 class OrgMemberRemovedReactor(EventStoreReactor):
@@ -122,12 +159,15 @@ class OrgMemberRemovedReactor(EventStoreReactor):
 
     async def handle_event(self, event_data: dict) -> None:
         org_id = event_data.get("organization_id") or event_data.get("org_id")
-        removed_dev_id = event_data.get("developer_id") or event_data.get("removed_developer_id")
+        # V0652 (af): ours, never a peer's id
+        removed_dev_id = (local_developer_id(event_data, "developer_id")
+                          or local_developer_id(event_data, "removed_developer_id"))
         if not org_id or not removed_dev_id:
             return
         async with get_db_context() as db:
             oname = await _org_name(db, org_id)
             admin_ids = await _org_admin_dev_ids(db, org_id)
+            removed = await _dev_name(db, removed_dev_id)
         # Notify removed dev
         await _notify_user(
             int(removed_dev_id),
@@ -135,6 +175,7 @@ class OrgMemberRemovedReactor(EventStoreReactor):
             message=f"You've been removed from the organization '{oname}'.",
             notification_type="warning",
         )
+        await _notice("org.member_left", int(removed_dev_id), f"Removed from {oname}", f"You've been removed from the organization '{oname}'.")
         # Notify remaining admins (NOT the removed dev)
         for aid in admin_ids:
             if int(aid) == int(removed_dev_id):
@@ -142,9 +183,10 @@ class OrgMemberRemovedReactor(EventStoreReactor):
             await _notify_user(
                 int(aid),
                 title=f"Member removed from {oname}",
-                message=f"Developer #{removed_dev_id} was removed from '{oname}'.",
+                message=f"{removed} was removed from '{oname}'.",
                 notification_type="info",
             )
+            await _notice("org.member_left", int(aid), f"Member removed from {oname}", f"{removed} was removed from '{oname}'.")
 
 
 # ─── module API ─────────────────────────────────────────────────────────────

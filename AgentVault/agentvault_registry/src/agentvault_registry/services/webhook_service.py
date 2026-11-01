@@ -212,6 +212,31 @@ class WebhookService:
     
     # Maximum consecutive failures before disabling webhook
     MAX_CONSECUTIVE_FAILURES = 10
+    # V0652 (af): its owner hears that deliveries keep failing at half of that, while it can still be fixed
+    FAILING_NOTICE_AT = 5
+
+    @classmethod
+    def _tell_failing(cls, webhook: "DeveloperWebhook") -> None:
+        """webhook.failing to the webhook's owner, once a day per webhook at most (concurrent deliveries can count past
+        the threshold together, so the notice is claimed on the webhook), after the delivery's commit. Never raises."""
+        try:
+            n = int(getattr(webhook, "failure_count", 0) or 0)
+            dev = getattr(webhook, "developer_id", None)
+            if not dev or not getattr(webhook, "is_active", False) or n < cls.FAILING_NOTICE_AT:
+                return
+            from urllib.parse import urlsplit
+            from agentvault_registry.background_tasks import push_notify
+            # the host only: a webhook URL can carry a token in its path or query, and a push passes through its rail
+            host = urlsplit(str(getattr(webhook, "url", "") or "")).hostname or "your webhook"
+            push_notify.spawn_notice(push_notify.notify_once(
+                f"webhook.failing:{webhook.id}", "webhook.failing", [int(dev)], ttl_s=86400,
+                title="Your webhook's deliveries are failing",
+                message=(f"{n} deliveries in a row to {host} failed. At "
+                         f"{cls.MAX_CONSECUTIVE_FAILURES} the webhook is switched off; fix the endpoint or test it from "
+                         "your settings."),
+                tags="warning", click="/ui#/settings"))
+        except Exception:  # noqa: BLE001
+            logger.debug("[WEBHOOK] failing notice skipped", exc_info=True)
     
     def __init__(self):
         """Initialize the webhook service"""
@@ -424,6 +449,7 @@ class WebhookService:
             async with db_lock:
                 db.add(delivery)
                 await db.commit()
+        self._tell_failing(webhook)   # V0652 (af)
 
         return delivery
     
@@ -548,6 +574,7 @@ class WebhookService:
 
         db.add(delivery)
         await db.commit()
+        self._tell_failing(webhook)   # V0652 (af)
         return delivery
 
     async def _emit_retry_exhausted(

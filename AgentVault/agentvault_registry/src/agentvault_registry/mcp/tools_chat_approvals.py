@@ -1,11 +1,13 @@
 """MCP tools: approvals in the chat (V0650 (l), 2026-10-31, agentvault2-14; routers/chat.py, services/chat_approvals.py).
 
-    requestChatApproval       agent JWT: ask the org's owner for a decision, in the agent's org room
+    requestChatApproval       agent JWT: ask the org's owner for a decision, in the agent's org room; with `options`
+                              (V0652 (ab)) a choice: 2 to 5 labels, one of which the decider chooses
     getChatApprovalStatus     agent JWT or developer key: one request, its decision and the proof; wait_seconds holds
                               the answer up to 20 seconds while it is pending (the fastest way for a session to learn
                               the decision)
     decideChatApproval        developer key or JWT: approve or deny one request, several, or every pending one (the
-                              org's owner or a named approver; an agent context is refused)
+                              org's owner or a named approver; an agent context is refused); choose (V0652 (ab)) one
+                              option of one choice request
     consumeChatApproval       agent JWT (V0651 (o)): open ONE act with an approval the agent asked for, named by the
                               act's sha256; the registry records the use once and refuses a second
 
@@ -68,7 +70,7 @@ def _token(auth: MCPAuthContext) -> Optional[Dict[str, Any]]:
 async def request_chat_approval(auth: MCPAuthContext, conversation_id: str, title: str, client_ref: str,
                                 reason: str = "", unlocks: str = "", expires_in_seconds: int = 3600,
                                 artifact_sha256: str = "", artifact_label: str = "",
-                                production_impact: bool = False) -> Dict[str, Any]:
+                                production_impact: bool = False, options: Optional[List[str]] = None) -> Dict[str, Any]:
     """Ask the organization's owner (or a named approver) to approve something, in the org's room. The request shows
     pinned above the room's history with Approve and Deny; the decision arrives as an approval.decided card, on
     /chat/sync, and through getChatApprovalStatus. A repeat client_ref returns the original request (agent JWT)."""
@@ -84,6 +86,10 @@ async def request_chat_approval(auth: MCPAuthContext, conversation_id: str, titl
                  ("artifact_label", artifact_label)):
         if v:
             body[k] = str(v)
+    if options:   # V0652 (ab): a choice; the registry checks the labels (2 to 5, each 1 to 80 characters, all distinct)
+        if not isinstance(options, (list, tuple)):
+            return {"error": "options must be a list of 2 to 5 short labels"}
+        body["options"] = [str(o) for o in options]
     r, err = await _call("POST", f"/api/v1/chat/conversations/{seg(conversation_id)}/approvals",
                          token=auth.raw_token, body=body)
     return err or _answer(r, "requestChatApproval")
@@ -125,7 +131,7 @@ async def consume_chat_approval(auth: MCPAuthContext, approval_id: str, act_labe
 
 async def decide_chat_approval(auth: MCPAuthContext, conversation_id: str, decision: str,
                                approval_ids: Optional[List[str]] = None, note: str = "",
-                               challenge_id: str = "") -> Dict[str, Any]:
+                               challenge_id: str = "", option: Optional[int] = None) -> Dict[str, Any]:
     """Approve or deny approval requests in an org room: the ids given, or with none given every request pending
     there now (read first, so the registry always decides an explicit set). The org's owner or a named approver only;
     an agent context is refused. Where the room asks for a phone confirmation the answer is status step_up_required
@@ -133,11 +139,13 @@ async def decide_chat_approval(auth: MCPAuthContext, conversation_id: str, decis
     require_developer_auth(auth)
     if (miss := _token(auth)):
         return miss
-    if decision not in ("approve", "deny"):
-        return {"error": "decision must be approve or deny"}
+    if decision not in ("approve", "deny", "choose"):
+        return {"error": "decision must be approve or deny (or choose, for a choice request)"}
     if not conversation_id:
         return {"error": "conversation_id is required"}
     ids = [str(i) for i in (approval_ids or []) if str(i).strip()]
+    if decision == "choose" and (len(ids) != 1 or option is None):   # V0652 (ab)
+        return {"error": "choose decides one choice request: give its id in approval_ids and the option's index"}
     if not ids:
         r, err = await _call("GET", f"/api/v1/chat/conversations/{seg(conversation_id)}/approvals",
                              token=auth.raw_token, params={"status": "pending", "limit": 50})
@@ -146,10 +154,14 @@ async def decide_chat_approval(auth: MCPAuthContext, conversation_id: str, decis
         listing = _answer(r, "decideChatApproval")
         if "error" in listing:
             return listing
-        ids = [i["id"] for i in listing.get("items") or [] if i.get("status") == "pending"]
+        # an approval is never decided as a choice, nor a choice approved (V0652 (ab)): "approve all" leaves choices
+        ids = [i["id"] for i in listing.get("items") or [] if i.get("status") == "pending"
+               and not (decision == "approve" and i.get("options"))]
         if not ids:
             return {"decision": decision, "decided": [], "skipped": {}, "note": "nothing is pending in this room"}
     body: Dict[str, Any] = {"decision": decision, "approval_ids": ids[:50], "surface": "mcp"}
+    if decision == "choose":
+        body["option"] = int(option)
     if note:
         body["note"] = str(note)[:500]
     if challenge_id:
@@ -197,12 +209,17 @@ CHAT_APPROVAL_AGENT_TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "production_impact": {"type": "boolean", "description": "The action touches production (you declare "
                                                                     "it; a room may ask for a phone confirmation)",
                                   "default": False},
+            "options": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 80},
+                        "minItems": 2, "maxItems": 5,
+                        "description": "Optional: a choice instead of yes or no: 2 to 5 short labels; the decider "
+                                       "taps one, or declines them all (V0652)"},
             "agent_jwt": _AGENT_JWT,
         }, "required": ["conversation_id", "title", "client_ref"]},
     },
     {
         "name": "theprotocol_getChatApprovalStatus",
-        "description": ("One approval request: pending, approved, denied or expired; once decided, who decided, when, "
+        "description": ("One approval request (or choice): pending, approved, denied, chosen or expired, a choice's "
+                        "options and the one chosen; once decided, who decided, when, "
                         "in which role, how (credential kind, MCP relay), the phone proof when one was asked for, and "
                         "the registry's signed statement. wait_seconds (0 to 20) holds the answer while it is "
                         "pending. Any member of the room may read it. Agent JWT or developer key."),
@@ -246,7 +263,10 @@ CHAT_APPROVAL_DEVELOPER_TOOL_SCHEMAS: List[Dict[str, Any]] = [
                         "JWT."),
         "inputSchema": {"type": "object", "properties": {
             "conversation_id": _CONV,
-            "decision": {"type": "string", "enum": ["approve", "deny"]},
+            "decision": {"type": "string", "enum": ["approve", "deny", "choose"],
+                         "description": "approve or deny; choose decides one choice request by one of its options"},
+            "option": {"type": "integer", "minimum": 0, "maximum": 4,
+                       "description": "With choose: the index of the option chosen (0 for the first)"},
             "approval_ids": {"type": "array", "items": {"type": "string"},
                              "description": "The requests to decide (1 to 50); omit for every pending one"},
             "note": {"type": "string", "description": "Optional: a note kept with the decision", "default": ""},

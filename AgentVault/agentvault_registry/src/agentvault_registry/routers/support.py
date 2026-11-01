@@ -65,6 +65,10 @@ class TicketReply(BaseModel):
 
 class TicketStatusUpdate(BaseModel):
     status: str = Field(..., pattern="^(open|in_progress|resolved|closed)$")
+    # V0652 (ai) (the sessions' room seq 609/610): a closing message travels WITH the status change, so one desk act sends
+    # one notice, the resolve's, in the message's words (supportCloseTicket used to post a reply, then the status: "New
+    # Reply" and "Resolved" for one act). The admin route alone reads it; the owner's route has its own schema.
+    message: Optional[str] = Field(default=None, min_length=1)
 
 
 class OwnerStatusUpdate(BaseModel):
@@ -245,6 +249,56 @@ async def _send_ticket_notification(
     logger.info(f"Ticket notification sent to dev {developer_id}: '{title}' for ticket #{ticket_id}")
 
 
+#: V0652 (ai) — what the desk's durable notice says, per event. Titles name the ticket; bodies carry the person's
+#: words (cut), so the bell can be acted on without opening the console first.
+DESK_EVENTS = {
+    "created": "New support ticket #{id}",
+    "reply": "Ticket #{id}: the requester replied",
+    "reopen": "Ticket #{id} reopened by the requester",
+}
+
+
+def _excerpt(text: Optional[str], n: int = 160) -> str:
+    s = " ".join(str(text or "").split())
+    return s if len(s) <= n else s[: n - 1].rstrip() + "…"
+
+
+async def _desk_recipients(db: AsyncSession, exclude_dev: Optional[int] = None) -> list:
+    """Every developer who holds the desk (`admin_support`, or `is_admin`, which passes every flag check), not
+    suspended and not deleted; the person who acted is left out (on a single-operator registry the requester IS
+    the desk, and a notice about your own ticket to yourself is noise)."""
+    from sqlalchemy import or_
+    q = (select(models.Developer.id)
+         .where(or_(models.Developer.is_admin.is_(True), models.Developer.admin_support.is_(True)))
+         .where(models.Developer.is_suspended.is_(False))
+         .where(models.Developer.deleted_at.is_(None)))
+    ids = [int(r[0]) for r in (await db.execute(q)).all()]
+    return [i for i in ids if exclude_dev is None or i != int(exclude_dev)]
+
+
+async def _notify_desk(db: AsyncSession, ticket: models.SupportTicket, event: str,
+                       text: Optional[str] = None, exclude_dev: Optional[int] = None) -> int:
+    """V0652 (ai): the desk is told DURABLY — a typed `support.desk` notice (the feed, and the pushes the person
+    chose) on a new ticket, a requester's reply and a reopen. Until now the desk's only signal was the live
+    `support.ticket` cue (`_emit_support_event`), which reaches a console that is open: session-tester's lifecycle
+    left the desk's unread count at 7 before and 7 after (FINDINGS_2026-10-31_SUPPORT_TICKET_EU.md, defect 5), so a
+    ticket filed at night waited unseen. Best-effort like every support notice: never fails the ticket. Returns how
+    many were told."""
+    try:
+        recipients = await _desk_recipients(db, exclude_dev)
+        if not recipients:
+            return 0
+        from agentvault_registry.background_tasks.push_notify import notify
+        title = DESK_EVENTS.get(event, "Support ticket #{id}").format(id=int(ticket.id))
+        body = f"\"{_excerpt(ticket.subject, 80)}\": {_excerpt(text)}" if text else f"\"{_excerpt(ticket.subject, 120)}\""
+        await notify("support.desk", recipients, title=title, message=body,
+                     click=f"/ui#/admin/chatdesk?ticket={int(ticket.id)}")
+        return len(recipients)
+    except Exception as e:  # noqa: BLE001 — a missed bell is a display bug; a failed ticket is an outage
+        logger.warning("[SUPPORT] the desk's notice for ticket #%s (%s) failed: %s", getattr(ticket, "id", "?"), event, e)
+        return 0
+
+
 def _ticket_to_list_item(ticket: models.SupportTicket, include_dev: bool = False):
     """Convert a ticket ORM object to a list item dict."""
     messages = ticket.messages or []
@@ -420,6 +474,7 @@ async def create_ticket(
     await _mirror(chat_support.mirror_user_message, db, ticket, payload.message)
     # §S6 — a new ticket is the one event the desk had NO way of hearing about.
     await _emit_support_event(ticket, "created")
+    await _notify_desk(db, ticket, "created", payload.message, exclude_dev=current_dev.id)   # V0652 (ai): durably too
 
     # Reload with messages
     result = await db.execute(
@@ -536,12 +591,20 @@ async def add_developer_reply(db: AsyncSession, ticket: models.SupportTicket,
     ))
     # Replying reopens a resolved/closed ticket — the ticket rail's rule, kept
     # here rather than re-decided by chat.
+    old_status = ticket.status
     if ticket.status in ("resolved", "closed"):
         ticket.status = "open"
     await db.commit()
 
     from agentvault_registry.services import chat_support
     await _mirror(chat_support.mirror_user_message, db, ticket, text)
+    # V0652 (ai): a reopen writes its status row like every other change (FINDINGS 2026-10-31, defect 3: the thread
+    # read resolved -> closed while the ticket went resolved -> open -> closed), authored by the person who reopened it
+    reopened = old_status in ("resolved", "closed")
+    if reopened:
+        await _mirror(chat_support.mirror_status, db, ticket, old_status, "open",
+                      by_name=dev.display_name or dev.name or "you", by_owner=True)
+    await _notify_desk(db, ticket, "reopen" if reopened else "reply", text, exclude_dev=dev.id)
     # §S6 — emitted from THE writer, not from the route, so a reply typed in the
     # chat composer cues the queue exactly like one typed in the ticket view.
     # A second emit at the route would have covered one surface and quietly
@@ -608,7 +671,10 @@ async def set_my_ticket_status(
     if old_status != wanted:
         from agentvault_registry.services import chat_support
         await _mirror(chat_support.mirror_status, db, ticket, old_status, wanted,
-                      by_name=current_dev.display_name or current_dev.name or "You")
+                      by_name=current_dev.display_name or current_dev.name or "You",
+                      by_owner=True)   # V0652 (ai): the row names who moved it (the owner), not the desk
+        if wanted == "open":
+            await _notify_desk(db, ticket, "reopen", exclude_dev=current_dev.id)
     await _emit_support_event(ticket, "status")
 
     result = await db.execute(
@@ -803,7 +869,9 @@ async def admin_reply_to_ticket(
         developer_id=ticket.developer_id,
         ticket_id=ticket.id,
         title=f"Support Ticket #{ticket.id}: New Reply",
-        body=f"Your support ticket \"{ticket.subject}\" has a new reply from the admin team.",
+        # V0652 (ai): the one notice of a desk reply carries its words (the thread's own chat notice, which did, is
+        # gone: one notice per desk act)
+        body=f"\"{_excerpt(ticket.subject, 80)}\": {_excerpt(payload.message)}",
     )
     await _emit_support_event(ticket, "reply")
 
@@ -814,6 +882,56 @@ async def admin_reply_to_ticket(
         .options(selectinload(models.SupportTicket.messages))
     )
     return result.scalar_one()
+
+
+async def apply_admin_status(db: AsyncSession, ticket: models.SupportTicket, admin: models.Developer, status: str,
+                             message: Optional[str] = None) -> int:
+    """The desk's status change and its optional closing message as ONE act with ONE notice (V0652 (ai), the sessions'
+    room seq 609/610). A closing message is written as the desk's message and mirrored before the status row (the order
+    a reply-then-close left in the thread); a resolve or close notifies once, in the message's words when there is one; a
+    message with no such move is a reply's notice. Returns the notices sent (0 or 1)."""
+    from agentvault_registry.services import chat_support
+    desk_name = admin.display_name or "Support"   # §ORGMARKET S4 — no auto name leak
+    text = (message or "").strip()
+    old_status = ticket.status
+    if text:
+        db.add(models.SupportMessage(ticket_id=ticket.id, sender_type="admin", sender_name=desk_name, message=text))
+    ticket.status = status
+    await db.commit()
+    if text:
+        await _mirror(chat_support.mirror_desk_message, db, ticket, desk_name, text)
+    # §OURSTATE-7 D — every status change leaves a visible system row in the
+    # thread, whether or not it is one of the two that also notifies. A status
+    # that moves silently is a thread that disagrees with its own ticket.
+    if old_status != status:
+        await _mirror(chat_support.mirror_status, db, ticket, old_status, status, by_name=desk_name)
+    sent = 0
+    if status in ("resolved", "closed") and old_status != status:
+        status_label = "resolved" if status == "resolved" else "closed"
+        await _send_ticket_notification(
+            db=db,
+            admin_id=admin.id,
+            developer_id=ticket.developer_id,
+            ticket_id=ticket.id,
+            title=f"Support Ticket #{ticket.id}: {status_label.title()}",
+            body=(f"\"{_excerpt(ticket.subject, 80)}\": {_excerpt(text)}" if text
+                  else f"Your support ticket \"{ticket.subject}\" has been {status_label}."),
+        )
+        sent = 1
+    elif text:
+        await _send_ticket_notification(
+            db=db,
+            admin_id=admin.id,
+            developer_id=ticket.developer_id,
+            ticket_id=ticket.id,
+            title=f"Support Ticket #{ticket.id}: New Reply",
+            body=f"\"{_excerpt(ticket.subject, 80)}\": {_excerpt(text)}",
+        )
+        sent = 1
+    if text:
+        await _emit_support_event(ticket, "reply")
+    await _emit_support_event(ticket, "status")
+    return sent
 
 
 @router.post(
@@ -827,7 +945,7 @@ async def admin_change_ticket_status(
     current_admin: models.Developer = Security(security.require_admin_flag("admin_support")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Change the status of a support ticket. Sends notification on resolve/close."""
+    """Change the status of a support ticket, with an optional closing message (V0652 (ai)): one notice per desk act."""
     result = await db.execute(
         select(models.SupportTicket)
         .where(models.SupportTicket.id == ticket_id)
@@ -837,30 +955,7 @@ async def admin_change_ticket_status(
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
 
-    old_status = ticket.status
-    ticket.status = payload.status
-    await db.commit()
-
-    # §OURSTATE-7 D — every status change leaves a visible system row in the
-    # thread, whether or not it is one of the two that also notifies. A status
-    # that moves silently is a thread that disagrees with its own ticket.
-    if old_status != payload.status:
-        from agentvault_registry.services import chat_support
-        await _mirror(chat_support.mirror_status, db, ticket, old_status, payload.status,
-                      by_name=current_admin.display_name or "Support")   # §ORGMARKET S4 — no auto name leak
-
-    # Notify on resolve/close
-    if payload.status in ("resolved", "closed") and old_status != payload.status:
-        status_label = "resolved" if payload.status == "resolved" else "closed"
-        await _send_ticket_notification(
-            db=db,
-            admin_id=current_admin.id,
-            developer_id=ticket.developer_id,
-            ticket_id=ticket.id,
-            title=f"Support Ticket #{ticket.id}: {status_label.title()}",
-            body=f"Your support ticket \"{ticket.subject}\" has been {status_label}.",
-        )
-    await _emit_support_event(ticket, "status")
+    await apply_admin_status(db, ticket, current_admin, payload.status, payload.message)
 
     # Reload
     result = await db.execute(

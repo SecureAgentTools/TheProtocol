@@ -257,6 +257,41 @@ async def _sweep_abandoned_submitted(db) -> int:
     return swept
 
 
+DEADLINE_NOTICE_SECONDS = 24 * 3600
+
+
+async def remind_deadlines() -> int:
+    """V0652 (af): guild.deadline_soon, a day before an order's deadline: an OPEN order expires at it (its poster hears
+    it), an AWARDED order with no work submitted is disputed an hour after it (its worker hears it). Once per order,
+    status and deadline (claimed on all three: a moved deadline is a new occasion). Its own read and its own claims:
+    it never touches the money sweeps. Returns how many it told."""
+    from agentvault_registry.background_tasks import push_notify
+    told = 0
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = (await db.execute(text(
+                "SELECT id, title, status, poster_did, worker_did, deadline FROM guild_work_orders "
+                "WHERE status IN ('open', 'awarded') AND deadline IS NOT NULL AND deadline > now() "
+                "AND deadline <= now() + make_interval(secs => :w) AND (worker_home_registry IS NULL OR worker_home_registry = '' "
+                "OR status = 'open') LIMIT 200"), {"w": DEADLINE_NOTICE_SECONDS})).mappings().all()
+        for o in rows:
+            who = o["poster_did"] if o["status"] == "open" else o["worker_did"]
+            if not who or not await push_notify.claim_once(
+                    f"guild.deadline_soon:{o['id']}:{o['status']}:{o['deadline']}", 30 * 86400):
+                continue
+            title = (o["title"] or o["id"])[:80]
+            when = o["deadline"].strftime("%Y-%m-%d %H:%M UTC") if hasattr(o["deadline"], "strftime") else str(o["deadline"])
+            message = (f"\u201c{title}\u201d expires at its deadline, {when}, unless you award it."
+                       if o["status"] == "open" else
+                       f"\u201c{title}\u201d is due {when}: submit the work, or the order goes to a dispute an hour after.")
+            await push_notify.notify_agent_owners("guild.deadline_soon", [who], title="Guild: a deadline is near",
+                                                  message=message, tags="hourglass", click="/ui/#/guild")
+            told += 1
+    except Exception as exc:  # noqa: BLE001 — a reminder never stops the reaper
+        logger.debug("[GUILD-REAPER] deadline reminders skipped: %s", exc)
+    return told
+
+
 async def _loop():
     global _stop
     from .leader import try_acquire_leadership
@@ -269,6 +304,7 @@ async def _loop():
                 async with _vitals.cycle("guild_order_reaper") as _ctx:
                     swept = await _sweep_once()
                     _ctx.note(swept=swept)
+                await remind_deadlines()   # V0652 (af)
                 if swept:
                     logger.info("[GUILD-REAPER] processed %s stale order(s)", swept)
         except Exception as exc:  # noqa: BLE001

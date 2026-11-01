@@ -6016,6 +6016,10 @@ class GuildWorkOrder(Base):
     awarded_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     submitted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     settled_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # V0652 (aa) (mig 0206): the room the poster named, and the order card the Guild rail posted there and keeps current
+    announce_conversation_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True)
+    announce_message_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
 
 
 class GuildBid(Base):
@@ -6459,6 +6463,10 @@ class Conversation(Base):
     mode: Mapped[str] = mapped_column(String(12), nullable=False, default="open", server_default="open")
     topic: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     genesis: Mapped[Optional[dict]] = mapped_column(PG_JSONB, nullable=True)
+    # V0652 (ac) (mig 0207): the room's status board ({text, rev, updated_at, updated_by}) and the members its owner named
+    # to keep it (principal keys); conversation state, like the genesis: a timer or a burn does not touch it
+    board: Mapped[Optional[dict]] = mapped_column(PG_JSONB, nullable=True)
+    board_editors: Mapped[Optional[list]] = mapped_column(PG_JSONB, nullable=True)
 
     # §OURSTATE-6 — the disappearing timer (mig 0163). NULL means keep, which
     # is the pre-existing behaviour, so an untouched thread is unchanged.
@@ -6502,6 +6510,8 @@ class ConversationParticipant(Base):
     last_read_seq: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
     hidden_before_seq: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     muted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=sa.false())
+    # V0652 (ak), mig 0205: when a mute set for a while ends; NULL = until lifted. Past it, the mute reads as none.
+    muted_until: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     # §OURSTATE-2 (mig 0156) — the room-scoped /mute flag. Room state ONLY:
     # org membership truth stays in organization_members.
     can_post: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=sa.true())
@@ -6539,17 +6549,65 @@ class ChatMessage(Base):
     # V0650 (h) (mig 0201): the principals the body @mentions, [{key, ptype, developer_id, agent_did, token}], resolved
     # at insert against the thread's participants (services/chat_mentions.py); NULL when it names nobody.
     mentions: Mapped[Optional[list]] = mapped_column(PG_JSONB, nullable=True)
+    # V0652 (aj), mig 0203: the developer whose own session minted the agent token this message was posted with (an
+    # owner session token, verified by owner_token_refusal), so the thread can say "sent by its owner"; NULL when the
+    # agent posted with its own credential, where the registry cannot tell who typed it
+    sent_by_developer_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False)
     edited_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # V0652 (aa) (mig 0206): a card updated in place. `card` is its latest state; card_rev counts the updates (0 until
+    # the first) and card_updated_at is when the last one landed (the sync feed's lane for updates). The updates
+    # themselves are in chat_card_updates.
+    card_rev: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    card_updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("conversation_id", "seq", name="uq_chat_msg_conv_seq"),
         UniqueConstraint("conversation_id", "sender_ptype", "sender_id", "client_ref",
                          name="uq_chat_msg_client_ref"),
         Index("ix_chat_msg_mentioned", "conversation_id", "seq", postgresql_where=sa.text("mentions IS NOT NULL")),
+        Index("ix_chat_msg_card_updated", "conversation_id", "card_updated_at",
+              postgresql_where=sa.text("card_updated_at IS NOT NULL")),
     )
+
+
+class ChatCardUpdate(Base):
+    """V0652 (aa) (mig 0206): one update of a card in place: who made it, when, the card after it and what changed.
+    The history a member of the thread reads; it goes with its message (a thread's timer erases it with the card)."""
+    __tablename__ = "chat_card_updates"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    message_id: Mapped[str] = mapped_column(String(36), ForeignKey("chat_messages.id", ondelete="CASCADE"), nullable=False)
+    conversation_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    rev: Mapped[int] = mapped_column(Integer, nullable=False)
+    actor_ptype: Mapped[str] = mapped_column(String(12), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    card: Mapped[dict] = mapped_column(PG_JSONB, nullable=False)
+    changes: Mapped[Optional[list]] = mapped_column(PG_JSONB, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("message_id", "rev", name="uq_chat_card_update_rev"),)
+
+
+class ChatBoardRevision(Base):
+    """V0652 (ac) (mig 0207): one edit of a room's status board: who, when, the text after it. The board's history."""
+    __tablename__ = "chat_board_revisions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    conversation_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    rev: Mapped[int] = mapped_column(Integer, nullable=False)
+    actor_ptype: Mapped[str] = mapped_column(String(12), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("conversation_id", "rev", name="uq_chat_board_rev"),)
 
 
 class ChatFederationOutbox(Base):
@@ -6623,6 +6681,9 @@ class ChatApproval(Base):
     consumed_by_agent_did: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     consumed_act: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     consumed_act_sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # V0652 (ab), mig 0204: a choice request's options (2 to 5 labels; NULL for an approval) and the one chosen (its index)
+    options: Mapped[Optional[list]] = mapped_column(PG_JSONB, nullable=True)
+    chosen_option: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("requester_agent_did", "client_ref", name="uq_chat_approval_client_ref"),

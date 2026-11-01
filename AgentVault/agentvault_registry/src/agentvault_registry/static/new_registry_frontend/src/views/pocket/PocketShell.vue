@@ -37,8 +37,10 @@
         <span class="pk-brand-col">
           <span class="pk-brand-name">{{ registryName }}</span>
           <span class="pk-acting" data-testid="pk-acting-line">
-            <template v-if="actingName">{{ t('pocket.shell.actingAs', 'Acting as') }}{{ ' ' }}<strong>{{ actingName }}</strong></template>
-            <template v-else>{{ t('pocket.shell.noActing', 'No acting agent — tap to choose') }}</template>
+            <!-- V0652 (ak), session-lead's review item 18: the text in a span of its own, so a narrow phone ends it
+                 with an ellipsis (an anonymous flex item cannot) instead of cutting a word -->
+            <span class="pk-acting-text"><template v-if="actingName">{{ t('pocket.shell.actingAs', 'Acting as') }}{{ ' ' }}<strong>{{ actingName }}</strong></template>
+            <template v-else>{{ t('pocket.shell.noActing', 'No acting agent — tap to choose') }}</template></span>
             <Icon name="mdi:chevron-down" class="pk-acting-chev" />
           </span>
         </span>
@@ -411,6 +413,7 @@ function micClick() { if (!voice.listening.value && !voice.interim.value) router
 .pk-acting { display: flex; align-items: center; gap: 0.2rem; font-size: 0.64rem; font-weight: 500;
   color: rgba(230,237,243,0.55); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0.01em; }
 .pk-acting strong { color: var(--nc-primary, #00d4ff); font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+.pk-acting-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pk-acting-chev { flex: 0 0 auto; opacity: 0.6; }
 .pk-acting :deep(svg) { width: 0.8rem; height: 0.8rem; }
 /* §OURCHAT polish — the mark leads the identity corner. `flex: 0 0 auto` so a

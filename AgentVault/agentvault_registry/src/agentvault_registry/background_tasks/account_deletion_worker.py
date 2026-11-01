@@ -151,6 +151,15 @@ class AccountDeletionWorker:
                 async with _vitals.cycle("account_deletion_worker") as ctx:
                     summary = await self._scan_and_anonymize()
                     ctx.note(**summary)
+                    # V0652 (af): the account's daily notices (an API key 14 days before its expiry, the terms when
+                    # their version changes), on this worker's daily turn; they never fail its cycle
+                    try:
+                        from agentvault_registry.database import get_db_context as _gdc
+                        from agentvault_registry.services import security_notices as _sn
+                        async with _gdc() as _ndb:
+                            ctx.note(**(await _sn.daily_pass(_ndb)))
+                    except Exception as _e:  # noqa: BLE001
+                        logger.warning("[AccountDeletionWorker] daily notices skipped: %s", _e)
                     if int(summary["drain_failures"]) > int(summary.get("drain_owed") or 0):
                         # §MONEY-R39: every developer may have been anonymized and the cycle
                         # is STILL a failure — a forfeiture that moved no money leaves a

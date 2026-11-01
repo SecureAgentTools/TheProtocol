@@ -1142,6 +1142,7 @@ class InvitationService:
             "developer_id": developer.id,
             "role": invitation.role,
             "via_invitation": invitation.id,
+            "invited_by": invitation.invited_by,   # V0652 (af): the reactor tells the inviter it was accepted
         })
 
         return member

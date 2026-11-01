@@ -190,20 +190,53 @@
       <p class="osc-worknote">{{ t('ourstate.card.listingNote', 'A pointer. Any price here is indicative — the ticket reads the live book, and you choose the side and the size there.') }}</p>
     </template>
 
-    <!-- §OURSTATE-5e MEDIA — a pointer, rendered as a pointer. No preview, no
-         <img src>: the bytes arrive only through an authenticated fetch the
-         viewer asks for, so a card can never make the app load someone's file
-         on sight. -->
+    <!-- §OURSTATE-5e MEDIA — a pointer, rendered as a pointer. No <img src>:
+         the bytes arrive only through an authenticated fetch the viewer asks
+         for, so a card can never make the app load someone's file on sight.
+         V0652 (ae): a text file's first lines ride on the card, written there
+         by its registry from the stored file; markdown is drawn by the chat's
+         own renderer (raw HTML is text, the result sanitized), every other
+         kind as text. "Open" is that same authenticated fetch, shown here. -->
     <template v-else-if="media">
       <div class="osc-head" data-testid="osc-media">
         <Icon name="mdi:file-document" />
         <span class="osc-media-name">{{ media.name }}</span>
         <span class="osc-media-size">{{ media.human }}</span>
       </div>
-      <button v-if="!media.defanged" class="osc-btn" data-testid="osc-media-get"
-              :disabled="downloading" @click="download">
-        {{ downloading ? t('ourstate.card.mediaGetting', 'Fetching…')
-                       : t('ourstate.card.mediaGet', 'Download') }}</button>
+      <template v-if="!opened">
+        <!-- eslint-disable-next-line vue/no-v-html -- sanitized: renderMarkdown (markdown-it html:false, then DOMPurify) -->
+        <div v-if="media.preview && media.previewKind === 'markdown'" class="osc-media-preview osc-media-md"
+             data-testid="osc-media-preview" data-kind="markdown" v-html="mediaPreviewHtml" />
+        <pre v-else-if="media.preview" class="osc-media-preview osc-media-pre" data-testid="osc-media-preview"
+             :data-kind="media.previewKind">{{ media.preview }}</pre>
+        <p v-if="media.preview && media.previewTruncated" class="osc-media-note" data-testid="osc-media-more">
+          {{ t('ourstate.card.mediaMore', 'The file goes on: open it to read the rest.') }}</p>
+      </template>
+      <p v-if="media.previewWithheld" class="osc-media-note" data-testid="osc-media-withheld"
+         :data-why="media.previewWithheld">
+        {{ media.previewWithheld === 'credential'
+          ? t('ourstate.card.mediaWithheldCredential', 'No preview: it looks like it holds a credential.')
+          : t('ourstate.card.mediaWithheldBinary', 'No preview: this is not a text file.') }}</p>
+      <div v-if="opened" class="osc-media-open" data-testid="osc-media-open" :data-kind="opened.kind">
+        <p v-if="opened.binary" class="osc-media-note" data-testid="osc-media-nottext">
+          {{ t('ourstate.card.mediaNotText', 'This file is not text: download it to open it.') }}</p>
+        <!-- eslint-disable-next-line vue/no-v-html -- sanitized: renderMarkdown (markdown-it html:false, then DOMPurify) -->
+        <div v-else-if="opened.kind === 'markdown'" class="osc-media-md" v-html="opened.html" />
+        <pre v-else class="osc-media-pre">{{ opened.text }}</pre>
+        <p v-if="opened.cut" class="osc-media-note" data-testid="osc-media-cut">
+          {{ tp('ourstate.card.mediaOpenCut', 'Showing the first {n} characters: download the file for the rest.',
+                { n: openMaxLabel }) }}</p>
+      </div>
+      <div v-if="!media.defanged" class="osc-media-actions">
+        <button v-if="media.isText && !media.previewWithheld" class="osc-btn osc-ghost" data-testid="osc-media-open-btn"
+                :disabled="opening" :aria-expanded="opened ? 'true' : 'false'" @click="toggleOpen">
+          {{ opened ? t('ourstate.card.mediaClose', 'Close')
+                    : opening ? t('ourstate.card.mediaOpening', 'Opening…') : t('ourstate.card.mediaOpen', 'Open') }}</button>
+        <button class="osc-btn" data-testid="osc-media-get"
+                :disabled="downloading" @click="download">
+          {{ downloading ? t('ourstate.card.mediaGetting', 'Fetching…')
+                         : t('ourstate.card.mediaGet', 'Download') }}</button>
+      </div>
       <div v-else class="osc-defanged" data-testid="osc-media-defanged">
         <Icon name="mdi:shield-key" />
         {{ t('ourstate.card.mediaDefanged', 'Accept the request before opening files from a stranger.') }}</div>
@@ -347,7 +380,7 @@
         {{ tp('ourstate.approvals.unlocks', 'Unlocks: {what}', { what: approvalRequest.unlocks }) }}</div>
       <div v-if="approvalRequest.artifactSha256" class="osc-ref" :title="approvalRequest.artifactSha256">
         sha256 {{ shorten(approvalRequest.artifactSha256) }}</div>
-      <p class="osc-worknote">{{ t('ourstate.card.approvalWhere', 'Decided in the panel pinned above this thread.') }}</p>
+      <p class="osc-worknote">{{ t('ourstate.card.approvalWhere', "Decided in the room's approvals panel.") }}</p>
     </template>
 
     <template v-else-if="approvalDecided">
@@ -364,6 +397,94 @@
       <div v-if="approvalDecided.artifactSha256" class="osc-ref" :title="approvalDecided.artifactSha256">
         sha256 {{ shorten(approvalDecided.artifactSha256) }}</div>
       <div v-if="approvalDecided.note" class="osc-memo">{{ approvalDecided.note }}</div>
+      <!-- V0652 (aa): the one act it opened, on the card itself (V0651 (o)); used once, it opens nothing else -->
+      <div v-if="approvalDecided.used" class="osc-used" data-testid="osc-approval-used"
+           :title="approvalDecided.used.actSha256 ? `sha256 ${approvalDecided.used.actSha256}` : ''">
+        <Icon name="mdi:check" />
+        <span>{{ tp('ourstate.card.approvalUsed', 'Used for {act}, {when}', { act: approvalDecided.used.act,
+          when: approvalDecided.used.at ? fmtWhen(approvalDecided.used.at) : '' }) }}</span></div>
+    </template>
+
+    <!-- V0652 (aa): a progress card its author keeps current in place: its steps and its verdict, one card instead of
+         many messages. A step's state reads by its shape as well as its word. -->
+    <template v-else-if="progress">
+      <div class="osc-head" :data-testid="`osc-progress-${progress.state}`">
+        <Icon :name="PROGRESS_ICON[progress.state]" />
+        <span class="osc-deal-kind osc-progress-state" :data-state="progress.state">{{ progressWord }}</span>
+        <span v-if="progressTotals && progressTotals.total" class="osc-progress-count" data-testid="osc-progress-count">
+          · {{ tp('ourstate.card.progressCount', '{done} of {total} steps', { done: progressTotals.done, total: progressTotals.total }) }}</span>
+      </div>
+      <div class="osc-worktitle">{{ progress.title }}</div>
+      <ol v-if="progress.steps.length" class="osc-steps">
+        <li v-for="(st, i) in progress.steps" :key="i" class="osc-step" :data-state="st.state" :data-testid="`osc-step-${i}`">
+          <span class="osc-step-mark" aria-hidden="true" />
+          <span class="osc-step-label">{{ st.label }}</span>
+          <span class="osc-step-word">{{ stepWord(st.state) }}</span>
+          <span v-if="st.note" class="osc-step-note">{{ st.note }}</span>
+        </li>
+      </ol>
+      <p v-if="progress.note" class="osc-memo osc-progress-note">{{ progress.note }}</p>
+    </template>
+
+    <!-- V0652 (aa): a Guild order in the room its poster named, kept current by the Guild rail (posted, a bid, awarded,
+         delivered, settled): the order's record, read from the order itself. -->
+    <template v-else-if="guildLive">
+      <div class="osc-head" data-testid="osc-guild-live" :data-status="guildLive.status">
+        <Icon name="mdi:briefcase" />
+        <span class="osc-deal-kind">{{ t('ourstate.card.guildOrder', 'Guild order') }}</span>
+        <span class="osc-approval-status osc-guild-status" :data-status="guildLive.status" data-testid="osc-guild-status">
+          · {{ guildStatusWord }}</span>
+      </div>
+      <div class="osc-worktitle">{{ guildLive.title }}</div>
+      <div class="osc-memo osc-guild-facts">
+        <span v-if="guildLive.bounty" class="osc-guild-bounty">{{ guildLive.bounty }} {{ guildLive.currency }}</span>
+        <span v-if="guildLive.posterName">{{ tp('ourstate.card.guildBy', 'posted by {who}', { who: guildLive.posterName }) }}</span>
+        <span v-if="guildLive.workerName || guildLive.workerDid" data-testid="osc-guild-worker">{{ tp('ourstate.card.guildTo', 'to {who}', {
+          who: guildLive.workerName || shorten(guildLive.workerDid || '') }) }}</span>
+        <span>{{ guildLive.bids === 1 ? t('ourstate.card.guildBidOne', '1 bid')
+          : tp('ourstate.card.guildBids', '{n} bids', { n: guildLive.bids }) }}</span>
+      </div>
+      <ol class="osc-stages" :aria-label="t('ourstate.card.guildStages', 'The order so far')">
+        <li v-for="st in guildStageList" :key="st.stage" class="osc-stage" :class="{ on: st.reached }"
+            :data-testid="`osc-stage-${st.stage}`" :title="st.at ? fmtWhen(st.at) : ''">
+          <span class="osc-stage-mark" aria-hidden="true" />
+          <span class="osc-stage-label">{{ stageWord(st.stage) }}</span>
+        </li>
+      </ol>
+      <div class="osc-ref">{{ guildLive.orderId }}</div>
+      <button v-if="guildLive.orderId" type="button" class="osc-btn osc-btn--quiet" data-testid="osc-guild-open"
+              @click="emit('open-work', { kind: 'guild.order', ref: guildLive.orderId })">
+        {{ t('ourstate.card.guildOpen', 'Open the order') }}</button>
+    </template>
+
+    <!-- V0652 (ab) — a choice: the question and its options (decided in the pinned panel, by one tap on one option),
+         then which option was chosen, by whom, or that none was. -->
+    <template v-else-if="choiceRequest">
+      <div class="osc-head" data-testid="osc-choice-request">
+        <Icon name="mdi:format-list-bulleted" />
+        <span class="osc-deal-kind">{{ t('ourstate.card.choiceAsks', 'Asks you to choose') }}</span>
+        <span class="osc-approval-status" :data-status="liveApproval || 'pending'" data-testid="osc-choice-status">
+          · {{ approvalStatusWord }}</span>
+      </div>
+      <div class="osc-worktitle">{{ choiceRequest.title }}</div>
+      <ol class="osc-options" data-testid="osc-choice-options">
+        <li v-for="(o, i) in choiceRequest.options" :key="i">{{ o }}</li>
+      </ol>
+      <p class="osc-worknote">{{ t('ourstate.card.choiceWhere', 'Chosen in the panel pinned above this thread.') }}</p>
+    </template>
+
+    <template v-else-if="choiceDecided">
+      <div class="osc-head" :data-testid="`osc-choice-${choiceDecided.decision}`">
+        <Icon :name="choiceDecided.decision === 'chosen' ? 'mdi:check-decagram' : 'mdi:close'" />
+        <span class="osc-deal-kind">{{ choiceDecided.decision === 'chosen' && choiceDecided.chosen
+          ? tp('ourstate.card.choiceChose', 'Chose \u201c{label}\u201d', { label: choiceDecided.chosen.label })
+          : t('ourstate.card.choiceNone', 'None of the options') }}</span>
+      </div>
+      <div class="osc-worktitle">{{ choiceDecided.title }}</div>
+      <div class="osc-memo">{{ tp('ourstate.card.approvalBy', 'By {who} ({role})', {
+        who: choiceDecided.decidedByName || `#${choiceDecided.decidedById ?? ''}`,
+        role: choiceDecided.role === 'owner' ? t('ourstate.card.approvalOwner', 'owner') : t('ourstate.card.approvalApprover', 'approver') }) }}</div>
+      <div v-if="choiceDecided.note" class="osc-memo">{{ choiceDecided.note }}</div>
     </template>
 
     <template v-else>
@@ -372,6 +493,15 @@
         {{ tp('ourstate.card.unsupported', 'Unsupported card ({type}) — update the app.', { type: unknownType }) }}
       </div>
     </template>
+
+    <!-- V0652 (aa): a card that changed in place says so, and its history (who, when, what changed) is one press away -->
+    <div v-if="rev > 0" class="osc-live" data-testid="osc-live">
+      <span class="osc-live-tx">{{ rev === 1
+        ? tp('ourstate.card.updatedOnce', 'Updated once, {when}', { when: updatedWhen })
+        : tp('ourstate.card.updatedMany', 'Updated {n} times, last {when}', { n: rev, when: updatedWhen }) }}</span>
+      <button type="button" class="osc-live-btn" data-testid="osc-history" @click="emit('history')">
+        <Icon name="mdi:history" /> {{ t('ourstate.card.history', 'History') }}</button>
+    </div>
   </div>
 </template>
 
@@ -382,6 +512,8 @@ import Icon from '@/components/Icon.vue'
 import apiClient from '@/services/api/client'
 import OurStateIdentity from '@/components/ourstate/OurStateIdentity.vue'
 import { cardView, type ChatCard } from '@/services/chat/cards'
+import { guildStages, stepTotals } from '@/services/chat/liveCards'
+import { OPEN_MAX_CHARS, openedFile, previewHtml, type OpenedFile } from '@/services/chat/filePreview'
 import { useI18n } from '@/composables/useI18n'
 
 const { t, tp } = useI18n()
@@ -397,7 +529,10 @@ const props = withDefaults(defineProps<{
   liveSettlement?: string | null
   /** V0650 (l) — an approval request's live status (pending | approved | denied | expired), read from the thread. */
   liveApproval?: string | null
-}>(), { defang: false, mine: false, liveSettlement: null, liveApproval: null })
+  /** V0652 (aa): how many times the card was updated in place (0: as posted), and when the last update landed. */
+  rev?: number
+  updatedAt?: string | null
+}>(), { defang: false, mine: false, liveSettlement: null, liveApproval: null, rev: 0, updatedAt: null })
 
 /** Closed by default: the thread stays scannable, the answer stays reachable. */
 const payloadOpen = ref(false)
@@ -426,6 +561,8 @@ const emit = defineEmits<{
                             note: string | null }): void
   (e: 'open-contract', p: { contractId: string }): void
   (e: 'accept-offer', p: { contractId: string; providerDid: string }): void
+  /** V0652 (aa): the card's history was asked for (the thread reads it and shows it) */
+  (e: 'history'): void
 }>()
 
 const view = computed(() => cardView(props.card, { defang: props.defang }))
@@ -451,8 +588,11 @@ const dealMilestone = computed(() => (view.value.type === 'engagement.milestone'
 const dealSettled = computed(() => (view.value.type === 'engagement.settled' ? view.value : null))
 const approvalRequest = computed(() => (view.value.type === 'approval.request' ? view.value : null))
 const approvalDecided = computed(() => (view.value.type === 'approval.decided' ? view.value : null))
+const choiceRequest = computed(() => (view.value.type === 'choice.request' ? view.value : null))   // V0652 (ab)
+const choiceDecided = computed(() => (view.value.type === 'choice.decided' ? view.value : null))
 const approvalStatusWord = computed(() => ({
   approved: t('ourstate.card.approvalApproved', 'Approved'),
+  chosen: t('ourstate.card.choiceChosen', 'Chosen'),
   denied: t('ourstate.card.approvalDenied', 'Denied'),
   expired: t('ourstate.approvals.expired', 'expired'),
 } as Record<string, string>)[props.liveApproval || ''] || t('ourstate.card.approvalPending', 'waiting for a decision'))
@@ -462,9 +602,61 @@ function fmtWhen(iso: string): string {
   catch { return iso }
 }
 
+/* V0652 (aa): cards that live */
+const progress = computed(() => (view.value.type === 'progress' ? view.value : null))
+const guildLive = computed(() => (view.value.type === 'guild.order.live' ? view.value : null))
+const progressTotals = computed(() => (progress.value ? stepTotals(progress.value.steps) : null))
+const PROGRESS_ICON: Record<string, string> = { running: 'mdi:timer-sand', passed: 'mdi:check-circle',
+  failed: 'mdi:close-circle', cancelled: 'mdi:cancel' }
+const progressWord = computed(() => ({
+  running: t('ourstate.card.progressRunning', 'In progress'), passed: t('ourstate.card.progressPassed', 'Passed'),
+  failed: t('ourstate.card.progressFailed', 'Failed'), cancelled: t('ourstate.card.progressCancelled', 'Cancelled'),
+} as Record<string, string>)[progress.value?.state || 'running'])
+function stepWord(state: string): string {
+  return ({ pending: t('ourstate.card.stepPending', 'waiting'), running: t('ourstate.card.stepRunning', 'running'),
+    done: t('ourstate.card.stepDone', 'done'), failed: t('ourstate.card.stepFailed', 'failed'),
+    skipped: t('ourstate.card.stepSkipped', 'skipped') } as Record<string, string>)[state] || state
+}
+const guildStageList = computed(() => (guildLive.value ? guildStages(guildLive.value.events) : []))
+function stageWord(stage: string): string {
+  return ({ posted: t('ourstate.card.stagePosted', 'posted'), bid: t('ourstate.card.stageBid', 'bid'),
+    awarded: t('ourstate.card.stageAwarded', 'awarded'), submitted: t('ourstate.card.stageDelivered', 'delivered'),
+    settled: t('ourstate.card.stageSettled', 'settled') } as Record<string, string>)[stage] || stage
+}
+const guildStatusWord = computed(() => ({
+  open: t('ourstate.card.guildOpenStatus', 'open for bids'), awarded: t('ourstate.card.guildAwarded', 'awarded'),
+  submitted: t('ourstate.card.guildDelivered', 'delivered, waiting for the poster'),
+  settling: t('ourstate.card.guildSettling', 'settling'), settled: t('ourstate.card.guildSettled', 'settled'),
+  disputed: t('ourstate.card.guildDisputed', 'disputed'), resolving: t('ourstate.card.guildResolving', 'resolving'),
+  resolved: t('ourstate.card.guildResolved', 'resolved'), cancelled: t('ourstate.card.guildCancelled', 'cancelled'),
+  expired: t('ourstate.card.guildExpired', 'expired'),
+} as Record<string, string>)[guildLive.value?.status || 'open'] || (guildLive.value?.status ?? ''))
+const updatedWhen = computed(() => (props.updatedAt ? fmtWhen(props.updatedAt) : ''))
+
 const appletValues = reactive<Record<string, any>>({})
 const downloading = ref(false)
 const mediaErr = ref('')
+
+/* V0652 (ae): the preview's HTML (markdown only; '' for the kinds shown as text), and "Open": the same authenticated
+   fetch as the download, read as text and shown in the card. */
+const mediaPreviewHtml = computed(() => previewHtml(media.value?.preview, media.value?.previewKind))
+const opening = ref(false)
+const opened = ref<OpenedFile | null>(null)
+const openMaxLabel = new Intl.NumberFormat(appLocale()).format(OPEN_MAX_CHARS)
+async function toggleOpen() {
+  if (opened.value) { opened.value = null; return }
+  const m = media.value
+  if (!m || opening.value) return
+  opening.value = true; mediaErr.value = ''
+  try {
+    const r = await apiClient.get(`/chat/attachments/${m.attachmentId}`, { responseType: 'arraybuffer' })
+    opened.value = openedFile(r.data as ArrayBuffer, m.mime, m.name)
+  } catch (e: any) {
+    mediaErr.value = e?.response?.status === 410
+      ? t('ourstate.card.mediaGone', 'This file was removed.')
+      : t('common.error', 'Something went wrong')
+  } finally { opening.value = false }
+}
 
 /* The download is an AUTHENTICATED fetch the viewer asked for, turned into a
    blob locally. No <img src>, no link: a card cannot cause a request until a
@@ -586,6 +778,27 @@ const shorten = (s: string) => !s ? '' : s.length > 18 ? s.slice(0, 8) + '…' +
 .osc-ic { flex: none; width: 14px; height: 14px; }
 .osc-media-name { font-weight: 600; text-transform: none; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; }
 .osc-media-size { opacity: .6; font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: 0; }
+/* V0652 (ae): a text file's first lines, and the whole file when opened */
+.osc-media-preview { margin: 6px 0 0; max-height: 17em; overflow: hidden; }
+.osc-media-pre {
+  margin: 0; padding: 8px 10px; border-radius: 6px; background: rgba(128, 128, 128, .12);
+  font-family: var(--font-mono, 'IBM Plex Mono', monospace); font-size: .76rem; line-height: 1.45;
+  white-space: pre-wrap; overflow-wrap: anywhere; text-transform: none; letter-spacing: 0;
+}
+.osc-media-md { font-size: .86rem; line-height: 1.5; overflow-wrap: anywhere; text-transform: none; letter-spacing: 0; }
+.osc-media-md :deep(p) { margin: 0 0 .45em; }
+.osc-media-md :deep(ul), .osc-media-md :deep(ol) { margin: .3em 0 .45em; padding-left: 1.3em; }
+.osc-media-md :deep(h1), .osc-media-md :deep(h2), .osc-media-md :deep(h3),
+.osc-media-md :deep(h4), .osc-media-md :deep(h5), .osc-media-md :deep(h6) { margin: .35em 0 .2em; font-size: 1em; font-weight: 600; }
+.osc-media-md :deep(code) { font-family: var(--font-mono, 'IBM Plex Mono', monospace); font-size: .86em; padding: 0 4px; border-radius: 3px; background: rgba(128, 128, 128, .18); }
+.osc-media-md :deep(pre) { margin: .4em 0; padding: 8px 10px; border-radius: 6px; background: rgba(128, 128, 128, .14); overflow-x: auto; }
+.osc-media-md :deep(pre code) { padding: 0; background: none; }
+.osc-media-md :deep(a) { color: var(--primary-color, #4fd8c4); text-decoration: underline; text-underline-offset: 2px; }
+.osc-media-md :deep(blockquote) { margin: .3em 0; padding-left: 10px; border-left: 2px solid rgba(128, 128, 128, .45); }
+/* #8b96a5 holds 4.5:1 on the dark card at this size */
+.osc-media-note { margin: 4px 0 0; font-size: .74rem; color: #8b96a5; text-transform: none; letter-spacing: 0; }
+.osc-media-open { margin-top: 8px; padding-top: 8px; max-height: 60vh; overflow: auto; border-top: 1px solid var(--border-color, rgba(128, 128, 128, .2)); }
+.osc-media-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .osc-applet-title { font-weight: 600; text-transform: none; letter-spacing: 0; }
 .osc-applet-field { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .osc-applet-label { font-size: .78rem; opacity: .7; min-width: 96px; }
@@ -600,6 +813,7 @@ const shorten = (s: string) => !s ? '' : s.length > 18 ? s.slice(0, 8) + '…' +
 .osc-certsig { font-family: ui-monospace, monospace; font-size: 10.5px; margin-top: 3px;
   color: var(--nc-primary, #4fd1c5); word-break: break-all; }
 .osc-worknote { font-size: .68rem; opacity: .5; margin: 0; }
+.osc-options { margin: 4px 0 6px; padding-left: 20px; font-size: .9rem; }   /* V0652 (ab) */
 /* §DEALTHREADS — negotiation + transition cards */
 .osc-deal-kind { font-weight: 600; }
 /* V0650 (l): an approval request's live status beside its head */
@@ -616,4 +830,47 @@ const shorten = (s: string) => !s ? '' : s.length > 18 ? s.slice(0, 8) + '…' +
   gap: 2px 10px; font-size: .74rem; }
 .osc-payload dt { opacity: .6; white-space: nowrap; }
 .osc-payload dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+/* V0652 (aa): cards that live. A step's state reads by its shape (hollow waiting, half running, filled done, a
+   diamond failed, a dash skipped) as well as its word; the order's stages are a segmented line, lit as reached. */
+.osc-used { display: flex; align-items: flex-start; gap: 6px; font-size: .82rem; color: var(--nc-success, #2fb36d); }
+.osc-used :deep(svg) { flex: none; width: 14px; height: 14px; margin-top: 2px; }
+.osc-progress-state[data-state='passed'] { color: var(--nc-success, #2fb36d); }
+.osc-progress-state[data-state='failed'] { color: var(--warning-color, #f59e0b); }
+.osc-progress-count { font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: 0; }
+.osc-steps { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.osc-step { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 8px; align-items: baseline;
+  font-size: .86rem; padding: 2px 0; }
+.osc-step-mark { width: 9px; height: 9px; box-sizing: border-box; align-self: center; border-radius: 50%;
+  border: 1px solid #8b96a5; }
+.osc-step[data-state='running'] .osc-step-mark { border-color: var(--nc-primary, #00d2d2);
+  background: linear-gradient(90deg, var(--nc-primary, #00d2d2) 50%, transparent 50%); }
+.osc-step[data-state='done'] .osc-step-mark { border-color: var(--nc-primary, #00d2d2); background: var(--nc-primary, #00d2d2); }
+.osc-step[data-state='failed'] .osc-step-mark { border-radius: 1px; border-color: var(--warning-color, #f59e0b);
+  background: var(--warning-color, #f59e0b); transform: rotate(45deg) scale(.85); }
+.osc-step[data-state='skipped'] .osc-step-mark { height: 1px; border: 0; border-radius: 0; background: #8b96a5; }
+.osc-step-label { min-width: 0; overflow-wrap: anywhere; }
+.osc-step-word { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .64rem; letter-spacing: .08em;
+  text-transform: uppercase; color: #8b96a5; }
+.osc-step[data-state='failed'] .osc-step-word { color: var(--warning-color, #f59e0b); }
+.osc-step-note { grid-column: 2 / 4; font-size: .76rem; color: #8b96a5; overflow-wrap: anywhere; }
+.osc-progress-note { color: #c4ccd6; }
+.osc-guild-facts { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.osc-guild-bounty { font-weight: 600; font-variant-numeric: tabular-nums; }
+.osc-guild-status[data-status='settled'] { color: var(--nc-success, #2fb36d); opacity: 1; }
+.osc-guild-status[data-status='disputed'] { color: var(--warning-color, #f59e0b); opacity: 1; }
+.osc-stages { list-style: none; margin: 4px 0 0; padding: 0; display: flex; gap: 3px; }
+.osc-stage { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.osc-stage-mark { height: 2px; background: rgba(128, 128, 128, .28); }
+.osc-stage.on .osc-stage-mark { background: var(--nc-primary, #00d2d2); }
+.osc-stage-label { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .58rem; letter-spacing: .1em;
+  text-transform: uppercase; color: #6b7685; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.osc-stage.on .osc-stage-label { color: #c4ccd6; }
+.osc-btn--quiet { background: none; color: var(--nc-primary, #00d2d2); border: 1px solid var(--nc-border-strong, #343a4d); }
+.osc-live { display: flex; align-items: center; gap: 10px; margin-top: 2px; padding-top: 6px;
+  border-top: 1px solid var(--nc-border-subtle, rgba(128, 128, 128, .14)); }
+.osc-live-tx { flex: 1; min-width: 0; font-size: .72rem; color: #8b96a5; }
+.osc-live-btn { display: inline-flex; align-items: center; gap: 4px; min-height: 34px; padding: 0 10px; border-radius: 8px;
+  border: 1px solid var(--nc-border-strong, #343a4d); background: none; color: inherit; font-size: .74rem; cursor: pointer; }
+.osc-live-btn :deep(svg) { width: 13px; height: 13px; }
+@media (pointer: coarse) { .osc-live-btn { min-height: 44px; } }
 </style>

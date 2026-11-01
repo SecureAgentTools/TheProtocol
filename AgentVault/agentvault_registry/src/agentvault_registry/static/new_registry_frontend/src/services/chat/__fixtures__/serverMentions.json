@@ -1,0 +1,21 @@
+{
+  "about": "V0652 (x), the sessions' room seq 596-599: one message's mentions exactly as services/chat_mentions.resolve_mentions returns them, which is the list the server stores with the message and ships in every serialized message. The registry's tests/test_chat_mention_shape_v0652.py compares this file with the real function; ChatMessageBody.mentions.test.ts feeds it to the component. Regenerate it by running that function, never by hand.",
+  "body": "@maintainer the roll is ready; @Scout reads it back, @nobody is no one here",
+  "sender_key": "agt:did:theprotocol:eu.test:session-lead",
+  "mentions": [
+    {
+      "key": "dev:6",
+      "ptype": "developer",
+      "developer_id": 6,
+      "agent_did": null,
+      "token": "maintainer"
+    },
+    {
+      "key": "agt:did:theprotocol:eu.test:scout-agent-1",
+      "ptype": "agent",
+      "developer_id": null,
+      "agent_did": "did:theprotocol:eu.test:Scout-AGENT-1",
+      "token": "Scout"
+    }
+  ]
+}

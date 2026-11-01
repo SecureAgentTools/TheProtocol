@@ -134,12 +134,19 @@ async def _write(db: AsyncSession, conv: Conversation, *, sender: cs.Actor,
 
 async def _announce(db: AsyncSession, conv: Conversation, sender: cs.Actor,
                     payload: dict) -> None:
-    """Post-commit fan-out (§ESDUP: never announce what might roll back)."""
+    """Post-commit fan-out (§ESDUP: never announce what might roll back).
+
+    V0652 (ai): LIVE ONLY. Every desk act already sends the ticket's one typed notice (routers/support.py:
+    support.reply), so the thread's own chat notice made a reply three notices (the status row as its raw machine
+    string `support.in_progress`, the reply's text, the ticket's), a resolve two and a close two: session-tester's
+    lifecycle left the requester 8 unread (FINDINGS_2026-10-31_SUPPORT_TICKET_EU.md, defects 1 and 2). The rows still
+    reach every open socket and sync waiter at once; the review-grant lines in an org room likewise (a visible row,
+    not a bell)."""
     try:
         recipients = await cs.recipients_snapshot(db, conv, sender)
         if recipients:
             cs.deliver(
-                conv.id, conv.kind, payload, recipients, sender.display_name)
+                conv.id, conv.kind, payload, recipients, sender.display_name, notify_absent=False)
     except Exception as e:  # noqa: BLE001 — a missed live update is not an outage
         logger.debug("support thread fan-out skipped: %s", e)
 
@@ -182,21 +189,31 @@ async def mirror_desk_message(db: AsyncSession, ticket: Any, sender_name: str, t
 
 
 async def mirror_status(db: AsyncSession, ticket: Any, old: str, new: str,
-                        *, by_name: str = "Support") -> Optional[dict]:
+                        *, by_name: str = "Support", by_owner: bool = False) -> Optional[dict]:
     """A visible system row for a status change — the same in-band trail a room
     moderation act leaves. `support.<status>` is a machine string the client
     renders as a sentence; it never reaches a human raw (the `retention.24h`
-    scar, which he read off his own screen)."""
+    scar, which he read off his own screen).
+
+    V0652 (ai): `by_owner=True` when the ticket's owner moved it (closed or reopened it, or reopened it by replying):
+    the row is authored by the owner, so a re-read says who did it. Authored by the rail, every row read back as
+    "Support marked this ticket ..." whoever acted (the rail's display name lives only in the live payload)."""
     if str(old) == str(new):
         return None
     conv = await ensure_thread(db, ticket)
     if conv is None:
         return None
-    desk = cs.Actor("system", display_name=str(by_name or "Support")[:120],
-                    system_id="support")
-    payload = await _write(db, conv, sender=desk, kind="system",
-                           body=f"support.{str(new)[:24]}", card=None,
-                           client_ref=str(_uuid.uuid4()), mark_read=False)
+    if by_owner:
+        who = cs.Actor("developer", developer_id=int(ticket.developer_id), display_name=str(by_name or "you")[:120])
+        payload = await _write(db, conv, sender=who, kind="system", body=f"support.{str(new)[:24]}", card=None,
+                               client_ref=str(_uuid.uuid4()), mark_read=True)
+        desk = who
+    else:
+        desk = cs.Actor("system", display_name=str(by_name or "Support")[:120],
+                        system_id="support")
+        payload = await _write(db, conv, sender=desk, kind="system",
+                               body=f"support.{str(new)[:24]}", card=None,
+                               client_ref=str(_uuid.uuid4()), mark_read=False)
     if payload:
         await _announce(db, conv, desk, payload)
     # §CHATDESK C4 — closing/resolving the ticket ends every review grant on
@@ -360,9 +377,11 @@ async def end_review_grants_for_ticket(db: AsyncSession, ticket_id: int,
         conv = (await db.execute(select(Conversation).where(
             Conversation.id == g.conversation_id))).scalars().first()
         if conv is not None:
+            # V0652 (ai): the line names what happened. It said "closed" at a resolve (FINDINGS 2026-10-31, defect 4).
+            what = {"ticket_resolved": "resolved", "ticket_closed": "closed"}.get(str(reason), "closed")
             await announce_review_event(
                 db, conv, SUPPORT_DESK,
-                f"The support desk's review access ended: ticket #{ticket_id} closed.")
+                f"The support desk's review access ended: ticket #{ticket_id} {what}.")
     return n
 
 

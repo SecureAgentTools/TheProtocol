@@ -16,6 +16,8 @@ Endpoints:
   POST /oauth/token                               — Exchange code for access_token
 """
 import hashlib
+import html as _html
+import re as _re
 import base64
 import json as _json
 import os as _os
@@ -561,6 +563,27 @@ LOGIN_HTML = """<!DOCTYPE html>
 </html>"""
 
 
+_PLACEHOLDER = _re.compile(r"\{\{([A-Z_]+)\}\}")
+
+
+def _render_login(client_id: str, client_name: str, redirect_uri: str, code_challenge: str, code_challenge_method: str,
+                  state: str, scope: str, error_html: str = "") -> str:
+    """The login page, every value escaped (V0652, the sessions' room seq 624: they were substituted raw, so a state, a
+    scope, a challenge or a registered client name could close the attribute or the text and run a script on the page that
+    takes the email and the password). One pass over the template: a value is never searched again for a placeholder.
+    error_html is this module's own fixed markup."""
+    values = {"CLIENT_ID": client_id, "CLIENT_NAME": client_name, "REDIRECT_URI": redirect_uri,
+              "REDIRECT_HOST": _redirect_host(redirect_uri), "CODE_CHALLENGE": code_challenge,
+              "CODE_CHALLENGE_METHOD": code_challenge_method, "STATE": state, "SCOPE": scope}
+
+    def _one(m):
+        name = m.group(1)
+        if name == "ERROR_HTML":
+            return error_html
+        return _html.escape(str(values.get(name) or ""), quote=True)
+    return _PLACEHOLDER.sub(_one, LOGIN_HTML)
+
+
 @router.get("/oauth/authorize")
 async def authorize_get(
     request: Request,
@@ -592,17 +615,8 @@ async def authorize_get(
 
     client_name = client.get("client_name", "MCP Client")
 
-    html = LOGIN_HTML.replace("{{CLIENT_ID}}", client_id)
-    html = html.replace("{{CLIENT_NAME}}", client_name)
-    html = html.replace("{{REDIRECT_URI}}", redirect_uri)
-    html = html.replace("{{REDIRECT_HOST}}", _redirect_host(redirect_uri))
-    html = html.replace("{{CODE_CHALLENGE}}", code_challenge)
-    html = html.replace("{{CODE_CHALLENGE_METHOD}}", code_challenge_method)
-    html = html.replace("{{STATE}}", state)
-    html = html.replace("{{SCOPE}}", scope)
-    html = html.replace("{{ERROR_HTML}}", "")
-
-    return HTMLResponse(content=html)
+    return HTMLResponse(content=_render_login(client_id, client_name, redirect_uri, code_challenge, code_challenge_method,
+                                              state, scope))
 
 
 @router.post("/oauth/authorize")
@@ -622,6 +636,11 @@ async def authorize_post(
     client = await _get_client(client_id)
     if not client:
         return JSONResponse(status_code=400, content={"error": "invalid_request", "error_description": "Unknown client_id"})
+    # V0652 (the sessions' room seq 624): the code goes only to an address the client registered. The GET checked it; the
+    # POST took the form's word, so a value injected into the page could send the code (and the key behind it) elsewhere.
+    # Asked before the credentials are tried.
+    if redirect_uri not in (client.get("redirect_uris") or []):
+        return JSONResponse(status_code=400, content={"error": "invalid_request", "error_description": "redirect_uri not registered"})
 
     # Authenticate the developer via the registry's auth system
     import httpx
@@ -634,17 +653,9 @@ async def authorize_post(
             )
             if auth_resp.status_code != 200:
                 # Login failed — show form again with error
-                client_name = client.get("client_name", "MCP Client")
-                html = LOGIN_HTML.replace("{{CLIENT_ID}}", client_id)
-                html = html.replace("{{CLIENT_NAME}}", client_name)
-                html = html.replace("{{REDIRECT_URI}}", redirect_uri)
-                html = html.replace("{{REDIRECT_HOST}}", _redirect_host(redirect_uri))
-                html = html.replace("{{CODE_CHALLENGE}}", code_challenge)
-                html = html.replace("{{CODE_CHALLENGE_METHOD}}", code_challenge_method)
-                html = html.replace("{{STATE}}", state)
-                html = html.replace("{{SCOPE}}", scope)
-                html = html.replace("{{ERROR_HTML}}", '<div class="error">Invalid email or password</div>')
-                return HTMLResponse(content=html, status_code=200)
+                return HTMLResponse(content=_render_login(
+                    client_id, client.get("client_name", "MCP Client"), redirect_uri, code_challenge, code_challenge_method,
+                    state, scope, error_html='<div class="error">Invalid email or password</div>'), status_code=200)
 
             auth_data = auth_resp.json()
             dev_token = auth_data["access_token"]
@@ -747,6 +758,15 @@ async def token_exchange(request: Request):
                 logger.warning(f"[MCP OAuth] client_secret mismatch for client {client_id}")
                 return JSONResponse(status_code=401, content={"error": "invalid_client", "error_description": "Client authentication failed"},
                                     headers={"WWW-Authenticate": "Basic"})
+
+        # V0652 (the sessions' room seq 624): the code was issued for an address the client still has registered, and a
+        # redirect_uri the exchange presents is that one (RFC 6749 4.1.3). A code issued for any other address is no grant.
+        code_uri = auth_code.get("redirect_uri") or ""
+        if code_uri not in (client.get("redirect_uris") or []):
+            return JSONResponse(status_code=400, content={"error": "invalid_grant", "error_description": "redirect_uri not registered"})
+        presented_uri = form.get("redirect_uri")
+        if presented_uri is not None and presented_uri != code_uri:
+            return JSONResponse(status_code=400, content={"error": "invalid_grant", "error_description": "redirect_uri mismatch"})
 
         # §MCPSCOPE-2 — PKCE IS MANDATORY, NOT OPTIONAL.
         # It used to be checked `if code_verifier:`, so omitting the verifier

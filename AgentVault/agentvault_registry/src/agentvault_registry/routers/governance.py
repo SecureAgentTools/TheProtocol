@@ -344,6 +344,10 @@ async def create_proposal(
              "title": proposal.title, "proposal_type": proposal.proposal_type,
              "end_timestamp": governance_proposal.end_timestamp.isoformat()},
             source_label="governance.create"))
+        # V0652 (af): a vote the registry's voters can cast (once: one proposal per POST); never blocks the create
+        from agentvault_registry.services import governance_notices
+        governance_notices.tell_opened(governance_proposal.id, proposal.title, governance_proposal.end_timestamp,
+                                       current_agent.did)
 
         return ProposalResponse(
             id=governance_proposal.id,
@@ -729,6 +733,10 @@ async def tally_proposal_votes(
                 "result": tally["status"]
             }
         )
+        # V0652 (af): its voters and its proposer hear the result (once per proposal: the worker may tally it too)
+        from agentvault_registry.services import governance_notices
+        governance_notices.tell_result(proposal_id, proposal_check.title, tally["status"], tally["votes_for"],
+                                       tally["votes_against"], proposal_check.proposer_did)
         
         # ⚠ §FRAMEPOLICY (2026-09-11) — this was a FIELD-BY-FIELD mapper, and it is
         # exactly the silent-drop machine PART 1 names. Widening TallyResponse was

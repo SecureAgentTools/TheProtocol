@@ -204,6 +204,24 @@ async def _sync_operator_licence_status(fed_license: Optional[models.FederationL
 # Public endpoint (no auth required)
 # ---------------------------------------------------------------------------
 
+def _tell_application(type_key: str, developer_id, title: str, message: str) -> None:
+    """V0652 (af): an operator application's notice, after its commit, never blocking the route. `developer_id` None =
+    the registry's admins (operator.application_received); else the applicant's linked account (nothing when the
+    application names no account: the applicant then has only their mail)."""
+    try:
+        from agentvault_registry.background_tasks import push_notify
+        if developer_id is None:
+            if type_key != "operator.application_received":
+                return
+            push_notify.spawn_notice(push_notify.notify_audience(type_key, title=title, message=message, tags="inbox_tray",
+                                                                 click="/ui#/admin/operators"))
+        else:
+            push_notify.spawn_notice(push_notify.notify(type_key, [int(developer_id)], title=title, message=message,
+                                                        tags="inbox_tray", click="/ui#/settings"))
+    except Exception:  # noqa: BLE001
+        logger.debug("[OPAPP] %s notice skipped", type_key, exc_info=True)
+
+
 @router.post("/operator-applications", response_model=schemas.OperatorApplicationRead)
 @limiter.limit("5/hour")
 async def submit_operator_application(
@@ -294,6 +312,10 @@ async def submit_operator_application(
     await db.refresh(app_record)
 
     logger.info(f"Operator application received: {application.name} ({application.email})")
+    # V0652 (af): the registry's admins hear it (the mail to the operators' address below stays); once: one per submit
+    _tell_application("operator.application_received", None,
+                      "Operator application received",
+                      f"{application.name} applied to run an operator on this registry. Review it in Operator Management.")
 
     # Send notification email (non-blocking — log on failure)
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -441,6 +463,11 @@ async def approve_operator_application(
     await db.refresh(app_record)
 
     logger.info(f"Operator application approved: {app_record.name} ({app_record.email}) by admin {admin.id}")
+    # V0652 (af): the applicant's account, when the application is linked to one, hears the decision (the mail with the
+    # activation code below stays the way to act on it); once: the status guard above lets one approve through
+    _tell_application("operator.application_decided", app_record.developer_id, "Your operator application was approved",
+                      "Your application to run an operator was approved. The activation code is in the mail sent to "
+                      "the address you applied with.")
 
     # Admin notification (no activation code -- admin can see it in the API response)
     _send_themed_notification(
@@ -515,6 +542,10 @@ async def reject_operator_application(
     await db.refresh(app_record)
 
     logger.info(f"Operator application rejected: {app_record.name} ({app_record.email}) by admin {admin.id}")
+    # V0652 (af): a rejection was said to nobody (no mail is sent for it): the applicant's account hears it
+    _tell_application("operator.application_decided", app_record.developer_id, "Your operator application was declined",
+                      "Your application to run an operator was declined"
+                      + (f": {str(review.notes)[:200]}" if getattr(review, "notes", None) else "."))
 
     return app_record
 

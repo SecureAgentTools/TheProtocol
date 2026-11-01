@@ -139,6 +139,38 @@ async def _sweep_once() -> int:
     return total
 
 
+DEADLINE_NOTICE_SECONDS = 24 * 3600
+
+
+async def remind_deadlines() -> int:
+    """V0652 (af): contract.deadline_soon, a day before an agreed contract's deadline (24 h after it, the reaper takes
+    it to a dispute): both parties hear it. Once per contract and deadline. Not for a Guild order's mirror (the Guild's
+    own reminder tells its worker) nor a legacy contract. Its own read and its own claims: it never touches the sweeps."""
+    from agentvault_registry.background_tasks import push_notify
+    told = 0
+    try:
+        async with get_db_context() as db:
+            rows = (await db.execute(text(
+                "SELECT id, title, client_did, provider_did, deadline FROM contracts "
+                "WHERE status IN ('agreed', 'in_progress') AND deadline IS NOT NULL AND deadline > now() "
+                "AND deadline <= now() + make_interval(secs => :w) AND origin_surface NOT IN ('guild', 'legacy') LIMIT 200"),
+                {"w": DEADLINE_NOTICE_SECONDS})).mappings().all()
+        for c in rows:
+            if not await push_notify.claim_once(f"contract.deadline_soon:{c['id']}:{c['deadline']}", 30 * 86400):
+                continue
+            when = c["deadline"].strftime("%Y-%m-%d %H:%M UTC") if hasattr(c["deadline"], "strftime") else str(c["deadline"])
+            title = (c["title"] or c["id"])[:80]
+            await push_notify.notify_agent_owners(
+                "contract.deadline_soon", [d for d in (c["client_did"], c["provider_did"]) if d],
+                title="A contract's deadline is near",
+                message=f"\u201c{title}\u201d is due {when}; a day after it, an unfinished contract goes to a dispute.",
+                tags="hourglass", click="/ui#/contracts")
+            told += 1
+    except Exception as exc:  # noqa: BLE001 — a reminder never stops the reaper
+        logger.debug("[CONTRACT-REAPER] deadline reminders skipped: %s", exc)
+    return told
+
+
 _task = None
 _stop = False
 
@@ -158,6 +190,7 @@ async def _loop():
                 async with _vitals.cycle("contract_reaper") as _ctx:
                     n = await _sweep_once()
                     _ctx.note(touched=n)
+                await remind_deadlines()   # V0652 (af)
                 if n:
                     logger.info("[CONTRACT-REAPER] sweep touched %d row(s)", n)
         except Exception as e:  # noqa: BLE001

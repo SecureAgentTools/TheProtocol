@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  approveAllIds, didTail, isExpired, leftParts, liveApprovalStatus, pendingShown, secondsLeft, shortSha,
-  touchesApprovals, type ApprovalItem,
+  alreadyDecidedIds, approveAllIds, decidedElsewhere, didTail, isExpired, leftParts, liveApprovalStatus, pendingShown,
+  secondsLeft, shortSha, touchesApprovals, type ApprovalItem,
 } from './approvals'
 
 /** V0650 (l): the pinned panel's pure rules. BASE (V0649): the module does not exist. */
@@ -45,5 +45,34 @@ describe('approvals: what the panel shows and what Approve all sends', () => {
     expect(live).toEqual({ p: 'pending', ok: 'approved', no: 'denied', old: 'expired' })
     expect(touchesApprovals(dec('ok', 'approved'))).toBe(true)
     expect(touchesApprovals({ kind: 'card', card: { type: 'pay.request' } })).toBe(false)
+  })
+})
+
+describe('V0652 (y): a press on a request decided before it', () => {
+  it('names the ids the server says were decided before (skipped already_*), or every sent id on a bare repeat', () => {
+    expect(alreadyDecidedIds({ decided: [], skipped: { a: 'already_approved', b: 'expired' }, already: true }, ['a', 'b']))
+      .toEqual(['a'])
+    expect(alreadyDecidedIds({ already: true }, ['a', 'b'])).toEqual(['a', 'b'])
+    expect(alreadyDecidedIds({ decided: [{ id: 'a' }], skipped: {} }, ['a'])).toEqual([])
+    expect(alreadyDecidedIds({ decided: [{ id: 'a' }], skipped: { b: 'already_denied' } }, ['a', 'b'])).toEqual(['b'])
+    expect(alreadyDecidedIds(null, ['a'])).toEqual([])
+  })
+
+  it('reads the decision, its time and whether the signed-in developer made it', () => {
+    const rec = (dev: unknown) => ({ id: 'apr_1', decision: { decision: 'approved', decided_at: '2026-10-31T04:35:12Z',
+                                                               decided_by: { developer_id: dev, name: 'Commander' } } })
+    expect(decidedElsewhere(rec(6), 6)).toEqual(
+      { id: 'apr_1', decision: 'approved', at: '2026-10-31T04:35:12Z', mine: true, name: 'Commander' })
+    expect(decidedElsewhere(rec(6), '6')?.mine).toBe(true)
+    expect(decidedElsewhere(rec(9), 6)?.mine).toBe(false)
+    expect(decidedElsewhere(rec(6), null)?.mine).toBe(false)           // unknown signer: never claimed as "yours"
+    expect(decidedElsewhere(rec(null), null)?.mine).toBe(false)
+  })
+
+  it('says nothing about a record without a decision', () => {
+    expect(decidedElsewhere({ id: 'apr_1', status: 'pending' }, 6)).toBeNull()
+    expect(decidedElsewhere({ decision: { decision: 'approved' } }, 6)).toBeNull()   // no time
+    expect(decidedElsewhere({ decision: { decision: 'expired', decided_at: 'x' } }, 6)).toBeNull()
+    expect(decidedElsewhere(null, 6)).toBeNull()
   })
 })

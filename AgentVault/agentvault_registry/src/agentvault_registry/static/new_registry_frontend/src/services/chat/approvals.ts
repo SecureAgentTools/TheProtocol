@@ -9,7 +9,7 @@
 export interface ApprovalItem {
   id: string
   conversation_id: string
-  status: 'pending' | 'approved' | 'denied' | 'expired' | string
+  status: 'pending' | 'approved' | 'denied' | 'chosen' | 'expired' | string
   title: string
   reason?: string | null
   unlocks?: string | null
@@ -20,6 +20,14 @@ export interface ApprovalItem {
   created_at?: string | null
   expires_at?: string | null
   request_message_id?: string | null
+  // V0652 (ab): a choice: its options (2 to 5) and, once decided, the one chosen
+  options?: string[] | null
+  chosen?: { index: number; label: string } | null
+}
+
+/** V0652 (ab): a choice is decided by one of its options (or declined), never approved. */
+export function isChoice(item: Pick<ApprovalItem, 'options'> | null | undefined): boolean {
+  return Array.isArray(item?.options) && item!.options!.length >= 2
 }
 
 function ms(iso: string | null | undefined): number | null {
@@ -50,9 +58,11 @@ export function pendingShown(items: ApprovalItem[], nowMs: number): ApprovalItem
     .sort((a, b) => (ms(a.created_at) ?? 0) - (ms(b.created_at) ?? 0))
 }
 
-/** The ids "Approve all" sends: the shown requests that are still pending and unexpired NOW. */
+/** The ids "Approve all" sends: the shown requests that are still pending and unexpired NOW. A choice is not among
+ *  them (V0652 (ab)): it is decided by one of its options, one at a time. */
 export function approveAllIds(items: ApprovalItem[], nowMs: number): string[] {
-  return pendingShown(items, nowMs).filter((i) => i.status === 'pending' && !isExpired(i, nowMs)).map((i) => i.id)
+  return pendingShown(items, nowMs).filter((i) => i.status === 'pending' && !isExpired(i, nowMs) && !isChoice(i))
+    .map((i) => i.id)
 }
 
 /** "1 h 05 min", "4 min 10 s", "45 s": the countdown's parts (the component words them through i18n). */
@@ -83,7 +93,8 @@ export function liveApprovalStatus(messages: Array<{ kind?: string; card?: any }
     const id = String(c.data?.approval_id || '')
     if (!id) continue
     if (c.type === 'approval.decided') out[id] = c.data?.decision === 'approved' ? 'approved' : 'denied'
-    else if (c.type === 'approval.request' && !(id in out)) {
+    else if (c.type === 'choice.decided') out[id] = c.data?.decision === 'chosen' ? 'chosen' : 'denied'   // V0652 (ab)
+    else if ((c.type === 'approval.request' || c.type === 'choice.request') && !(id in out)) {
       const ex = ms(c.data?.expires_at)
       out[id] = ex !== null && ex <= nowMs ? 'expired' : 'pending'
     }
@@ -94,5 +105,35 @@ export function liveApprovalStatus(messages: Array<{ kind?: string; card?: any }
 /** Is this message one the panel must hear about (a request posted, or one decided)? */
 export function touchesApprovals(m: { kind?: string; card?: any } | null | undefined): boolean {
   const t = m?.kind === 'card' ? m?.card?.type : null
-  return t === 'approval.request' || t === 'approval.decided'
+  return t === 'approval.request' || t === 'approval.decided' || t === 'choice.request' || t === 'choice.decided'
+}
+
+/** V0652 (y): a request decided before this press, on another device or by another approver. */
+export interface DecidedElsewhere {
+  id: string
+  decision: 'approved' | 'denied'
+  at: string
+  mine: boolean
+  name: string
+}
+
+/** The ids of a decide answer that were decided before the press: an idempotent repeat (`already`, his seq 477: the
+ *  desktop approved, the phone still offered Approve and the server answered 200 "already decided this way") or the
+ *  `already_*` entries of `skipped`. */
+export function alreadyDecidedIds(answer: any, sent: string[]): string[] {
+  const skipped = answer && typeof answer.skipped === 'object' && answer.skipped ? answer.skipped : {}
+  const named = Object.keys(skipped).filter((k) => String(skipped[k]).startsWith('already_'))
+  if (named.length) return named
+  return answer?.already ? sent.slice() : []
+}
+
+/** What the record says about such a request (GET /chat/approvals/{id}): its decision, when, and whether the
+ *  signed-in developer made it (then it was another device or window of theirs). Null while it carries no decision. */
+export function decidedElsewhere(record: any, myDeveloperId: number | string | null | undefined): DecidedElsewhere | null {
+  const d = record?.decision
+  const st = d?.decision
+  if ((st !== 'approved' && st !== 'denied') || !d?.decided_at) return null
+  const by = d.decided_by || {}
+  const mine = myDeveloperId != null && myDeveloperId !== '' && String(by.developer_id) === String(myDeveloperId)
+  return { id: String(record?.id || ''), decision: st, at: String(d.decided_at), mine, name: String(by.name || '') }
 }

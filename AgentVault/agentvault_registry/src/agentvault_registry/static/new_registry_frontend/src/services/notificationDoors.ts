@@ -38,9 +38,32 @@ export function pocketClick(click?: string | null): NotifDoor | null {
   return Object.keys(query).length ? { path: m[1], query } : { path: m[1] }
 }
 
+/** The hash route a click names (`/ui#/x?y` -> `/x?y`), or null for anything that is not an in-app route. */
+export function hashRoute(click?: string | null): string | null {
+  if (!click) return null
+  const s = String(click)
+  const hash = s.indexOf('#')
+  const route = hash >= 0 ? s.slice(hash + 1) : s
+  return route.startsWith('/') && !route.startsWith('//') ? route : null
+}
+
+/**
+ * V0652 (ai): a chat thread opens on the surface the notice is read on. The server cannot know where that is, and its
+ * chat and support notices name Pocket's path (`/pocket/ourchat/<id>`), so the desktop bell sent its reader into the
+ * phone layout. The desktop bell maps a Pocket thread (and the permanent `/pocket/ourstate` alias) to the console's
+ * thread (`/ourchat/<id>`), query kept; Pocket maps the console's thread back (`doorForNotification`).
+ */
+export function desktopRoute(click?: string | null): string | null {
+  const route = hashRoute(click)
+  return route ? route.replace(/^\/pocket\/(?:ourchat|ourstate)\//, '/ourchat/') : null
+}
+
 export function doorForNotification(e: NotifDoorInput): NotifDoor | null {
   const direct = pocketClick(e.click)
   if (direct) return direct
+  // V0652 (ai): the console's own thread link, read on a phone, opens Pocket's thread
+  const desk = hashRoute(e.click)
+  if (desk && /^\/ourchat\/[^/?#\s]+/.test(desk)) return pocketClick(`#/pocket${desk}`)
 
   const t = String(e.type_key || '')
   if (!t) return null

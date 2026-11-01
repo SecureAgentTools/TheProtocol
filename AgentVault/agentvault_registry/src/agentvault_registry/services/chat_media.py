@@ -21,6 +21,11 @@ refusals, and each one is deliberate:
     did not ask for.
   * **Bounded.** Per-file size cap and a per-principal daily quota, both env
     tunable, both refusing with the number.
+  * **A text file shows its first lines** (V0652 (ae)): the registry writes them
+    into the card (at most 600 characters, cut at a line end), at the upload and
+    again when the card is posted, from the stored file, so a preview never says
+    something its file does not. A binary, or a file that holds a credential's
+    shape, gets no preview, and the card says which.
 
 The bytes live on the durable volume, keyed by SHA-256; the database holds the
 metadata. A message references an attachment through a `media` CARD, which is a
@@ -31,9 +36,11 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import json
 import logging
 import os
 import re
+import unicodedata
 import uuid
 from pathlib import Path
 from typing import Any, Optional
@@ -61,8 +68,14 @@ ALLOWED_MIME = {
     # V0650 (i): Markdown is text, held to text/plain's rules (no magic number; refused when it sniffs as an image or a
     # PDF), and like every file served only as a download (octet-stream, attachment, nosniff, sandbox), never rendered.
     "text/markdown": ".md",
+    # V0652 (ae): JSON and CSV are text too, on the same rules.
+    "application/json": ".json",
+    "text/csv": ".csv",
 }
-TEXT_MIME = frozenset({"text/plain", "text/markdown"})
+TEXT_MIME = frozenset({"text/plain", "text/markdown", "application/json", "text/csv"})
+# V0652 (ae): the names browsers give the same text types (a .log file arrives as text/x-log on Linux); stored as
+# the canonical type.
+MIME_ALIASES = {"text/x-log": "text/plain", "text/x-markdown": "text/markdown"}
 # Named refusals for the types people will actually try, so the answer is a
 # sentence rather than a shrug.
 NAMED_REFUSALS = {
@@ -143,6 +156,7 @@ async def store(db: AsyncSession, *, conversation_id: str, uploader_key: str,
                         f"this one is {size // 1024} KB")
 
     declared = (declared_mime or "").split(";")[0].strip().lower()
+    declared = MIME_ALIASES.get(declared, declared)
     if declared in NAMED_REFUSALS:
         raise _err(415, NAMED_REFUSALS[declared])
     if declared not in ALLOWED_MIME:
@@ -166,6 +180,8 @@ async def store(db: AsyncSession, *, conversation_id: str, uploader_key: str,
         raise _err(429, f"daily upload limit of {DAILY_BYTES // (1024 * 1024)} MB reached")
 
     digest = hashlib.sha256(data).hexdigest()
+    shown = text_preview(data[:PREVIEW_READ], mime=declared, filename=safe_filename(filename),
+                         complete=size <= PREVIEW_READ) or {}
 
     # Dedup INSIDE the thread: the same file sent twice is one blob, two cards.
     existing = (await db.execute(sa_text("""
@@ -174,7 +190,7 @@ async def store(db: AsyncSession, *, conversation_id: str, uploader_key: str,
     """), {"c": conversation_id, "s": digest})).first()
     if existing is not None:
         return {"attachment_id": existing[0], "filename": existing[1], "mime": existing[2],
-                "bytes": int(existing[3]), "sha256": existing[4], "deduplicated": True}
+                "bytes": int(existing[3]), "sha256": existing[4], "deduplicated": True, **shown}
 
     ext = ALLOWED_MIME[declared]
     folder = DATA_ROOT / conversation_id
@@ -211,10 +227,10 @@ async def store(db: AsyncSession, *, conversation_id: str, uploader_key: str,
         if row is None:
             raise _err(500, "the upload raced and could not be recovered")
         return {"attachment_id": row[0], "filename": row[1], "mime": row[2],
-                "bytes": int(row[3]), "sha256": row[4], "deduplicated": True}
+                "bytes": int(row[3]), "sha256": row[4], "deduplicated": True, **shown}
 
     return {"attachment_id": att_id, "filename": safe_filename(filename),
-            "mime": declared, "bytes": size, "sha256": digest, "deduplicated": False}
+            "mime": declared, "bytes": size, "sha256": digest, "deduplicated": False, **shown}
 
 
 async def fetch(db: AsyncSession, attachment_id: str) -> Optional[dict]:
@@ -252,8 +268,164 @@ async def tombstone(db: AsyncSession, attachment_id: str) -> bool:
 
 def media_card(att: dict) -> dict:
     """The POINTER a message carries. No bytes, no data URI, no preview blob:
-    a thread read stays the same size no matter what people send."""
+    a thread read stays the same size no matter what people send. V0652 (ae):
+    a text file's card carries its first lines too, bounded (PREVIEW_CHARS)."""
     return {"v": 1, "type": "media", "data": {
         "attachment_id": att["attachment_id"], "name": att["filename"],
         "mime": att["mime"], "bytes": att["bytes"], "sha256": att["sha256"],
+        **{k: att[k] for k in PREVIEW_KEYS if k in att},
     }}
+
+
+# ── V0652 (ae) (order gwo_5b9de9adb052d681ca95853d): a text file's first lines on its card ─────────────────────────
+#
+# The maintainer (the sessions' room, seq 265): "can you print like a preview from the context of the file on the
+# card? ... otherwise i would always have to download it to see whats in it if its an md or txt file or json". The
+# registry writes the preview, never the sender: the upload returns a card that carries it, and the post path
+# (chat_service.send_message) writes it again from the stored file, so a card cannot show text its file does not
+# hold, and a card that points at a file outside its thread shows none.
+
+PREVIEW_CHARS = 600                 # the most a preview shows
+PREVIEW_LINES = 16                  # and at most this many lines of it
+PREVIEW_READ = 256 * 1024           # what the preview reads of a file (and screens for a credential's shape)
+PREVIEW_KINDS = ("markdown", "json", "csv", "log", "text")
+PREVIEW_WITHHELD = ("binary", "credential")
+PREVIEW_KEYS = ("preview", "preview_kind", "preview_truncated", "preview_withheld")
+
+_KIND_BY_EXT = {".md": "markdown", ".markdown": "markdown", ".json": "json", ".csv": "csv", ".log": "log"}
+_ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")        # a terminal's colour codes, in logs
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0e-\x1f\x7f]")
+# a secret-named assignment, as an env file or a YAML file writes one (KEY=value, key: value), its value one word to
+# the line's end (so a sentence such as "Password: rotated on Friday" is prose, not a credential)
+_ENV_SECRET = re.compile(
+    r"(?im)^[ \t]*(?:export[ \t]+)?[a-z0-9_.-]*(?:secret|password|passwd|token|api[_-]?key|private[_-]?key|credential)"
+    r"[a-z0-9_.-]*[ \t]*[=:][ \t]*['\"]?[^\s'\"]{6,}['\"]?,?[ \t]*$")
+
+
+def preview_kind(mime: str, filename: str) -> str:
+    """How a text file is shown: markdown rendered, the others in monospace (JSON pretty-printed)."""
+    if mime == "text/markdown":
+        return "markdown"
+    if mime == "application/json":
+        return "json"
+    if mime == "text/csv":
+        return "csv"
+    name = (filename or "").lower()
+    if name.endswith(".txt"):           # chat_link sends a .md or .json to a registry that refuses it as FILE.md.txt
+        name = name[:-4]
+    return next((k for ext, k in _KIND_BY_EXT.items() if name.endswith(ext)), "text")
+
+
+def _decode(head: bytes, complete: bool) -> Optional[str]:
+    """The text of a read window, or None when it is not UTF-8. A window that ends inside a character loses only that
+    character's bytes; an undecodable byte anywhere else is a binary."""
+    if head.startswith(b"\xef\xbb\xbf"):
+        head = head[3:]
+    try:
+        return head.decode("utf-8")
+    except UnicodeDecodeError as e:
+        if complete or e.reason != "unexpected end of data" or e.end != len(head) or e.start < len(head) - 3:
+            return None
+        try:
+            return head[:e.start].decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+
+
+def _holds_a_credential(text: str) -> bool:
+    from ..mcp.audit_sanitizer import _SECRET_KV, _SECRET_SHAPES     # the product's own shapes, one definition
+    return (any(rx.search(text) for rx in _SECRET_SHAPES) or bool(_SECRET_KV.search(text))
+            or bool(_ENV_SECRET.search(text)))
+
+
+def _cut(text: str) -> tuple[str, bool]:
+    """At most PREVIEW_CHARS characters and PREVIEW_LINES lines, cut at a line end; a first line longer than that is
+    cut at a word, else at a character, never between a character and its combining mark."""
+    text = text.lstrip("\n")
+    lines = text.split("\n")
+    kept, used = [], 0
+    for line in lines:
+        add = len(line) + (1 if kept else 0)
+        if len(kept) >= PREVIEW_LINES or used + add > PREVIEW_CHARS:
+            break
+        kept.append(line)
+        used += add
+    else:
+        return text.rstrip(), False
+    if kept and "\n".join(kept).strip():
+        return "\n".join(kept).rstrip(), True
+    first = text[:PREVIEW_CHARS + 1]
+    k = PREVIEW_CHARS
+    space = first.rfind(" ", 0, k + 1)
+    if space >= PREVIEW_CHARS // 2:
+        k = space
+    while 0 < k < len(first) and (unicodedata.combining(first[k]) or first[k] in "\u200d\ufe0e\ufe0f"
+                                  or first[k - 1] == "\u200d"):
+        k -= 1
+    return first[:k].rstrip(), True
+
+
+def text_preview(head: bytes, *, mime: str, filename: str, complete: bool) -> Optional[dict]:
+    """The preview fields a text file's card carries, or None for a file that shows none (not text, or blank).
+
+    `head` is the file's first PREVIEW_READ bytes (or all of it: `complete`). A binary or a file shaped like a
+    credential gets `preview_withheld` instead, so the card can say why it shows nothing.
+    """
+    if mime not in TEXT_MIME:
+        return None
+    text = _decode(head or b"", complete)
+    if text is None or "\x00" in text:
+        return {"preview_withheld": "binary"}
+    text = _ANSI.sub("", text.replace("\r\n", "\n").replace("\r", "\n"))
+    if len(_CONTROL.findall(text[:8192])) > max(8, len(text[:8192]) // 50):
+        return {"preview_withheld": "binary"}
+    text = _CONTROL.sub("", text)
+    if _holds_a_credential(text):
+        return {"preview_withheld": "credential"}
+    kind = preview_kind(mime, filename)
+    if kind == "json" and complete:
+        try:
+            text = json.dumps(json.loads(text), indent=2, ensure_ascii=False)
+        except (ValueError, RecursionError):
+            pass                        # not JSON after all: shown as it is
+    shown, cut = _cut(text)
+    if not shown.strip():
+        return None
+    return {"preview": shown, "preview_kind": kind, "preview_truncated": bool(cut or not complete)}
+
+
+def without_preview(card: dict) -> dict:
+    """A media card with no preview fields (a new card; the one given is unchanged)."""
+    return {**card, "data": {k: v for k, v in (card.get("data") or {}).items() if k not in PREVIEW_KEYS}}
+
+
+def _read_head(path: str) -> tuple[bytes, bool]:
+    with open(path, "rb") as fh:
+        head = fh.read(PREVIEW_READ + 1)
+    return head[:PREVIEW_READ], len(head) <= PREVIEW_READ
+
+
+async def ground_card(db: AsyncSession, conversation_id: str, card: dict) -> dict:
+    """A media card as it is posted: its preview fields written from the stored file, whatever the sender's card said.
+    A card whose attachment is not this thread's (or is gone) carries no preview. Returns a new card."""
+    out = without_preview(card)
+    data = out["data"]
+    att_id = str(data.get("attachment_id") or "")
+    if not att_id or len(att_id) > 64:
+        return out
+    try:
+        att = await fetch(db, att_id)
+    except Exception as e:  # noqa: BLE001 - a preview is an extra; the message still posts without it
+        logger.warning("[CHATMEDIA] preview: attachment read failed: %s", e)
+        return out
+    if att is None or str(att["conversation_id"]) != str(conversation_id) or att["deleted_at"]:
+        return out
+    if att["mime"] not in TEXT_MIME:
+        return out
+    try:
+        head, complete = _read_head(att["path"])
+    except OSError as e:
+        logger.warning("[CHATMEDIA] preview: %s unreadable: %s", att["path"], e)
+        return out
+    data.update(text_preview(head, mime=att["mime"], filename=att["filename"], complete=complete) or {})
+    return out

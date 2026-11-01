@@ -42,6 +42,9 @@ class _Result:
     def first(self):
         return self._rows[0] if self._rows else None
 
+    def all(self):   # V0652 (af): the award reads the declined bids it releases (UPDATE ... RETURNING)
+        return list(self._rows)
+
     def scalar(self):
         r = self.first()
         if r is None:

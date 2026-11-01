@@ -83,3 +83,31 @@ def test_the_first_peer_matching_keeps_the_old_order():
                                  "beta": {"hash_match": True, "live_policy_hash": "b" * 64},
                                  "op-b": {"hash_match": True, "live_policy_hash": "c" * 64}})
     assert reads == ["op-a"] and [a["peer_id"] for a in accepts] == ["1", "1"]
+
+
+# ── V0652 (agentvault2-d3): the row says what the success path read (the V0651 posture pairs never reached it) ─────────
+EFFECT = "admin_effect: acceptComplianceBaseline"
+
+
+def test_when_no_peer_matches_the_effect_row_names_each_read():
+    out, accepts, reads = _run({k: {"hash_match": False, "live_policy_hash": k[0] * 64, "baseline_hash": "9" * 64,
+                                    "baseline_source": "compliance_poller:first_sight"} for k in ("op-a", "beta", "op-b")})
+    row = out[EFFECT]
+    why = str(row.get("skip_reason"))
+    assert row.get("healthy") is False and why.startswith("NOT MEASURED: no peer of the 3 read"), why
+    for k in ("op-a", "beta", "op-b"):
+        assert f"{k}: hash_match=False, baseline_source='compliance_poller:first_sight', baseline 99999999, live " \
+               f"{k[0] * 8}" in why, why
+    assert "9" * 9 not in why, "8 characters of a hash at most"
+    assert [a["expected_hash"] for a in accepts] == [STALE], "still nothing drifted is accepted"
+
+
+def test_an_unfetched_live_policy_is_named():
+    out, _accepts, _reads = _run({k: {"hash_match": None, "live_policy_hash": None, "live_fetch_error": "HTTP 401"}
+                                  for k in ("op-a", "beta", "op-b")})
+    assert "live not fetched, fetch error 'HTTP 401'" in str(out[EFFECT].get("skip_reason"))
+
+
+def test_a_match_writes_no_effect_row():
+    out, _accepts, _reads = _run({"op-a": {"hash_match": True, "live_policy_hash": "a" * 64}})
+    assert EFFECT not in out

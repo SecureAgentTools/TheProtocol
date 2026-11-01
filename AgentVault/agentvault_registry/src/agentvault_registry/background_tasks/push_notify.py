@@ -581,6 +581,47 @@ async def notify(
     return sent
 
 
+_ONCE_PREFIX = "registry:notify:once:"
+_NOTICE_TASKS: set = set()
+
+
+def spawn_notice(coro) -> None:
+    """V0652 (af): run a notice after the caller's own work, without making the caller wait for a push (each rail
+    hop is up to 5 s), holding a reference until it ends (a bare create_task may be collected mid-flight)."""
+    try:
+        import asyncio
+        t = asyncio.get_running_loop().create_task(coro)
+        _NOTICE_TASKS.add(t)
+        t.add_done_callback(_NOTICE_TASKS.discard)
+    except RuntimeError:   # no running loop: there is nobody to tell from here
+        coro.close()
+
+
+async def claim_once(once_key: str, ttl_s: int) -> bool:
+    """V0652 (af): True exactly once per `once_key` within `ttl_s` (Redis SET NX). Without Redis: False."""
+    try:
+        from agentvault_registry.background_tasks.leader import get_redis
+        r = await get_redis()
+        if r is None:
+            return False
+        return bool(await r.set(_ONCE_PREFIX + once_key, "1", nx=True, ex=int(ttl_s)))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[NOTIFY] once-claim failed for %s: %s", once_key, exc)
+        return False
+
+
+async def notify_once(once_key: str, type_key: str, developer_ids: Iterable[int], *, ttl_s: int = 45 * 86400,
+                      **kw) -> int:
+    """V0652 (af): a notice said once per occasion, whatever runs its check again (a worker's next cycle, a restart,
+    a second worker): a reminder 24 h before a vote closes, an API key 14 days before it expires, a card that stopped
+    answering. `once_key` names the occasion (the object and its deadline), held longer than the occasion lasts.
+    Without Redis nothing is sent: a reminder said every cycle is worse than one said late, and the workers that carry
+    these hold no leadership without Redis either."""
+    if not await claim_once(once_key, ttl_s):
+        return 0
+    return await notify(type_key, developer_ids, **kw)
+
+
 async def notify_agent_owners(type_key: str, dids: Iterable[str], **kw) -> int:
     """Convenience for the reactor pattern: resolve agent DIDs → owning developers → notify()."""
     dev_ids = await resolve_developer_ids_for_dids(dids)

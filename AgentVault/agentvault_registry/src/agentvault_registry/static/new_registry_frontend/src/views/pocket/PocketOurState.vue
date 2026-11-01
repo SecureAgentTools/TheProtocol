@@ -23,7 +23,13 @@
           <span v-else-if="requestCount > 0" class="os-lane-badge" data-testid="os-req-count">{{ requestCount }}</span>
         </button>
       </div>
+      <!-- V0652 (ak): your chat settings, from the list too (inventory item 13: the console reached them nowhere) -->
+      <button type="button" class="os-you" data-testid="os-you-settings"
+              :aria-label="t('ourstate.settings.you', 'Your chat settings')" :title="t('ourstate.settings.you', 'Your chat settings')"
+              @click="youOpen = true"><Icon name="mdi:cog" /></button>
     </header>
+    <ChatYouPanel v-if="youOpen" :surface="youWide ? 'drawer' : 'sheet'" push-state="unknown"
+                  :in-pocket="String(route.path || '').startsWith('/pocket')" @close="youOpen = false" />
 
     <!-- Honest hosting line (law 5): who holds these threads, said plainly. -->
     <!-- §TWOAGENT V0441: where cross-registry chat is on, "Same-registry only for now." is no longer true here; the
@@ -228,6 +234,7 @@ import OurStateIdentity from '@/components/ourstate/OurStateIdentity.vue'
 import PocketProfile from '@/views/pocket/PocketProfile.vue'
 import TrustLinesRow from '@/components/ourstate/TrustLinesRow.vue'
 import OurStateFind from '@/components/ourstate/OurStateFind.vue'
+import ChatYouPanel from '@/components/ourstate/ChatYouPanel.vue'
 import { chatApi } from '@/services/api/chat'
 import { discoveryService } from '@/services/api/discovery'
 import { useAuthStore } from '@/stores/auth'
@@ -238,6 +245,10 @@ import { useFrames } from '@/composables/useFrames'
 
 const { t, tp } = useI18n()
 const router = useRouter()
+/* V0652 (ak): your chat settings from the list's header; a drawer from 900 px (OurChatShell's breakpoint), else a sheet */
+const youOpen = ref(false)
+const youWide = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+  ? window.matchMedia('(min-width: 900px)').matches : false
 const { base } = useOurChatBase()
 const route = useRoute()
 const auth = useAuthStore()
@@ -519,6 +530,10 @@ onMounted(async () => {
 .pk-ptr-spin { animation: os-spin 1s linear infinite; }
 @keyframes os-spin { to { transform: rotate(360deg); } }
 .os-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+/* V0652 (ak): the door to your chat settings, a 44 px target */
+.os-you { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid var(--nc-border, #2a2f3e);
+  border-radius: 10px; background: none; color: inherit; cursor: pointer; }
+.os-you :deep(svg) { width: 18px; height: 18px; opacity: .85; }
 .os-title { font-size: 1.35rem; font-weight: 800; margin: 0; }
 .os-lanes { display: flex; gap: 6px; }
 .os-lane { min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border-color, rgba(128,128,128,.3)); background: none; color: inherit; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }

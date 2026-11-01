@@ -567,6 +567,17 @@ async def create_frame_invitation(
                       bundle_endpoint_url=payload.bundle_endpoint_url,
                       federation_endpoint_url=payload.federation_endpoint_url,
                       initiator_ip=invitation.initiator_ip)
+    # V0652 (af): the registry's admins hear a frame's request to federate (a decision: approve or reject in Frame
+    # Management); the name is the requester's own words, so it is bounded and kept to one line
+    try:
+        from agentvault_registry.background_tasks import push_notify
+        _who = " ".join(str(invitation.initiator_name or initiator_td or "a frame").split())[:80]
+        push_notify.spawn_notice(push_notify.notify_audience(
+            "federation.invitation_received", title="A frame asks to federate",
+            message=f"{_who} ({str(initiator_td)[:120]}) asks to federate with this registry. Approve or reject it in "
+                    "Frame Management.", tags="handshake", click="/ui#/admin/frames"))
+    except Exception:  # noqa: BLE001
+        logger.debug("[frame_invitations] admin notice skipped", exc_info=True)
 
     # Notify admin (non-blocking)
     admin_addr = _admin_notification_email()

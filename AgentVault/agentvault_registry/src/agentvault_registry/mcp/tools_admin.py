@@ -755,7 +755,7 @@ async def support_close_ticket(
         auth      : Must be admin developer context
         ticket_id : ID of the ticket to close
         status    : Target status — "resolved" or "closed" (default "resolved")
-        message   : Optional final reply message (sent before status change)
+        message   : Optional final message, sent WITH the status change (one desk act, one notice: V0652 (ai))
 
     Returns:
         Confirmation with final ticket status.
@@ -777,25 +777,13 @@ async def support_close_ticket(
 
     try:
         async with httpx.AsyncClient(timeout=HTTPX_TIMEOUT, verify=get_httpx_verify()) as client:
-            # Step 1: Send reply if message provided
+            # V0652 (ai) (the sessions' room seq 609/610): ONE call, the closing message with the status, so the
+            # requester gets one notice (the resolve's, in the message's words), never a reply's plus a status's
+            body: Dict[str, Any] = {"status": status}
             if message and message.strip():
-                reply_url = f"{REGISTRY_SELF_URL}/api/v1/admin/support/tickets/{seg(ticket_id)}/reply"
-                reply_resp = await client.post(reply_url, json={"message": message}, headers=headers)
-
-                if reply_resp.status_code >= 400:
-                    try:
-                        reply_data = reply_resp.json()
-                    except Exception:
-                        reply_data = reply_resp.text
-                    return {
-                        "error": f"Failed to send reply before closing ticket #{ticket_id} (HTTP {reply_resp.status_code})",
-                        "detail": reply_data,
-                        "ok": False,
-                    }
-
-            # Step 2: Update ticket status
+                body["message"] = message.strip()
             status_url = f"{REGISTRY_SELF_URL}/api/v1/admin/support/tickets/{seg(ticket_id)}/status"
-            status_resp = await client.post(status_url, json={"status": status}, headers=headers)
+            status_resp = await client.post(status_url, json=body, headers=headers)
 
         try:
             status_data = status_resp.json()

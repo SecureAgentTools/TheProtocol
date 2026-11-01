@@ -1160,11 +1160,29 @@ class FederationTestRig:
                 return await r
             return r
 
+        def _clear_earlier_flags():
+            """§MCPTEST30 (V0652, agentvault2-d3): a retry starts with no nothing-flag of an earlier attempt
+            (decorator.clear_nothing_flags). Only a sync capture returns the live map; an async one is a snapshot,
+            closed unawaited, so no I/O starts."""
+            if not capture_state:
+                return
+            try:
+                r = capture_state()
+            except Exception:                                          # noqa: BLE001 - a capture error clears nothing
+                return
+            if asyncio.iscoroutine(r):
+                r.close()
+                return
+            from agentvault_registry.api_tests.federation_suite.decorator import clear_nothing_flags
+            clear_nothing_flags(r)
+
         t0 = time.time()
         attempts = 0
         last_exception: Optional[BaseException] = None
         while True:
             attempts += 1
+            if attempts > 1:
+                _clear_earlier_flags()
             # §NIGHTLYTRUTH (2026-09-14): what the LAST attempt did decides the verdict. A predicate that
             # raises PreconditionUnmet is kept polling (a fixture can still arrive inside the budget), but
             # if the budget ends on an unmet precondition the row is NOT MEASURED, not FAILED: the decorator's

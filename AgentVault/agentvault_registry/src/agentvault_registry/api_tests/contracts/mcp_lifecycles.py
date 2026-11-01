@@ -6865,18 +6865,28 @@ async def _commons_member_of_the_run(rpc: RpcCall, parse: ParseResult, bag: Any,
     return {**out, "agent_jwt": agent_jwt, "access_token": jwt, "did": did}
 
 
+COMMONS_EXTRA_VOTERS_CAP = 4   # the most members of its own a run makes for one season's ballots (a pair only)
+
+
+def _season_min_voters(season: Any) -> int:
+    """The voters a submission needs to be funded, as the run's own season names it (services/commons.min_voters: at
+    least 1; COMMONS_MIN_VOTERS_PER_SUBMISSION, 2 by default); 2 where the answer does not say."""
+    v = season.get("min_voters") if isinstance(season, dict) else None
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= 1 else 2
+
+
 async def _commons_member_vote(rpc: RpcCall, parse: ParseResult, bag: Any, outcomes: Dict[str, dict], sid: int,
-                               tag: str, own_refusal: Any) -> Dict[str, Any]:
+                               tag: str, own_refusal: Any, min_voters: int = 2) -> Dict[str, Any]:
     """The runner's member gives 10 points to the second developer's submission. Records the vote row (the tally row is
-    recorded at close). Returns {"voted": submission id or None, "why": a NOT MEASURED sentence or None, the peer's
-    email and password for its own deletion}."""
+    recorded at close). Returns {"voted": submission id or None, "why": a NOT MEASURED sentence or None, "ballots": on a
+    pair, a sentence on the run's ballots for that submission against the `min_voters` it needs, the peer's email and
+    password for its own deletion, and those of the members of the run's own (member_*, member<n>_*)}."""
+    from agentvault_registry.api_tests.contracts.earned_ad_ephemeral import ephemeral_target
     t0 = time.time()
     said = _switches.answer_text(own_refusal)
     voter_jwt, voter_dev_jwt = bag.sentinel_jwt, bag.developer_jwt
     own: Dict[str, Any] = {}     # members of the run's own (a pair only): their accounts are deleted with the peer's
-    second: Dict[str, Any] = {}
     if "not_a_member" in said:
-        from agentvault_registry.api_tests.contracts.earned_ad_ephemeral import ephemeral_target
         if not ephemeral_target():
             why = ("NOT MEASURED: the runner's developer is not a member on this target (its own-submission ballot was "
                    "refused not_a_member: no qualifying bond), so it has no ballot to give")
@@ -6890,16 +6900,33 @@ async def _commons_member_vote(rpc: RpcCall, parse: ParseResult, bag: Any, outco
             _commons_row(outcomes, COMMONS_VOTE_CHECK, False, 0, t0, skip=why)
             return {**own, "voted": None, "why": why}
         voter_jwt, voter_dev_jwt = made["agent_jwt"], made["access_token"]
-        # a submission is funded only with COMMONS_MIN_VOTERS_PER_SUBMISSION voters (2 by default; the trial pair
-        # nt261031x5 closed one member's ballot with no award): a second member of the run's own gives the same points
-        # as setup, recorded on no row; the rule stays as it is
-        second = await _commons_member_of_the_run(rpc, parse, bag, tag, which="-2")
-        own.update({"member2_email": second.get("email"), "member2_password": second.get("password")})
     elif "own_submission" not in said:
         why = ("NOT MEASURED: the runner's own-submission ballot was not refused own_submission, so whether its developer "
                "is a member here is not known")
         _commons_row(outcomes, COMMONS_VOTE_CHECK, False, 0, t0, skip=why)
         return {"voted": None, "why": why}
+    # V0652 (agentvault2-d3; the V0651 pair proof nt261101x1): a submission is funded only with the season's min_voters
+    # voters (2 by default; the trial pair nt261031x5 closed one member's ballot with no award). On a pair the run makes
+    # the rest as members of its own, whoever its first voter is: on a pair running production's posture the runner's
+    # agents bond from their own funds, so the runner's developer IS a member (own_submission), and V0651's proof closed
+    # its season on that one ballot (too_few_voters), so the pay was never measured. Their ballots are setup, on no row;
+    # the rule stays as it is.
+    extra: List[Dict[str, Any]] = []
+    extra_why: List[str] = []
+    pair = ephemeral_target()
+    if pair:
+        need = max(0, int(min_voters) - 1)
+        if need > COMMONS_EXTRA_VOTERS_CAP:
+            extra_why.append(f"the season needs {min_voters} voters, more than the {COMMONS_EXTRA_VOTERS_CAP + 1} a "
+                             f"run gives")
+            need = 0
+        for n in range(2, need + 2):
+            m = await _commons_member_of_the_run(rpc, parse, bag, tag, which=f"-{n}")
+            own.update({f"member{n}_email": m.get("email"), f"member{n}_password": m.get("password")})
+            if m.get("agent_jwt"):
+                extra.append({**m, "n": n})
+            else:
+                extra_why.append(f"member {n} of the run's own could not be made: {m.get('why')}")
     peer = await _commons_peer_work(rpc, parse, bag, sid, tag)
     peer = {**peer, **own}
     if not isinstance(peer.get("submission_id"), int):
@@ -6938,13 +6965,22 @@ async def _commons_member_vote(rpc: RpcCall, parse: ParseResult, bag: Any, outco
             and (inner.get("allocations") or {}) == {str(x2): 10} and inner.get("digest")):
         _commons_row(outcomes, COMMONS_VOTE_CHECK, True, code, t0, evidence=ev)
         _tool_row(True)
-        second_jwt = second.get("agent_jwt") if own else None
-        if second_jwt:     # the second member's ballot (setup): the season's award needs two voters
-            await rpc("theprotocol_castCommonsBallot",
-                      {"agent_jwt": second_jwt, "season_id": sid, "allocations": {str(x2): 10}},
-                      jwt=second["access_token"], timeout=30)
-        return {**peer, "voted": x2, "why": None,
-                "second_voter": bool(second_jwt) if own else None}
+        taken = 1
+        for m in extra:    # the other members' ballots (setup): the season's award needs min_voters voters
+            ok2, body2, code2 = await rpc("theprotocol_castCommonsBallot",
+                                          {"agent_jwt": m["agent_jwt"], "season_id": sid, "allocations": {str(x2): 10}},
+                                          jwt=m["access_token"], timeout=30)
+            got = parse(body2)
+            if ok2 and isinstance(got, dict) and got.get("total_points") == 10:
+                taken += 1
+            else:
+                extra_why.append(f"member {m['n']}'s ballot answered HTTP {code2}: {_said(got)}")
+        ballots = None
+        if pair:
+            ballots = f"the run's ballots for it: {taken} of the {min_voters} voters a submission needs"
+            if extra_why:
+                ballots += f" ({'; '.join(extra_why)})"
+        return {**peer, "voted": x2, "why": None, "ballots": ballots, "voters_taken": taken}
     _fail = (f"castCommonsBallot did not take a member's ballot for another developer's work as cast: HTTP {code}: "
              f"{_said(inner)}")
     _commons_row(outcomes, COMMONS_VOTE_CHECK, False, code, t0, evidence=ev, fail=_fail)
@@ -6968,7 +7004,7 @@ async def _ledger_liquid(bag: Any, parse: ParseResult, did: str) -> Optional[Any
 
 
 async def _commons_pay_on_a_pair(rpc: RpcCall, parse: ParseResult, bag: Any, outcomes: Dict[str, dict], sid: int,
-                                 voted: int, dev_jwt: str, events: Any) -> bool:
+                                 voted: int, dev_jwt: str, events: Any, ballots: Optional[str] = None) -> bool:
     """§MCPTEST30 (tester batch 2 item 3, gwo_e3bad842b1a5943022b01d40): on a target torn down after its run only, the
     closed season this run opened is PAID. Its one award (the member's ballot for the second developer's submission) is
     first held to write-off's rule (a refusal row: only a payment that failed or never answered is written off, and a
@@ -6987,7 +7023,7 @@ async def _commons_pay_on_a_pair(rpc: RpcCall, parse: ParseResult, bag: Any, out
     did = (sub or {}).get("submitter_did")
     if not (award and isinstance(award.get("id"), int) and did and award.get("status") == "pending"):
         _ef.effect_unmeasured(outcomes, pay, f"the closed season {sid} names no pending award for submission {voted} "
-                                             f"(it reads {award!r})")
+                                             f"(it reads {award!r})" + (f"; {ballots}" if ballots else ""))
         return False
     await _ef.refusal_step(bag.rpc_admin, parse, write_off, "admin",
                            {"season_id": sid, "award_id": award["id"], "reason": "MCP tester: the award was never sent"},
@@ -7161,7 +7197,8 @@ async def lifecycle_commons_season(rpc: RpcCall, parse: ParseResult, bag: Any, o
             _own_name = _ef.refusal_row("theprotocol_castCommonsBallot", "a ballot for its own developer's submission")
             outcomes[_own_name] = {**_own["theprotocol_castCommonsBallot"], "tool_name": _own_name}
         # V0552: the ballot's success path, on a second developer's submission (recorded under "commons: ")
-        member = await _commons_member_vote(rpc, parse, bag, outcomes, sid, tag, inner)
+        member = await _commons_member_vote(rpc, parse, bag, outcomes, sid, tag, inner,
+                                            min_voters=_season_min_voters(season))
         if "theprotocol_castCommonsBallot" not in outcomes:   # the member's ballot never ran: say why on its row
             outcomes["theprotocol_castCommonsBallot"] = _not_measured(
                 "theprotocol_castCommonsBallot", "2", member.get("why") or "NOT MEASURED: no member's ballot was cast")
@@ -7200,7 +7237,8 @@ async def lifecycle_commons_season(rpc: RpcCall, parse: ParseResult, bag: Any, o
             # §MCPTEST30 (tester batch 2 item 3): on a pair, the closed season is paid (its write-off held to its rule)
             from agentvault_registry.api_tests.contracts.earned_ad_ephemeral import ephemeral_target
             if ephemeral_target():
-                paid = await _commons_pay_on_a_pair(rpc, parse, bag, outcomes, sid, member["voted"], dev_jwt, events)
+                paid = await _commons_pay_on_a_pair(rpc, parse, bag, outcomes, sid, member["voted"], dev_jwt, events,
+                                                    ballots=member.get("ballots"))
     finally:
         cancel_sid: Optional[int] = sid
         if paid:
@@ -7237,9 +7275,10 @@ async def lifecycle_commons_season(rpc: RpcCall, parse: ParseResult, bag: Any, o
         if member.get("member_email") and member.get("member_password"):
             await _schedule_own_deletion(rpc, bag, member["member_email"], member["member_password"],
                                          "the commons season's member of the run's own")
-        if member.get("member2_email") and member.get("member2_password"):
-            await _schedule_own_deletion(rpc, bag, member["member2_email"], member["member2_password"],
-                                         "the commons season's second member of the run's own")
+        for n in range(2, COMMONS_EXTRA_VOTERS_CAP + 2):
+            if member.get(f"member{n}_email") and member.get(f"member{n}_password"):
+                await _schedule_own_deletion(rpc, bag, member[f"member{n}_email"], member[f"member{n}_password"],
+                                             f"the commons season's member {n} of the run's own")
 
 
 LIFECYCLES: List[Dict[str, Any]] = [

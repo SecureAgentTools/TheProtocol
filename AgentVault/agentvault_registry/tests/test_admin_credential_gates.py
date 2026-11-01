@@ -136,6 +136,7 @@ REVIEWED = {
     ("federation_sync.py", "_get_operator_location"): "a SQL filter on the column",
     ("fiat_onramp.py", "_handle_routed_settle"): "a SQL filter on the column",
     ("frame_invitations.py", "_may_name_internal_bundle"): "asks api_key_grants_admin and the second factor",
+    ("support.py", "_desk_recipients"): "a SQL filter on the column: who is told of a desk act, grants nothing (V0652 (ai))",
     ("teg_transactions.py", "reads_every_ledger"): "asks api_key_grants_admin and the second factor",
     ("websocket.py", "<module>"): "the socket's audience predicates over the user dict _build_user_data writes",
     ("websocket.py", "_build_user_data"): "writes the flags only while the credential conveys admin (D6-821)",

@@ -65,7 +65,8 @@ async def test_push_redeem_returns_a_refresh_token():
     from agentvault_registry.routers import push_login
     dev = _developer()
     now = dt.datetime.now(dt.timezone.utc)
-    db = _FakeDB([_Result(row=(dev.id, "approved", now)), _Result(rowcount=1)], get_obj=dev)
+    # V0652 (af): the redeem also reads the request's address and browser (the new-device notice)
+    db = _FakeDB([_Result(row=(dev.id, "approved", now, None, None)), _Result(rowcount=1)], get_obj=dev)
     out = await push_login.redeem_token("appr-1", db=db)
     assert out["token_type"] == "bearer" and out["access_token"]
     _assert_refresh_for(out["refresh_token"], dev.id, dev.token_version)

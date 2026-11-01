@@ -137,7 +137,8 @@ BY_DESIGN_REFUSAL: Dict[str, str] = {
     'theprotocol_acceptComplianceBaseline':
         'a baseline is accepted only for a federated peer whose compliance this registry monitors and which still '
         "publishes the baseline on record (accepting a drift is an admin's decision); the monitor runs on a frame "
-        '(IS_CENTRAL_REGISTRY), so an operator holds no such peer',
+        '(IS_CENTRAL_REGISTRY), so an operator holds no such peer, and on a frame its admin_effect row says what the '
+        'compliance overview offered',
     'theprotocol_guildCrossRegistryBid':
         'a cross-registry bid needs an order on a peer frame, and the lifecycle that earns it '
         '(earned_guild_cross_registry) needs both frames of a pair, which an operator run does not have',

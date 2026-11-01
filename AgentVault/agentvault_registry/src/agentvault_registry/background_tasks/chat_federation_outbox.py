@@ -30,6 +30,12 @@ from ..services import chat_federation as fed
 logger = logging.getLogger(__name__)
 
 CYCLE_SECONDS = int(os.getenv("CHAT_FEDERATION_OUTBOX_INTERVAL", "20"))
+# V0652 (q) gwo_1939f34c31a297ffdd56c51c: between cycles the LEADER looks for a due row this often (one indexed probe,
+# ix_chat_fed_outbox_due) and drains at once when it finds one. The nightly nt261101 measured the host's cycles 40 s
+# apart (the 20 s sleep plus a drain under load): a message queued just after a cycle waited up to 40 s before it left,
+# and the federation suite's 45 s window (chat_g1, the owner's hook on the other registry) heard it late. Still one
+# writer: only the leader probes and drains; the others keep sleeping the whole cycle.
+DUE_POLL_SECONDS = float(os.getenv("CHAT_FEDERATION_OUTBOX_POLL", "1"))
 
 _running = False
 
@@ -96,6 +102,34 @@ async def _drain_once() -> None:
                     out["considered"], out["delivered"], out["failed"])
 
 
+async def _due_rows() -> bool:
+    """Whether a queued row is due now (the drain's own condition, through ix_chat_fed_outbox_due)."""
+    from sqlalchemy import text as sa_text
+    async with async_session_factory() as db:
+        return (await db.execute(sa_text(
+            "SELECT 1 FROM chat_federation_outbox WHERE delivered_at IS NULL AND next_attempt_at <= now() "
+            "AND attempts < :m LIMIT 1"), {"m": fed.MAX_ATTEMPTS})).first() is not None
+
+
+async def _rest(seconds: float, may_wake: bool) -> None:
+    """The pause between cycles. A worker that is not the leader sleeps it whole; the leader ends it as soon as a row
+    is due (a message just queued for another registry), so delivery waits about a second, not a cycle."""
+    if not may_wake or DUE_POLL_SECONDS <= 0:
+        await asyncio.sleep(seconds)
+        return
+    loop = asyncio.get_running_loop()
+    end = loop.time() + seconds
+    while _running and loop.time() < end:
+        await asyncio.sleep(min(DUE_POLL_SECONDS, max(0.0, end - loop.time())))
+        try:
+            if await _due_rows():
+                return
+        except Exception as e:  # noqa: BLE001 — a probe that fails costs the cycle's ordinary wait, nothing else
+            logger.debug("[CHATFED] outbox due-probe failed: %s", e)
+            await asyncio.sleep(max(0.0, end - loop.time()))
+            return
+
+
 async def chat_federation_outbox_loop():
     from .leader import try_acquire_leadership
     global _running
@@ -109,13 +143,17 @@ async def chat_federation_outbox_loop():
                            pattern="hand-rolled", interval_sec=CYCLE_SECONDS,
                            enabled=fed.federation_enabled())
     while _running:
+        # the rest may end early only after a cycle the leader drained cleanly: a cycle that raised waits the whole
+        # cycle, so a failing database costs one error line a cycle, never one a second
+        woke = False
         try:
             if await try_acquire_leadership("chat_federation_outbox"):
                 async with _vitals.cycle("chat_federation_outbox"):
                     await _drain_once()
+                woke = True
         except Exception:
             logger.error("[CHATFED] outbox cycle error", exc_info=True)
-        await asyncio.sleep(CYCLE_SECONDS)
+        await _rest(CYCLE_SECONDS, woke)
 
 
 def stop_chat_federation_outbox():

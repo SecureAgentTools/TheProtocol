@@ -6810,7 +6810,11 @@
       "marketplace": "Marketplace",
       "money": "Money",
       "ops": "Operations",
-      "security": "Security"
+      "security": "Security",
+      "chat": "Chat",
+      "governance": "Governance and commons",
+      "organizations": "Organizations",
+      "legal": "Terms"
     },
     "_channel": {
       "desktop": "Desktop",
@@ -6985,6 +6989,141 @@
     "release_rollout_due": {
       "label": "Scheduled rollout due",
       "desc": "The rollout window an admin scheduled is due. Admin audience; once per schedule."
+    },
+    "security_spend_approval": {
+      "label": "Spend waiting for your approval"
+    },
+    "security_password_changed": {
+      "label": "Your password was changed",
+      "desc": "If it was not you, reset it and sign out everywhere."
+    },
+    "security_new_login": {
+      "label": "Sign-in from a new device or place"
+    },
+    "security_api_key_expiring": {
+      "label": "API key expires soon",
+      "desc": "Said 14 days before, once per key."
+    },
+    "agent_card_unreachable": {
+      "label": "Agent card cannot be read"
+    },
+    "a2a_payment_authorized": {
+      "label": "Payment authorized to your agent",
+      "desc": "Work waits for your agent."
+    },
+    "a2a_payment_expired": {
+      "label": "Unused payment authorization released"
+    },
+    "bond_released": {
+      "label": "Reputation bond released"
+    },
+    "contract_deadline_soon": {
+      "label": "Contract deadline near"
+    },
+    "jurisdiction_countersign_broken": {
+      "label": "Countersigned contract no longer verifies"
+    },
+    "guild_order_cancelled": {
+      "label": "Guild: order cancelled"
+    },
+    "guild_bid_declined": {
+      "label": "Guild: your bid was not chosen"
+    },
+    "guild_deadline_soon": {
+      "label": "Guild: deadline near"
+    },
+    "exchange_price_alert": {
+      "label": "Price alert"
+    },
+    "chat_message": {
+      "label": "Room messages",
+      "desc": "Read in the app. What needs you comes as its own notice."
+    },
+    "chat_ping": {
+      "label": "Pings"
+    },
+    "chat_approval_requested": {
+      "label": "Approval asked of you",
+      "desc": "Reaches you in quiet hours too."
+    },
+    "chat_mention": {
+      "label": "You were mentioned"
+    },
+    "chat_direct": {
+      "label": "Direct messages"
+    },
+    "chat_request": {
+      "label": "Someone wants to talk with you"
+    },
+    "chat_choice_requested": {
+      "label": "Choice asked of you",
+      "desc": "Reaches you in quiet hours too."
+    },
+    "chat_approval_used": {
+      "label": "Your approval was used"
+    },
+    "chat_approval_used_production": {
+      "label": "Your approval was used for a production act"
+    },
+    "chat_progress_finished": {
+      "label": "Progress finished"
+    },
+    "org_session_offline": {
+      "label": "A session went quiet"
+    },
+    "org_work_receipt": {
+      "label": "Organization receipts"
+    },
+    "support_reply": {
+      "label": "Support replies"
+    },
+    "governance_proposal_opened": {
+      "label": "A vote you can cast"
+    },
+    "governance_vote_closing": {
+      "label": "Vote closes in a day",
+      "desc": "Only while you have not voted."
+    },
+    "governance_result": {
+      "label": "Vote result"
+    },
+    "commons_season_opened": {
+      "label": "Commons season opened"
+    },
+    "commons_award": {
+      "label": "Commons award to your work"
+    },
+    "commons_season_paid": {
+      "label": "Commons season paid"
+    },
+    "org_invitation_received": {
+      "label": "Invitation to an organization"
+    },
+    "org_invitation_accepted": {
+      "label": "Your invitation was accepted"
+    },
+    "org_member_joined": {
+      "label": "A member joined"
+    },
+    "org_member_left": {
+      "label": "A member left"
+    },
+    "legal_terms_updated": {
+      "label": "Terms updated",
+      "desc": "The version, the date it takes effect and the link."
+    },
+    "federation_invitation_received": {
+      "label": "A frame asks to federate"
+    },
+    "operator_application_received": {
+      "label": "Operator application received"
+    },
+    "operator_application_decided": {
+      "label": "Your operator application was decided"
+    },
+    "webhook_failing": {
+      "label": "Webhook deliveries failing",
+      "desc": "Said before the webhook is switched off."
     }
   },
   "notifications": {
@@ -7798,6 +7937,14 @@
       "mediaGetting": "Fetching…",
       "mediaDefanged": "Accept the request before opening files from a stranger.",
       "mediaGone": "This file was removed.",
+      "mediaMore": "The file goes on: open it to read the rest.",
+      "mediaWithheldCredential": "No preview: it looks like it holds a credential.",
+      "mediaWithheldBinary": "No preview: this is not a text file.",
+      "mediaNotText": "This file is not text: download it to open it.",
+      "mediaOpen": "Open",
+      "mediaClose": "Close",
+      "mediaOpening": "Opening…",
+      "mediaOpenCut": "Showing the first {n} characters: download the file for the rest.",
       "appletOpen": "Open",
       "appletNote": "This opens a door in the app with these details filled in. Nothing is sent until you confirm it there.",
       "appletNoTarget": "That card names no agent to buy from.",
@@ -7838,13 +7985,53 @@
       "dealLedger": "A record of money that already moved on the contract rail.",
       "nothingCharged": "Nothing was charged.",
       "approvalAsks": "Asks for approval",
-      "approvalWhere": "Decided in the panel pinned above this thread.",
+      "approvalWhere": "Decided in the room's approvals panel.",
       "approvalApproved": "Approved",
       "approvalDenied": "Denied",
       "approvalBy": "By {who} ({role})",
       "approvalOwner": "owner",
       "approvalApprover": "approver",
-      "approvalPending": "waiting for a decision"
+      "approvalPending": "waiting for a decision",
+      "approvalUsed": "Used for {act}, {when}",
+      "progressCount": "{done} of {total} steps",
+      "guildBy": "posted by {who}",
+      "guildTo": "to {who}",
+      "guildBidOne": "1 bid",
+      "guildBids": "{n} bids",
+      "guildStages": "The order so far",
+      "guildOpen": "Open the order",
+      "updatedOnce": "Updated once, {when}",
+      "updatedMany": "Updated {n} times, last {when}",
+      "history": "History",
+      "progressRunning": "In progress",
+      "progressPassed": "Passed",
+      "progressFailed": "Failed",
+      "progressCancelled": "Cancelled",
+      "stepPending": "waiting",
+      "stepRunning": "running",
+      "stepDone": "done",
+      "stepFailed": "failed",
+      "stepSkipped": "skipped",
+      "stagePosted": "posted",
+      "stageBid": "bid",
+      "stageAwarded": "awarded",
+      "stageDelivered": "delivered",
+      "stageSettled": "settled",
+      "guildOpenStatus": "open for bids",
+      "guildAwarded": "awarded",
+      "guildDelivered": "delivered, waiting for the poster",
+      "guildSettling": "settling",
+      "guildSettled": "settled",
+      "guildDisputed": "disputed",
+      "guildResolving": "resolving",
+      "guildResolved": "resolved",
+      "guildCancelled": "cancelled",
+      "guildExpired": "expired",
+      "choiceAsks": "Asks you to choose",
+      "choiceWhere": "Chosen in the panel pinned above this thread.",
+      "choiceChose": "Chose “{label}”",
+      "choiceNone": "None of the options",
+      "choiceChosen": "Chosen"
     },
     "help": {
       "audit": "local background check — public data only, posts nothing",
@@ -7980,6 +8167,7 @@
       "railContract": "Contract rail",
       "railTreasury": "Treasury",
       "railSupport": "Support",
+      "railGuild": "Guild",
       "railSystem": "System",
       "privacy": "Who can read this",
       "railAssistant": "@assistant",
@@ -7993,7 +8181,34 @@
       "joinTitle": "Join this thread?",
       "joinConfirm": "Join the thread",
       "joinCancel": "Not now",
-      "hostedByCopies": "Hosted by {reg}, copied to {copies} — the operator of each can read this thread."
+      "hostedByCopies": "Hosted by {reg}, copied to {copies} — the operator of each can read this thread.",
+      "newLine": "NEW · {n}",
+      "live": "live",
+      "catchingUp": "catching up",
+      "offline": "offline",
+      "speakerAs": "as",
+      "sendAs": "Send as {who}",
+      "speakerTitleThread": "Who your next message goes out as. You, unless you choose an agent for this thread; each message keeps its author forever.",
+      "sentByOwner": "sent by its owner",
+      "showMore": "show more",
+      "showLess": "show less",
+      "forMeOnly": "For me ({n})",
+      "forMeAll": "Show the whole room",
+      "replyTo": "Reply to this message",
+      "reply": "Reply",
+      "threadNew": "{n} new",
+      "threadForMe": "{n} for you",
+      "threadLast": "last: {who}, {when}",
+      "threadHide": "Hide",
+      "threadShow": "Show",
+      "replyingTo": "Replying to {who}: {what}",
+      "replyCancel": "Not a reply",
+      "threadOrderOne": "1 more about {id}",
+      "threadOrder": "{n} more about {id}",
+      "threadReplyOne": "1 reply",
+      "threadReplies": "{n} replies",
+      "pushAskNeeds": "Get a push on this device when you are named, written to directly or asked to decide? Off until you say so.",
+      "pushOnNeeds": "On. Mentions, direct messages and approvals to decide reach this device."
     },
     "trust": {
       "cross": "{n} cross-registry",
@@ -8064,7 +8279,8 @@
       "actingGap": "{who} is acting for you, but speaking as it needs its credentials on this device.",
       "adopt": "Adopt or import it",
       "vsActing": "This is the same choice as “Acting as” in the header — one selection, so the two can never disagree. It signs your next message and decides which registry and currency your money moves on.",
-      "youSub": "your own account"
+      "youSub": "your own account",
+      "vsActingThread": "Choosing an agent also makes it the agent you act as in the header, which decides the registry and currency your money moves on. This thread remembers the choice; every other thread speaks as you until you choose there."
     },
     "stocks": {
       "title": "Trading right now",
@@ -8120,7 +8336,188 @@
       "noneWaiting": "No approval request in your rooms waits for you.",
       "inRoom": "in {room}",
       "leftMinutesOnly": "{m} min left",
-      "notWaiting": "This request no longer waits for a decision: its decision, or its expiry, is in the thread."
+      "notWaiting": "This request no longer waits for a decision: its decision, or its expiry, is in the thread.",
+      "none": "Nothing waits for a decision in this room.",
+      "noneOfThese": "None of these",
+      "chooseFrom": "Choose: {options}",
+      "alreadyApprovedMine": "Already approved at {time} (another device)",
+      "alreadyDeniedMine": "Already denied at {time} (another device)",
+      "alreadyApprovedBy": "Already approved at {time} by {who}",
+      "alreadyDeniedBy": "Already denied at {time} by {who}",
+      "anotherApprover": "another approver"
+    },
+    "settings": {
+      "aria": "Settings for {name}",
+      "thisRoom": "This room",
+      "thisTicket": "This ticket",
+      "thisChat": "This chat",
+      "membersSub": "Who has opened the room",
+      "roomSubOp": "Topic, who may post, the room's rules",
+      "roomSubMember": "Read only: an owner or an admin sets them",
+      "modeAnnounce": "Announce only",
+      "modeOpen": "Open",
+      "assistantSub": "Answers when addressed; reads the organization's records only",
+      "assistantMember": "An owner or an admin adds it",
+      "on": "On",
+      "off": "Off",
+      "ticket": "Ticket #{id}",
+      "timerSubRoom": "Set by an owner or an admin; everyone sees who",
+      "timerSubDm": "Set by either of you; both see who",
+      "timerSubReadOnly": "Read only: an owner or an admin sets it",
+      "youHere": "You here",
+      "notify": "Notifications",
+      "notifySubSupport": "Replies from the desk",
+      "notifySub": "Asks that wait on you always reach you",
+      "standIn": "Stand-in here",
+      "standInSub": "While away mode is on, your stand-in answers here",
+      "youInChat": "You in OurChat",
+      "you": "Your chat settings",
+      "youSub": "Handle, who can reach you, away, blocked, push",
+      "block": "Block {name}…",
+      "them": "them",
+      "blockSub": "Nothing from them reaches you; they are not told",
+      "leaveRoom": "Leave this room…",
+      "leaveChat": "Leave this chat…",
+      "leaveRoomSub": "It leaves your list; open it again to come back",
+      "leaveChatSub": "It leaves your list; they are not told",
+      "burn": "Burn this thread for you…",
+      "burnSub": "Your history goes; the others keep theirs",
+      "keys": "↑ ↓ move · enter open · space switch · esc close",
+      "youPanelSub": "The chat part of Pocket's More",
+      "push": "Push on this device",
+      "pushTurnOn": "Turn on",
+      "quietSub": "When and where each kind of notice reaches you",
+      "approvalsSub": "Every request that waits on you",
+      "supportSub": "Opens a ticket; the reply comes here as a thread",
+      "pushOnLine": "Messages that need you reach this device.",
+      "pushOffLine": "Off: nothing reaches this device while the app is closed.",
+      "pushNo": "This browser cannot receive push.",
+      "pushUnknown": "Could not be read on this device.",
+      "button": "Settings and actions for this conversation",
+      "word": "Settings",
+      "timerReadOnly": "In an organization's room, an owner or an admin sets the timer.",
+      "leaveRoomTitle": "Leave this room?",
+      "leaveChatTitle": "Leave this chat?",
+      "leaveRoomLine": "It leaves your list and its messages stop reaching you. Open it again from your organization to come back. The room is not told.",
+      "leaveChatLine": "It leaves your list and nothing in it reaches you until you start a chat with them again. They are not told.",
+      "leave": "Leave",
+      "membersTitle": "Who has opened this room",
+      "roster": "The organization's whole roster",
+      "kindRoom": "Org room",
+      "opened": "{n} opened it",
+      "kindDm": "Direct",
+      "hostedBy": "hosted by {reg}",
+      "oneHour": "1 hour",
+      "hours": "{n} hours",
+      "oneDay": "1 day",
+      "days": "{n} days",
+      "notifyUntil": "{what} · until {when}",
+      "readersRoom": "The members, and {reg}'s operator",
+      "readersSupport": "You, the support desk, and {reg}'s operator",
+      "readersDm": "You two, and {reg}'s operator",
+      "readersCopies": "{who}; copies at {copies}"
+    },
+    "burn": {
+      "title": "Burn this thread for you?",
+      "yours": "Its history up to now leaves your account, on every device.",
+      "device": "Any copy on this device is deleted now.",
+      "final": "This cannot be undone. New messages after it still reach you.",
+      "holdAria": "Hold to burn",
+      "holding": "Keep holding…",
+      "hold": "Hold to burn",
+      "how": "Press and hold for 1.2 s, or hold Space or Enter. Let go to stop.",
+      "keptUnknown": "The others keep theirs. The registry that hosts it keeps the thread until your account is deleted.",
+      "keptCopies": "The others keep theirs. {reg} keeps the thread until your account is deleted; {copies} keep their copies.",
+      "kept": "The others keep theirs. {reg} keeps the thread until your account is deleted."
+    },
+    "notify": {
+      "title": "Notifications here",
+      "muted": "Muted",
+      "asksOnly": "Only asks for me",
+      "mutedSubSupport": "Nothing from this thread.",
+      "asksOnlySub": "Muted: nothing from here but the approvals and choices that wait on you.",
+      "forHow": "For how long",
+      "note": "Your quiet hours apply on top, except to asks that wait on you. A muted thread keeps no unread count.",
+      "quiet": "Quiet hours and channels",
+      "done": "Done",
+      "needs": "Mentions and asks",
+      "every": "Every message",
+      "everyReply": "Every reply",
+      "needsSub": "When someone names you, and every approval or choice that waits on you. The room's other messages show when you open it.",
+      "everySub": "Each message in this chat.",
+      "everyReplySub": "Each reply from the support desk.",
+      "until": "Muted until {when}, then {level} again.",
+      "for1h": "1 hour",
+      "for8h": "8 hours",
+      "for1d": "1 day",
+      "forever": "Until I change it"
+    },
+    "roomSettings": {
+      "youOperator": "you are an owner or an admin",
+      "youMember": "read only",
+      "name": "Name",
+      "nameNote": "The organization's name; it changes on the organization's page.",
+      "org": "Organization",
+      "topic": "Topic",
+      "none": "none",
+      "topicNote": "Shown under the room's name. A change posts a line in the room.",
+      "whoPosts": "Who may post",
+      "everyone": "Everyone in the organization",
+      "operators": "Owners and admins only",
+      "announceSub": "Announce only: the others read, they do not post",
+      "modeNote": "Changing it silences people, so it asks for a hold first, and posts a line in the room.",
+      "rules": "The room's rules",
+      "rulesNote": "Shown at the top of the room to everyone who joins. Burning the thread does not hide it.",
+      "assistantNote": "Reads the organization's records only (receipts, the roster, the treasury) and answers when addressed. Switched from the room's menu.",
+      "discardAsk": "Discard your changes to the topic and the rules?",
+      "keep": "Keep editing",
+      "discard": "Discard",
+      "save": "Save topic and rules"
+    },
+    "side": {
+      "aria": "This room, at a glance",
+      "approvals": "Approvals",
+      "board": "Status board",
+      "live": "Live cards",
+      "present": "Present",
+      "liveOf": "{n} of {total} live",
+      "presenceFailed": "Who is present could not be read just now.",
+      "noAgents": "No agent is assigned to this organization.",
+      "noStatus": "no live status",
+      "active": "active {ago} ago"
+    },
+    "cardHistory": {
+      "title": "History of this card",
+      "failed": "The history of this card could not be read just now.",
+      "none": "This card has not changed since it was posted.",
+      "posted": "Posted",
+      "added": "{path}: {to} (new)",
+      "removed": "{path}: removed",
+      "changed": "{path}: {from} → {to}"
+    },
+    "board": {
+      "title": "Status board",
+      "emptyEditor": "Nothing on the board yet: write what the room should see first (the release, the open orders, what waits on the owner).",
+      "empty": "Nothing on the board yet.",
+      "by": "Updated by {who}, {when}",
+      "edit": "Edit",
+      "history": "History",
+      "editors": "Who keeps it",
+      "editTitle": "Edit the status board",
+      "editSub": "Markdown; the room sees it at once, nobody is notified",
+      "save": "Save the board",
+      "historyTitle": "History of the status board",
+      "historyFailed": "The board's history could not be read just now.",
+      "rev": "Edit {n} · {who} · {when}",
+      "cleared": "(cleared)",
+      "editorsTitle": "Who keeps the status board",
+      "editorsSub": "You always do; these keep it with you while they belong to the organization",
+      "candidatesFailed": "The organization's members could not be read just now.",
+      "agent": "agent",
+      "member": "member",
+      "noCandidates": "Nobody else is in the room yet.",
+      "editorsSave": "Save",
+      "conflict": "Someone else changed the board while you edited. It shows their version now; your text is still here to merge."
     }
   },
   "ourstate.away.digestHead": "While you were away",

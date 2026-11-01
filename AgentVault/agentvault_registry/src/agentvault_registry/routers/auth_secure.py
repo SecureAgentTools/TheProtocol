@@ -734,6 +734,10 @@ async def login_for_access_token(
         await db.commit()
     except Exception:
         await db.rollback()  # non-fatal — token already issued
+    # V0652 (af): the device this sign-in came from; a device new to the account is said to it (never raises)
+    from agentvault_registry.core.client_ip import effective_client_ip
+    from agentvault_registry.services import security_notices
+    await security_notices.note_login(db, developer.id, effective_client_ip(request), request.headers.get("user-agent"))
     
     # Log successful login
     logger.info(f"Login successful for developer ID: {developer.id}")
@@ -854,6 +858,8 @@ async def change_password(
         db.add(current_developer)
         await db.commit()
         logger.info(f"Password changed for developer {current_developer.id}")
+        from agentvault_registry.services import security_notices   # V0652 (af)
+        security_notices.tell_password_changed(current_developer.id, "from your account's settings")
         return {"status": "password_changed"}
     except Exception:
         await db.rollback()
@@ -1068,6 +1074,8 @@ async def reset_password_via_email(
         db.add(developer)
         await db.commit()
         logger.info(f"Password reset via email token for developer {developer.id}")
+        from agentvault_registry.services import security_notices   # V0652 (af)
+        security_notices.tell_password_changed(developer.id, "with a reset link sent to your email")
         return {"message": "Password updated successfully. Please log in with your new password."}
     except Exception:
         await db.rollback()
@@ -1180,6 +1188,8 @@ async def set_new_password_after_recovery(
         db.add(developer)
         await db.commit()
         logger.info(f"Password updated and recovery key invalidated for developer {developer_id}.")
+        from agentvault_registry.services import security_notices   # V0652 (af)
+        security_notices.tell_password_changed(developer_id, "with one of your recovery keys")
         return {"message": "Password updated successfully. Please login with your new password."}
     except Exception as e:
         await db.rollback()

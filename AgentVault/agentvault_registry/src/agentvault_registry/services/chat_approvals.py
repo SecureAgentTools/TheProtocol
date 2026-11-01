@@ -50,8 +50,10 @@ from ..models import ChatApproval, Conversation, Organization, OrganizationMembe
 logger = logging.getLogger(__name__)
 
 ACTION_TYPE = "chat.approval"
-STATUSES = ("pending", "approved", "denied", "expired")
-DECISIONS = {"approve": "approved", "deny": "denied"}
+STATUSES = ("pending", "approved", "denied", "chosen", "expired")
+# V0652 (ab): a choice request is decided by choosing one of its options ("choose"), or declined ("deny": none of them)
+DECISIONS = {"approve": "approved", "deny": "denied", "choose": "chosen"}
+OPTIONS_MIN, OPTIONS_MAX, OPTION_MAX = 2, 5, 80
 EXPIRY_MIN_S = 60
 EXPIRY_MAX_S = 7 * 86400
 EXPIRY_DEFAULT_S = 3600
@@ -126,8 +128,8 @@ def presence_policy(registry_value: str, org_settings: Optional[dict]) -> str:
 
 
 def presence_required(policy: str, decision: str, production_impact: bool) -> bool:
-    """Deny never asks: refusing must always be the easy path."""
-    if decision != "approve":
+    """Deny never asks: refusing must always be the easy path. Choosing an option asks as approving does (V0652 (ab))."""
+    if decision not in ("approve", "choose"):
         return False
     return policy == "all" or (policy == "production" and bool(production_impact))
 
@@ -138,6 +140,30 @@ def presence_required(policy: str, decision: str, production_impact: bool) -> bo
 
 def new_id() -> str:
     return "apr_" + secrets.token_hex(16)
+
+
+def normalize_options(raw: Any) -> Tuple[Optional[List[str]], Optional[str]]:
+    """V0652 (ab): a choice's options as recorded: each on one line, 1 to 80 characters, 2 to 5 of them, no two the same
+    (case aside). (None, None) for a request with none (an approval); (None, reason) for options that cannot stand."""
+    if raw is None:
+        return None, None
+    if not isinstance(raw, (list, tuple)):
+        return None, "options must be a list of 2 to 5 short labels"
+    out: List[str] = []
+    seen = set()
+    for o in raw:
+        label = " ".join(str(o if o is not None else "").split())
+        if not label:
+            return None, "an option may not be empty"
+        if len(label) > OPTION_MAX:
+            return None, f"an option is at most {OPTION_MAX} characters"
+        if label.casefold() in seen:
+            return None, f"two options say the same: {label!r}"
+        seen.add(label.casefold())
+        out.append(label)
+    if not (OPTIONS_MIN <= len(out) <= OPTIONS_MAX):
+        return None, f"a choice has {OPTIONS_MIN} to {OPTIONS_MAX} options"
+    return out, None
 
 
 def normalize_sha256(value: Any) -> Optional[str]:
@@ -173,10 +199,11 @@ def iso(ts: Optional[_dt.datetime]) -> Optional[str]:
 def request_facts(*, approval_id: str, conversation_id: str, org_id: Optional[str], requester_agent_did: str,
                   title: str, reason: Optional[str], unlocks: Optional[str], artifact_sha256: Optional[str],
                   artifact_label: Optional[str], production_impact: bool, created_at: _dt.datetime,
-                  expires_at: _dt.datetime, client_ref: str) -> dict:
+                  expires_at: _dt.datetime, client_ref: str, options: Optional[List[str]] = None) -> dict:
     """The request as the registry recorded it. `facts_digest` is the sha256 of exactly this, and every decision
-    repeats it, so a requester can check that the decision answers its own request and nothing else."""
-    return {
+    repeats it, so a requester can check that the decision answers its own request and nothing else. A choice's options
+    are part of it (V0652 (ab)); an approval's facts carry no options key, as before."""
+    facts = {
         "type": "theprotocol.chat-approval.request.v1",
         "approval_id": approval_id,
         "conversation_id": conversation_id,
@@ -192,6 +219,9 @@ def request_facts(*, approval_id: str, conversation_id: str, org_id: Optional[st
         "expires_at": iso(expires_at),
         "client_ref": client_ref,
     }
+    if options:
+        facts["options"] = list(options)
+    return facts
 
 
 def effective_status(status: str, expires_at: Optional[_dt.datetime], now: _dt.datetime) -> str:
@@ -223,6 +253,8 @@ def consume_refusal(row: Any, *, agent_did: str, act_sha256: str, now: _dt.datet
         used = row.consumed_act_sha256 or ""
         return 409, (f"this approval was already used: it opened {row.consumed_act!r} (sha256 {used[:12]}...) at "
                      f"{iso(row.consumed_at)} for {row.consumed_by_agent_did}. One approval opens one act: ask again")
+    if getattr(row, "options", None):
+        return 409, "this is a choice, not an approval: a choice opens no act (read the option chosen instead)"
     st = effective_status(row.status, row.expires_at, now)
     if st != "approved":
         return 409, f"this approval is {st}, not approved: nothing opened"
@@ -315,7 +347,8 @@ def challenge_facts(decision: str, rows: Sequence[Any], conversation_id: str) ->
 
 
 def build_statement(row: Any, *, decision: str, decided_at: _dt.datetime, decider_id: int, decider_name: str,
-                    role: str, via: dict, presence: Optional[dict], registry: str = "") -> dict:
+                    role: str, via: dict, presence: Optional[dict], registry: str = "",
+                    chosen: Optional[int] = None) -> dict:
     """The registry's signed statement of one decision. The public key travels OUTSIDE the signed object (the share
     certificate's lesson: a field added after signing breaks verification), and a statement the registry cannot verify
     itself is served unsigned with the reason, never as if it were signed."""
@@ -336,6 +369,8 @@ def build_statement(row: Any, *, decision: str, decided_at: _dt.datetime, decide
         "presence": presence,
         "signature": "",
     }
+    if decision == "choose" and chosen is not None:   # V0652 (ab): the option, by its place and its words
+        stmt["chosen"] = {"index": int(chosen), "label": list(row.options)[int(chosen)]}
     try:
         from .attestation_signer import sign_bundle, verify_bundle_signature
         sign_bundle(stmt)
@@ -365,6 +400,9 @@ def request_card(row: Any) -> dict:
         v = getattr(row, k, None)
         if v:
             data[k] = v if k != "reason" else str(v)[:REASON_MAX]
+    if getattr(row, "options", None):   # V0652 (ab): a choice: its options are its buttons
+        data["options"] = list(row.options)
+        return {"v": 1, "type": "choice.request", "data": data, "refs": {"approval_id": row.id}}
     return {"v": 1, "type": "approval.request", "data": data, "refs": {"approval_id": row.id}}
 
 
@@ -387,11 +425,16 @@ def decided_card(row: Any, statement: dict) -> dict:
     refs: Dict[str, Any] = {"approval_id": row.id}
     if row.request_message_id:
         refs["request_message_id"] = row.request_message_id
+    if getattr(row, "options", None):   # V0652 (ab): a choice's decision names the option chosen (or none of them)
+        data["options"] = list(row.options)
+        if statement.get("chosen"):
+            data["chosen"] = dict(statement["chosen"])
+        return {"v": 1, "type": "choice.decided", "data": data, "refs": refs}
     return {"v": 1, "type": "approval.decided", "data": data, "refs": refs}
 
 
 def validate_card_data(ctype: str, data: dict) -> Optional[str]:
-    """The two card types' shapes (their authority is that only this rail may post them at all)."""
+    """The four card types' shapes (their authority is that only this rail may post them at all)."""
     aid = data.get("approval_id")
     if not isinstance(aid, str) or not aid.startswith("apr_") or len(aid) > 44:
         return f"{ctype}: data.approval_id must name the approval record"
@@ -409,6 +452,23 @@ def validate_card_data(ctype: str, data: dict) -> Optional[str]:
             return "approval.decided: data.decision must be approved or denied"
         if not isinstance(data.get("decided_by_developer_id"), int):
             return "approval.decided: data.decided_by_developer_id must name the developer who decided"
+    elif ctype in ("choice.request", "choice.decided"):   # V0652 (ab)
+        opts = data.get("options")
+        if (not isinstance(opts, list) or not (OPTIONS_MIN <= len(opts) <= OPTIONS_MAX)
+                or not all(isinstance(o, str) and 1 <= len(o) <= OPTION_MAX for o in opts)):
+            return f"{ctype}: data.options must be {OPTIONS_MIN} to {OPTIONS_MAX} labels of 1-{OPTION_MAX} chars"
+        if ctype == "choice.request":
+            if not isinstance(data.get("expires_at"), str) or not data["expires_at"]:
+                return "choice.request: data.expires_at is required"
+        else:
+            if data.get("decision") not in ("chosen", "denied"):
+                return "choice.decided: data.decision must be chosen or denied"
+            if not isinstance(data.get("decided_by_developer_id"), int):
+                return "choice.decided: data.decided_by_developer_id must name the developer who decided"
+            ch = data.get("chosen")
+            if data["decision"] == "chosen" and not (isinstance(ch, dict) and isinstance(ch.get("index"), int)
+                                                      and 0 <= ch["index"] < len(opts) and ch.get("label") == opts[ch["index"]]):
+                return "choice.decided: data.chosen must name one of data.options by its index and its label"
     return None
 
 
@@ -451,7 +511,11 @@ def serialize(row: Any, now: _dt.datetime, *, requester_name: Optional[str] = No
                       "act_sha256": getattr(row, "consumed_act_sha256", None)}
                      if getattr(row, "consumed_at", None) is not None else None),
     }
-    if st in ("approved", "denied"):
+    if getattr(row, "options", None):   # V0652 (ab)
+        out["options"] = list(row.options)
+        out["chosen"] = ({"index": int(row.chosen_option), "label": list(row.options)[int(row.chosen_option)]}
+                         if st == "chosen" and getattr(row, "chosen_option", None) is not None else None)
+    if st in ("approved", "denied", "chosen"):
         out["decision"] = {
             "decision": st,
             "decided_at": iso(row.decided_at),

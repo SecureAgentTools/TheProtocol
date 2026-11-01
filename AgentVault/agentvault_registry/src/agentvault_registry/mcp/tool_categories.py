@@ -84,6 +84,14 @@ PUBLIC_OVERLAY_BUCKETS: Dict[str, Tuple[str, FrozenSet[str]]] = {
             # §OURSTATE-1 — OurChat chat: the phone's conversation surface
             "listConversations", "readThread", "syncChat", "sendChatMessage", "respondChatRequest",
             "blockChatPrincipal", "unblockChatPrincipal",
+            # V0652 (w): the rest of the phone client's set: read marks, the unread count, a shared text file, and the
+            # approval requests (a room's, those waiting on you, one's status and its decision)
+            "markChatRead", "getChatUnreadCount", "getChatAttachment", "listChatApprovals",
+            "listWaitingChatApprovals", "getChatApprovalStatus", "decideChatApproval",
+            # V0652 (aa): a progress card kept current in place, and a card's history
+            "postChatProgress", "updateChatProgress", "getChatCardHistory",
+            # V0652 (ac): the room's status board
+            "getChatBoard", "updateChatBoard",
             # AGORA trading
             "getAgoraListings", "getAgoraListing", "getAgoraOrderBook",
             "getAgoraTrades", "getAgoraCandles", "placeAgoraOrder",
@@ -150,6 +158,19 @@ PUBLIC_TOOL_CATEGORIES: Dict[str, str] = {
     "getChatApprovalStatus": "account",
     "consumeChatApproval": "account",     # V0651 (o)
     "decideChatApproval": "account",
+    # V0652 (w) (2026-10-31) — OurChat for a phone client
+    "markChatRead": "account",
+    "getChatUnreadCount": "account",
+    "listChatApprovals": "account",
+    "listWaitingChatApprovals": "account",
+    "getChatAttachment": "account",
+    # V0652 (aa) (2026-11-01) — cards that live
+    "postChatProgress": "account",
+    "updateChatProgress": "account",
+    "getChatCardHistory": "account",
+    # V0652 (ac) (2026-11-01) — the room's status board
+    "getChatBoard": "account",
+    "updateChatBoard": "account",
     "buyAgoraLaunch": "exchange",
     "cancelAccountDeletion": "account",
     "cancelAgoraOrder": "exchange",

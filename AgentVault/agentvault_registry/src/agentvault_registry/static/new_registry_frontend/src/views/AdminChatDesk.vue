@@ -24,6 +24,7 @@
  * the same endpoints. Org rooms are org-admin moderated and never appear here.
  */
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { apiClient } from '@/services/api/client'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import { useSupportStream } from '@/composables/useSupportStream'
@@ -228,7 +229,16 @@ useSupportStream({
 
 watch([filterStatus, filterPriority, filterCategory], () => { loadTickets(0) })
 
-onMounted(() => { loadStats(); loadTickets(0) })
+onMounted(() => { loadStats(); loadTickets(0); openFromLink() })
+
+/* V0652 (ai): the desk's notice opens its ticket (`#/admin/chatdesk?ticket=N`), on arrival and when the view is
+   already open (vue-router reuses the component on a query-only change, so onMounted alone would not see it) */
+const route = useRoute()
+function openFromLink() {
+  const id = Number(route?.query?.ticket)
+  if (Number.isInteger(id) && id > 0 && selected.value?.id !== id) openTicket(id)
+}
+watch(() => route?.query?.ticket, () => openFromLink())
 </script>
 
 <template>

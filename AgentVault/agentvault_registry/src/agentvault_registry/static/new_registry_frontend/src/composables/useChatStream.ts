@@ -25,6 +25,10 @@ export interface ChatEnvelope {
 export interface ChatStreamHandlers {
   onMessage?: (env: ChatEnvelope) => void
   onPing?: (env: ChatEnvelope) => void
+  /** V0652 (aa): a card updated in place (`message` carries id, seq, card, card_rev, card_updated_at). */
+  onCardUpdate?: (env: ChatEnvelope) => void
+  /** V0652 (ac): a room's status board changed (`board` carries text, rev, updated_at, updated_by). */
+  onBoardUpdate?: (env: { conversation_id: string; board: Record<string, any>; actor_name?: string }) => void
   /** Fired after a RECONNECT — pull /sync; the socket has no memory. */
   onResync?: () => void
 }
@@ -34,10 +38,14 @@ export function useChatStream(handlers: ChatStreamHandlers) {
 
   const onMsg = (data: any) => { try { handlers.onMessage?.(data as ChatEnvelope) } catch { /* handler's problem */ } }
   const onPing = (data: any) => { try { handlers.onPing?.(data as ChatEnvelope) } catch { /* handler's problem */ } }
+  const onCard = (data: any) => { try { handlers.onCardUpdate?.(data as ChatEnvelope) } catch { /* handler's problem */ } }
+  const onBoard = (data: any) => { try { handlers.onBoardUpdate?.(data) } catch { /* handler's problem */ } }
   const onReconnected = () => { try { handlers.onResync?.() } catch { /* handler's problem */ } }
 
   ws.on('chat.message' as any, onMsg)
   ws.on('chat.ping' as any, onPing)
+  ws.on('chat.card_updated' as any, onCard)
+  ws.on('chat.board_updated' as any, onBoard)
   ws.on('reconnected' as any, onReconnected)
 
   // Best-effort: a failed connect degrades to polling via /sync — the views

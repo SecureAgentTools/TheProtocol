@@ -86,7 +86,9 @@ const measure = () => {
 }
 const bounded = computed(() => !wide.value && threadOpen.value)
 const paneStyle = computed(() => {
-  if (wide.value) return { height: `calc(100vh - ${topPx.value}px)` }
+  // V0652 (ad): the two panes leave the page's bottom space too (Pocket wide keeps its tab bar there; the console's
+  // dashboard keeps none), or the composer sat under Pocket's tab bar on a wide screen (measured at 1920 on V0651)
+  if (wide.value) return { height: `calc(100vh - ${topPx.value + bottomPx.value}px)` }
   if (bounded.value) return { '--ocs-offset': `${topPx.value + bottomPx.value}px` }
   return undefined
 })

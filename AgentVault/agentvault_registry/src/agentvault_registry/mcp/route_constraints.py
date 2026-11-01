@@ -243,6 +243,9 @@ ROUTE_CONSTRAINTS: Dict[str, Dict[str, Dict[str, Any]]] = {
         'qty': {"exclusiveMinimum": 0},
         'ttl_seconds': {"maximum": 604800, "minimum": 10},
     },
+    'theprotocol_postChatProgress': {
+        'client_ref': {"maxLength": 64, "minLength": 8},
+    },
     'theprotocol_previewSlash': {
         'amount': {"exclusiveMinimum": 0},
     },

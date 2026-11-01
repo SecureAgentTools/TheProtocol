@@ -167,20 +167,24 @@ async def test_a_waiting_call_answers_empty_at_the_bound(env):
     assert (await _get(env.app, cursor=body["next_cursor"])).json()["messages"] == []
 
 
+# One read with a cursor: the messages, and (V0652 (aa)) the cards updated in place since the cursor.
+READ = ["execute", "execute"]
+
+
 async def test_while_it_waits_it_holds_no_connection_and_runs_no_query(env):
     # BASE: one query and an immediate answer, never a close-then-wait
     cursor = await _start(env)
     env.logged.log.clear()
     task = asyncio.create_task(_get(env.app, wait=3, cursor=cursor))
     await asyncio.sleep(0.4)
-    assert env.logged.log == ["execute", "close"], env.logged.log    # one query, then the session handed back
+    assert env.logged.log == READ + ["close"], env.logged.log    # one read, then the session handed back
     await asyncio.sleep(0.6)
-    assert env.logged.log == ["execute", "close"], env.logged.log    # nothing while idle
+    assert env.logged.log == READ + ["close"], env.logged.log    # nothing while idle
     m = _post(env.db, 1)
     await WS.manager.wake_chat({KEY})
     body = (await asyncio.wait_for(task, 3.0)).json()
     assert [x["id"] for x in body["messages"]] == [m.id]
-    assert env.logged.log == ["execute", "close", "execute"], env.logged.log   # exactly one more query, on the wake
+    assert env.logged.log == READ + ["close"] + READ, env.logged.log   # exactly one more read, on the wake
 
 
 async def test_a_plain_call_waits_for_nothing_and_registers_nothing(env):

@@ -324,11 +324,11 @@ async def redeem_token(approval_id: str, db: AsyncSession = Depends(get_db)):
     """Single-use by construction: the row is claimed pending→consumed in one UPDATE, so two
     browsers racing the same approval cannot both walk away with a token."""
     row = (await db.execute(text(
-        "SELECT developer_id, status, expires_at FROM login_approvals WHERE id = :i"
+        "SELECT developer_id, status, expires_at, requested_ip, requested_ua FROM login_approvals WHERE id = :i"
     ), {"i": approval_id})).first()
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Unknown approval")
-    dev_id, st, exp = row
+    dev_id, st, exp, req_ip, req_ua = row
     if st != "approved":
         raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Approval is {st}")
     # the approval, not just the challenge, has a lifetime — an approved-but-unclaimed token
@@ -349,6 +349,10 @@ async def redeem_token(approval_id: str, db: AsyncSession = Depends(get_db)):
     )
     dev.last_login_at = _now()
     await db.commit()
+    # V0652 (af): the device that asked for this sign-in (the browser the phone approved); a device new to the account
+    # is said to it (never raises)
+    from agentvault_registry.services import security_notices
+    await security_notices.note_login(db, dev.id, req_ip, req_ua)
     # §FEFRAME W1: a phone-approved sign-in is a full session: it refreshes like a password login instead of ending
     # hard at the access token's expiry
     refresh = security.create_refresh_token(dev.id, token_version=getattr(dev, "token_version", 0))

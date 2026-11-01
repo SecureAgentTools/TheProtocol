@@ -45,6 +45,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentvault_registry.models import (
     ChatBlock,
+    ChatCardUpdate,
     ChatMessage,
     Conversation,
     ConversationParticipant,
@@ -82,13 +83,169 @@ def spawn(coro: Awaitable[Any], what: Optional[str] = None) -> "asyncio.Task[Any
 
 
 def deliver(conv_id: str, conv_kind: str, message: dict, recipients: List[dict], sender_name: str,
-            *, is_ping: bool = False, sender_owner_dev_id: Optional[int] = None) -> "asyncio.Task[Any]":
-    """fan_out_message() in the background through spawn(), named by the message and its recipients' kinds."""
+            *, is_ping: bool = False, sender_owner_dev_id: Optional[int] = None,
+            notify_absent: bool = True) -> "asyncio.Task[Any]":
+    """fan_out_message() in the background through spawn(), named by the message and its recipients' kinds.
+    notify_absent=False delivers live only (the sockets, the sync waiters, the agents' hooks): V0652 (ai), the support
+    rail, whose ticket already sends one typed notice per desk act."""
     kinds = sorted({str(r.get("ptype") or "?") for r in recipients or []})
+    # notify_absent travels only when it is False: every other call keeps the shape it has always had
+    extra = {} if notify_absent else {"notify_absent": False}
     return spawn(fan_out_message(conv_id, conv_kind, message, recipients, sender_name, is_ping=is_ping,
-                                 sender_owner_dev_id=sender_owner_dev_id),
+                                 sender_owner_dev_id=sender_owner_dev_id, **extra),
                  what=f"the delivery of message {message.get('id')} (seq {message.get('seq')}) in {conv_id} "
                       f"to {len(recipients or [])} recipient(s) ({', '.join(kinds) or 'none'})")
+
+
+# ---------------------------------------------------------------------------
+# V0652 (aa): cards that live (services/chat_live_cards.py holds the pure rules)
+# ---------------------------------------------------------------------------
+
+async def update_card(db: AsyncSession, conversation_id: str, message_id: str, actor: Actor, card: Any, *,
+                      rail_author: bool = False) -> Tuple[dict, Optional[Conversation], bool]:
+    """Update the card a message carries, in place: the message keeps its seq and its place, its card becomes `card`,
+    and the update is kept (who, when, the card after it, what changed). Returns (the message, the conversation, whether
+    anything changed). COMMITS. Never announces: the caller fans the update out after the commit.
+
+    A `progress` card is updated by its author only; a `guild.order.live` or `approval.decided` card by its rail only
+    (rail_author). A card keeps its type; a closed card (a verdict, an order's end, an approval's one use) takes no more;
+    a thread another registry hosts or reaches is refused (its cards are posted, not updated, until the federation
+    carries updates). An update that changes nothing is no revision."""
+    from agentvault_registry.services import chat_live_cards as lc
+    conv = await _get_conversation(db, conversation_id)
+    if getattr(conv, "host_registry", None):
+        raise ChatError(409, "this thread is hosted by another registry: a card in it is updated there")
+    remote = (await db.execute(sa_text(
+        "SELECT 1 FROM conversation_participants WHERE conversation_id = :c AND ptype = 'remote' AND state = 'active' "
+        "LIMIT 1"), {"c": conv.id})).first()
+    if remote is not None:
+        raise ChatError(409, "this thread reaches another registry, whose copy would not follow: post a new card "
+                             "instead of updating this one")
+    my_row = None
+    if not rail_author:
+        my_row = await resolve_membership(db, conv, actor)
+        if my_row is None or my_row.state != "active":
+            raise ChatError(409, "you have left this conversation")
+    msg = (await db.execute(select(ChatMessage).where(
+        ChatMessage.id == str(message_id), ChatMessage.conversation_id == conv.id).with_for_update())).scalars().first()
+    if msg is None or msg.deleted_at is not None or (
+            my_row is not None and msg.seq <= int(my_row.hidden_before_seq or 0)):
+        raise ChatError(404, "no such message in this thread")
+    old = msg.card if isinstance(msg.card, dict) else None
+    otype = (old or {}).get("type")
+    if msg.kind != "card" or otype is None:
+        raise ChatError(409, "this message carries no card")
+    who = lc.UPDATABLE.get(otype)
+    if who is None:
+        raise ChatError(409, f"a {otype} card stays as it was posted: post a new card")
+    if not isinstance(card, dict) or card.get("type") != otype:
+        raise ChatError(422, f"a card keeps its type: this one stays {otype}")
+    if who == "rail" and not rail_author:
+        raise ChatError(403, f"a {otype} card is kept current by {lc.UPDATE_RAILS.get(otype, 'its rail')} only")
+    if who == "author" and sender_key_of(msg) != principal_key(actor.ptype, actor.sender_id):
+        raise ChatError(403, "only whoever posted this card updates it")
+    closed = lc.closed_reason(old)
+    if closed:
+        raise ChatError(409, f"this card is closed ({closed}): post a new card")
+    reason = validate_card(card, rail_author=rail_author)
+    if reason:
+        raise ChatError(422, reason)
+    if not rail_author:
+        await room_posting_gate(db, conv, my_row, actor)     # a member who may not post now cannot change a card either
+    changes = lc.card_changes(old, card)
+    if not changes:
+        return serialize_message(msg), conv, False
+    if int(msg.card_rev or 0) >= lc.CARD_REV_MAX:
+        raise ChatError(409, f"this card took its {lc.CARD_REV_MAX} updates: post a new card")
+    when = message_clock()
+    msg.card = card
+    msg.card_rev = int(msg.card_rev or 0) + 1
+    msg.card_updated_at = when
+    db.add(ChatCardUpdate(message_id=msg.id, conversation_id=conv.id, rev=msg.card_rev, actor_ptype=actor.ptype,
+                          actor_id=actor.sender_id, card=card, changes=changes, created_at=when))
+    if int(conv.last_seq or 0) == int(msg.seq):
+        # the thread list previews its newest message: when that is this card, the preview follows its state
+        conv.last_preview = preview_for("card", None, card, getattr(actor, "display_name", None))
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise ChatError(409, "another update of this card landed at the same moment: read it and try again")
+    return serialize_message(msg), conv, True
+
+
+async def card_history(db: AsyncSession, conversation_id: str, message_id: str, actor: Actor) -> dict:
+    """The updates a card took, oldest first: when, who (by name), what changed. A member of the thread reads it."""
+    conv = await _get_conversation(db, conversation_id)
+    my_row = await resolve_membership(db, conv, actor)
+    msg = (await db.execute(select(ChatMessage).where(
+        ChatMessage.id == str(message_id), ChatMessage.conversation_id == conv.id))).scalars().first()
+    if msg is None or msg.deleted_at is not None or (
+            my_row is not None and msg.seq <= int(my_row.hidden_before_seq or 0)):
+        raise ChatError(404, "no such message in this thread")
+    rows = (await db.execute(select(ChatCardUpdate).where(ChatCardUpdate.message_id == msg.id)
+                             .order_by(ChatCardUpdate.rev.asc()))).scalars().all()
+    keys = []
+    for r in rows:
+        try:
+            keys.append(principal_key(r.actor_ptype, r.actor_id))
+        except (ValueError, TypeError):
+            pass
+    names = await display_names(db, keys) if keys else {}
+    out = []
+    for r in rows:
+        try:
+            k = principal_key(r.actor_ptype, r.actor_id)
+        except (ValueError, TypeError):
+            k = None
+        out.append({"rev": int(r.rev), "at": r.created_at.isoformat() if r.created_at else None,
+                    "by": {"ptype": r.actor_ptype, "id": r.actor_id, "name": names.get(k) if k else None},
+                    "changes": list(r.changes or [])})
+    card = msg.card if isinstance(msg.card, dict) else {}
+    return {"conversation_id": conv.id, "message_id": msg.id, "seq": int(msg.seq), "card_type": card.get("type"),
+            "card_rev": int(msg.card_rev or 0), "posted_at": msg.created_at.isoformat() if msg.created_at else None,
+            "updates": out}
+
+
+async def fan_out_card_update(conv_id: str, conv_kind: str, message: dict, recipients: List[dict], actor_name: str,
+                              *, sender_owner_dev_id: Optional[int] = None) -> None:
+    """A card's update, after its commit: the WS envelope `chat.card_updated` to every recipient's owner and to the
+    updater's own household (its other devices), and a wake for the sync calls waiting on these threads. No notice and
+    no push: an update is the same card, read where it is."""
+    try:
+        from agentvault_registry.routers.websocket import manager
+    except Exception:  # noqa: BLE001
+        return
+    envelope = {"type": "chat.card_updated",
+                "data": {"conversation_id": conv_id, "kind": conv_kind, "message": message, "actor_name": actor_name}}
+    devs = {int(r["owner_developer_id"]) for r in recipients if r.get("owner_developer_id") is not None}
+    if sender_owner_dev_id is not None:
+        devs.add(int(sender_owner_dev_id))
+    try:
+        wake = getattr(manager, "wake_chat", None)
+        keys = {principal_key("developer", d) for d in devs}
+        keys |= {principal_key("agent", r.get("agent_did")) for r in recipients
+                 if r.get("ptype") == "agent" and r.get("agent_did")}
+        if wake is not None and keys:
+            await wake(keys)
+    except Exception as e:  # noqa: BLE001 — a missed wake costs a waiting call its bound, never the update
+        logger.debug("[CHAT] sync wake for the update of %s failed: %s", message.get("id"), e)
+    for d in devs:
+        try:
+            await manager.broadcast_to_subscribers(f"chat:dev:{d}", dict(envelope))
+        except Exception as e:  # noqa: BLE001
+            logger.debug("[CHAT] WS card update to dev %s failed: %s", d, e)
+
+
+async def deliver_card_update(db: AsyncSession, conv: Conversation, message: dict, updater: Actor) -> None:
+    """Who hears an update (the thread's active participants, the updater's blocks applied, as for a message) and its
+    fan-out in the background."""
+    recipients = await recipients_snapshot(db, conv, updater)
+    owner = updater.developer_id if updater.ptype == "developer" else (
+        (await agent_owner_map(db, [updater.agent_did or ""])).get(updater.agent_did or "") if updater.agent_did else None)
+    spawn(fan_out_card_update(conv.id, conv.kind, message, recipients, updater.display_name or "",
+                              sender_owner_dev_id=owner),
+          what=f"the update of card {message.get('id')} (rev {message.get('card_rev')}) in {conv.id}")
 
 
 # §TWOAGENT #26 (2026-09-23): the refusal used to promise that federation would carry a dm to such an agent, which is not
@@ -149,6 +306,9 @@ CLIENT_POSTABLE_CARDS = frozenset({
     # counter supersedes it (refs.supersedes keeps the whole history). The four
     # rail-only siblings live in RAIL_ONLY_CARDS below.
     "engagement.proposal", "engagement.counter",
+    # V0652 (aa): a proof's or a roll's progress, posted once and updated in place by its author
+    # (services/chat_live_cards.py: its steps and its verdict; a verdict closes it)
+    "progress",
 })
 RAIL_ONLY_CARDS = frozenset({
     "service.call", "service.result",
@@ -178,6 +338,11 @@ RAIL_ONLY_CARDS = frozenset({
     # reason: an approval a client could type would let anyone "approve", and one forgeable makes every real one
     # worthless. The record in `chat_approvals` is the authority; these cards show it.
     "approval.request", "approval.decided",
+    # V0652 (ab): a choice is an approval request with options; the same rail posts both, for the same reason
+    "choice.request", "choice.decided",
+    # V0652 (aa): a Guild order's lifecycle in the room its poster named, posted and kept current by the Guild rail
+    # (a lifecycle a client could type is not the order's record)
+    "guild.order.live",
 })
 # §DOCSFIX D6-556 (2026-10-16): the rail that writes each rail-only card, and what its card records, for the refusal
 # a client meets when it types one. The refusal named the service-call rail for all eight.
@@ -192,6 +357,9 @@ RAIL_ONLY_WRITERS = {
     "engagement.settled": ("the contract rail", "a contract transition"),
     "approval.request": ("the chat approval rail", "an approval request"),
     "approval.decided": ("the chat approval rail", "an approval decision"),
+    "choice.request": ("the chat approval rail", "a choice request"),
+    "choice.decided": ("the chat approval rail", "a choice's decision"),
+    "guild.order.live": ("the Guild rail", "an order's lifecycle"),
 }
 LATER_PHASE_CARDS = frozenset({"topup.offer"})
 # The one value that means "resolved, and open". Anything else — including the
@@ -243,6 +411,19 @@ def sender_key_of(m: Any) -> Optional[str]:
         except (ValueError, TypeError):
             return None
     return None
+
+
+#: V0652 (ai): the name a rail's rows carry in a thread read. A support desk reply is authored by the rail (the desk is
+#: not a participant) and read back with a blank author: API and MCP readers saw "" where Pocket wrote "Support" itself.
+SYSTEM_SENDER_NAMES = {"support": "Support"}
+
+
+def system_sender_name(m: Any) -> str:
+    """The label of a system sender this module knows ("Support"), else ""; a person or an agent is named by
+    display_names()."""
+    if getattr(m, "sender_ptype", None) != "system":
+        return ""
+    return SYSTEM_SENDER_NAMES.get(str(getattr(m, "sender_id", "") or ""), "")
 
 
 def part_key(p: Any) -> str:
@@ -395,6 +576,11 @@ def validate_card(card: Any, *, rail_author: bool = False,
         return "card.refs must be an object when present"
 
     # Per-type required fields (strict on structure, permissive on extras).
+    if ctype in ("progress", "guild.order.live"):     # V0652 (aa)
+        from .chat_live_cards import validate_guild_live, validate_progress
+        problem = validate_progress(data) if ctype == "progress" else validate_guild_live(data)
+        if problem:
+            return problem
     if ctype == "applet":
         from .chat_applet import validate_applet
         problem = validate_applet(data)
@@ -411,6 +597,17 @@ def validate_card(card: Any, *, rail_author: bool = False,
         for banned in ("data", "content", "b64", "url", "src"):
             if banned in data:
                 return f"a media card carries no {banned} — it points at an attachment"
+        # V0652 (ae): a text file's first lines, bounded; the post path writes them from the stored file
+        from .chat_media import PREVIEW_CHARS, PREVIEW_KINDS, PREVIEW_WITHHELD
+        pv = data.get("preview")
+        if pv is not None and (not isinstance(pv, str) or len(pv) > PREVIEW_CHARS):
+            return f"media.preview is text of at most {PREVIEW_CHARS} characters"
+        if data.get("preview_kind") is not None and data.get("preview_kind") not in PREVIEW_KINDS:
+            return f"media.preview_kind is one of {', '.join(PREVIEW_KINDS)}"
+        if data.get("preview_withheld") is not None and data.get("preview_withheld") not in PREVIEW_WITHHELD:
+            return f"media.preview_withheld is one of {', '.join(PREVIEW_WITHHELD)}"
+        if data.get("preview_truncated") is not None and not isinstance(data.get("preview_truncated"), bool):
+            return "media.preview_truncated must be true or false"
     if ctype == "pay.receipt":
         # §OURSTATE-6 — a cross-frame receipt states what ARRIVED as well as
         # what was debited. Both halves or neither: an arrival amount with no
@@ -551,7 +748,7 @@ def validate_card(card: Any, *, rail_author: bool = False,
             return "share.certificate: data.certificate_id is required — the artifact is its identifier"
         if not isinstance(data.get("digest"), str) or len(data["digest"]) != 64:
             return "share.certificate: data.digest must be the sha256 of the signed claim"
-    elif ctype in ("approval.request", "approval.decided"):
+    elif ctype in ("approval.request", "approval.decided", "choice.request", "choice.decided"):
         # V0650 (l): rail-authored, so this validates SHAPE; the authority is that only the approval rail posts them.
         from .chat_approvals import validate_card_data as _approval_card_problem
         problem = _approval_card_problem(ctype, data)
@@ -730,6 +927,21 @@ def _card_sentence(card: dict) -> str:
     if t == "approval.decided":
         word = "Approved" if d.get("decision") == "approved" else "Denied"
         return f"{word}: {_clip(d.get('title'), 90)}" if d.get("title") else word
+    if t == "progress":         # V0652 (aa): the card's latest state is what the list shows
+        word = {"running": "In progress", "passed": "Passed", "failed": "Failed", "cancelled": "Cancelled"}.get(
+            d.get("state"), "Progress")
+        return f"{word}: {_clip(d.get('title'), 90)}" if d.get("title") else word
+    if t == "guild.order.live":
+        word = {"open": "Guild order", "awarded": "Guild order awarded", "submitted": "Guild order delivered",
+                "settled": "Guild order settled", "cancelled": "Guild order cancelled",
+                "disputed": "Guild order disputed"}.get(d.get("status"), "Guild order")
+        return f"{word}: {_clip(d.get('title'), 80)}" if d.get("title") else word
+    if t == "choice.request":   # V0652 (ab)
+        return f"Asks you to choose: {_clip(d.get('title'), 90)}" if d.get("title") else "Asks you to choose"
+    if t == "choice.decided":
+        ch = d.get("chosen") if isinstance(d.get("chosen"), dict) else {}
+        word = f"Chose \u201c{_clip(ch.get('label'), 60)}\u201d" if ch.get("label") else "Declined"
+        return f"{word}: {_clip(d.get('title'), 70)}" if d.get("title") else word
     return _clip(str(t).replace(".", " ").replace("_", " ").capitalize(), 60)
 
 
@@ -862,12 +1074,15 @@ def result_client_ref(client_ref: str) -> str:
 class Actor:
     """Normalized authenticated principal."""
 
-    __slots__ = ("ptype", "developer_id", "agent_did", "display_name", "system_id")
+    __slots__ = ("ptype", "developer_id", "agent_did", "display_name", "system_id", "sent_by")
 
     def __init__(self, ptype: str, developer_id: Optional[int] = None,
                  agent_did: Optional[str] = None, display_name: str = "",
-                 system_id: Optional[str] = None):
+                 system_id: Optional[str] = None, sent_by: Optional[int] = None):
         self.ptype = ptype
+        # V0652 (aj): for an agent acting through its owner's session token, the owner (the message says "sent by its
+        # owner"); None for every other principal
+        self.sent_by = sent_by if ptype == "agent" else None
         self.developer_id = developer_id
         self.agent_did = agent_did
         self.display_name = display_name
@@ -897,10 +1112,11 @@ def actor_from_auth(actor_dict: dict) -> Actor:
     if actor_dict.get("kind") == "agent":
         agent = actor_dict.get("agent")
         return Actor("agent", agent_did=actor_dict["agent_did"],
-                     display_name=getattr(agent, "name", None) or actor_dict["agent_did"])
+                     display_name=getattr(agent, "name", None) or actor_dict["agent_did"],
+                     sent_by=actor_dict.get("owner_session"))
     dev = actor_dict["developer"]
     return Actor("developer", developer_id=int(dev.id),
-                 display_name=getattr(dev, "name", None) or getattr(dev, "email", "") or f"dev {dev.id}")
+                 display_name=developer_display_name(dev))
 
 
 # ---------------------------------------------------------------------------
@@ -1098,6 +1314,16 @@ async def agent_owner_map(db: AsyncSession, dids: Iterable[str]) -> Dict[str, Op
     return {d: found.get(d.lower()) for d in ds}
 
 
+def developer_display_name(dev: Any) -> str:
+    """How a developer is named to others in the chat: their name, else @handle, else "dev N"; never their e-mail
+    address (V0652 (ak), session-lead's review item 20). Pure."""
+    name = str(getattr(dev, "name", None) or "").strip()
+    if name:
+        return name
+    handle = str(getattr(dev, "handle", None) or "").strip()
+    return f"@{handle}" if handle else f"dev {getattr(dev, 'id', '?')}"
+
+
 async def display_names(db: AsyncSession, keys: Iterable[str]) -> Dict[str, str]:
     """Principal key → display name, one query per type."""
     dev_ids, agent_dids, remote_ids = [], [], []
@@ -1125,7 +1351,10 @@ async def display_names(db: AsyncSession, keys: Iterable[str]) -> Dict[str, str]
             out.setdefault(f"rem:{rid}", rid)
     if dev_ids:
         rows = (await db.execute(sa_text(
-            "SELECT id, COALESCE(NULLIF(name, ''), email) FROM developers WHERE id = ANY(:ids)"
+            # V0652 (ak), session-lead's review item 20: a developer with no name is shown by their handle, else as
+            # "dev N", never by their e-mail address: these names reach everyone in the thread, strangers included
+            "SELECT id, COALESCE(NULLIF(trim(name), ''), '@' || NULLIF(trim(handle), '')) FROM developers "
+            "WHERE id = ANY(:ids)"
         ), {"ids": [int(i) for i in dev_ids]})).all()
         for r in rows:
             out[f"dev:{r[0]}"] = r[1] or f"dev {r[0]}"
@@ -1605,6 +1834,7 @@ async def insert_message(db: AsyncSession, conv: Conversation,
         conversation_id=conv.id, seq=seq, sender_ptype=sender.ptype,
         sender_id=sender.sender_id, kind=kind, body=body, card=card,
         reply_to=reply_to, client_ref=client_ref, mentions=mentions,
+        sent_by_developer_id=getattr(sender, "sent_by", None),   # V0652 (aj)
         created_at=message_clock())   # V0650 (g): stamped once it holds its seq, not at its transaction's start
     db.add(msg)
     # Sending implies having read up to your own message — otherwise your own
@@ -1664,8 +1894,13 @@ def serialize_message(m: ChatMessage) -> dict:
             "kind": m.kind, "body": m.body, "card": m.card, "deleted": False,
             "reply_to": m.reply_to, "client_ref": m.client_ref,
             "mentions": list(getattr(m, "mentions", None) or []),   # V0650 (h)
+            # V0652 (aj): an agent's message its owner sent through their own session (who typed it, not an id)
+            "sent_by_owner": bool(getattr(m, "sent_by_developer_id", None)),
             "created_at": m.created_at.isoformat() if m.created_at else None,
-            "edited_at": m.edited_at.isoformat() if m.edited_at else None}
+            "edited_at": m.edited_at.isoformat() if m.edited_at else None,
+            # V0652 (aa): a card updated in place says how often and when (0 and null until its first update)
+            "card_rev": int(getattr(m, "card_rev", 0) or 0),
+            "card_updated_at": m.card_updated_at.isoformat() if getattr(m, "card_updated_at", None) else None}
 
 
 # ---------------------------------------------------------------------------
@@ -1741,7 +1976,7 @@ async def unread_total(db: AsyncSession, actor: Actor) -> dict:
                     SELECT 1 FROM organizations o
                     WHERE o.id = c.org_id AND o.chat_enabled = true)
                     AND {org_live}))
-              AND NOT COALESCE(p.muted, false)
+              AND NOT (COALESCE(p.muted, false) AND (p.muted_until IS NULL OR p.muted_until > now()))
             GROUP BY c.id
             HAVING MAX(CASE WHEN p.state = :st THEN 1 ELSE 0 END) = 1
         ) u
@@ -1812,9 +2047,11 @@ async def list_conversations(db: AsyncSession, actor: Actor, state: str = "activ
                c.dm_pair_key, c.service_inflight_at, c.created_at,
                MAX(CASE WHEN p.state = :st THEN 1 ELSE 0 END) AS visible,
                SUM(GREATEST(0, c.last_seq - GREATEST(p.last_read_seq, COALESCE(p.hidden_before_seq, 0)))) AS unread,
-               BOOL_AND(p.muted) AS muted,
+               BOOL_AND(COALESCE(p.muted, false) AND (p.muted_until IS NULL OR p.muted_until > now())) AS muted,
                c.mode, c.topic, c.org_id, c.support_ticket_id,
-               c.created_by_ptype, c.created_by_id
+               c.created_by_ptype, c.created_by_id,
+               MAX(p.muted_until) FILTER (WHERE p.muted AND p.muted_until > now()) AS muted_until,
+               (SELECT o.name FROM organizations o WHERE o.id = c.org_id) AS org_name
         FROM conversations c
         JOIN conversation_participants p ON p.conversation_id = c.id
         WHERE ({reach}) {cursor_clause}
@@ -1873,7 +2110,9 @@ async def list_conversations(db: AsyncSession, actor: Actor, state: str = "activ
             if same_household:
                 counterparty["same_household"] = True
         items.append({
-            "id": cid, "kind": r[1], "title": r[2], "last_seq": int(r[3] or 0),
+            # V0652 (ak), session-lead's review item 14: a room is named by its organization's LIVE name, as the
+            # thread already is; the title copied when the room opened went stale on a rename
+            "id": cid, "kind": r[1], "title": (r[19] or r[2]) if r[1] == "org" else r[2], "last_seq": int(r[3] or 0),
             "last_message_at": r[4].isoformat() if r[4] else None,
             "last_preview": r[5],
             "service_inflight": bool(r[7]) and
@@ -1881,6 +2120,7 @@ async def list_conversations(db: AsyncSession, actor: Actor, state: str = "activ
             "created_at": r[8].isoformat() if r[8] else None,
             "unread": int(r[10] or 0),
             "muted": bool(r[11]),
+            "muted_until": r[18].isoformat() if r[18] else None,   # V0652 (ak): a mute set for a while ends then
             "my_state": want_state,
             "counterparty": counterparty,
             "mode": r[12], "topic": r[13], "org_id": r[14],
@@ -1894,6 +2134,44 @@ async def list_conversations(db: AsyncSession, actor: Actor, state: str = "activ
             "cross_registry": fed.federation_enabled()}
 
 
+async def _owner_reader_row(db: AsyncSession, conv: Conversation, actor: Actor) -> Optional[ConversationParticipant]:
+    """V0652 (s), V0651's pair proof finding 3 (nt261101x1): the owner READS his agent's system thread (the Guild's feed of
+    bids: kind system, one participant, the agent) as he reads its direct threads, his list having shown it all along, but
+    takes no seat there: no participant row (so no chat notice per bid: the push and the webhook tell him), nothing to post
+    (the thread is rail-only), no read position of his own. The row returned is never added to the session; the message
+    reads take it (resolve_reader), every other act (a post, a mark-read, a mute) still asks resolve_membership and is
+    refused."""
+    if conv.kind != "system" or actor.ptype != "developer" or actor.developer_id is None:
+        return None
+    parts = (await db.execute(select(ConversationParticipant).where(
+        ConversationParticipant.conversation_id == conv.id, ConversationParticipant.ptype == "agent",
+        ConversationParticipant.state == "active"))).scalars().all()
+    dids = [p.agent_did for p in parts if p.agent_did]
+    if not dids:
+        return None
+    owners = await agent_owner_map(db, dids)
+    mine = [p for p in parts if owners.get(p.agent_did) == actor.developer_id]
+    if not mine:
+        return None
+    return ConversationParticipant(conversation_id=conv.id, ptype="developer", developer_id=actor.developer_id,
+                                   role="reader", state="active", hidden_before_seq=mine[0].hidden_before_seq or 0,
+                                   last_read_seq=mine[0].last_read_seq or 0)
+
+
+async def resolve_reader(db: AsyncSession, conv: Conversation, actor: Actor, *, announce_ok: bool = False):
+    """V0652 (s): the row a READ asks. resolve_membership's, or where it refuses (403) the owner's read-only row in his
+    agent's system thread (_owner_reader_row). One question for the two reads a thread's page makes on open, its messages
+    and its support-review banner (a banner read that 403s told the owner the check failed); every write keeps asking
+    resolve_membership."""
+    try:
+        return await resolve_membership(db, conv, actor, announce_ok=announce_ok)
+    except ChatError as e:
+        reader = await _owner_reader_row(db, conv, actor) if e.status_code == 403 else None
+        if reader is None:
+            raise
+        return reader
+
+
 async def list_messages(db: AsyncSession, conversation_id: str, actor: Actor,
                         before_seq: Optional[int] = None, limit: int = 40, join: bool = False,
                         *, mentions: Optional[str] = None) -> dict:
@@ -1903,7 +2181,7 @@ async def list_messages(db: AsyncSession, conversation_id: str, actor: Actor,
     # auto_join=True: the household rule — a developer reads the thread their
     # agent is active in (and vice versa); the materialized row carries their
     # own read/burn floors from here on.
-    my_row = await resolve_membership(db, conv, actor, announce_ok=join)
+    my_row = await resolve_reader(db, conv, actor, announce_ok=join)
     limit = max(1, min(int(limit or 40), PAGE_MAX))
 
     q = select(ChatMessage).where(
@@ -1950,7 +2228,7 @@ async def list_messages(db: AsyncSession, conversation_id: str, actor: Actor,
     out = []
     for m in msgs:
         d = serialize_message(m)
-        d["sender_name"] = names.get(sender_key_of(m) or "", "")
+        d["sender_name"] = names.get(sender_key_of(m) or "", "") or system_sender_name(m)
         out.append(d)
     room = None
     if conv.kind == "org":
@@ -1975,12 +2253,34 @@ async def list_messages(db: AsyncSession, conversation_id: str, actor: Actor,
                 "my_is_operator": my_org_role in ROOM_OPS_ROLES,
                 "transparency_public": _tp_pub,
                 # §ROOMBRAIN — the standing banner's source, read LIVE like transparency
-                "assistant_present": assistant_present(_settings)}
+                "assistant_present": assistant_present(_settings),
+                # V0652 (ak): one measure of the room, labelled where it shows: who has opened it (an active row)
+                "member_count": int((await db.execute(sa_text(
+                    "SELECT count(*) FROM conversation_participants WHERE conversation_id = :c AND state = 'active'"),
+                    {"c": conv.id})).scalar() or 0)}
+        # V0652 (ac): the room's status board travels with the page (and whether this reader keeps it)
+        from agentvault_registry.services import chat_board as _board
+        _who = await _board.authority(db, conv, actor)
+        _b = conv.board if isinstance(conv.board, dict) else {}
+        _by = _b.get("updated_by") or {}
+        _keys = list(conv.board_editors or []) if _who == "owner" else []
+        if _by.get("ptype"):
+            try:
+                _keys.append(principal_key(_by["ptype"], _by.get("id")))
+            except (ValueError, TypeError):
+                pass
+        room["board"] = _board.view(conv, await display_names(db, _keys) if _keys else {}, _who is not None,
+                                    _who == "owner")
 
     return {"conversation_id": conv.id, "kind": conv.kind,
             "last_seq": int(conv.last_seq or 0),
             "my_state": my_row.state,
             "my_last_read_seq": int(my_row.last_read_seq or 0),
+            # V0652 (ak): the reader's own mute, and when a mute set for a while ends (the thread's settings show it)
+            "muted": mute_in_effect(getattr(my_row, "muted", False), getattr(my_row, "muted_until", None)),
+            "muted_until": (my_row.muted_until.isoformat()
+                            if mute_in_effect(getattr(my_row, "muted", False), getattr(my_row, "muted_until", None))
+                            and getattr(my_row, "muted_until", None) else None),
             "counterparty": counterparty,
             "room": room,
             "service_inflight": bool(conv.service_inflight_at) and
@@ -2054,12 +2354,45 @@ async def _participant_handle(db: AsyncSession, row: ConversationParticipant) ->
     return h[0] if h and h[0] else f"dev:{row.developer_id}"
 
 
-async def set_muted(db: AsyncSession, conversation_id: str, actor: Actor, muted: bool) -> dict:
+MUTE_MAX = datetime.timedelta(days=30)
+
+
+def mute_in_effect(muted: Any, muted_until: Optional[datetime.datetime],
+                   now: Optional[datetime.datetime] = None) -> bool:
+    """V0652 (ak): is this row's mute on now? A mute set for a while (muted_until) ends by itself. Pure."""
+    if not muted:
+        return False
+    if muted_until is None:
+        return True
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    if muted_until.tzinfo is None:
+        muted_until = muted_until.replace(tzinfo=datetime.timezone.utc)
+    return muted_until > now
+
+
+async def set_muted(db: AsyncSession, conversation_id: str, actor: Actor, muted: bool,
+                    until: Optional[datetime.datetime] = None) -> dict:
+    """Mute or unmute this thread for me. V0652 (ak): `until` makes the mute end by itself (an hour, 8 hours, a day; at
+    most 30 days, in the future); without it a mute holds until lifted. A muted thread still brings me the approvals
+    and choices that wait on me (fan_out_message)."""
     conv = await _get_conversation(db, conversation_id)
     my_row = await resolve_membership(db, conv, actor)
+    if until is not None:
+        if not muted:
+            raise ChatError(422, "until goes with a mute: unmuting needs no time")
+        if until.tzinfo is None:
+            until = until.replace(tzinfo=datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        if until <= now:
+            raise ChatError(422, "until must be in the future")
+        if until - now > MUTE_MAX:
+            raise ChatError(422, f"a mute for a while lasts at most {MUTE_MAX.days} days; leave until out to mute until "
+                                 f"you lift it")
     my_row.muted = bool(muted)
+    my_row.muted_until = until if muted else None
     await db.commit()
-    return {"conversation_id": conv.id, "muted": my_row.muted}
+    return {"conversation_id": conv.id, "muted": my_row.muted,
+            "muted_until": my_row.muted_until.isoformat() if my_row.muted_until else None}
 
 
 async def burn_for_me(db: AsyncSession, conversation_id: str, actor: Actor) -> dict:
@@ -2169,7 +2502,7 @@ def next_sync_cursor(prev_t: datetime.datetime, prev_i: Optional[str],
 # V0651 (t) gwo_cddfbd743842eb65906ef8ab: an @all / @everyone in a message's body, as a word (the mentions column (h)
 # resolves @name to a participant and stores nothing for these two).
 FOR_ME_ALL_RE = re.compile(r"(?<!\w)@(all|everyone)(?!\w)", re.IGNORECASE)
-_APPROVAL_CARDS = ("approval.request", "approval.decided")
+_APPROVAL_CARDS = ("approval.request", "approval.decided", "choice.request", "choice.decided")   # V0652 (ab)
 
 
 def _card_approval_id(card: Any) -> Optional[str]:
@@ -2287,9 +2620,12 @@ async def sync_since(db: AsyncSession, actor: Actor, since: Optional[str], *,
     if prev_i is not None:
         params["tid"] = prev_i
     skip = ""
-    if prev_seen:
+    # V0652 (aa): the seen list also carries the card updates already returned (`u:<message id>:<rev>`)
+    msg_seen = [x for x in prev_seen if not x[0].startswith("u:")]
+    upd_seen = [x for x in prev_seen if x[0].startswith("u:")]
+    if msg_seen:
         skip = "AND m.id NOT IN :seen"
-        params["seen"] = [mid for mid, _ in prev_seen]
+        params["seen"] = [mid for mid, _ in msg_seen]
         binds.append(bindparam("seen", expanding=True))
     extra = ", m.mentions" if for_me else ""     # V0651 (t): the filter reads (h)'s mentions
 
@@ -2336,15 +2672,63 @@ async def sync_since(db: AsyncSession, actor: Actor, since: Optional[str], *,
         for m in msgs:
             m.pop("mentions", None)
     truncated = len(rows) >= SYNC_MAX
-    nt, ni, ns = next_sync_cursor(prev_t, prev_i, prev_seen, returned, truncated, now)
+    nt, ni, ns = next_sync_cursor(prev_t, prev_i, msg_seen, returned, truncated, now)
+    updates: List[dict] = []
+    if cursor and not for_me:
+        updates, upd_returned = await _card_updates_since(db, reach, actor, prev_t, upd_seen)
+        # the updates returned inside the overlap join the seen list (within its bound: an update that finds no room
+        # may come once more, which a client applies by its rev and sees nothing)
+        keep = {k: t for k, t in upd_seen + upd_returned if t >= nt}
+        room = max(0, SYNC_SEEN_MAX - len(ns))
+        extra = sorted(keep.items(), key=lambda kv: kv[1])[-room:] if room else []
+        ns = sorted(list(ns) + extra, key=lambda kv: kv[1])
     out = {"since": prev_t.isoformat(), "messages": msgs,
            "truncated": truncated, "bound": SYNC_MAX,
            "next_cursor": encode_sync_cursor(nt, ni, ns)}
+    if cursor and not for_me:
+        out["updates"] = updates
     if for_me:
         # the filtered stream moves on (next_cursor); the plain stream stays where it was (plain_cursor)
         out["for"] = "me"
         out["plain_cursor"] = encode_sync_cursor(prev_t, prev_i, prev_seen)
     return out
+
+
+async def _card_updates_since(db: AsyncSession, reach: str, actor: Actor, ts: datetime.datetime,
+                              seen: List[Tuple[str, datetime.datetime]]) -> Tuple[List[dict], List[Tuple[str, datetime.datetime]]]:
+    """V0652 (aa): the cards in my active threads that moved since `ts` (a cursor's position), each as the message's
+    current card and its rev, minus the updates the cursor already returned; and their seen-list entries."""
+    params: Dict[str, Any] = ({"me": actor.developer_id} if actor.ptype == "developer" else {"med": actor.agent_did})
+    params.update({"ts": ts, "lim": SYNC_MAX})
+    binds = [bindparam("ts", type_=DateTime(timezone=True))]
+    skip = ""
+    if seen:
+        skip = "AND ('u:' || m.id || ':' || CAST(m.card_rev AS TEXT)) NOT IN :useen"
+        params["useen"] = [k for k, _ in seen]
+        binds.append(bindparam("useen", expanding=True))
+    stmt = sa_text(f"""
+        SELECT m.id, m.conversation_id, m.seq, m.card, m.card_rev, m.card_updated_at
+        FROM chat_messages m
+        JOIN conversation_participants p ON p.conversation_id = m.conversation_id
+        WHERE ({reach}) AND p.state = 'active'
+          AND m.card_updated_at IS NOT NULL AND m.deleted_at IS NULL
+          AND m.card_updated_at >= :ts {skip}
+          AND m.seq > COALESCE(p.hidden_before_seq, 0)
+        ORDER BY m.card_updated_at ASC, m.id ASC
+        LIMIT :lim
+    """).bindparams(*binds).columns(card_updated_at=DateTime(timezone=True))
+    rows = (await db.execute(stmt, params)).all()
+    out, returned, ids = [], [], set()
+    for r in rows:
+        if r[0] in ids:             # dev + their agent both in a thread: one copy
+            continue
+        ids.add(r[0])
+        at = _as_utc(r[5])
+        card = json.loads(r[3]) if isinstance(r[3], str) else r[3]     # a raw read: a driver may hand JSON back as text
+        out.append({"id": r[0], "conversation_id": r[1], "seq": int(r[2]), "card": card, "card_rev": int(r[4] or 0),
+                    "card_updated_at": at.isoformat()})
+        returned.append((f"u:{r[0]}:{int(r[4] or 0)}", at))
+    return out, returned
 
 
 async def sync_wait(db: AsyncSession, actor: Actor, *, since: Optional[str] = None,
@@ -2381,7 +2765,7 @@ async def sync_wait(db: AsyncSession, actor: Actor, *, since: Optional[str] = No
         except Exception as e:  # noqa: BLE001 — without the channel, a wake from this worker still arrives
             logger.debug("[CHAT] sync wait: the wake channel is not subscribed: %s", e)
         out = await sync_since(db, actor, since, cursor=cursor, for_me=for_me)
-        while not out["messages"]:
+        while not out["messages"] and not out.get("updates"):
             await _release_ws_session(db)          # no connection held while idle
             remaining = deadline - loop.time()
             if remaining <= 0:
@@ -2427,6 +2811,43 @@ async def notify_request_received(conv_id: str, conv_kind: str, recipient_agent_
          "message": message, "sender_name": sender_name,
          "answer_with": "POST /api/v1/chat/conversations/{conversation_id}/accept or /decline, as the recipient agent"},
         [recipient_agent_did], source_label="chat.request")
+
+
+async def pending_developer_target(db: AsyncSession, conv: Conversation, target_ptype: str,
+                                   target_id: Any) -> Optional[int]:
+    """V0652 (z): the target PERSON's developer id when their row in this conversation is 'pending' (a stranger's
+    first message waits in their Requests lane), else None: pending_agent_target's question, for a developer."""
+    if target_ptype != "developer" or target_id in (None, ""):
+        return None
+    try:
+        dev_id = int(target_id)
+    except (TypeError, ValueError):
+        return None
+    row = (await db.execute(select(ConversationParticipant).where(
+        ConversationParticipant.conversation_id == conv.id,
+        ConversationParticipant.ptype == "developer",
+        ConversationParticipant.developer_id == dev_id))).scalar_one_or_none()
+    return dev_id if row is not None and row.state == "pending" else None
+
+
+async def notify_developer_request(conv_id: str, developer_id: int, message: Optional[dict],
+                                   sender_name: str) -> None:
+    """V0652 (z): tell a PERSON that a stranger's first message waits in their Requests (chat.request: in-app and
+    pushed by default, under their preferences and quiet hours). It notified nobody: the fan-out reaches active rows
+    only, and the knock notice was an agent owner's webhook (session-tester found it through the maintainer's handle,
+    the sessions' room seq 337-339). Best-effort and bounded, like every chat notice."""
+    from agentvault_registry.background_tasks.push_notify import notify
+    preview = (message or {}).get("body") or (
+        f"[{((message or {}).get('card') or {}).get('type', 'card')}]" if (message or {}).get("card") else "…")
+    try:
+        await asyncio.wait_for(notify(
+            "chat.request", [int(developer_id)],
+            title=f"{sender_name or 'Someone'} wants to talk with you",
+            message=str(preview)[:PREVIEW_LEN],
+            click=f"/ui#/pocket/ourchat/{conv_id}"), NOTIFY_BOUND_S)
+    except Exception as e:  # noqa: BLE001 — a notice is advisory; the knock already landed
+        logger.warning("[CHAT] the request notice of %s to developer %s failed: %s: %s",
+                       conv_id, developer_id, type(e).__name__, e)
 
 
 def accepted_knock_notice(conv: Conversation, previous_state: str, new_state: str,
@@ -2491,7 +2912,7 @@ async def recipients_snapshot(db: AsyncSession, conv: Conversation,
             continue
         keys.append(k)
         out.append({"key": k, "ptype": p.ptype, "developer_id": p.developer_id,
-                    "agent_did": p.agent_did, "muted": bool(p.muted)})
+                    "agent_did": p.agent_did, "muted": mute_in_effect(p.muted, getattr(p, "muted_until", None))})
     blockers = await blocker_keys_against(db, sender.key, keys)
     out = [r for r in out if r["key"] not in blockers]
     agent_dids = [r["agent_did"] for r in out if r["ptype"] == "agent" and r["agent_did"]]
@@ -2505,7 +2926,8 @@ async def recipients_snapshot(db: AsyncSession, conv: Conversation,
 async def fan_out_message(conv_id: str, conv_kind: str, message: dict,
                           recipients: List[dict], sender_name: str,
                           *, is_ping: bool = False,
-                          sender_owner_dev_id: Optional[int] = None) -> None:
+                          sender_owner_dev_id: Optional[int] = None,
+                          notify_absent: bool = True) -> None:
     """Fire-and-forget delivery, called AFTER the insert committed.
     WS topic per recipient developer (including the sender's own household —
     that is cross-device sync of your own sends, not a notification); notify()
@@ -2559,17 +2981,28 @@ async def fan_out_message(conv_id: str, conv_kind: str, message: dict,
             logger.debug("[CHAT] sync wake for message %s failed: %s", message.get("id"), e)
 
     notices: List[int] = []
+    # V0652 (ak): a muted thread still brings you an approval or a choice that waits on you (asks_only: told only if
+    # the notice is that ask; _notify_absent checks who may decide)
+    card_type = (message.get("card") or {}).get("type") if isinstance(message.get("card"), dict) else None
+    asks_only: List[int] = []
     for dev_id, muted in dev_targets.items():
         if manager is not None:
             try:
                 await manager.broadcast_to_subscribers(f"chat:dev:{dev_id}", dict(envelope))
             except Exception as e:  # noqa: BLE001
                 logger.debug("[CHAT] WS fan-out to dev %s failed: %s", dev_id, e)
-        if muted or (sender_owner_dev_id is not None and dev_id == int(sender_owner_dev_id)):
+        if sender_owner_dev_id is not None and dev_id == int(sender_owner_dev_id):
             continue   # you are never notified about your own household's send
+        if muted:
+            if card_type in ASK_CARD_TYPES and not is_ping:
+                asks_only.append(dev_id)
+            continue
         notices.append(dev_id)
-    if notices:
-        spawn(_notify_absent(conv_id, message, notices, sender_name, is_ping, manager),
+    # V0652 (ai): a rail that tells its people itself (the support desk) delivers live only (notify_absent=False);
+    # V0652 (ak): a muted thread still brings the asks that wait on you (asks_only)
+    if (notices or asks_only) and notify_absent:
+        spawn(_notify_absent(conv_id, message, notices + asks_only, sender_name, is_ping, manager, conv_kind=conv_kind,
+                             asks_only=set(asks_only)),
               what=f"the offline notices of message {message.get('id')} (seq {message.get('seq')}) in {conv_id} "
                    f"({len(notices)} developer(s))")
 
@@ -2593,7 +3026,7 @@ def approval_notice(message: dict, sender_name: str) -> Optional[Dict[str, str]]
     id goes with the room's link (`?approval=`), so the thread opens on that request in its pinned panel."""
     card = message.get("card") if isinstance(message.get("card"), dict) else None
     ctype = (card or {}).get("type")
-    if ctype not in ("approval.request", "approval.decided"):
+    if ctype not in ("approval.request", "approval.decided", "choice.request", "choice.decided"):
         return None
     data = card.get("data") if isinstance(card.get("data"), dict) else {}
     aid = str(data.get("approval_id") or "")
@@ -2603,6 +3036,15 @@ def approval_notice(message: dict, sender_name: str) -> Optional[Dict[str, str]]
     if ctype == "approval.request":
         title = f"Approval requested by {sender_name}" if sender_name else "Approval requested"
         text = what + (" (affects production)" if data.get("production_impact") else "")
+    elif ctype == "choice.request":   # V0652 (ab): the options are the question
+        title = f"{sender_name} asks you to choose" if sender_name else "A choice is asked of you"
+        opts = [str(o) for o in (data.get("options") or [])][:5]
+        text = what + (": " + " / ".join(opts) if opts else "")
+    elif ctype == "choice.decided":
+        ch = data.get("chosen") if isinstance(data.get("chosen"), dict) else {}
+        title = f"Chose \u201c{str(ch.get('label'))[:60]}\u201d" if ch.get("label") else "Declined"
+        by = str(data.get("decided_by_name") or "")
+        text = f"{what} ({by})" if by else what
     else:
         title = "Approved" if data.get("decision") == "approved" else "Denied"
         by = str(data.get("decided_by_name") or "")
@@ -2610,8 +3052,35 @@ def approval_notice(message: dict, sender_name: str) -> Optional[Dict[str, str]]
     return {"approval_id": aid, "title": title[:120], "message": text[:PREVIEW_LEN] or title}
 
 
+def notice_type_for(dev_id: int, message: dict, conv_kind: str, deciders: Iterable[int], is_ping: bool) -> str:
+    """V0652 (z): the notice a developer who was not there gets, by what the message is TO THEM ("push only what
+    needs you", his plan's item 5). A ping stays a ping; an approval request they may decide is
+    chat.approval_requested (it crosses quiet hours); a message that names them (their mention, or @all/@everyone in
+    its body: reaches_me's rule) is chat.mention; a message in a direct conversation is chat.direct; anything else in
+    a room is chat.message, which is in-app only. Pure."""
+    if is_ping:
+        return "chat.ping"
+    if int(dev_id) in {int(d) for d in (deciders or ())}:
+        # V0652 (ab): a choice asked of its deciders is its own type (it crosses quiet hours too)
+        ctype = ((message.get("card") or {}).get("type")) if isinstance(message.get("card"), dict) else None
+        return "chat.choice_requested" if ctype == "choice.request" else "chat.approval_requested"
+    key = principal_key("developer", int(dev_id))
+    if any(m.get("key") == key for m in _mentions_list(message.get("mentions"))):
+        return "chat.mention"
+    body = message.get("body")
+    if isinstance(body, str) and body and FOR_ME_ALL_RE.search(body):
+        return "chat.mention"
+    if conv_kind in PAIR_KINDS:
+        return "chat.direct"
+    return "chat.message"
+
+
+ASK_CARD_TYPES = ("approval.request", "choice.request")
+ASK_NOTICE_TYPES = ("chat.approval_requested", "chat.choice_requested")
+
+
 async def _notify_absent(conv_id: str, message: dict, notices: List[int], sender_name: str, is_ping: bool,
-                         manager: Any) -> None:
+                         manager: Any, conv_kind: str = "", asks_only: Optional[set] = None) -> None:
     """The offline notices, one developer after another, each given NOTIFY_BOUND_S: a notice that takes longer is
     given up and logged, and the next developer is still told."""
     from agentvault_registry.background_tasks.push_notify import notify
@@ -2624,7 +3093,8 @@ async def _notify_absent(conv_id: str, message: dict, notices: List[int], sender
     # V0651 (y2): a request's deciders get its own type, pushed by default (chat.message's pushes are off until the
     # opt-in card); a failed read leaves everyone on the plain notice, never on none
     deciders: set = set()
-    if approval is not None and str(((message.get("card") or {}).get("type")) or "") == "approval.request" and not is_ping:
+    if approval is not None and str(((message.get("card") or {}).get("type")) or "") in ("approval.request",
+                                                                                     "choice.request") and not is_ping:
         try:
             from . import chat_approvals as _ca
             deciders = await _ca.deciders_among(conv_id, notices)
@@ -2647,9 +3117,12 @@ async def _notify_absent(conv_id: str, message: dict, notices: List[int], sender
                 has_live_session = False
         if has_live_session:
             continue   # they already received it live — don't double-notify
+        ntype = notice_type_for(dev_id, message, conv_kind, deciders, is_ping)
+        if asks_only and dev_id in asks_only and ntype not in ASK_NOTICE_TYPES:
+            continue   # V0652 (ak): muted here; only an ask that waits on them reaches them
         try:
             await asyncio.wait_for(notify(
-                "chat.ping" if is_ping else ("chat.approval_requested" if dev_id in deciders else "chat.message"), [dev_id],
+                ntype, [dev_id],
                 title=title,
                 message=("pinged you" if is_ping else str(preview)[:PREVIEW_LEN]),
                 click=click), NOTIFY_BOUND_S)
@@ -3080,6 +3553,13 @@ async def set_retention(db: AsyncSession, conversation_id: str, actor: Actor,
     my_row = await _my_row(db, conv.id, actor)
     if my_row is None or my_row.state not in ("active", "pending"):
         raise ChatError(403, "not a participant in this conversation")
+    # V0652 (ak), session-lead's review (seq 397/398): a support thread mirrors its ticket, which keeps the record; and
+    # in an organization's room the timer deletes everyone's history (its approvals and orders), so an owner or an
+    # admin sets it. A direct thread keeps the old rule: either side may, and both are told.
+    if conv.kind == "support":
+        raise ChatError(409, "a support thread has no timer: the ticket keeps its record")
+    if conv.kind == "org" and (await actor_org_role(db, conv.org_id or "", actor)) not in ROOM_OPS_ROLES:
+        raise ChatError(403, "in an organization's room, an owner or an admin sets the timer")
     if hours is not None:
         if int(hours) not in RETENTION_CHOICES:
             raise ChatError(422, f"a timer is one of {RETENTION_CHOICES} hours, or none")
@@ -3575,6 +4055,11 @@ async def insert_remote_message(db: AsyncSession, conv: Conversation,
             raise ChatError(422, "a text message needs a body")
         card = None
     else:
+        if isinstance(card, dict) and card.get("type") == "media" and isinstance(card.get("data"), dict):
+            # V0652 (ae): the file lives on the sender's registry, which this one cannot read; a preview is shown only
+            # by the registry that read the file, so a relayed file card carries none.
+            from . import chat_media
+            card = chat_media.without_preview(card)
         # The closed vocabulary applies to peers too — rail_author=False,
         # because a remote CLIENT wrote this, not our own rail.
         # This second site validates a card WITHOUT a database read available;

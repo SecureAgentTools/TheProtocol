@@ -718,6 +718,32 @@ async def lifecycle_admin_event_emission_policy_rw(rpc: RpcCall, parse: ParseRes
 _BASELINE_PEERS = 5
 
 
+def _baseline_census(peers: List[Any]) -> str:
+    """§MCPTEST30 (V0652, agentvault2-d3): what the compliance overview offered the success path, peer by peer (pure).
+    V0651's posture pairs (nt261031x9, nt261031x0, nt261101x1) never reached it while the old-posture nightly on the same
+    image did, and the row could only say the operator sentence; this is the observation, never a cause."""
+    listed = [p for p in peers if isinstance(p, dict)]
+    parts = [f"{p.get('operator_id')}: record={bool(p.get('has_compliance_record'))}, "
+             f"federation_status={p.get('federation_status')!r}, peer_status={p.get('peer_status')!r}, "
+             f"peer_registry_id={p.get('peer_registry_id')!r}" for p in listed[:8]]
+    more = f" (+{len(listed) - 8} more)" if len(listed) > 8 else ""
+    return f"the compliance overview lists {len(listed)} peer(s): " + "; ".join(parts) + more
+
+
+def _baseline_reads(read: List[Tuple[Any, Any]]) -> str:
+    """Each candidate's detail as the success path read it (pure): the match, where its baseline came from, whether its
+    live policy was fetched (8 characters of each hash at most: policy hashes are public)."""
+    parts = []
+    for cand, got in read:
+        g = got if isinstance(got, dict) else {}
+        live, base = str(g.get("live_policy_hash") or ""), str(g.get("baseline_hash") or "")
+        err = f", fetch error {str(g.get('live_fetch_error'))[:80]!r}" if g.get("live_fetch_error") else ""
+        parts.append(f"{cand.get('operator_id')}: hash_match={g.get('hash_match')!r}, "
+                     f"baseline_source={g.get('baseline_source')!r}, baseline {base[:8] or '-'}, "
+                     f"live {live[:8] or 'not fetched'}{err}")
+    return "; ".join(parts)
+
+
 # §MCPTEST30 (V0561): acceptComplianceBaseline measured on a real peer, without changing it. The overview names a
 # federated peer with a baseline; its detail reads the hash the peer publishes now. A hash the peer does NOT publish is
 # refused (409, nothing written); the stored hash, while the peer still publishes it, answers "unchanged" (nothing
@@ -729,20 +755,54 @@ async def lifecycle_admin_compliance_baseline(rpc: RpcCall, parse: ParseResult,
     _ok, ov = await _exec_step(rpc, parse, "theprotocol_getFederationComplianceOverview", "admin", {}, dev_jwt,
                                outcomes, expect_status="success", record_as_separate=False)
     peers = (ov.get("peers") or []) if isinstance(ov, dict) else []
-    rows = [p for p in peers if isinstance(p, dict) and p.get("has_compliance_record")
-            and p.get("federation_status") == "federated" and p.get("peer_registry_id")
-            and str(p.get("peer_status") or "").upper() == "ACTIVE"][:_BASELINE_PEERS]
+
+    def _candidates(listed: List[Any]) -> List[dict]:
+        return [p for p in listed if isinstance(p, dict) and p.get("has_compliance_record")
+                and p.get("federation_status") == "federated" and p.get("peer_registry_id")
+                and str(p.get("peer_status") or "").upper() == "ACTIVE"][:_BASELINE_PEERS]
+    rows = _candidates(peers)
+    primed: List[str] = []
+    from agentvault_registry.api_tests.contracts.earned_ad_ephemeral import ephemeral_target
+    if not rows and ephemeral_target():
+        # §MCPTEST30 (V0652, agentvault2-d3; the trial pair nt261101x2): a fresh frame's compliance mode is 'off', so its
+        # poller records no first sight, and on production's posture the federation suite primes the baseline on the
+        # other frame (its governance cycle's home moved there). On a pair torn down after its run, the lifecycle primes
+        # its own: a dry-run poll-now on each ACTIVE peer with no record (the federation suite's own priming, §TESTBED
+        # 2026-09-19), then reads the overview again. Setup, on no row; a standing frame is never primed.
+        for p in [p for p in peers if isinstance(p, dict) and not p.get("has_compliance_record")
+                  and p.get("peer_registry_id") and str(p.get("peer_status") or "").upper() == "ACTIVE"][:_BASELINE_PEERS]:
+            ok_p, ans_p = await _exec_step(rpc, parse, "theprotocol_pollPeerComplianceNow", "admin",
+                                           {"peer_id": str(p["peer_registry_id"])}, dev_jwt, outcomes,
+                                           expect_status="any", record_as_separate=False)
+            primed.append(f"{p.get('operator_id')}: "
+                          + (f"baseline_recorded={ans_p.get('baseline_recorded')!r}" if isinstance(ans_p, dict)
+                             else "no answer"))
+        if primed:
+            _ok, ov = await _exec_step(rpc, parse, "theprotocol_getFederationComplianceOverview", "admin", {}, dev_jwt,
+                                       outcomes, expect_status="success", record_as_separate=False)
+            peers = (ov.get("peers") or []) if isinstance(ov, dict) else []
+            rows = _candidates(peers)
     if not rows:
-        return   # no federated peer with a baseline here: phase 6's refusal row stands
+        # no federated peer with a baseline here: phase 6's refusal row stands. Where the overview lists peers (a frame),
+        # the effect row says what it offered, so the declared operator sentence is not the only word on a frame (V0652)
+        if any(isinstance(p, dict) for p in peers):
+            _ef.effect_unmeasured(outcomes, "theprotocol_acceptComplianceBaseline",
+                                  "no federated, ACTIVE peer with a compliance record to read a baseline of: "
+                                  + _baseline_census(peers)
+                                  + (f"; the run primed {len(primed)} with a dry-run poll ({'; '.join(primed)})"
+                                     if primed else ""))
+        return
     # §MCPTEST30 (V0639, agentvault2-aa): the success path needs a peer that still publishes its baseline, and the first
     # peer may have drifted (sbx-alpha's op-sbxalphaop, 2026-10-24: hash_match false while Sandbox Beta and sbxbetaop
     # matched, so the success path went unmeasured every run): the others are read, at most _BASELINE_PEERS, until one
     # matches. The refusal stays on the first.
     row, det, matched = rows[0], None, None
+    read: List[Tuple[Any, Any]] = []
     for i, candidate in enumerate(rows):
         _ok, got = await _exec_step(rpc, parse, "theprotocol_getFederationCompliancePeerByOperator", "admin",
                                     {"operator_id": candidate["operator_id"]}, dev_jwt, outcomes,
                                     expect_status="success", record_as_separate=False)
+        read.append((candidate, got))
         if i == 0:
             det = got
         if isinstance(got, dict) and got.get("hash_match") is True and got.get("live_policy_hash"):
@@ -754,6 +814,10 @@ async def lifecycle_admin_compliance_baseline(rpc: RpcCall, parse: ParseResult,
                      {"peer_id": str(row["peer_registry_id"]), "expected_hash": stale,
                       "reason": "MCP tester: a hash this peer does not publish (must be refused)"},
                      dev_jwt, outcomes, expect_status="error_4xx")
+    if matched is None:
+        _ef.effect_unmeasured(outcomes, "theprotocol_acceptComplianceBaseline",
+                              f"no peer of the {len(rows)} read still publishes the baseline on record, and a run never "
+                              f"accepts a drift: {_baseline_reads(read)}")
     if matched is not None:
         row, live = matched[0], matched[1]["live_policy_hash"]
         await _exec_step(rpc, parse, "theprotocol_acceptComplianceBaseline", "admin",

@@ -1243,6 +1243,23 @@ async def backstop(db: AsyncSession, agent: Agent, *, actor: str,
     return bond
 
 
+async def _tell_bond(agent_did: str, funder_did: Optional[str], once_key: str, title: str, message: str) -> None:
+    """V0652 (af): bond.released to the owners of the agent and of its funder, once per release, after the release's
+    own work (the caller does not wait for a push). Never raises."""
+    from agentvault_registry.background_tasks import push_notify
+
+    async def _go():
+        try:
+            devs = await push_notify.resolve_developer_ids_for_dids([d for d in (agent_did, funder_did) if d])
+            if devs:
+                await push_notify.notify_once(once_key, "bond.released", devs, title=title, message=message,
+                                              tags="unlock", click="/ui#/my-agents")
+        except Exception:  # noqa: BLE001
+            logger.debug("[REPBOND] release notice skipped", exc_info=True)
+
+    push_notify.spawn_notice(_go())
+
+
 async def release(db: AsyncSession, agent: Agent, *, actor: str,
                   policy: Optional[Dict[str, Any]] = None) -> ReputationBond:
     """Pay a MATURED bond back to its funder after the cooldown (treasury → funder through
@@ -1302,6 +1319,12 @@ async def release(db: AsyncSession, agent: Agent, *, actor: str,
         "funded_by": bond.funded_by, "release_ref": bond.release_ref,
         "release_teg_transaction_id": tx, "released_at": now.isoformat(), "actor": actor,
     }, key=f"repbond-rel-{bond.release_ref or bond.id}")
+    # V0652 (af): bond.released, to the agent's owner and a funder who is not the treasury (once per release: two
+    # concurrent releases share the release_ref, so the notice is claimed on it)
+    await _tell_bond(agent.did, None if bond.funded_by == "treasury" else bond.funder_did,
+                     f"bond.released:{bond.release_ref or bond.id}", "Reputation bond released",
+                     f"The reputation bond of {agent.did} was released: {money_str(released_amount)} {frame_currency()}"
+                     + (" back to its funder." if bond.funded_by != "treasury" else " (the treasury's backstop; nothing to pay back)."))
     return bond
 
 
@@ -1387,6 +1410,11 @@ async def unlock(db: AsyncSession, agent: Agent, *, actor: str,
         "currency": frame_currency(), "paid_to": target, "unlock_ref": bond.partial_release_ref,
         "unlock_teg_transaction_id": tx, "unlocked_at": now.isoformat(), "actor": actor,
     }, key=f"repbond-unlock-{bond.partial_release_ref}")
+    # V0652 (af): the declared share released, the rest still bonded
+    await _tell_bond(agent.did, target if target and target != agent.did else None,
+                     f"bond.released:{bond.partial_release_ref}", "Part of a reputation bond released",
+                     f"{money_str(amount_out)} {frame_currency()} of the reputation bond of {agent.did} was released; "
+                     f"{money_str(bond.amount)} {frame_currency()} stays bonded.")
     return bond
 
 

@@ -69,6 +69,105 @@ async def test_the_compliance_lifecycle_stays_out_of_a_frame_with_no_baseline():
     assert [t for t, _ in calls] == ["theprotocol_getFederationComplianceOverview"]
 
 
+@pytest.mark.asyncio
+async def test_a_frame_whose_peers_offer_no_baseline_says_what_the_overview_listed():
+    """V0652: on V0651's posture pairs the overview listed peers, none of them a federated, ACTIVE peer with a record,
+    and the row said only the operator sentence. The effect row names each peer's facts; nothing else is called."""
+    listed = [{**PEER, "has_compliance_record": False},
+              {"operator_id": "op-b", "peer_registry_id": 3, "has_compliance_record": True,
+               "federation_status": "pending", "peer_status": "ACTIVE"}]
+
+    def answer(tool, args):
+        if tool == "theprotocol_getFederationComplianceOverview":
+            return 200, {"peers": listed}
+        raise AssertionError(f"no call may follow: {tool}")
+    rpc, parse, calls = _harness(answer)
+    out = {}
+    await m.lifecycle_admin_compliance_baseline(rpc, parse, BAG, out)
+    assert [t for t, _ in calls] == ["theprotocol_getFederationComplianceOverview"]
+    why = str(out["admin_effect: acceptComplianceBaseline"]["skip_reason"])
+    assert "the compliance overview lists 2 peer(s)" in why, why
+    assert "sandbox-beta: record=False, federation_status='federated'" in why
+    assert "op-b: record=True, federation_status='pending', peer_status='ACTIVE', peer_registry_id=3" in why
+
+
+@pytest.mark.asyncio
+async def test_an_operator_with_no_peer_listed_gets_no_effect_row():
+    def answer(tool, args):
+        if tool == "theprotocol_getFederationComplianceOverview":
+            return 200, {"peers": []}
+        raise AssertionError(tool)
+    rpc, parse, calls = _harness(answer)
+    out = {}
+    await m.lifecycle_admin_compliance_baseline(rpc, parse, BAG, out)
+    assert out == {}, "the declared operator sentence stays the word there"
+
+
+def _unprimed_world(records_after_poll: bool):
+    """A fresh pair's frame: two ACTIVE peers listed, no compliance record until a poll-now records first sight."""
+    state = {"polled": []}
+    live = "c" * 64
+
+    def peers():
+        rec = records_after_poll and bool(state["polled"])
+        return [{"operator_id": "op-b", "peer_registry_id": 3, "has_compliance_record": rec,
+                 "federation_status": "federated" if rec else None, "peer_status": "ACTIVE"},
+                {"operator_id": "frame-b", "peer_registry_id": 1, "has_compliance_record": rec,
+                 "federation_status": "federated" if rec else None, "peer_status": "ACTIVE"}]
+
+    def answer(tool, args):
+        if tool == "theprotocol_getFederationComplianceOverview":
+            return 200, {"peers": peers()}
+        if tool == "theprotocol_pollPeerComplianceNow":
+            state["polled"].append(args["peer_id"])
+            return 200, {"status": "completed", "baseline_recorded": records_after_poll, "mode_used": "dry_run"}
+        if tool == "theprotocol_getFederationCompliancePeerByOperator":
+            return 200, {"live_policy_hash": live, "hash_match": True}
+        if tool == "theprotocol_acceptComplianceBaseline":
+            if args["expected_hash"] != live:
+                return 409, {"detail": "the peer now publishes another hash"}
+            return 200, {"status": "unchanged"}
+        raise AssertionError(tool)
+    return state, answer
+
+
+@pytest.mark.asyncio
+async def test_a_pair_primes_its_baselines_and_reaches_the_success_path(monkeypatch):
+    """V0652: on the posture pairs the frame's poller is 'off' and the federation suite primed the other frame, so no
+    peer had a record (trial pair nt261101x2). On a pair the lifecycle primes each ACTIVE peer with a dry-run poll-now."""
+    monkeypatch.setenv("MCP_TESTER_EPHEMERAL_TARGET", "true")
+    state, answer = _unprimed_world(records_after_poll=True)
+    rpc, parse, calls = _harness(answer)
+    out = {}
+    await m.lifecycle_admin_compliance_baseline(rpc, parse, BAG, out)
+    assert state["polled"] == ["3", "1"], "each ACTIVE peer without a record is polled, once"
+    assert out["theprotocol_acceptComplianceBaseline"]["healthy"] is True
+    assert "admin_effect: acceptComplianceBaseline" not in out
+    assert "theprotocol_pollPeerComplianceNow" not in out, "the priming is setup, on no row"
+
+
+@pytest.mark.asyncio
+async def test_a_priming_that_records_nothing_is_said(monkeypatch):
+    monkeypatch.setenv("MCP_TESTER_EPHEMERAL_TARGET", "true")
+    state, answer = _unprimed_world(records_after_poll=False)
+    rpc, parse, calls = _harness(answer)
+    out = {}
+    await m.lifecycle_admin_compliance_baseline(rpc, parse, BAG, out)
+    why = str(out["admin_effect: acceptComplianceBaseline"]["skip_reason"])
+    assert "the run primed 2 with a dry-run poll (op-b: baseline_recorded=False; frame-b: baseline_recorded=False)" in why
+    assert not [t for t, _ in calls if t == "theprotocol_acceptComplianceBaseline"]
+
+
+@pytest.mark.asyncio
+async def test_a_standing_frame_is_never_primed(monkeypatch):
+    monkeypatch.delenv("MCP_TESTER_EPHEMERAL_TARGET", raising=False)
+    state, answer = _unprimed_world(records_after_poll=True)
+    rpc, parse, calls = _harness(answer)
+    out = {}
+    await m.lifecycle_admin_compliance_baseline(rpc, parse, BAG, out)
+    assert state["polled"] == [] and "the run primed" not in str(out["admin_effect: acceptComplianceBaseline"]["skip_reason"])
+
+
 def _cc_answer(targets, run_ids=None, op_summary="dry-run: would restart sbxalphaop's teg-layer through the operator lifecycle (via runner)"):
     run_ids = run_ids or sorted(m._SELF_CHECKS)
 

@@ -2478,6 +2478,83 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         success_path_unmeasured="a decision needs a request in an organization room of the run's own, earned only on "
                                 "the nightly and proof pairs (earned_ad_chat_approvals)",
     ),
+    # V0652 (w) gwo_213e530b: OurChat for a phone client. Each tool is exactly its route; the sweep pins what the route
+    # answers a developer key with no room of its own (the earned paths run on the pairs' org rooms).
+    "theprotocol_markChatRead": McpContract(
+        tier="3",
+        arguments={"conversation_id": "00000000-0000-4000-8000-000000000000", "seq": 1},
+        expect_status="error_4xx",
+        expect_error_message_contains="conversation not found",
+        success_path_unmeasured="marking read needs a thread of the caller's own, earned on the pairs' org rooms",
+    ),
+    "theprotocol_getChatUnreadCount": McpContract(
+        tier="3", arguments={}, expect_status="success", expect_keys=["messages", "threads"],
+        # dual-principal (GET /chat/unread-count takes a developer JWT, an agent JWT or a key) and it needs no argument, so
+        # a missing argument cannot refuse the wrong-tier matrix's call: only the empty credential is to be refused
+        # (tier="3" derived ["empty", "agent_jwt"], V0651's syncChat red in another tool)
+        expect_tier_rejections=["empty"],
+    ),
+    "theprotocol_listChatApprovals": McpContract(
+        tier="3",
+        arguments={"conversation_id": "phase6-no-such-room"},
+        expect_status="error_4xx",
+        expect_error_message_contains="conversation not found",
+        success_path_unmeasured="a room's requests exist only in an organization room of the run's own, earned only on "
+                                "the nightly and proof pairs (earned_ad_chat_approvals)",
+    ),
+    "theprotocol_listWaitingChatApprovals": McpContract(
+        tier="3", arguments={}, expect_status="success", expect_keys=["items", "count"],
+    ),
+    "theprotocol_getChatAttachment": McpContract(
+        tier="3",
+        arguments={"attachment_id": "00000000-0000-4000-8000-000000000000"},
+        expect_status="error_4xx",
+        expect_error_message_contains="no such attachment",
+        success_path_unmeasured="a file exists only in a thread of the run's own, earned on the pairs' org rooms",
+    ),
+    # V0652 (aa) gwo_840aa2b5: cards that live. Each tool is exactly its route; the sweep pins what the route answers a
+    # developer key for a room that is not there (measured through the real chat router: 404, "conversation not found").
+    "theprotocol_postChatProgress": McpContract(
+        tier="3",
+        arguments={"conversation_id": "00000000-0000-4000-8000-000000000000", "title": "contract sweep"},
+        expect_status="error_4xx",
+        expect_error_message_contains="conversation not found",
+        success_path_unmeasured="a progress card needs a thread of the caller's own, earned on the pairs' org rooms",
+    ),
+    "theprotocol_updateChatProgress": McpContract(
+        tier="3",
+        arguments={"conversation_id": "00000000-0000-4000-8000-000000000000",
+                   "message_id": "00000000-0000-4000-8000-000000000001", "title": "contract sweep"},
+        expect_status="error_4xx",
+        expect_error_message_contains="conversation not found",
+        success_path_unmeasured="updating a card needs the caller's own progress card in a thread of its own, earned on the "
+                                "pairs' org rooms",
+    ),
+    "theprotocol_getChatCardHistory": McpContract(
+        tier="3",
+        arguments={"conversation_id": "00000000-0000-4000-8000-000000000000",
+                   "message_id": "00000000-0000-4000-8000-000000000001"},
+        expect_status="error_4xx",
+        expect_error_message_contains="conversation not found",
+        success_path_unmeasured="a card's history needs a card in a thread of the caller's own, earned on the pairs' org rooms",
+    ),
+    # V0652 (ac) gwo_2ae43c77: the room's status board. Each tool is exactly its route; the sweep pins what the route answers
+    # a developer key for a room that is not there (measured through the real chat router: 404, "conversation not found").
+    "theprotocol_getChatBoard": McpContract(
+        tier="3",
+        arguments={"conversation_id": "00000000-0000-4000-8000-000000000000"},
+        expect_status="error_4xx",
+        expect_error_message_contains="conversation not found",
+        success_path_unmeasured="a board lives in an organization room of the run's own, earned on the pairs' org rooms",
+    ),
+    "theprotocol_updateChatBoard": McpContract(
+        tier="3",
+        arguments={"conversation_id": "00000000-0000-4000-8000-000000000000", "text": "contract sweep", "base_rev": 0},
+        expect_status="error_4xx",
+        expect_error_message_contains="conversation not found",
+        success_path_unmeasured="writing a board needs an organization room whose owner the caller is, or names it, earned "
+                                "on the pairs' org rooms",
+    ),
     "theprotocol_assignAgentToOrg": McpContract(
         tier="3",
         arguments={"org_id": "00000000-0000-4000-8000-000000000000", "agent_did": "did:theprotocol:00000000-0000-4000-8000-000000000000"},
@@ -3976,6 +4053,10 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         arguments={"agent_jwt": "${sentinel_jwt}", "for_me": True, "wait_seconds": 0},
         expect_status="success",
         expect_keys=["messages", "next_cursor", "plain_cursor", "for"],
+        # V0652: dual-principal like every chat tool (GET /chat/sync takes a developer JWT, an agent JWT or a key), so the
+        # only credential the wrong-tier matrix may expect refused is the empty one. tier="2" derived ["empty",
+        # "developer_jwt"], and the correct 200 to a developer key was V0651's pair proof red (nt261101x1, finding 2).
+        expect_tier_rejections=["empty"],
         notes="V0651 (t): for=me echoes the filter (for: me) and carries plain_cursor beside next_cursor",
     ),
     "theprotocol_sendChatMessage": McpContract(

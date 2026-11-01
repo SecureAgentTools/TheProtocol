@@ -132,6 +132,21 @@ def measured_nothing(state: Any) -> List[str]:
     return sorted(str(k) for k, v in state.items() if v is True and isinstance(k, str) and _NOTHING_FLAG.match(k))
 
 
+def clear_nothing_flags(state: Any) -> List[str]:
+    """§MCPTEST30 (V0652, agentvault2-d3, 2026-11-01): drop the nothing flags an EARLIER attempt left in a live state map,
+    before the next attempt runs (rig.assert_within). The verdict is the last attempt's (§NIGHTLYTRUTH), so are its
+    flags: operator_application_admin_approve set `no_app_id` and returned False, found the application on its second
+    attempt and passed, and the flag it no longer meant read "passed on nothing" (V0651's pair proof nt261101x1, its one
+    federation hard; 26 such set-then-fail branches in 15 test files). A last attempt that passes on nothing sets its
+    flag again and stays flagged. Returns the flags dropped."""
+    if not isinstance(state, dict):
+        return []
+    gone = measured_nothing(state)
+    for k in gone:
+        del state[k]
+    return gone
+
+
 def _leg_is_silent(v: Any) -> bool:
     """A leg marked {"silent": True}, or one the test kept as an answer's KEYS where the keys are the admin
     dispatcher's error envelope ({status_code, upstream_error, ...}): the copy-pasted helper reads that dict as an

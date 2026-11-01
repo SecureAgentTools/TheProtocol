@@ -189,12 +189,40 @@ def _backoff_seconds(failures: int) -> int:
         return _BACKOFF_CAP_SEC
 
 
+# V0652 (af): the owner hears that the card cannot be read once its reads have failed this many times in a row (with
+# the backoff, about 42 h after the first failure: a host's short outage says nothing)
+UNREACHABLE_NOTICE_AT = 3
+
+
 def _stamp_attempt(row: Any, status: str, ok: bool, now: Optional[datetime.datetime] = None) -> None:
     """Record an attempt on the row — every outcome moves the cursor; only success resets the backoff."""
     now = now or datetime.datetime.now(datetime.timezone.utc)
     row.last_pull_attempt_at = now
     row.last_pull_status = str(status)[:16]
     row.pull_failures = 0 if ok else int(getattr(row, "pull_failures", 0) or 0) + 1
+    if not ok and row.pull_failures == UNREACHABLE_NOTICE_AT and str(status) not in ("skipped", "refused"):
+        _tell_unreachable(row, str(status))
+
+
+def _tell_unreachable(row: Any, status: str) -> None:
+    """V0652 (af): agent.card_unreachable to the card's owner, once per streak (the streak crosses the threshold once;
+    the notice is claimed on the card for a week against a card that flaps). Never raises."""
+    try:
+        dev = getattr(row, "developer_id", None)
+        did = getattr(row, "agent_did", None)
+        if not dev or not did:
+            return   # a card nobody here owns (a mirror of another registry's agent): its own registry tells its owner
+        from agentvault_registry.background_tasks import push_notify
+        why = {"timeout": "it did not answer in time", "5xx": "its host answered with a server error",
+               "4xx": "its host refused the read"}.get(status, "the read failed")
+        push_notify.spawn_notice(push_notify.notify_once(
+            f"agent.card_unreachable:{did}", "agent.card_unreachable", [int(dev)], ttl_s=7 * 86400,
+            title="This registry cannot read your agent's card",
+            message=(f"The card of {did} could not be read {UNREACHABLE_NOTICE_AT} times in a row ({why}); "
+                     "the registry keeps the last card it read."),
+            tags="warning", click="/ui#/my-agents"))
+    except Exception:  # noqa: BLE001
+        logger.debug("[AgentCardPullSync] unreachable notice skipped", exc_info=True)
 
 # Fields the agent owns (replaced from the well-known card).
 # ⚠ This constant is DOCUMENTATION, not the rule: `_merge_pulled_card` never reads it,

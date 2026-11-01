@@ -9,7 +9,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status, Body, Security
+from fastapi import APIRouter, Depends, HTTPException, status, Body, Security, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
@@ -341,6 +341,7 @@ async def disable_two_factor(
 @router.post("/validate", summary="Validate 2FA Code During Login")
 async def validate_two_factor(
     request: TwoFactorLoginRequest,
+    http_request: Request = None,   # FastAPI injects it; a direct caller (a test) may leave it out
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -402,6 +403,12 @@ async def validate_two_factor(
             )
             
             logger.info(f"2FA login successful for developer {developer.id}")
+            # V0652 (af): the device this sign-in came from; a device new to the account is said to it (never raises)
+            from agentvault_registry.core.client_ip import effective_client_ip
+            from agentvault_registry.services import security_notices
+            if http_request is not None:
+                await security_notices.note_login(db, developer.id, effective_client_ip(http_request),
+                                                  http_request.headers.get("user-agent"))
             
             return {
                 "access_token": access_token,
@@ -448,6 +455,7 @@ async def validate_two_factor(
 @router.post("/recover", summary="Use Backup Code")
 async def recover_with_backup_code(
     request: TwoFactorRecoveryRequest,
+    http_request: Request = None,   # FastAPI injects it; a direct caller (a test) may leave it out
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -527,6 +535,12 @@ async def recover_with_backup_code(
             )
             
             logger.info(f"2FA recovery successful for developer {developer.id}")
+            # V0652 (af): as a 2FA code's sign-in (see /validate)
+            from agentvault_registry.core.client_ip import effective_client_ip
+            from agentvault_registry.services import security_notices
+            if http_request is not None:
+                await security_notices.note_login(db, developer.id, effective_client_ip(http_request),
+                                                  http_request.headers.get("user-agent"))
             
             # Warn if low on backup codes
             warning = None

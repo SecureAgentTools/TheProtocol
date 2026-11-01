@@ -21,6 +21,8 @@ export interface ChatApiError extends Error {
   detail: string
   /** The answer's whole JSON body (V0650 (l)): a 428 step-up answer carries its challenge here, not in `detail`. */
   body?: any
+  /** V0652 (ag): a 429's or a 503's Retry-After, in seconds, when the answer named one. */
+  retryAfterS?: number
 }
 
 async function call(method: string, path: string, token: string | null, body?: any): Promise<any> {
@@ -38,6 +40,8 @@ async function call(method: string, path: string, token: string | null, body?: a
     err.status = r.status
     err.detail = err.message
     err.body = data
+    const ra = Number(r.headers?.get?.('retry-after'))
+    if (Number.isFinite(ra) && ra > 0) err.retryAfterS = ra
     throw err
   }
   return data
@@ -116,6 +120,17 @@ export const chatApi = {
     return call('POST', `/conversations/${conversationId}/messages`, token, payload)
   },
 
+  /** V0652 (ag): the catch-up stream (V0650 (g)): with `wait` the call answers as soon as something new reaches one of
+   *  your threads, or empty at the bound; pass the answer's next_cursor back as `cursor`. */
+  sync(token: string, opts: string | { since?: string; cursor?: string; wait?: number } = {}) {
+    if (typeof opts === 'string') opts = { since: opts }       // the older call shape: sync(token, sinceIso)
+    const q = new URLSearchParams()
+    if (opts.cursor) q.set('cursor', opts.cursor)
+    else if (opts.since) q.set('since', opts.since)
+    if (opts.wait) q.set('wait', String(Math.max(0, Math.min(25, opts.wait))))
+    const s = q.toString()
+    return call('GET', `/sync${s ? `?${s}` : ''}`, token)
+  },
   markRead(token: string, conversationId: string, seq: number) {
     return call('POST', `/conversations/${conversationId}/read`, token, { seq })
   },
@@ -129,11 +144,29 @@ export const chatApi = {
   leave(token: string, conversationId: string) {
     return call('POST', `/conversations/${conversationId}/leave`, token, {})
   },
-  mute(token: string, conversationId: string, muted: boolean) {
-    return call('POST', `/conversations/${conversationId}/mute`, token, { muted })
+  /** V0652 (ak): `until` (ISO) makes a mute end by itself; without it a mute holds until lifted. */
+  mute(token: string, conversationId: string, muted: boolean, until?: string | null) {
+    return call('POST', `/conversations/${conversationId}/mute`, token, until && muted ? { muted, until } : { muted })
   },
   burn(token: string, conversationId: string) {
     return call('POST', `/conversations/${conversationId}/burn`, token, {})
+  },
+  /** V0652 (ac): an organization's room's status board (any member), its every edit, and the owner's editors. */
+  getBoard(token: string, conversationId: string) {
+    return call('GET', `/conversations/${conversationId}/board`, token)
+  },
+  putBoard(token: string, conversationId: string, text: string, baseRev: number) {
+    return call('PUT', `/conversations/${conversationId}/board`, token, { text, base_rev: baseRev })
+  },
+  boardHistory(token: string, conversationId: string) {
+    return call('GET', `/conversations/${conversationId}/board/history`, token)
+  },
+  putBoardEditors(token: string, conversationId: string, editors: string[]) {
+    return call('PUT', `/conversations/${conversationId}/board/editors`, token, { editors })
+  },
+  /** V0652 (aa): the updates a card took in place, oldest first (who, when, what changed). */
+  cardHistory(token: string, conversationId: string, messageId: string) {
+    return call('GET', `/conversations/${conversationId}/messages/${encodeURIComponent(messageId)}/card/history`, token)
   },
   ping(token: string, conversationId: string, clientRef: string) {
     return call('POST', `/conversations/${conversationId}/ping`, token, { client_ref: clientRef })
@@ -216,13 +249,9 @@ export const chatApi = {
     return call('GET', `/approvals/${encodeURIComponent(approvalId)}?wait=${Math.max(0, Math.min(20, wait))}`, token)
   },
   decideApprovals(token: string, conversationId: string,
-                  body: { decision: 'approve' | 'deny'; approval_ids: string[]; challenge_id?: string;
-                          note?: string; surface?: string }) {
+                  body: { decision: 'approve' | 'deny' | 'choose'; approval_ids: string[]; challenge_id?: string;
+                          note?: string; surface?: string; option?: number }) {   // V0652 (ab): choose + option
     return call('POST', `/conversations/${conversationId}/approvals/decide`, token, body)
   },
 
-  sync(token: string, sinceIso?: string) {
-    const q = sinceIso ? `?since=${encodeURIComponent(sinceIso)}` : ''
-    return call('GET', `/sync${q}`, token)
-  },
 }

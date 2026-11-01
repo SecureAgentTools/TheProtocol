@@ -248,6 +248,19 @@ from .tools_agent import (
     chat_respond_request,
     chat_block_principal,
     chat_unblock_principal,
+    # V0652 (w): the phone client's set
+    chat_mark_read,
+    chat_unread_count,
+    chat_list_approvals,
+    chat_waiting_approvals,
+    chat_get_attachment,
+    # V0652 (aa): a progress card kept current in place, and a card's history
+    chat_post_progress,
+    chat_update_progress,
+    chat_card_history,
+    # V0652 (ac): the room's status board
+    chat_read_board,
+    chat_write_board,
     get_contract_v2_mcp,
     submit_contract_milestone,
     release_contract_milestone,
@@ -910,6 +923,19 @@ TOOL_DISPATCH: Dict[str, Any] = {
     "theprotocol_respondChatRequest": chat_respond_request,
     "theprotocol_blockChatPrincipal": chat_block_principal,
     "theprotocol_unblockChatPrincipal": chat_unblock_principal,
+    # V0652 (w) gwo_213e530b: OurChat for a phone client, each exactly its route
+    "theprotocol_markChatRead": chat_mark_read,
+    "theprotocol_getChatUnreadCount": chat_unread_count,
+    "theprotocol_listChatApprovals": chat_list_approvals,
+    "theprotocol_listWaitingChatApprovals": chat_waiting_approvals,
+    "theprotocol_getChatAttachment": chat_get_attachment,
+    # V0652 (aa) gwo_840aa2b5: cards that live, each exactly its route
+    "theprotocol_postChatProgress": chat_post_progress,
+    "theprotocol_updateChatProgress": chat_update_progress,
+    "theprotocol_getChatCardHistory": chat_card_history,
+    # V0652 (ac) gwo_2ae43c77: the room's status board
+    "theprotocol_getChatBoard": chat_read_board,
+    "theprotocol_updateChatBoard": chat_write_board,
     "theprotocol_getContractV2": get_contract_v2_mcp,
     "theprotocol_submitContractMilestone": submit_contract_milestone,
     "theprotocol_releaseContractMilestone": release_contract_milestone,
@@ -1123,6 +1149,16 @@ TIER2_TOOLS = {
     "theprotocol_respondChatRequest",
     "theprotocol_blockChatPrincipal",
     "theprotocol_unblockChatPrincipal",
+    # V0652 (w): dual-auth like the chat tools above (a developer key passes through; agent_jwt speaks as an agent)
+    "theprotocol_markChatRead",
+    "theprotocol_getChatUnreadCount",
+    "theprotocol_listChatApprovals",
+    "theprotocol_getChatAttachment",
+    "theprotocol_postChatProgress",         # V0652 (aa)
+    "theprotocol_updateChatProgress",
+    "theprotocol_getChatCardHistory",
+    "theprotocol_getChatBoard",             # V0652 (ac)
+    "theprotocol_updateChatBoard",
     "theprotocol_getContractV2",
     "theprotocol_submitContractMilestone",
     "theprotocol_releaseContractMilestone",
@@ -2564,7 +2600,8 @@ TOOL_DISPATCH.update({
 })
 _APPROVAL_T2 = {"theprotocol_requestChatApproval", "theprotocol_getChatApprovalStatus",
                 "theprotocol_consumeChatApproval"}
-_APPROVAL_T3 = {"theprotocol_decideChatApproval"}
+# V0652 (w): the requests waiting on you across rooms are a decider's read: a developer credential, like deciding
+_APPROVAL_T3 = {"theprotocol_decideChatApproval", "theprotocol_listWaitingChatApprovals"}
 TIER2_TOOLS.update(_APPROVAL_T2)
 TIER3_TOOLS.update(_APPROVAL_T3)
 AUTH_REQUIRED_TOOLS.update(_APPROVAL_T2 | _APPROVAL_T3)

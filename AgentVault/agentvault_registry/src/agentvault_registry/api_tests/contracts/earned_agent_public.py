@@ -134,13 +134,51 @@ def _status_is(*want: str):
     return _c
 
 
+BACKSTOP_OFF = "does not backstop bonds from its treasury"
+
+
 async def _backstop(bag: Any, parse: ParseResult, did: str) -> Optional[str]:
     """A treasury-backed bond for an agent of the runner's (it moves no money; REPUTATION_BOND_TREASURY_BACKSTOP): a
-    provider needs one to accept under REPUTATION_BOND_MODE=enforce. None, or why it failed."""
+    provider needs one to accept under REPUTATION_BOND_MODE=enforce. None, or why it failed.
+
+    §MCPTEST30 (V0652, agentvault2-d3, 2026-11-01, tester batch 3's follow-up): production runs the backstop off (V0649)
+    and the pairs take production's posture since V0651 (stack 507f2be9), so this refusal ("This registry does not
+    backstop bonds from its treasury") left 14 contract and Guild rows NOT MEASURED in V0651's pair proof. On a target
+    torn down after its run (MCP_TESTER_EPHEMERAL_TARGET) the agent then bonds from its own balance, funded first from
+    the treasury (federation_suite rig._bond_from_own_funds' two rails); elsewhere the refusal stands, said."""
     st, resp = await _rest(bag, parse, "POST", f"/api/v1/developers/me/agents/{did}/reputation-bond/backstop", {})
     if st == 200 and _d(resp).get("status") == "locked":
         return None
-    return f"the provider's backstop bond answered HTTP {st}: {ef.said(resp)}"
+    why = f"the provider's backstop bond answered HTTP {st}: {ef.said(resp)}"
+    if st != 403 or BACKSTOP_OFF not in json.dumps(resp, default=str).lower():
+        return why
+    from agentvault_registry.api_tests.contracts.earned_ad_ephemeral import ephemeral_target
+    if not ephemeral_target():
+        return why + " (an agent bonds from its own funds only on a target torn down after its run)"
+    return await _bond_from_own_funds(bag, parse, did)
+
+
+async def _bond_from_own_funds(bag: Any, parse: ParseResult, did: str) -> Optional[str]:
+    """The agent funded with its bond (and 1 % for a fee) from the treasury (the canonical fund-agent rail, reason
+    admin_grant), then bonded from that balance (the owner's deposit rail, funder_did = the agent). Both legs conserve
+    supply: treasury to the agent, the agent to the bond's escrow. None, or why it failed."""
+    st, cfg = await _rest(bag, parse, "GET", "/api/v1/reputation-bond/config")
+    try:
+        bond = Decimal(str(_d(cfg).get("amount")))
+    except (InvalidOperation, ValueError, TypeError):
+        bond = Decimal(0)
+    if st != 200 or bond <= 0:
+        return f"the bond config names no amount to fund (HTTP {st}: {ef.said(cfg)})"
+    fund = (bond + bond / 100).quantize(Decimal("0.000001"))
+    st, got = await _rest(bag, parse, "POST", "/api/v1/teg/treasury/fund-agent", {
+        "target_agent_did": did, "amount": str(fund), "reason": "admin_grant",
+        "reference_id": f"mcp-bond-{did.rsplit(':', 1)[-1][:40]}"})
+    if not 200 <= st < 300:
+        return f"funding the provider's bond from the treasury answered HTTP {st}: {ef.said(got)}"
+    st, got = await _rest(bag, parse, "POST", f"/api/v1/developers/me/agents/{did}/reputation-bond", {"funder_did": did})
+    if _d(got).get("status") in ("locked", "matured"):
+        return None
+    return f"the provider's bond from its own funds answered HTTP {st}: {ef.said(got)}"
 
 
 async def _v2_offer(bag: Any, parse: ParseResult, client_jwt: str, provider_did: str, title: str,

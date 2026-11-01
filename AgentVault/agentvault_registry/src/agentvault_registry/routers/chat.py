@@ -15,6 +15,7 @@ settlement gate intact, and the honest outcome written back as a
 """
 from __future__ import annotations
 
+import datetime
 import functools
 import logging
 import os
@@ -118,8 +119,26 @@ class ReadMark(BaseModel):
     seq: int = Field(..., ge=0)
 
 
+class BoardWrite(BaseModel):
+    """V0652 (ac): the board's whole new text (markdown; empty clears it), and the revision it was written against."""
+    text: str = Field(..., max_length=4000)
+    base_rev: int = Field(..., ge=0)
+
+
+class BoardEditors(BaseModel):
+    """V0652 (ac): the members the owner names to keep the board (principal keys dev:<id>, agt:<did>)."""
+    editors: list = Field(default_factory=list)
+
+
+class CardUpdate(BaseModel):
+    """V0652 (aa): the card's new state (the whole card, its type unchanged)."""
+    card: Dict[str, Any]
+
+
 class MuteBody(BaseModel):
     muted: bool = True
+    # V0652 (ak): when a mute set for a while ends (in the future, at most 30 days); without it, until lifted
+    until: Optional[datetime.datetime] = None
 
 
 class PingBody(BaseModel):
@@ -204,6 +223,11 @@ async def _send_and_fan_out(db: AsyncSession, conv, my_row, actor: cs.Actor,
     gate_key = f"msg:{actor.key}"
     if not await cs._rate_gate(gate_key, cs.RL_MSG_LIMIT, cs.RL_MSG_WINDOW_S):
         raise cs.ChatError(429, "message rate limit reached — slow down")
+
+    if kind == "card" and isinstance(card, dict) and card.get("type") == "media" and isinstance(card.get("data"), dict):
+        # V0652 (ae): a file card's preview is what THIS registry reads from the stored file, never what a sender wrote
+        from ..services import chat_media
+        card = await chat_media.ground_card(db, conv.id, card)
 
     if getattr(conv, "host_registry", None):
         # §TWOAGENT G1 (2026-09-23): this thread is a MIRROR of one another registry hosts. The host is the only writer
@@ -333,6 +357,10 @@ async def create_conversation(
             if pending_did:
                 cs.spawn(cs.notify_request_received(
                     conv.id, conv.kind, pending_did, first, actor.display_name))
+            # V0652 (z): a person is told too (chat.request), not only an agent's owner
+            pending_dev = await cs.pending_developer_target(db, conv, t_type, t_id)
+            if pending_dev:
+                cs.spawn(cs.notify_developer_request(conv.id, pending_dev, first, actor.display_name))
         except Exception as e:  # noqa: BLE001 — a notice is advisory; the knock itself already landed
             logger.warning("[CHAT] request notice skipped for %s: %s", conv.id, e)
 
@@ -413,6 +441,108 @@ async def post_message(
     return {"message": msg, "my_state": my_row.state}
 
 
+@router.put("/conversations/{conversation_id}/messages/{message_id}/card")
+@chat_errors
+async def update_card(
+    conversation_id: str,
+    message_id: str,
+    req: CardUpdate,
+    actor_dict: dict = Depends(get_current_actor_for_read),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a card in place: the message keeps its place, its card becomes the one sent, and the update is kept
+    (who, when, what changed). A `progress` card is updated by whoever posted it; its verdict (passed, failed,
+    cancelled) closes it. Every member of the thread sees the update; nobody is notified.
+
+    \f
+    V0652 (aa), order gwo_840aa2b590306f7eba147758 (services.chat_service.update_card). A `guild.order.live` and an
+    `approval.decided` card are kept current by their rails only; any other card stays as it was posted. An update that
+    changes nothing answers `changed: false` and writes no revision."""
+    actor = cs.actor_from_auth(actor_dict)
+    gate_key = f"msg:{actor.key}"
+    if not await cs._rate_gate(gate_key, cs.RL_MSG_LIMIT, cs.RL_MSG_WINDOW_S):
+        raise cs.ChatError(429, "message rate limit reached — slow down")
+    updater = await _named_sender(db, actor)
+    msg, conv, changed = await cs.update_card(db, conversation_id, message_id, updater, req.card)
+    if changed and conv is not None:
+        await cs.deliver_card_update(db, conv, msg, updater)
+    return {"message": msg, "changed": changed}
+
+
+@router.get("/conversations/{conversation_id}/messages/{message_id}/card/history")
+@chat_errors
+async def card_history(
+    conversation_id: str,
+    message_id: str,
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """The updates a card took, oldest first: when, who, what changed. A member of the thread reads it."""
+    actor = cs.actor_from_auth(actor_dict)
+    return await cs.card_history(db, conversation_id, message_id, actor)
+
+
+@router.get("/conversations/{conversation_id}/board")
+@chat_errors
+async def read_board(
+    conversation_id: str,
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """An organization's room's status board (any member): its text, its revision, who last edited it, and whether
+    you may edit it."""
+    from ..services import chat_board
+    return await chat_board.read_board(db, conversation_id, cs.actor_from_auth(actor_dict))
+
+
+@router.put("/conversations/{conversation_id}/board")
+@chat_errors
+async def write_board(
+    conversation_id: str,
+    req: BoardWrite,
+    actor_dict: dict = Depends(get_current_actor_for_read),
+    db: AsyncSession = Depends(get_db),
+):
+    """Write the room's status board: the room's owner, or a member the owner named. Send the whole new text and the
+    revision you read (`base_rev`); an edit written against an older board is refused (409), so nobody overwrites an
+    edit unseen. The room sees the new board at once; nobody is notified.
+
+    \f
+    V0652 (ac), order gwo_2ae43c7789db1e808ea1417f (services.chat_board)."""
+    from ..services import chat_board
+    actor = await _named_sender(db, cs.actor_from_auth(actor_dict))
+    board, conv, changed = await chat_board.set_board(db, conversation_id, actor, req.text, req.base_rev)
+    if changed:
+        cs.spawn(chat_board.fan_out_board(conv, board, actor), what=f"the board update of {conversation_id}")
+    return {"board": board, "changed": changed}
+
+
+@router.get("/conversations/{conversation_id}/board/history")
+@chat_errors
+async def board_history(
+    conversation_id: str,
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """Every edit of the room's status board, oldest first: when, who, the text after it."""
+    from ..services import chat_board
+    return await chat_board.board_history(db, conversation_id, cs.actor_from_auth(actor_dict))
+
+
+@router.put("/conversations/{conversation_id}/board/editors")
+@chat_errors
+async def board_editors(
+    conversation_id: str,
+    req: BoardEditors,
+    actor_dict: dict = Depends(get_current_actor_for_read),
+    db: AsyncSession = Depends(get_db),
+):
+    """The room's owner names who keeps the status board with them: members and agents of the organization (principal
+    keys `dev:<id>`, `agt:<did>`, at most 20). A name stops counting when its principal leaves the organization."""
+    from ..services import chat_board
+    return await chat_board.set_editors(db, conversation_id, cs.actor_from_auth(actor_dict), req.editors)
+
+
 @router.post("/conversations/{conversation_id}/read")
 @chat_errors
 async def read_mark(
@@ -469,7 +599,7 @@ async def mute_conversation(
     db: AsyncSession = Depends(get_db),
 ):
     actor = cs.actor_from_auth(actor_dict)
-    return await cs.set_muted(db, conversation_id, actor, req.muted)
+    return await cs.set_muted(db, conversation_id, actor, req.muted, req.until)
 
 
 @router.post("/conversations/{conversation_id}/burn")
@@ -854,6 +984,9 @@ async def sync(
     Every answer carries `next_cursor`: pass it as `cursor` on the next call and nothing is missed or returned twice.
     With `wait` (up to 25 seconds) the call answers as soon as something new reaches one of your threads, or answers
     empty at the bound, so a client can stay current without polling. Your own sends are included, as before.
+
+    With a cursor the answer also carries `updates`: the cards in your threads that changed in place since then
+    (V0652), each the message's current card with its `card_rev`; apply the higher rev. A `wait` ends on an update too.
 
     With `for=me` the answer holds only what reaches you in particular: a message that mentions you, @all or
     @everyone, a message from the room's owner, any message in a direct conversation, and an approval card you asked
@@ -1332,7 +1465,13 @@ class SupportOpen(BaseModel):
     category: str = Field(default="general", pattern="^(bug|question|feature|account|general)$")
 
 
-@router.get("/conversations/{conversation_id}/support")
+#: V0652 (ai): the support routes take the shared actor resolver (so an agent hears the sentence that refuses it,
+#: not a bare 401) and therefore declared "agent or developer" in the OpenAPI; the reference read that as a promise.
+#: x-callers names who may actually call them (scripts/gen_reference_docs.py reads it).
+SUPPORT_CALLERS = {"x-callers": ["developer"]}
+
+
+@router.get("/conversations/{conversation_id}/support", openapi_extra=SUPPORT_CALLERS)
 @chat_errors
 async def support_state(
     conversation_id: str,
@@ -1361,7 +1500,7 @@ async def support_state(
             "note": "support decides this ticket; the thread shows it"}
 
 
-@router.post("/conversations/{conversation_id}/support-reply", status_code=201)
+@router.post("/conversations/{conversation_id}/support-reply", status_code=201, openapi_extra=SUPPORT_CALLERS)
 @chat_errors
 async def support_reply(
     conversation_id: str,
@@ -1396,7 +1535,7 @@ async def support_reply(
             "status": ticket.status}
 
 
-@router.post("/support/open", status_code=201)
+@router.post("/support/open", status_code=201, openapi_extra=SUPPORT_CALLERS)
 @chat_errors
 async def support_open(
     req: SupportOpen,
@@ -1453,11 +1592,12 @@ async def support_review_state(
     db: AsyncSession = Depends(get_db),
 ):
     """The banner's data: every grant on this conversation, live flag included.
-    Participants only: the grant list is part of the conversation."""
+    Participants only: the grant list is part of the conversation (and the owner who reads his agent's system thread
+    reads its grants too, V0652 (s): the page asks this on every open)."""
     from ..services import chat_support
     actor = cs.actor_from_auth(actor_dict)
     conv = await cs._get_conversation(db, conversation_id)
-    await cs.resolve_membership(db, conv, actor)
+    await cs.resolve_reader(db, conv, actor)
     grants = await chat_support.review_grants_for_conversation(db, conv.id)
     # the server answers "is this yours" — the client never compares ids locally
     # (the §ORGJOIN masked-hint lesson, applied to grants).
@@ -1467,7 +1607,7 @@ async def support_review_state(
     return {"conversation_id": conv.id, "grants": grants}
 
 
-@router.post("/conversations/{conversation_id}/support-review", status_code=201)
+@router.post("/conversations/{conversation_id}/support-review", status_code=201, openapi_extra=SUPPORT_CALLERS)
 @chat_errors
 async def support_review_grant(
     conversation_id: str,
@@ -1503,7 +1643,7 @@ async def support_review_grant(
         await chat_support.announce_review_event(
             db, conv, actor,
             f"{actor.display_name} allowed the support desk to review this conversation "
-            f"for ticket #{ticket.id} — read-only, until the ticket closes{until}. Revocable here.")
+            f"for ticket #{ticket.id} — read-only, until the ticket is resolved or closed{until}. Revocable here.")
     else:
         await db.commit()
     return {"grant_id": grant.id, "ticket_id": ticket.id, "created": created,
@@ -1511,7 +1651,7 @@ async def support_review_grant(
             "note": "read-only; visible to every participant; dies with the ticket"}
 
 
-@router.delete("/conversations/{conversation_id}/support-review/{grant_id}")
+@router.delete("/conversations/{conversation_id}/support-review/{grant_id}", openapi_extra=SUPPORT_CALLERS)
 @chat_errors
 async def support_review_revoke(
     conversation_id: str,
@@ -1860,10 +2000,17 @@ class ApprovalRequestBody(BaseModel):
                                            description="sha256 of the artifact the approval is about (64 hex)")
     artifact_label: Optional[str] = Field(None, max_length=200, description="A human name for that artifact")
     production_impact: bool = Field(False, description="Declared by you: the action touches production")
+    # V0652 (ab): a decision that is not yes or no: up to five options, one of which the owner or an approver chooses
+    options: Optional[list[str]] = Field(None, min_length=2, max_length=5,
+                                         description="A choice: 2 to 5 short labels (up to 80 characters each); the "
+                                                     "decider taps one, or declines them all. Omit for an approval")
 
 
 class ApprovalDecideBody(BaseModel):
-    decision: Literal["approve", "deny"]
+    # V0652 (ab): "choose" decides a choice request by one of its options (`option`, its index); "deny" declines either
+    decision: Literal["approve", "deny", "choose"]
+    option: Optional[int] = Field(None, ge=0, le=4, description="With choose: the index of the option chosen (0 for the "
+                                                                 "first)")
     approval_ids: list[str] = Field(..., min_length=1, max_length=50,
                                     description="The requests to decide: one, several, or every one shown")
     challenge_id: Optional[str] = Field(None, max_length=44,
@@ -1986,6 +2133,9 @@ async def request_approval(
     title = " ".join(req.title.split())
     if not title:
         raise cs.ChatError(422, "title must say what is asked")
+    options, why = ca.normalize_options(req.options)   # V0652 (ab): None for an approval
+    if why:
+        raise cs.ChatError(422, why)
     sha = ca.normalize_sha256(req.artifact_sha256)
     existing = await ca.by_client_ref(db, did, req.client_ref)
     if existing is not None:
@@ -2008,23 +2158,24 @@ async def request_approval(
     facts = ca.request_facts(
         approval_id=aid, conversation_id=conv.id, org_id=conv.org_id, requester_agent_did=did, title=title,
         reason=reason, unlocks=unlocks, artifact_sha256=sha, artifact_label=label,
-        production_impact=req.production_impact, created_at=now, expires_at=expires_at, client_ref=req.client_ref)
+        production_impact=req.production_impact, created_at=now, expires_at=expires_at, client_ref=req.client_ref,
+        options=options)
     row = ChatApproval(
         id=aid, conversation_id=conv.id, org_id=conv.org_id, requester_agent_did=did, client_ref=req.client_ref,
         title=title, reason=reason, unlocks=unlocks, artifact_sha256=sha, artifact_label=label,
         production_impact=bool(req.production_impact), facts=facts, facts_digest=ca.digest(facts),
-        status="pending", created_at=now, expires_at=expires_at)
+        status="pending", created_at=now, expires_at=expires_at, options=options)
     card = ca.request_card(row)
 
     async def _with_record(m):
         row.request_message_id = m.id
         db.add(row)
         await db.flush()
-        await log_chat_action(db, action="approval.requested", actor_type="agent", actor_id=did,
-                              target_type="chat_approval", target_id=aid,
+        await log_chat_action(db, action="choice.requested" if options else "approval.requested", actor_type="agent",
+                              actor_id=did, target_type="chat_approval", target_id=aid,
                               details={"conversation_id": conv.id, "org_id": conv.org_id, "title": title[:120],
                                        "artifact_sha256": sha, "production_impact": bool(req.production_impact),
-                                       "expires_at": ca.iso(expires_at)})
+                                       "expires_at": ca.iso(expires_at), "options": options})
 
     msg_ref = "aprq-" + _hl.sha1(f"{did}|{req.client_ref}".encode()).hexdigest()[:40]
     msg = await _send_and_fan_out(db, conv, my_row, actor, "card", None, card, msg_ref,
@@ -2147,6 +2298,25 @@ async def get_approval(
     return out
 
 
+async def _decision_card_shows_use(db: AsyncSession, conv, approval_id: str, actor: cs.Actor, label: str, sha: str,
+                                   used_at) -> None:
+    """V0652 (aa): the approval.decided card of this approval (the rail's `aprdec-<id>` message) gains `used`, in place."""
+    import copy
+    from ..models import ChatMessage
+    m = (await db.execute(select(ChatMessage.id, ChatMessage.card).where(
+        ChatMessage.conversation_id == conv.id, ChatMessage.client_ref == f"aprdec-{approval_id}"))).first()
+    if m is None or not isinstance(m[1], dict) or m[1].get("type") != "approval.decided":
+        return
+    card = copy.deepcopy(m[1])                   # the stored value is not edited in place
+    card.setdefault("data", {})["used"] = {
+        "act": label[:200], "act_sha256": sha,
+        "at": used_at.isoformat() if hasattr(used_at, "isoformat") else str(used_at),
+        "by_agent_did": actor.agent_did}
+    msg, conv2, changed = await cs.update_card(db, conv.id, m[0], actor, card, rail_author=True)
+    if changed and conv2 is not None:
+        await cs.deliver_card_update(db, conv2, msg, actor)
+
+
 @router.post("/approvals/{approval_id}/consume",
              summary="Use an approved request to open one act (the agent that asked, once)")
 @approval_errors
@@ -2217,6 +2387,25 @@ async def consume_approval(
             cs.deliver(conv.id, conv.kind, payload, recipients, actor.display_name)
     except Exception as e:  # noqa: BLE001 — the use is committed; its line is a display
         logger.warning("[CHATAPPROVAL] the use line for %s was not posted: %s", row.id, e)
+    # V0652 (aa): the decision's card shows its use on itself (used for <act> at <time>), kept in its history; once
+    # used it is closed
+    try:
+        await _decision_card_shows_use(db, conv, row.id, actor, label, sha, used_at)
+    except Exception as e:  # noqa: BLE001 — the use is committed; the card is a display of it
+        logger.warning("[CHATAPPROVAL] the decision card of %s does not show its use: %s", row.id, e)
+    # V0652 (af): the person who approved it hears that it was used, pushed when the act was a production act (once:
+    # mark_consumed above lets one use through); the room's line above reaches everyone else in the app
+    try:
+        if row.decided_by_developer_id:
+            from agentvault_registry.background_tasks import push_notify
+            prod = bool(getattr(used, "production_impact", False))
+            push_notify.spawn_notice(push_notify.notify(
+                "chat.approval_used_production" if prod else "chat.approval_used", [int(row.decided_by_developer_id)],
+                title="Your approval was used" + (" for a production act" if prod else ""),
+                message=f"{actor.display_name} used your approval {row.id}: {label[:160]}",
+                tags="white_check_mark", click=f"/ui#/pocket/ourchat/{conv.id}?approval={row.id}"))
+    except Exception:  # noqa: BLE001 — the use is committed; its notice is a courtesy
+        logger.debug("[CHATAPPROVAL] the use notice for %s was skipped", row.id, exc_info=True)
     agents, devs = await ca.names_for(db, [used])
     return {"approval": ca.serialize(used, now, requester_name=agents.get(used.requester_agent_did),
                                      decider_name=devs.get(used.decided_by_developer_id))}
@@ -2264,9 +2453,29 @@ async def decide_approvals(
     rows = (await db.execute(select(ChatApproval).where(
         ChatApproval.conversation_id == conv.id, ChatApproval.id.in_(ids)).with_for_update())).scalars().all()
     now = await ca.db_now(db)
+    # V0652 (ab): a choice is decided by one of its options, one request at a time; an approval is approved or denied
+    if req.decision == "choose":
+        if len(ids) != 1 or req.option is None:
+            raise cs.ChatError(422, "choose decides one choice request at a time, by the index of one of its options")
+        r0 = next((r for r in rows if r.id == ids[0]), None)
+        r0_opts = list(getattr(r0, "options", None) or []) if r0 is not None else []
+        if r0 is not None and not r0_opts:
+            raise cs.ChatError(409, "this is an approval request, not a choice: approve or deny it")
+        if r0 is not None and not (0 <= int(req.option) < len(r0_opts)):
+            raise cs.ChatError(422, f"option must be 0 to {len(r0_opts) - 1}: this choice offers {len(r0_opts)}")
+    elif req.decision == "approve" and any(getattr(r, "options", None) for r in rows):
+        raise cs.ChatError(409, "a choice is decided by choosing one of its options (decision choose, option), or "
+                                "declined with deny")
     decidable, skipped = ca.partition_for_decision(rows, ids, now)
     if not decidable:
         code, sentence, already = ca.refusal_when_nothing_decided(skipped, req.decision)
+        if already and req.decision == "choose":
+            # a choice is made once: the same option again is the same decision; another option is not
+            r0 = next((r for r in rows if r.id == ids[0]), None)
+            if r0 is None or getattr(r0, "chosen_option", None) != int(req.option):
+                label = (list(getattr(r0, "options", None) or [])[int(r0.chosen_option)]
+                         if r0 is not None and getattr(r0, "chosen_option", None) is not None else "another option")
+                raise cs.ChatError(409, f"this choice was already made: {label!r}; a decision is final")
         if already:
             return {"decision": ca.DECISIONS[req.decision], "decided": [], "skipped": skipped, "already": True}
         raise cs.ChatError(code, sentence)
@@ -2282,17 +2491,19 @@ async def decide_approvals(
     note = (req.note or "").strip() or None
     statements = {}
     for r in decidable:
+        chosen = int(req.option) if req.decision == "choose" else None
         stmt = ca.build_statement(r, decision=req.decision, decided_at=now, decider_id=int(dev.id),
                                   decider_name=dev_name, role=role, via=via, presence=presence,
-                                  registry=str(getattr(_st, "REGISTRY_NAME", "") or ""))
+                                  registry=str(getattr(_st, "REGISTRY_NAME", "") or ""), chosen=chosen)
         res = await db.execute(_sql(
             "UPDATE chat_approvals SET status = :st, decided_at = :t, decided_by_developer_id = :d, "
             "decided_by_role = :role, decision_note = :n, decision_via = CAST(:via AS JSONB), "
-            "presence_method = :pm, presence_challenge_id = :pc, decision_statement = CAST(:stmt AS JSONB) "
+            "presence_method = :pm, presence_challenge_id = :pc, decision_statement = CAST(:stmt AS JSONB), "
+            "chosen_option = :co "
             "WHERE id = :id AND status = 'pending' AND expires_at > now() RETURNING id"),
             {"st": word, "t": now, "d": int(dev.id), "role": role, "n": note, "via": _json.dumps(via),
              "pm": (presence or {}).get("method"), "pc": (presence or {}).get("challenge_id"),
-             "stmt": _json.dumps(stmt), "id": r.id})
+             "stmt": _json.dumps(stmt), "co": chosen, "id": r.id})
         if res.first() is None:
             skipped[r.id] = "expired"      # the belt: a request that expired under us is never decided
             continue

@@ -139,7 +139,9 @@ def api_page(d: dict) -> str:
                 continue
             seg = path.split("/")
             group = seg[3] if path.startswith("/api/v1/") and len(seg) > 3 else (seg[1] or "root")
-            cred = sorted({LABELS.get(k, k) for k in schemes}) or ["public"]
+            # V0652 (ai): a route may name who may actually call it (x-callers): the support routes take the shared
+            # actor resolver, so their security lists the agent token too, and every one of them refuses an agent
+            cred = sorted(op.get("x-callers") or {LABELS.get(k, k) for k in schemes}) or ["public"]
             groups[group].append((path, method.upper(), summary, " or ".join(cred)))
     n = sum(len(v) for v in groups.values())
     out = ["# API Reference", "",

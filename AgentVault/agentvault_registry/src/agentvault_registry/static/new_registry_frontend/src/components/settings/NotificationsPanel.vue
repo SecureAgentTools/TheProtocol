@@ -91,7 +91,15 @@ const thresholdDraft = ref<Record<string, string>>({})
 const CATEGORY_LABEL: Record<string, string> = {
   security: 'Security & approvals', agents: 'Agents & delegation', money: 'Money',
   contracts: 'Contracts', marketplace: 'Marketplace', ops: 'Operator & federation',
+  chat: 'Chat', governance: 'Governance & commons', organizations: 'Organizations', legal: 'Terms',
 }
+// V0652 (af): the matrix shows every category the catalog sends, in this order, and any category it does not know yet
+// after them. A fixed list of six left the whole chat category off this panel (approval requests, mentions, direct
+// messages, pings): a type in a category the list did not name could not be configured anywhere.
+const CATEGORY_ORDER = ['security', 'chat', 'agents', 'money', 'contracts', 'marketplace', 'governance', 'organizations',
+  'legal', 'ops']
+// the broadcast severities are set in the strip below (their delivery still reads those settings)
+const STRIP_CATEGORIES = new Set(['broadcast'])
 
 // §FESUITE (2026-10-04): a registry whose staking rewards are switched off (the production set since V0520) has no
 // reward to tell anyone about, so its "Staking rewards" row goes, and stays gone while the config is still being read
@@ -102,7 +110,9 @@ const rewardsOn = computed(() => registryCfg.value.staking_rewards_enabled === t
 
 const matrixGroups = computed(() => {
   const groups: { cat: string; label: string; types: NType[] }[] = []
-  for (const cat of ['security', 'agents', 'money', 'contracts', 'marketplace', 'ops']) {
+  const cats = [...CATEGORY_ORDER]
+  for (const t of vTypes.value) if (!cats.includes(t.category) && !STRIP_CATEGORIES.has(t.category)) cats.push(t.category)
+  for (const cat of cats) {
     const types = vTypes.value.filter(t => t.category === cat && !t.legacy_managed && (rewardsOn.value || !REWARD_TYPES.has(t.key)))
     if (types.length) groups.push({ cat, label: t(`notifCatalog._category.${cat}`, CATEGORY_LABEL[cat] ?? cat), types })
   }
@@ -244,7 +254,9 @@ async function presetQuietMobile() {
   // Mobile rings only for what genuinely needs a human; mandatory types are unaffected
   // by construction. Everything else on mobile: off via the channel master.
   const keep = ['contract.disputed', 'dispute.filed_against_you', 'funding.decided',
-                'capability.revoked', 'agent.mtls_revoked', 'guild.awarded']
+                'capability.revoked', 'agent.mtls_revoked', 'guild.awarded',
+                // V0652 (af): the decisions someone waits on ring the phone too ("only approvals ..." below)
+                'security.spend_approval', 'chat.approval_requested', 'chat.choice_requested']
   const rows: any[] = [{ type_key: '*', channel: 'push_mobile', enabled: false }]
   for (const k of keep) {
     if (vTypes.value.some(t => t.key === k)) {

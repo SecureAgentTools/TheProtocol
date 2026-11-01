@@ -22,6 +22,9 @@
       <li v-for="a in items" :key="a.id">
         <button type="button" class="pca-item" :data-testid="`pca-item-${a.id}`" @click="open(a)">
           <span class="pca-title">{{ a.title }}</span>
+          <!-- V0652 (ab): a choice says so, with its options (chosen in its room's pinned panel) -->
+          <span v-if="Array.isArray(a.options) && a.options.length >= 2" class="pca-unlocks" data-testid="pca-choice">
+            {{ tp('ourstate.approvals.chooseFrom', 'Choose: {options}', { options: a.options.join(' / ') }) }}</span>
           <span v-if="a.unlocks" class="pca-unlocks">
             {{ tp('ourstate.approvals.unlocks', 'Unlocks: {what}', { what: a.unlocks }) }}</span>
           <span class="pca-meta">
@@ -92,15 +95,19 @@ function open(a: WaitingItem) {
 }
 
 function onVisible() { if (document.visibilityState === 'visible') void refresh() }
+// V0652 (y): the window's focus too (a desktop window comes back without a visibility change)
+function onFocus() { void refresh() }
 
 onMounted(() => {
   void refresh()
   clock = setInterval(() => { now.value = Date.now() }, 30000)
   document.addEventListener('visibilitychange', onVisible)
+  window.addEventListener('focus', onFocus)
 })
 onBeforeUnmount(() => {
   if (clock) clearInterval(clock)
   document.removeEventListener('visibilitychange', onVisible)
+  window.removeEventListener('focus', onFocus)
 })
 
 defineExpose({ refresh, items })

@@ -7,6 +7,7 @@ import { useNotificationStore } from '@/stores/notifications'
 import type { BroadcastItem, FeedItem } from '@/stores/notifications'
 import { useRouter } from 'vue-router'
 import { useViewport } from '@/composables/useViewport'
+import { desktopRoute } from '@/services/notificationDoors'
 
 const store = useNotificationStore()
 const router = useRouter()
@@ -152,10 +153,7 @@ async function dismiss(item: BroadcastItem) {
  * served at / on the apex and at /ui/ on a registry, so only the hash route is portable), and the entry is read.
  */
 function feedRoute(click: string | null): string | null {
-  if (!click) return null
-  const hash = click.indexOf('#')
-  const route = hash >= 0 ? click.slice(hash + 1) : click
-  return route.startsWith('/') && !route.startsWith('//') ? route : null
+  return desktopRoute(click)   // V0652 (ai): a Pocket thread link opens the console's thread here
 }
 async function openFeed(e: FeedItem) {
   open.value = false

@@ -50,7 +50,7 @@ describe('a thread on a phone is bounded, so the pinned panel stays in view', ()
     expect(root.attributes('style') || '').toBe('')
   })
 
-  it('bounds the thread when one opens after the list, and keeps the desktop panes as they were', async () => {
+  it('bounds the thread when one opens after the list, and keeps the desktop panes their own height', async () => {
     h.route.params = {}
     const w = mountIn('40px')
     await flushPromises()
@@ -58,11 +58,19 @@ describe('a thread on a phone is bounded, so the pinned panel stays in view', ()
     await flushPromises()
     expect(w.find('[data-testid="ocs-root"]').classes()).toContain('ocs-bounded')
     h.wideMatches = true
-    const wide = mountIn()
+    const wide = mountIn('0px')
     await flushPromises()
     const root = wide.find('[data-testid="ocs-root"]')
     expect(root.classes()).toContain('ocs-two')
     expect(root.classes()).not.toContain('ocs-bounded')
     expect(root.attributes('style') || '').toContain('height: calc(100vh - 0px)')
+  })
+
+  it('V0652 (ad): the wide panes leave the bottom space Pocket keeps for its tab bar (the composer stays above it)', async () => {
+    // BASE (V0651): calc(100vh - 0px): at 1920 the composer's send sat under Pocket's tab bar and the page scrolled 84 px
+    h.wideMatches = true
+    const wide = mountIn('83px')
+    await flushPromises()
+    expect(wide.find('[data-testid="ocs-root"]').attributes('style') || '').toContain('height: calc(100vh - 83px)')
   })
 })

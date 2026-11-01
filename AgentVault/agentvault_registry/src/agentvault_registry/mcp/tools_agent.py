@@ -2756,7 +2756,8 @@ async def chat_send_message(auth: MCPAuthContext, body: str,
                             target_developer_id: Optional[int] = None,
                             conversation_kind: str = "dm",
                             client_ref: Optional[str] = None,
-                            target_remote_key: Optional[str] = None) -> Dict[str, Any]:
+                            target_remote_key: Optional[str] = None,
+                            reply_to: Optional[str] = None) -> Dict[str, Any]:
     """Send a text message into an OurChat thread. Give conversation_id to
     continue a thread, or a target (agent DID / developer id) to start-or-
     continue the pair thread (dedup is server-side). Idempotent on client_ref.
@@ -2766,10 +2767,12 @@ async def chat_send_message(auth: MCPAuthContext, body: str,
         return {"error": "body is required"}
     ref = client_ref or str(uuid.uuid4())
     if conversation_id:
+        msg: Dict[str, Any] = {"kind": "text", "body": body, "client_ref": ref}
+        if reply_to:
+            msg["reply_to"] = str(reply_to)     # V0652 (ac): the reply folds under the message it answers
         return await _chat_request(
             auth, "POST", f"/api/v1/chat/conversations/{seg(conversation_id)}/messages",
-            json_body={"kind": "text", "body": body, "client_ref": ref},
-            op_name="sendChatMessage")
+            json_body=msg, op_name="sendChatMessage")
     if target_remote_key:
         rk = str(target_remote_key).strip()
         target = {"ptype": "agent" if rk.lower().startswith("did:") else "developer", "remote_key": rk}
@@ -2829,11 +2832,244 @@ async def chat_unblock_principal(auth: MCPAuthContext, ptype: str, developer_id:
     return await _chat_request(auth, "DELETE", "/api/v1/chat/blocks", json_body=b, op_name="unblockChatPrincipal")
 
 
+# V0652 (w) (order gwo_213e530b4ca2de3130c4a1d1): OurChat for a phone client (voice or chat). The maintainer, from his
+# phone (the sessions' room, seq 225): "the Claude phone integration lost of tools to use needs whole ourchat endpoints
+# too if the agent is permitted to use it". The set a phone client lives on, each exactly its route (the route decides
+# who may; no new grant): mark a thread read, the unread count, a room's approval requests, the requests waiting on
+# you, and a text file someone shared. The descriptions are written to be spoken: what it does, what it needs.
+
+ATTACHMENT_TEXT_MAX = 20000
+
+
+async def chat_mark_read(auth: MCPAuthContext, conversation_id: str, seq: int) -> Dict[str, Any]:
+    """Mark a thread read up to a message (its seq). Never shown to anyone else (no read receipts)."""
+    if not conversation_id:
+        return {"error": "conversation_id is required"}
+    try:
+        n = int(seq)
+    except (TypeError, ValueError):
+        return {"error": "seq must be the number of the last message you read"}
+    return await _chat_request(auth, "POST", f"/api/v1/chat/conversations/{seg(conversation_id)}/read",
+                               json_body={"seq": n}, op_name="markChatRead")
+
+
+async def chat_unread_count(auth: MCPAuthContext) -> Dict[str, Any]:
+    """How many messages wait unread, and in how many threads (muted threads are not counted)."""
+    return await _chat_request(auth, "GET", "/api/v1/chat/unread-count", op_name="getChatUnreadCount")
+
+
+async def chat_list_approvals(auth: MCPAuthContext, conversation_id: str, status: str = "pending",
+                              limit: int = 50) -> Dict[str, Any]:
+    """A room's approval requests (and choices): pending by default, or decided, or all; with can_decide."""
+    if not conversation_id:
+        return {"error": "conversation_id is required"}
+    if status not in ("pending", "decided", "all"):
+        return {"error": "status must be pending, decided or all"}
+    return await _chat_request(auth, "GET", f"/api/v1/chat/conversations/{seg(conversation_id)}/approvals",
+                               params={"status": status, "limit": max(1, min(200, int(limit or 50)))},
+                               op_name="listChatApprovals")
+
+
+async def chat_waiting_approvals(auth: MCPAuthContext, limit: int = 50) -> Dict[str, Any]:
+    """Every pending request you may decide, in every room (the org's owner or a named approver; agents never)."""
+    return await _chat_request(auth, "GET", "/api/v1/chat/approvals",
+                               params={"limit": max(1, min(200, int(limit or 50)))}, op_name="listWaitingChatApprovals")
+
+
+def attachment_answer(attachment_id: str, name: str, data: bytes) -> Dict[str, Any]:
+    """A shared file as a voice client can use it: its text when it is UTF-8 text without NUL bytes (up to 20000
+    characters, with `truncated`), else its name and size and where to open it. Pure."""
+    text = None
+    if b"\x00" not in data:
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            text = None
+    if text is None:
+        return {"attachment_id": attachment_id, "name": name, "bytes": len(data), "text": None,
+                "note": "not a text file: open it in the app to download it"}
+    return {"attachment_id": attachment_id, "name": name, "bytes": len(data),
+            "text": text[:ATTACHMENT_TEXT_MAX], "truncated": len(text) > ATTACHMENT_TEXT_MAX}
+
+
+async def chat_get_attachment(auth: MCPAuthContext, attachment_id: str) -> Dict[str, Any]:
+    """A file someone shared in a thread you take part in (the route checks that you do)."""
+    if auth.auth_type == "anonymous" or not auth.raw_token:
+        return {"error": "This tool requires authentication (a developer key or an agent JWT)."}
+    if not attachment_id:
+        return {"error": "attachment_id is required"}
+    try:
+        async with mcp_http_client(timeout=HTTPX_TIMEOUT_SHORT) as client:
+            r = await client.get(f"{REGISTRY_SELF_URL}/api/v1/chat/attachments/{seg(attachment_id)}",
+                                 headers={"Authorization": f"Bearer {auth.raw_token}", **mcp_forwarded_headers()})
+        if r.status_code != 200:
+            return {"error": f"getChatAttachment returned HTTP {r.status_code}: {_refusal_reason(r)}"}
+        disp = r.headers.get("content-disposition", "")
+        name = disp.split("filename=", 1)[1].strip().strip('"') if "filename=" in disp else attachment_id
+        return attachment_answer(attachment_id, name, r.content or b"")
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"getChatAttachment error: {e}", exc_info=True)
+        return {"error": format_tool_exception(e)}
+
+
+# V0652 (aa) (order gwo_840aa2b590306f7eba147758): a progress card a session posts once and keeps current in place
+# (a proof's or a roll's steps and its verdict: one card, not ten messages), and a card's history. Each exactly its route.
+
+def progress_card(title: str, state: str = "running", steps: Optional[list] = None,
+                  note: Optional[str] = None) -> Dict[str, Any]:
+    """The `progress` card these tools send (the route validates it: services/chat_live_cards.py). Pure."""
+    data: Dict[str, Any] = {"title": str(title or "").strip(), "state": state or "running"}
+    if steps:
+        data["steps"] = [{k: v for k, v in (s or {}).items() if k in ("label", "state", "note") and v is not None}
+                         for s in steps if isinstance(s, dict)]
+    if note:
+        data["note"] = str(note)
+    return {"v": 1, "type": "progress", "data": data}
+
+
+async def chat_post_progress(auth: MCPAuthContext, conversation_id: str, title: str, state: str = "running",
+                             steps: Optional[list] = None, note: Optional[str] = None,
+                             client_ref: Optional[str] = None) -> Dict[str, Any]:
+    """Post a progress card (a proof, a roll): its title, its state, its steps. Keep it current with
+    updateChatProgress; a verdict (passed, failed, cancelled) closes it."""
+    if not conversation_id:
+        return {"error": "conversation_id is required"}
+    if not (title or "").strip():
+        return {"error": "title is required"}
+    return await _chat_request(auth, "POST", f"/api/v1/chat/conversations/{seg(conversation_id)}/messages",
+                               json_body={"kind": "card", "card": progress_card(title, state, steps, note),
+                                          "client_ref": client_ref or str(uuid.uuid4())},
+                               op_name="postChatProgress")
+
+
+async def chat_update_progress(auth: MCPAuthContext, conversation_id: str, message_id: str, title: str,
+                               state: str = "running", steps: Optional[list] = None,
+                               note: Optional[str] = None) -> Dict[str, Any]:
+    """Update your progress card in place, with its whole new state (title, state, steps, note)."""
+    if not conversation_id or not message_id:
+        return {"error": "conversation_id and message_id are required"}
+    if not (title or "").strip():
+        return {"error": "title is required"}
+    return await _chat_request(
+        auth, "PUT", f"/api/v1/chat/conversations/{seg(conversation_id)}/messages/{seg(message_id)}/card",
+        json_body={"card": progress_card(title, state, steps, note)}, op_name="updateChatProgress")
+
+
+async def chat_card_history(auth: MCPAuthContext, conversation_id: str, message_id: str) -> Dict[str, Any]:
+    """The updates a card took, oldest first: when, who, what changed."""
+    if not conversation_id or not message_id:
+        return {"error": "conversation_id and message_id are required"}
+    return await _chat_request(
+        auth, "GET", f"/api/v1/chat/conversations/{seg(conversation_id)}/messages/{seg(message_id)}/card/history",
+        op_name="getChatCardHistory")
+
+
+# V0652 (ac) (order gwo_2ae43c7789db1e808ea1417f): an organization's room's status board, read and kept fresh by its
+# owner or the members the owner named. Each exactly its route.
+
+async def chat_read_board(auth: MCPAuthContext, conversation_id: str) -> Dict[str, Any]:
+    """The room's status board: its text, its revision, who last edited it, whether you may edit it."""
+    if not conversation_id:
+        return {"error": "conversation_id is required"}
+    return await _chat_request(auth, "GET", f"/api/v1/chat/conversations/{seg(conversation_id)}/board",
+                               op_name="getChatBoard")
+
+
+async def chat_write_board(auth: MCPAuthContext, conversation_id: str, text: str, base_rev: int) -> Dict[str, Any]:
+    """Write the room's status board (its owner, or a member the owner named): the whole new text, against the
+    revision you read."""
+    if not conversation_id:
+        return {"error": "conversation_id is required"}
+    try:
+        rev = int(base_rev)
+    except (TypeError, ValueError):
+        return {"error": "base_rev must be the revision you read (getChatBoard; 0 for a board never written)"}
+    return await _chat_request(auth, "PUT", f"/api/v1/chat/conversations/{seg(conversation_id)}/board",
+                               json_body={"text": str(text or ""), "base_rev": rev}, op_name="updateChatBoard")
+
+
+_AGENT_JWT_OPT = {"type": "string", "description": "Optional: speak as an agent"}
+_PROGRESS_STEPS = {"type": "array", "maxItems": 30, "description": "The steps, each {label, state, note?}; state is "
+                   "pending, running, done, failed or skipped",
+                   "items": {"type": "object", "properties": {
+                       "label": {"type": "string"}, "state": {"type": "string",
+                                                              "enum": ["pending", "running", "done", "failed", "skipped"]},
+                       "note": {"type": "string"}}, "required": ["label", "state"]}}
+_PROGRESS_STATE = {"type": "string", "enum": ["running", "passed", "failed", "cancelled"], "default": "running",
+                   "description": "running, or the verdict (passed, failed, cancelled), which closes the card"}
+
+AGENT_TOOL_SCHEMAS.extend([
+    {"name": "theprotocol_postChatProgress", "description": "OurChat: post a progress card (a proof, a roll) into a "
+     "thread: its title, state and steps. Keep it current with updateChatProgress, one card instead of many messages; "
+     "a verdict (passed, failed, cancelled) closes it. Needs the thread's id and a title. Developer key or agent JWT.",
+     "inputSchema": {"type": "object", "properties": {
+         "conversation_id": {"type": "string"}, "title": {"type": "string", "maxLength": 200},
+         "state": _PROGRESS_STATE, "steps": _PROGRESS_STEPS, "note": {"type": "string", "maxLength": 500},
+         "client_ref": {"type": "string", "description": "Idempotency key (uuid); generated if omitted"},
+         "agent_jwt": _AGENT_JWT_OPT}, "required": ["conversation_id", "title"]}},
+    {"name": "theprotocol_updateChatProgress", "description": "OurChat: update your progress card in place with its "
+     "whole new state (title, state, steps, note). Everyone in the thread sees it change; nobody is notified. Only "
+     "whoever posted it updates it, and a closed card takes no more. Needs the thread's id and the card's message id. "
+     "Developer key or agent JWT.",
+     "inputSchema": {"type": "object", "properties": {
+         "conversation_id": {"type": "string"}, "message_id": {"type": "string"},
+         "title": {"type": "string", "maxLength": 200}, "state": _PROGRESS_STATE, "steps": _PROGRESS_STEPS,
+         "note": {"type": "string", "maxLength": 500}, "agent_jwt": _AGENT_JWT_OPT},
+         "required": ["conversation_id", "message_id", "title"]}},
+    {"name": "theprotocol_getChatBoard", "description": "OurChat: an organization's room's status board (the current "
+     "release, the open orders, what waits on the owner): its text, its revision, who last edited it and whether you "
+     "may edit it. Needs the room's id. Developer key or agent JWT.",
+     "inputSchema": {"type": "object", "properties": {"conversation_id": {"type": "string"}, "agent_jwt": _AGENT_JWT_OPT},
+                     "required": ["conversation_id"]}},
+    {"name": "theprotocol_updateChatBoard", "description": "OurChat: write the room's status board (its owner, or a "
+     "member the owner named): the whole new text (markdown, up to 4000 characters; empty clears it) and base_rev, the "
+     "revision you read with getChatBoard. An edit against an older board is refused, so nobody overwrites another's "
+     "edit unseen. The room sees it at once; nobody is notified. Developer key or agent JWT.",
+     "inputSchema": {"type": "object", "properties": {
+         "conversation_id": {"type": "string"}, "text": {"type": "string", "maxLength": 4000},
+         "base_rev": {"type": "integer", "minimum": 0}, "agent_jwt": _AGENT_JWT_OPT},
+         "required": ["conversation_id", "text", "base_rev"]}},
+    {"name": "theprotocol_getChatCardHistory", "description": "OurChat: the updates a card took (a progress card, a "
+     "Guild order card, an approval card's use), oldest first: when, who, what changed. Needs the thread's id and the "
+     "card's message id. Developer key or agent JWT.",
+     "inputSchema": {"type": "object", "properties": {
+         "conversation_id": {"type": "string"}, "message_id": {"type": "string"}, "agent_jwt": _AGENT_JWT_OPT},
+         "required": ["conversation_id", "message_id"]}},
+    {"name": "theprotocol_markChatRead", "description": "OurChat: mark a thread read up to a message. Needs the "
+     "thread's id and the number (seq) of the last message read. Nobody else sees it. Developer key or agent JWT.",
+     "inputSchema": {"type": "object", "properties": {
+         "conversation_id": {"type": "string"},
+         "seq": {"type": "integer", "minimum": 0, "description": "The last message read (its seq)"},
+         "agent_jwt": _AGENT_JWT_OPT}, "required": ["conversation_id", "seq"]}},
+    {"name": "theprotocol_getChatUnreadCount", "description": "OurChat: how many messages wait unread, and in how many "
+     "threads (muted threads are not counted). Needs nothing. Developer key or agent JWT.",
+     "inputSchema": {"type": "object", "properties": {"agent_jwt": _AGENT_JWT_OPT}, "required": []}},
+    {"name": "theprotocol_listChatApprovals", "description": "OurChat: a room's approval requests and choices, pending "
+     "by default, with whether you may decide them. Needs the room's id. Decide one with decideChatApproval. Developer "
+     "key or agent JWT.",
+     "inputSchema": {"type": "object", "properties": {
+         "conversation_id": {"type": "string"},
+         "status": {"type": "string", "enum": ["pending", "decided", "all"], "default": "pending"},
+         "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50},
+         "agent_jwt": _AGENT_JWT_OPT}, "required": ["conversation_id"]}},
+    {"name": "theprotocol_listWaitingChatApprovals", "description": "OurChat: every approval request and choice waiting "
+     "for your decision, in every room, oldest first. Needs nothing. Only the org's owner or a named approver gets "
+     "any; agents never decide. Developer key.",
+     "inputSchema": {"type": "object", "properties": {
+         "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50}}, "required": []}},
+    {"name": "theprotocol_getChatAttachment", "description": "OurChat: read a file shared in one of your threads: its "
+     "text when it is a text file (up to 20000 characters), else its name and size. Needs the attachment's id (from "
+     "the file card). Developer key or agent JWT.",
+     "inputSchema": {"type": "object", "properties": {
+         "attachment_id": {"type": "string"}, "agent_jwt": _AGENT_JWT_OPT}, "required": ["attachment_id"]}},
+])
+
+
 AGENT_TOOL_SCHEMAS.extend([
     {"name": "theprotocol_listConversations", "description": "OurChat chat: list my threads (state=active) or my Requests lane (state=requests). Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"state": {"type": "string", "enum": ["active", "requests"], "default": "active"}, "cursor": {"type": "string", "description": "ISO timestamp from a prior page"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 30}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": []}},
     {"name": "theprotocol_readThread", "description": "OurChat chat: read one thread's messages (page back with before_seq; mentions=me reads only the messages that @mention you). Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"conversation_id": {"type": "string"}, "before_seq": {"type": "integer", "minimum": 1}, "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 40}, "join": {"type": "boolean", "default": False, "description": "An agent's owner opening its cross-registry thread is announced to the other side as a visible join; the first such read answers 409 household_join_confirm until repeated with join=true"}, "mentions": {"type": "string", "enum": ["me"], "description": "me: only the messages that @mention you (your handle, your card name or your DID)"}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": ["conversation_id"]}},
     {"name": "theprotocol_syncChat", "description": "OurChat chat (V0651): catch up across every thread of yours after a cursor, waiting up to wait_seconds (0 to 25) when nothing is there yet. for_me=true: only what reaches you in particular (a mention of you, @all, the room owner's message, a direct message, an approval card of yours), and a wait ends only on such a message; pass next_cursor back with for_me to continue, and plain_cursor to a plain sync to read everything else. Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"cursor": {"type": "string", "maxLength": 4096, "description": "next_cursor from the previous answer"}, "since": {"type": "string", "description": "ISO timestamp, instead of cursor (default: 24 hours ago)"}, "wait_seconds": {"type": "integer", "minimum": 0, "maximum": 25, "default": 0, "description": "Wait up to this many seconds when nothing is there yet"}, "for_me": {"type": "boolean", "default": False, "description": "Only what reaches you in particular"}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}}},
-    {"name": "theprotocol_sendChatMessage", "description": "OurChat chat: send a text message. Give conversation_id to continue, or target_agent_did / target_developer_id to start-or-continue the pair thread. A first message to a stranger lands as a request. Idempotent on client_ref. Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"body": {"type": "string"}, "conversation_id": {"type": "string"}, "target_agent_did": {"type": "string"}, "target_developer_id": {"type": "integer"}, "target_remote_key": {"type": "string", "description": "Someone on ANOTHER registry: handle@https://their.registry or did:...@https://their.registry"}, "conversation_kind": {"type": "string", "enum": ["dm", "agent_service"], "default": "dm"}, "client_ref": {"type": "string", "description": "Idempotency key (uuid); generated if omitted"}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": ["body"]}},
+    {"name": "theprotocol_sendChatMessage", "description": "OurChat chat: send a text message. Give conversation_id to continue, or target_agent_did / target_developer_id to start-or-continue the pair thread. A first message to a stranger lands as a request. Idempotent on client_ref. Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"body": {"type": "string"}, "conversation_id": {"type": "string"}, "target_agent_did": {"type": "string"}, "target_developer_id": {"type": "integer"}, "target_remote_key": {"type": "string", "description": "Someone on ANOTHER registry: handle@https://their.registry or did:...@https://their.registry"}, "conversation_kind": {"type": "string", "enum": ["dm", "agent_service"], "default": "dm"}, "client_ref": {"type": "string", "description": "Idempotency key (uuid); generated if omitted"}, "reply_to": {"type": "string", "maxLength": 36, "description": "With conversation_id: the id of the message this answers (the reply folds under it)"}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": ["body"]}},
     {"name": "theprotocol_blockChatPrincipal", "description": "OurChat chat: block a principal silently (shared pair threads are left; the blocked party is told nothing). ptype remote names someone on another registry by its address. Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"ptype": {"type": "string", "enum": ["developer", "agent", "remote"]}, "developer_id": {"type": "integer"}, "agent_did": {"type": "string"}, "remote_key": {"type": "string", "description": "id@https://their.registry"}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": ["ptype"]}},
     {"name": "theprotocol_unblockChatPrincipal", "description": "OurChat chat: remove a block (threads stay left; opening the dm again re-engages it). Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"ptype": {"type": "string", "enum": ["developer", "agent", "remote"]}, "developer_id": {"type": "integer"}, "agent_did": {"type": "string"}, "remote_key": {"type": "string", "description": "id@https://their.registry"}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": ["ptype"]}},
     {"name": "theprotocol_respondChatRequest", "description": "OurChat chat: accept or decline a pending request thread, or leave a thread (opening the dm again re-engages it). Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"conversation_id": {"type": "string"}, "action": {"type": "string", "enum": ["accept", "decline", "leave"]}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": ["conversation_id", "action"]}},

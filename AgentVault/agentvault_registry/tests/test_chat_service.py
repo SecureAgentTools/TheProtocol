@@ -828,8 +828,10 @@ class TestMediaGate:
         assert "application/octet-stream" not in m.ALLOWED_MIME
         assert set(m.ALLOWED_MIME) == {
             "image/png", "image/jpeg", "image/webp", "image/gif",
-            "application/pdf", "text/plain", "text/markdown"}     # V0650 (i)
+            "application/pdf", "text/plain", "text/markdown",     # V0650 (i)
+            "application/json", "text/csv"}                       # V0652 (ae)
         assert m.ALLOWED_MIME["text/markdown"] == ".md"
+        assert m.TEXT_MIME == {"text/plain", "text/markdown", "application/json", "text/csv"}
 
     def test_contents_are_sniffed_not_trusted(self):
         m = self._m()

@@ -868,7 +868,11 @@ _EMIT_MAP: Dict[str, List[str]] = {
     "deleteAdminAgent":               ["AgentHardDeleted"],
     "acknowledgeAgentFlag":           ["AgentFlagAcknowledged"],
     # ── Admin broadcasts ──
-    "composeBroadcast":               ["AdminBroadcastSent"],
+    # §MCPTEST30 (V0652, agentvault2-d3): every broadcast a run composes is a direct notice to the run's own
+    # developer (V0645: mcp_admin_lifecycles' sweep, earned_ad_platform), and a developer-targeted notice is
+    # audited as AdminDirectNoticeSent (routers/admin_broadcast.DIRECT_NOTICE_EVENT, so no peer frame copies it). The
+    # AdminBroadcastSent named here read "REAL MISS" on every run since (V0650's and V0651's pair proofs).
+    "composeBroadcast":               ["AdminDirectNoticeSent"],
     "updateBroadcast":                ["AdminBroadcastEdited"],
     "retractBroadcast":               ["AdminBroadcastRetracted"],
     # ── Organization membership ──

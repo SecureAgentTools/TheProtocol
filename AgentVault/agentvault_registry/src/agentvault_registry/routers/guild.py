@@ -105,6 +105,12 @@ class OrderPostIn(BaseModel):
         None, max_length=120,
         description="The DID of the agent this task is meant for. Anyone may still bid; a bid from another agent is "
                     "accepted and marked not_intended_worker.")
+    # V0652 (aa): the room the order shows in, as one card the Guild rail keeps current (posted, bid, awarded,
+    # delivered, settled). Checked in post_order, before any escrow moves.
+    room_id: Optional[str] = Field(
+        None, max_length=36,
+        description="A conversation your agent takes part in and may post in (an organization's room): the order "
+                    "shows there as one card that follows its lifecycle.")
 
 
 class BidIn(BaseModel):
@@ -159,6 +165,12 @@ async def _audit(db: AsyncSession, oid: str, seq: int, etype: str, actor: Option
         INSERT INTO guild_order_events (order_id, seq, event_type, actor_did, payload)
         VALUES (:o, :q, :e, :a, CAST(:p AS JSONB))
     """), {"o": oid, "q": seq, "e": etype, "a": actor, "p": json.dumps(payload or {})})
+    # V0652 (aa): the order's room card follows this event once it is committed (its own session; never raises)
+    try:
+        from agentvault_registry.services import guild_live_card
+        guild_live_card.refresh_soon(oid, seq, etype)
+    except Exception:  # noqa: BLE001 — the card is a display of the order; the event is written
+        logger.debug("[GUILD] room card refresh for %s not asked", oid, exc_info=True)
 
 
 async def _next_seq(db: AsyncSession, oid: str) -> int:
@@ -301,6 +313,14 @@ async def post_order(body: OrderPostIn, agent: models.Agent = Depends(get_curren
         if intended == agent.did:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                                 detail="intended_worker_did names the poster: you cannot bid on your own task")
+    # V0652 (aa): the room the order shows in. Refused here, before any escrow moves.
+    room = (body.room_id or "").strip() or None
+    if room is not None:
+        from agentvault_registry.services import chat_service as _cs, guild_live_card
+        poster = _cs.Actor("agent", agent_did=agent.did, display_name=getattr(agent, "name", None) or agent.did)
+        why = await guild_live_card.room_refusal(db, room, poster)
+        if why:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"room_id: {why}")
     currency = body.currency or os.getenv("FRAME_CURRENCY", "AVT")
     bounty = Decimal(str(body.bounty))
     oid = "gwo_" + secrets.token_hex(12)
@@ -315,12 +335,14 @@ async def post_order(body: OrderPostIn, agent: models.Agent = Depends(get_curren
         deadline = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(seconds=body.deadline_seconds)
     await db.execute(text("""
         INSERT INTO guild_work_orders (id, poster_did, title, spec, bounty, currency, fee_bps, status,
-            required_skills, min_reputation, deadline, escrow_ref, stake_required, intended_worker_did)
-        VALUES (:id,:p,:t,:s,:b,:c,:fb,'open',CAST(:rs AS JSONB),:mr,:dl,:er,:stk,:iw)
+            required_skills, min_reputation, deadline, escrow_ref, stake_required, intended_worker_did,
+            announce_conversation_id)
+        VALUES (:id,:p,:t,:s,:b,:c,:fb,'open',CAST(:rs AS JSONB),:mr,:dl,:er,:stk,:iw,:room)
     """), {"id": oid, "p": agent.did, "t": body.title, "s": body.spec, "b": bounty, "c": currency,
            "fb": _fee_bps(), "rs": json.dumps(body.required_skills) if body.required_skills else None,
            "mr": body.min_reputation, "dl": deadline, "er": f"guildref:{oid}",
-           "stk": Decimal(str(body.stake_required)) if body.stake_required else None, "iw": intended})
+           "stk": Decimal(str(body.stake_required)) if body.stake_required else None, "iw": intended,
+           "room": room})
     posted = {"bounty": str(bounty), "currency": currency}
     if intended:
         posted["intended_worker_did"] = intended
@@ -330,7 +352,7 @@ async def post_order(body: OrderPostIn, agent: models.Agent = Depends(get_curren
     logger.info("[GUILD] order %s posted by %s bounty=%s %s (escrowed)", oid, agent.did, bounty, currency)
     return {"order_id": oid, "status": "open", "bounty": float(bounty), "currency": currency,
             "fee_bps": _fee_bps(), "deadline": deadline.isoformat() if deadline else None,
-            "intended_worker_did": intended}
+            "intended_worker_did": intended, "room_id": room}
 
 
 # ── discover ─────────────────────────────────────────────────────────────────
@@ -653,6 +675,20 @@ async def place_bid(oid: str, body: BidIn, agent: models.Agent = Depends(get_cur
 
 
 # ── award ────────────────────────────────────────────────────────────────────
+def _notify_owners(type_key: str, dids, title: str, message: str, tags: str = "memo") -> None:
+    """V0652 (af): a notice to the owners of these LOCAL agents, after the commit, fire-and-forget (never blocks the rail;
+    an agent of another registry is told by its own registry's notice, or not at all)."""
+    dids = [d for d in dict.fromkeys(dids or ()) if d]
+    if not dids:
+        return
+    try:
+        import asyncio as _aio
+        from agentvault_registry.background_tasks.push_notify import notify_agent_owners
+        _aio.create_task(notify_agent_owners(type_key, dids, title=title, message=message, tags=tags, click="/ui/#/guild"))
+    except Exception:  # noqa: BLE001
+        logger.debug("[GUILD] %s notify skipped", type_key, exc_info=True)
+
+
 @router.post("/api/v1/guild/orders/{oid}/award", summary="Award a bid (poster)")
 async def award(oid: str, body: AwardIn, agent: models.Agent = Depends(get_current_agent), db: AsyncSession = Depends(get_db)):
     _require_enabled()
@@ -695,7 +731,10 @@ async def award(oid: str, body: AwardIn, agent: models.Agent = Depends(get_curre
     if getattr(claimed, "rowcount", 0) == 0:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Order is no longer open")
     await db.execute(text("UPDATE guild_bids SET status='awarded' WHERE id=:b"), {"b": bid["id"]})
-    await db.execute(text("UPDATE guild_bids SET status='released' WHERE order_id=:o AND id != :b AND status='open'"), {"o": oid, "b": bid["id"]})
+    # V0652 (af): the losing bids are named by the UPDATE that releases them (once: the award's claim above happens once)
+    declined = (await db.execute(text(
+        "UPDATE guild_bids SET status='released' WHERE order_id=:o AND id != :b AND status='open' "
+        "RETURNING bidder_did, home_registry_url"), {"o": oid, "b": bid["id"]})).all()
     # STAKED WORK: refund the losing bidders' stakes; the winner's stays held until settle/dispute.
     await _refund_all_stakes(db, oid, exclude_bidder=bid["bidder_did"])
     await _audit(db, oid, await _next_seq(db, oid), "awarded", agent.did,
@@ -713,6 +752,10 @@ async def award(oid: str, body: AwardIn, agent: models.Agent = Depends(get_curre
             tags="trophy", click="/ui/#/guild"))
     except Exception:  # noqa: BLE001
         logger.debug("[GUILD] award notify skipped", exc_info=True)
+    # V0652 (af): and the bidders who lost hear it (their stakes, if any, were refunded above)
+    _notify_owners("guild.bid_declined", [r[0] for r in declined if not r[1] and r[0] != bid["bidder_did"]],
+                   title="Guild: another bid was chosen",
+                   message=f"\u201c{(o.get('title') or oid)[:80]}\u201d went to another bid; any stake you put up was returned.")
     _award_data = {"order_id": oid, "title": o.get("title"), "bid_id": bid["id"], "worker_did": bid["bidder_did"],
                    "payee": payee_did or bid["bidder_did"], "firm": payee_org, "bounty": str(o.get("bounty")),
                    "currency": o.get("currency")}
@@ -1312,6 +1355,19 @@ async def cancel(oid: str, agent: models.Agent = Depends(get_current_agent), db:
     await _refund_all_stakes(db, oid)  # STAKED WORK: return every bidder's collateral
     await db.commit()
     _emit("GuildOrderCancelled", oid, {"refund": str(o["bounty"])})
+    # V0652 (af): every agent that bid on it hears that it is gone, and why (once: the claim above happens once). The
+    # money has moved by now: a failed read of the bidders tells nobody and never fails the cancel
+    try:
+        bidders = (await db.execute(text(
+            "SELECT DISTINCT bidder_did FROM guild_bids WHERE order_id=:o AND (home_registry_url IS NULL OR home_registry_url = '')"
+        ), {"o": oid})).scalars().all()
+    except Exception:  # noqa: BLE001
+        logger.debug("[GUILD] cancel notice: the bidders could not be read", exc_info=True)
+        bidders = []
+    _notify_owners("guild.order_cancelled", [d for d in bidders if d != o["poster_did"]],
+                   title="Guild: an order you bid on was cancelled",
+                   message=f"\u201c{(o.get('title') or oid)[:80]}\u201d was cancelled"
+                           + (f": {reason[:200]}" if reason else ".") + " Any stake you put up was returned.")
     await guild_contract_mirror.sync_from_order(db, oid)  # P3a mirror
     return {"ok": True, "order_id": oid, "status": "cancelled", "refund": float(o["bounty"])}
 

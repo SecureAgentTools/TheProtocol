@@ -1932,7 +1932,15 @@ async def get_current_actor_for_read(
         _owner_why = await agent_token_refusal(db, payload, agent)   # D6-281
         if _owner_why:
             raise agent_token_refusal_exception(payload, _owner_why)
-        return {"kind": "agent", "agent_did": agent_did, "agent": agent}
+        # V0652 (aj): an owner session token (accepted just above: the owner is the agent's creator, in a live session)
+        # names the developer who acts as the agent, so a message it posts can say "sent by its owner"
+        owner_session = None
+        if payload.get("via") == "owner":
+            try:
+                owner_session = int(payload.get("owner"))
+            except (TypeError, ValueError):
+                owner_session = None
+        return {"kind": "agent", "agent_did": agent_did, "agent": agent, "owner_session": owner_session}
 
     # Developer JWT path — the SAME refusals every other developer route applies, through the same two helpers
     # the optional twin below already uses. §TWOAGENT #18 (2026-09-23): this branch used to check only "the

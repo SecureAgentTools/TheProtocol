@@ -37,8 +37,14 @@ OWN = (422, "Error: HTTP 422: own_submission: a member never gives points to the
 
 class _World:
     def __init__(self, *, ledger_moves=True, stays_closed=False, partial=False, runner_member=True,
-                 member_age_rule=False, deposit_refused=False):
+                 member_age_rule=False, deposit_refused=False, min_voters=2, refuse_ballot_of=()):
         self.ledger_moves, self.stays_closed, self.partial = ledger_moves, stays_closed, partial
+        # V0652: the world keeps the server's rule (services/commons.tally): submission 77 is funded, and the closed
+        # season names its award, only when min_voters distinct members gave it points. Before, this fake awarded any
+        # closed season, so the run's one-ballot season of V0651's pair proof (the runner itself a member, nobody
+        # else: too_few_voters) passed here while its pay read NOT MEASURED on the pair.
+        self.min_voters, self.refuse_ballot_of = min_voters, tuple(refuse_ballot_of)
+        self.ballots = {}
         # V0651: whether the runner's developer is a member here, whether the target keeps the 30-day bond age (a pair
         # without batch 3's NIGHTLY_FLAGS), whether the member's own deposit is refused
         self.runner_member, self.member_age_rule, self.deposit_refused = runner_member, member_age_rule, deposit_refused
@@ -49,11 +55,17 @@ class _World:
         self.balance = Decimal("5")
         self.seen = []
 
+    def voters_for_77(self):
+        return sum(1 for alloc in self.ballots.values() if int(alloc.get("77", 0)) > 0)
+
+    def funded(self):
+        return self.voters_for_77() >= self.min_voters
+
     def _season(self, sid):
         subs = [{"id": 9, "submitter_did": "did:theprotocol:sentinel", "status": "struck", "award": None},
                 {"id": 77, "submitter_did": PEER, "status": "submitted",
-                 "award": dict(self.award) if self.state.get(sid) in ("closed", "paid") else None}]
-        return {"id": sid, "status": self.state.get(sid), "budget": "1.000000",
+                 "award": dict(self.award) if self.state.get(sid) in ("closed", "paid") and self.funded() else None}]
+        return {"id": sid, "status": self.state.get(sid), "budget": "1.000000", "min_voters": self.min_voters,
                 "submissions": subs if sid == 4 else []}
 
     def answer(self, tool, args):
@@ -64,7 +76,7 @@ class _World:
             self.opens += 1
             new = 3 + self.opens
             self.state[new] = "open"
-            return 201, {"id": new, "status": "open", "budget": "1.000000"}
+            return 201, {"id": new, "status": "open", "budget": "1.000000", "min_voters": self.min_voters}
         if tool == "theprotocol_getCommonsSeason":
             return 200, self._season(sid)
         if tool == "theprotocol_submitCommonsWork":
@@ -74,10 +86,13 @@ class _World:
         if tool == "theprotocol_castCommonsBallot":
             if args["agent_jwt"] == "sentinel" and not self.runner_member:
                 return NOT_A_MEMBER
-            if args["agent_jwt"] in ("member-agent", "member2-agent") and self.member_age_rule:
+            if args["agent_jwt"].startswith("member") and self.member_age_rule:
                 return NOT_A_MEMBER
+            if args["agent_jwt"] in self.refuse_ballot_of:
+                return 409, "Error: HTTP 409: season_not_open: season 4 is closed."
             if args["allocations"] == {"9": 10}:
                 return OWN
+            self.ballots[args["agent_jwt"]] = dict(args["allocations"])   # one per member, replaceable
             return 200, {"season_id": 4, "allocations": dict(args["allocations"]), "total_points": 10, "digest": "ab"}
         if tool == WRITE_OFF:
             if self.state[sid] == "open":
@@ -101,10 +116,14 @@ class _World:
             return 200, {"id": 9, "status": "struck"}
         if tool == "theprotocol_adminCommonsCloseSeason":
             self.state[sid] = "closed"
+            n, funded = self.voters_for_77(), self.funded()
             return 200, {"id": sid, "status": "closed",
-                         "tally": {"ballots_cast": 1, "ballots_counted": 1, "awarded": "1.000000", "unallocated": "0",
-                                   "rows": [{"submission_id": 77, "voters": 1, "median_points": "10.000000",
-                                             "share": "1", "amount": "1.000000", "capped": False}]}}
+                         "tally": {"ballots_cast": len(self.ballots), "ballots_counted": len(self.ballots),
+                                   "awarded": "1.000000" if funded else "0", "unallocated": "0" if funded else "1",
+                                   "rows": [{"submission_id": 77, "voters": n,
+                                             "median_points": "10.000000" if funded else "0",
+                                             "share": "1" if funded else "0", "amount": "1.000000" if funded else "0",
+                                             "capped": False, "reason": None if funded else "too_few_voters"}]}}
         if tool == CANCEL:
             if self.state[sid] == "paid":
                 return 409, f"Error: HTTP 409: season_settled: season {sid} is paid."
@@ -118,26 +137,30 @@ class _World:
         if tool == "theprotocol_createAgent":
             if args["name"].startswith("mcp-commons-member-2-"):
                 return 200, {"did": MEMBER2, "client_id": "member2-cid", "client_secret": "member2-csec"}
+            for n in range(3, 7):
+                if args["name"].startswith(f"mcp-commons-member-{n}-"):
+                    return 200, {"did": f"{MEMBER}-{n}", "client_id": f"member{n}-cid", "client_secret": "x-csec"}
             if args["name"].startswith("mcp-commons-member-"):
                 return 200, {"did": MEMBER, "client_id": "member-cid", "client_secret": "member-csec"}
             return 200, {"did": PEER, "client_id": "cid", "client_secret": "csec"}
         if tool == "theprotocol_getAgentToken":
             if args["client_id"] == "member-cid":
                 return 200, {"access_token": "member-agent", "token_type": "bearer"}
-            if args["client_id"] == "member2-cid":
-                return 200, {"access_token": "member2-agent", "token_type": "bearer"}
+            if args["client_id"].startswith("member") and args["client_id"].endswith("-cid"):
+                return 200, {"access_token": args["client_id"][:-4] + "-agent", "token_type": "bearer"}
             return 200, {"access_token": "peer-agent", "token_type": "bearer"}
         if tool == "theprotocol_adminRequest":
             if (args["method"], args["endpoint"]) == ("GET", "/api/v1/reputation-bond/config"):
                 return 200, {"status_code": 200, "ok": True, "response": {"mode": "enforce", "amount": "250.000000"}}
             if (args["method"], args["endpoint"]) == ("POST", "/api/v1/teg/treasury/fund-agent"):
                 b = args["body"]
-                assert b["target_agent_did"] in (MEMBER, MEMBER2) and b["reason"] == "admin_grant"
+                assert b["target_agent_did"].startswith(MEMBER) or b["target_agent_did"] == MEMBER2
+                assert b["reason"] == "admin_grant"
                 assert Decimal(b["amount"]) >= Decimal("252.5"), "the bond and its margin"
                 return 200, {"status_code": 200, "ok": True, "response": {"status": "completed"}}
             raise AssertionError(args)
         if tool == "theprotocol_depositReputationBond":
-            assert args["agent_jwt"] in ("member-agent", "member2-agent"), "a member bonds itself, from its own balance"
+            assert args["agent_jwt"].startswith("member"), "a member bonds itself, from its own balance"
             self.deposits.append(args["amount"])
             if self.deposit_refused:
                 return 400, "Error: HTTP 400: insufficient_balance: the agent holds less than the bond."
@@ -177,6 +200,10 @@ def _run(w: _World, monkeypatch, *, pair=True):
         if role == "commons-member-2":
             return {"email": "member2@throwaway-pl.example.com", "password": "pw3", "developer_id": "503",
                     "access_token": "member2-dev"}
+        if role.startswith("commons-member-"):
+            n = role.rsplit("-", 1)[1]
+            return {"email": f"member{n}@throwaway-pl.example.com", "password": f"pw{n}", "developer_id": f"50{n}",
+                    "access_token": f"member{n}-dev"}
         return {"email": "peer@throwaway-pl.example.com", "password": "pw", "developer_id": "501",
                 "access_token": "peer-dev"}
 
@@ -274,6 +301,84 @@ def test_a_refused_deposit_is_said(monkeypatch):
     why = str(rows["theprotocol_castCommonsBallot"].get("skip_reason"))
     assert "no member of the run's own could be made" in why and "bond deposit answered HTTP 400" in why, why
     assert len(_ballots(w)) == 1, "no ballot without a member"
+
+
+# ── V0652: the season's voter minimum, whoever the run's first voter is (the V0651 pair proof nt261101x1) ─────────────
+def _deletions(w):
+    return [t for t, _a in w.seen if t == "theprotocol_requestAccountDeletion"]
+
+
+def test_a_pair_where_the_runner_is_a_member_adds_a_voter_of_its_own_and_pays(monkeypatch):
+    """V0651's proof: the runner's agents bonded from their own funds (production's posture, no backstop), so its
+    developer was a member, the run made no member of its own, and the season closed on one ballot (too_few_voters):
+    its pay read NOT MEASURED. RED before: the run casts the runner's ballot alone and nothing is paid."""
+    w = _World()
+    rows, admin = _run(w, monkeypatch)
+    assert [(b["agent_jwt"], b["allocations"]) for b in _ballots(w)] == [
+        ("sentinel", {"9": 10}), ("sentinel", {"77": 10}), ("member2-agent", {"77": 10})], _ballots(w)
+    assert _ok(rows.get(PAY_ROW)), rows.get(PAY_ROW)
+    assert w.deposits == [250] and w.state == {4: "paid", 5: "cancelled"} and w.balance == Decimal("6")
+    assert len(_deletions(w)) == 2, "the second developer and the run's member ask for their deletion"
+    assert "member2-agent" not in repr(rows) and "member2-csec" not in repr(rows)
+
+
+def test_a_standing_frame_where_the_runner_is_a_member_makes_no_member(monkeypatch):
+    w = _World()
+    rows, admin = _run(w, monkeypatch, pair=False)
+    assert not [a for t, a in w.seen if t == "theprotocol_createAgent" and a["name"].startswith("mcp-commons-member")]
+    assert w.deposits == [] and PAY_ROW not in rows and len(_ballots(w)) == 2
+
+
+def test_a_voter_of_its_own_that_cannot_be_made_is_said_on_the_pay_row(monkeypatch):
+    w = _World(deposit_refused=True)
+    rows, admin = _run(w, monkeypatch)
+    row = rows[PAY_ROW]
+    why = str(row.get("skip_reason"))
+    assert not row.get("healthy") and not row.get("fail_reason"), row
+    assert "1 of the 2 voters a submission needs" in why and "member 2 of the run's own could not be made" in why, why
+    assert "bond deposit answered HTTP 400" in why, why
+    assert _ok(rows.get("theprotocol_castCommonsBallot")), "the runner's own ballot was taken"
+    assert w.state.get(4) == "cancelled", "an unpaid season is still given back"
+
+
+def test_a_refused_ballot_of_a_member_of_its_own_is_said(monkeypatch):
+    w = _World(refuse_ballot_of=("member2-agent",))
+    rows, admin = _run(w, monkeypatch)
+    why = str(rows[PAY_ROW].get("skip_reason"))
+    assert "1 of the 2 voters" in why and "member 2's ballot answered HTTP 409" in why, why
+
+
+def test_a_season_that_needs_three_voters_gets_two_of_its_own(monkeypatch):
+    w = _World(min_voters=3)
+    rows, admin = _run(w, monkeypatch)
+    assert [b["agent_jwt"] for b in _ballots(w)] == ["sentinel", "sentinel", "member2-agent", "member3-agent"]
+    assert _ok(rows.get(PAY_ROW)), rows.get(PAY_ROW)
+    assert w.deposits == [250, 250] and len(_deletions(w)) == 3
+
+
+def test_a_pair_without_a_member_that_needs_three_voters_makes_three(monkeypatch):
+    w = _World(runner_member=False, min_voters=3)
+    rows, admin = _run(w, monkeypatch)
+    assert [b["agent_jwt"] for b in _ballots(w)] == ["sentinel", "member-agent", "member2-agent", "member3-agent"]
+    assert _ok(rows.get(PAY_ROW)), rows.get(PAY_ROW)
+    assert len(_deletions(w)) == 4
+
+
+def test_the_season_minimum_is_read_from_the_season():
+    assert L._season_min_voters({"min_voters": 3}) == 3
+    assert L._season_min_voters({"min_voters": 1}) == 1
+    for bad in ({}, {"min_voters": 0}, {"min_voters": "3"}, {"min_voters": True}, None, []):
+        assert L._season_min_voters(bad) == 2, bad
+
+
+def test_the_fake_keeps_the_servers_voter_rule():
+    # the control: the tests above prove something only while one voter funds nothing here, as on the server
+    w = _World()
+    w.ballots = {"sentinel": {"77": 10}}
+    assert not w.funded() and w._season(4)["submissions"][1]["award"] is None
+    w.ballots["member2-agent"] = {"77": 10}
+    w.state[4] = "closed"
+    assert w.funded() and w._season(4)["submissions"][1]["award"]["status"] == "pending"
 
 
 @pytest.fixture(autouse=True)

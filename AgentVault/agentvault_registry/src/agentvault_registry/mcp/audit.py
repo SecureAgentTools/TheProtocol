@@ -829,6 +829,15 @@ _TIER_2_TOOLS.update({
     "theprotocol_respondChatRequest",
     "theprotocol_blockChatPrincipal",
     "theprotocol_unblockChatPrincipal",
+    "theprotocol_markChatRead",             # V0652 (w)
+    "theprotocol_getChatUnreadCount",
+    "theprotocol_listChatApprovals",
+    "theprotocol_getChatAttachment",
+    "theprotocol_postChatProgress",         # V0652 (aa)
+    "theprotocol_updateChatProgress",
+    "theprotocol_getChatCardHistory",
+    "theprotocol_getChatBoard",             # V0652 (ac)
+    "theprotocol_updateChatBoard",
 })
 
 # V0650 (a) (2026-10-31) — an agent's status line and its organization's presence (mcp/tools_presence.py).
@@ -861,4 +870,5 @@ _TIER_2_TOOLS.update({
 })
 _TIER_3_TOOLS.update({
     "theprotocol_decideChatApproval",
+    "theprotocol_listWaitingChatApprovals",  # V0652 (w): a decider's read across rooms
 })

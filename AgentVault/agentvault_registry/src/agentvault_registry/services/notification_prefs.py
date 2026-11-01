@@ -7,6 +7,7 @@ to re-enable something the developer switched off, and step 1's short-circuit is
 
     1. audience gate            (operator/admin types never reach plain developers)
     2. MANDATORY                → send. Skips prefs, mutes, thresholds, quiet hours, coalescing.
+   2b. IN-APP ONLY             → never a push channel, whatever a row says (V0652 (z): a room's traffic)
     3. explicit row             (developer_id, type_key, channel)
     4. wildcard row             (developer_id, '*', channel)   — the channel master switch
     5. no v2 rows → LEGACY SIGNALS AS ENABLERS (no-regression rule: the phone-configured
@@ -16,7 +17,8 @@ to re-enable something the developer switched off, and step 1's short-circuit is
     then, only if still sending:
     7. device narrowing         (allowlist may drop; min_transfer may RAISE the threshold)
     8. amount threshold
-    9. quiet hours              (push channels only; UTC with midnight wrap — the EXACT
+    9. quiet hours              (push channels only, except a type that crosses them: V0652 (z), a decision
+                                 someone waits on; UTC with midnight wrap — the EXACT
                                  semantics of routers/websocket.py so the two gates can never
                                  disagree about what "22 to 6" means)
    10. coalescing               (leading-edge send + suppression window + carried count;
@@ -141,6 +143,10 @@ def decide(
     if entry.mandatory:
         return True, "mandatory", None
 
+    # 2b — V0652 (z): an in-app-only type (a room's traffic) is never pushed, whatever a row says
+    if entry.inapp_only and channel in PUSH_CHANNELS:
+        return False, "inapp_only", None
+
     base: Optional[bool] = None
     reason = ""
     threshold: Optional[float] = entry.threshold_default
@@ -226,8 +232,9 @@ def decide(
         if amount is None or float(amount) < float(threshold):
             return False, "threshold", threshold
 
-    # 9 — quiet hours (push only; mandatory already exempted at step 2)
-    if channel in PUSH_CHANNELS and _in_quiet_hours(ctx.notification_prefs, now_hour):
+    # 9 — quiet hours (push only; mandatory already exempted at step 2; V0652 (z): a decision someone waits on
+    # crosses them, its type says so)
+    if channel in PUSH_CHANNELS and not entry.crosses_quiet_hours and _in_quiet_hours(ctx.notification_prefs, now_hour):
         return False, "quiet", threshold
 
     return True, reason, threshold

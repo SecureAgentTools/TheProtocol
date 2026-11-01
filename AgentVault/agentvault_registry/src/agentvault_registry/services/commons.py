@@ -327,6 +327,32 @@ async def fee_collector_balance() -> Optional[Decimal]:
         return None
 
 
+def _tell(type_key: str, devs, title: str, message: str, once_key: Optional[str] = None) -> None:
+    """V0652 (af): a commons notice after the commit that made it true, without making the admin's call wait for a
+    push; `once_key` claims it where a second run could say it again. Never raises."""
+    devs = sorted({int(d) for d in (devs or ()) if d})
+    if not devs:
+        return
+    try:
+        from agentvault_registry.background_tasks import push_notify
+        coro = (push_notify.notify_once(once_key, type_key, devs, ttl_s=400 * 86400, title=title, message=message,
+                                        tags="seedling", click="/ui#/commons")
+                if once_key else push_notify.notify(type_key, devs, title=title, message=message, tags="seedling",
+                                                    click="/ui#/commons"))
+        push_notify.spawn_notice(coro)
+    except Exception:  # noqa: BLE001
+        logger.debug("[COMMONS] %s notice skipped", type_key, exc_info=True)
+
+
+async def _season_people(db: AsyncSession, season_id: int) -> List[int]:
+    """The developers who took part in a season: who submitted work and who cast a ballot."""
+    rows = (await db.execute(text(
+        "SELECT developer_id FROM commons_submissions WHERE season_id = :s AND developer_id IS NOT NULL "
+        "UNION SELECT voter_developer_id FROM commons_ballots WHERE season_id = :s AND voter_developer_id IS NOT NULL"),
+        {"s": int(season_id)})).all()
+    return [int(r[0]) for r in rows]
+
+
 def _emit(event_type: str, season_id: int, data: Dict[str, Any], key: str) -> None:
     try:
         from ..event_emitter import get_event_emitter
@@ -391,6 +417,14 @@ async def open_season(db: AsyncSession, *, admin_id: int, title: str, ends_at: _
     _emit("CommonsSeasonOpened", s.id, {"season_id": s.id, "title": s.title, "budget": _money(s.budget),
                                         "currency": s.currency, "ends_at": _iso(s.ends_at)},
           key=f"commons-opened-{s.id}")
+    # V0652 (af): the members, who cast the ballots, hear that a season is open (once: one season per open)
+    try:
+        from agentvault_registry.services import membership
+        _tell("commons.season_opened", (await membership.members(db)).keys(), "A commons season opened",
+              f"\u201c{s.title}\u201d is open until {s.ends_at:%Y-%m-%d}: submit work, or vote on the work submitted, "
+              f"for a budget of {_money(s.budget)} {s.currency}.")
+    except Exception:  # noqa: BLE001
+        logger.debug("[COMMONS] opened notice skipped", exc_info=True)
     return s
 
 
@@ -660,12 +694,22 @@ async def pay_season(db: AsyncSession, *, admin_id: int, season_id: int) -> Dict
             report.append({"recipient_did": did, "amount": _money(amount), "status": "failed", "error": str(e)[:200]})
             logger.error("[COMMONS] season %s award to %s failed: %s", s.id, did, e)
         await db.commit()
+        # V0652 (af): an award paid (in full or in part) is said to the developer whose work earned it (once: a run
+        # pays only pending or failed awards, so a paid one is never paid, nor said, again)
+        if awards and awards[0].status in ("paid", "partial"):
+            _tell("commons.award", [a.developer_id for a in awards], "A commons award for your work",
+                  f"Season \u201c{s.title}\u201d paid {_money(sum((Decimal(a.funded_amount or 0) for a in awards), Decimal(0)))} "
+                  f"{s.currency} to {did} for the work you submitted"
+                  + ("." if awards[0].status == "paid" else ", part of its award (the rest is owed)."),
+                  once_key=f"commons.award:{s.id}:{did}")
     left = (await db.execute(text(
         "SELECT COUNT(*) FROM commons_awards WHERE season_id = :s AND status IN ('pending', 'failed')"),
         {"s": s.id})).scalar() or 0
     if left == 0:
         s.status, s.paid_at, s.paid_by = "paid", now_utc(), admin_id
         await db.commit()
+        _tell("commons.season_paid", await _season_people(db, s.id), "A commons season was paid",
+              f"Every award of \u201c{s.title}\u201d is settled.", once_key=f"commons.season_paid:{s.id}")
     out = {"season": season_summary(s), "payments": report, "unpaid_awards": int(left), "needs_decision": needs_decision}
     if needs_decision:
         out["decision"] = (f"{len(needs_decision)} award(s) failed more than {int(RETRY_WINDOW.total_seconds() // 3600)} "
@@ -703,6 +747,9 @@ async def write_off_award(db: AsyncSession, *, admin_id: int, season_id: int, aw
     if left == 0:
         s.status, s.paid_at, s.paid_by = "paid", now_utc(), admin_id
     await db.commit()
+    if left == 0:   # V0652 (af): the last open award written off settles the season too (once per season)
+        _tell("commons.season_paid", await _season_people(db, s.id), "A commons season was paid",
+              f"Every award of \u201c{s.title}\u201d is settled.", once_key=f"commons.season_paid:{s.id}")
     logger.warning("[COMMONS] season %s award %s (%s, %s) written off by developer %s: %s", s.id, a.id,
                    a.recipient_did, a.amount, admin_id, a.written_off_reason)
     return a, int(left)

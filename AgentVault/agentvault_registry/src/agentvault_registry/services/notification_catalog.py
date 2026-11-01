@@ -45,6 +45,9 @@ PUSH_CHANNELS: Tuple[str, ...] = ("push_desktop", "push_mobile")
 CATEGORIES: Tuple[str, ...] = (
     "security", "agents", "money", "contracts", "marketplace", "broadcast", "ops",
     "chat",   # §OURSTATE-1 (2026-08-24) — OurChat messages + pings
+    # V0652 (af): the categories the gaps file found without a home (session-lead's NOTIFICATION_GAPS_2026-10-31.md:
+    # "Governance (no category at all today)"), organizations' own events, and the terms
+    "governance", "organizations", "legal",
 )
 SEVERITIES: Tuple[str, ...] = ("info", "warning", "critical")
 AUDIENCES: Tuple[str, ...] = ("developer", "operator", "admin")
@@ -67,6 +70,12 @@ class NotificationType:
     desc_key: Optional[str] = None
     legacy_managed: bool = False          # delivery still on the pre-v2 store (broadcast/CICD)
     emitter: bool = True                  # False = declared, nothing fires it yet ("coming soon")
+    # V0652 (z): a DECISION someone waits on (an approval request) reaches them in quiet hours too; every other type
+    # keeps the quiet hours (the maintainer's plan, item 5: "only decide events cross quiet hours")
+    crosses_quiet_hours: bool = False
+    # V0652 (z): never pushed, whatever a preference says: a room's traffic is read in the app ("push only what
+    # needs you"); in-app (and email, where a type defaults to it) as the preferences say
+    inapp_only: bool = False
 
     def __post_init__(self):
         if not self.label_key:
@@ -119,6 +128,15 @@ CATALOG: Tuple[NotificationType, ...] = (
     _t("account.deleted", "security", "critical",
        default_enabled={"push_desktop": True, "push_mobile": True},
        es_event_types=("DeveloperDeleted",)),
+    # V0652 (af) — the account's own security events the gaps file found missing. A password change and a sign-in from
+    # a device or place this account has not used are the two a person must hear about when it was not them; an API
+    # key's expiry is said 14 days ahead, once per key. No email by default (the maintainer, the room seq 313).
+    _t("security.password_changed", "security", "warning",
+       default_enabled={"inapp": True, "push_desktop": True, "push_mobile": True}, desc_key="notifCatalog.security_password_changed.desc"),
+    _t("security.new_login", "security", "warning",
+       default_enabled={"inapp": True, "push_desktop": True, "push_mobile": True}, coalesce_window_s=600),
+    _t("security.api_key_expiring", "security", "warning",
+       default_enabled={"inapp": True, "push_desktop": True}, desc_key="notifCatalog.security_api_key_expiring.desc"),
 
     # ── agents ────────────────────────────────────────────────────────────
     _t("delegation.granted", "agents", "info",
@@ -150,6 +168,12 @@ CATALOG: Tuple[NotificationType, ...] = (
        default_enabled={"push_desktop": True}, coalesce_window_s=600),
     _t("agent.mtls_revoked", "agents", "warning",
        default_enabled={"push_desktop": True, "push_mobile": True}),
+    # V0652 (af): an agent card this registry can no longer read (said once when its reads have failed three times in
+    # a row, not on every failed read). Grouped: a host that went down for many agents is one bell. (The gaps file's
+    # agent.mtls_expiring is not declared: an external agent's certificate lives 30 minutes by default and is renewed
+    # by calling enable-mtls again, and nothing records its expiry, so there is no expiry to say ahead of.)
+    _t("agent.card_unreachable", "agents", "warning",
+       default_enabled={"inapp": True}, coalesce_window_s=3600),
 
     # ── money (strictly opt-in where it can be frequent) ──────────────────
     _t("money.received", "money", "info",
@@ -167,6 +191,14 @@ CATALOG: Tuple[NotificationType, ...] = (
     _t("forge.royalty_received", "money", "info",
        default_enabled={"push_desktop": True},
        threshold_kind="amount", threshold_default=1.0, coalesce_window_s=600),
+    # V0652 (af): an A2A payment authorized to your agent means work waits for it; an authorization nobody used is
+    # released at its expiry, and the payer hears that its units are free again; a reputation bond released.
+    _t("a2a.payment_authorized", "money", "info",
+       default_enabled={"inapp": True, "push_desktop": True}, coalesce_window_s=60, desc_key="notifCatalog.a2a_payment_authorized.desc"),
+    _t("a2a.payment_expired", "money", "info",
+       default_enabled={"inapp": True}, coalesce_window_s=600),
+    _t("bond.released", "money", "info",
+       default_enabled={"inapp": True, "push_desktop": True}),
 
     # ── contracts (rare per-party and genuinely meaningful → mobile on) ───
     _t("contract.offered", "contracts", "info",
@@ -184,6 +216,9 @@ CATALOG: Tuple[NotificationType, ...] = (
        default_enabled={"push_desktop": True}),
     _t("contract.cancelled", "contracts", "info",
        default_enabled={"push_desktop": True}),
+    # V0652 (af): a contract's deadline is near (said once per contract and deadline)
+    _t("contract.deadline_soon", "contracts", "warning",
+       default_enabled={"inapp": True, "push_desktop": True}),
     # §VCSIGN-2: operator-side alarm — a contract referenced by a LIVE regulatory
     # authorization left the agreed state, so the public countersign no longer
     # verifies (the card drops its digest; the proof endpoint answers 409).
@@ -200,6 +235,14 @@ CATALOG: Tuple[NotificationType, ...] = (
        default_enabled={"push_desktop": True}, coalesce_window_s=300),
     _t("guild.work_submitted", "marketplace", "info",
        default_enabled={"push_desktop": True}),
+    # V0652 (af): an order you bid on or were awarded is cancelled (with its reason); your bid lost to another; an
+    # awarded order's deadline is near (said once per order)
+    _t("guild.order_cancelled", "marketplace", "info",
+       default_enabled={"inapp": True, "push_desktop": True}),
+    _t("guild.bid_declined", "marketplace", "info",
+       default_enabled={"inapp": True}, coalesce_window_s=300),
+    _t("guild.deadline_soon", "marketplace", "warning",
+       default_enabled={"inapp": True, "push_desktop": True}),
     _t("dispute.filed_against_you", "marketplace", "warning",
        default_enabled={"push_desktop": True, "push_mobile": True},
        es_event_types=("DisputeFiled",)),
@@ -228,8 +271,11 @@ CATALOG: Tuple[NotificationType, ...] = (
     # card in the first thread — never silent-on. inapp is the offline
     # fallback the WS-delivered session doesn't need; the coalesce window
     # keeps a burst of messages from machine-gunning the bell.
+    # V0652 (z): a room's traffic is in-app only. What needs a person reaches their devices as its own type below
+    # (an approval request they decide, a mention of them, a direct message, a stranger's first message to them);
+    # the thread's opt-in card used to turn pushes on for ALL of a room's messages.
     _t("chat.message", "chat", "info",
-       default_enabled={"inapp": True}, coalesce_window_s=60),
+       default_enabled={"inapp": True}, coalesce_window_s=60, inapp_only=True, desc_key="notifCatalog.chat_message.desc"),
     # Ping is the consent-shaped knock (law 6): coalesce-EXEMPT because one
     # deliberate nudge must arrive as itself, but preference-obedient — it
     # never overrides a mute and the send side hard rate-limits it.
@@ -241,7 +287,36 @@ CATALOG: Tuple[NotificationType, ...] = (
     # decision someone waits on is the push a person must not miss, like a sign-in approval: on by default, still
     # theirs to turn off. Only deciders get this type; the room's other members keep the in-app chat.message.
     _t("chat.approval_requested", "chat", "info",
+       default_enabled={"inapp": True, "push_desktop": True, "push_mobile": True}, crosses_quiet_hours=True, desc_key="notifCatalog.chat_approval_requested.desc"),
+    # V0652 (z) — what needs you, pushed by default (his plan's item 5; the gaps file's chat table): a message that
+    # names you (a mention, or @all), a message in a direct conversation, and a stranger's first message to you, which
+    # waits in your Requests and had notified nobody (session-tester, the room seq 337-339). Coalesced: a burst is one
+    # bell. They keep your quiet hours.
+    _t("chat.mention", "chat", "info",
+       default_enabled={"inapp": True, "push_desktop": True, "push_mobile": True}, coalesce_window_s=60),
+    _t("chat.direct", "chat", "info",
+       default_enabled={"inapp": True, "push_desktop": True, "push_mobile": True}, coalesce_window_s=60),
+    _t("chat.request", "chat", "info",
        default_enabled={"inapp": True, "push_desktop": True, "push_mobile": True}),
+    # V0652 (af) — the rest of today's chat features (the gaps file's chat table). A choice someone asks you to make is a
+    # decision, like an approval request: it crosses quiet hours (its card arrives with the choice cards, (ab)). An
+    # approval you gave, used: in-app, and pushed when the act it allowed was a production act. A session's status
+    # line that expired (the session went quiet) and a finished progress line (a proof or a roll with its verdict):
+    # in-app.
+    # V0652 (ab): a choice asked of its deciders (chat_service.notice_type_for). emitter=False below until the live
+    # progress cards ((aa)) post them, and until a status line's expiry is watched (the status board, (ac)): declared
+    # now, so the settings already show them
+    _t("chat.choice_requested", "chat", "info",
+       default_enabled={"inapp": True, "push_desktop": True, "push_mobile": True}, crosses_quiet_hours=True,
+       desc_key="notifCatalog.chat_choice_requested.desc"),
+    _t("chat.approval_used", "chat", "info",
+       default_enabled={"inapp": True}),
+    _t("chat.approval_used_production", "chat", "warning",
+       default_enabled={"inapp": True, "push_desktop": True, "push_mobile": True}),
+    _t("chat.progress_finished", "chat", "info",
+       default_enabled={"inapp": True}, coalesce_window_s=60, emitter=False),
+    _t("org.session_offline", "chat", "info",
+       default_enabled={"inapp": True}, coalesce_window_s=600, emitter=False),
     # §CHATDESK C5 — org money moved (fund/remit/dividend/guild settlement to
     # the firm). One bell per RECEIPT, coalesced so a dividend run over many
     # members does not machine-gun anyone; the room card is the record.
@@ -252,6 +327,45 @@ CATALOG: Tuple[NotificationType, ...] = (
     # every connected user — routers/support.py, fixed the same batch).
     _t("support.reply", "ops", "info",
        default_enabled={"inapp": True, "email": False}),
+    # V0652 (ai): the desk is told durably — a new ticket, a requester's reply, a reopen — to every admin_support
+    # holder (routers/support.py::_notify_desk). Its only signal had been a live cue to an open console, so a ticket
+    # filed at night waited unseen. In-app and the desktop push by default, coalesced so a burst of replies is one bell.
+    _t("support.desk", "ops", "info", audience="admin",
+       default_enabled={"inapp": True, "push_desktop": True}, coalesce_window_s=60),
+
+    # ── governance (V0652 (af): no category at all before) ────────────────
+    # A vote you can cast; the same vote 24 h before it closes, only while you have not voted; its result. A commons
+    # season opening, an award to your work, and the season's payment. Quiet: in-app and the desktop; the result and
+    # a season's opening in-app only (they reach every member).
+    _t("governance.proposal_opened", "governance", "info",
+       default_enabled={"inapp": True, "push_desktop": True}, coalesce_window_s=300),
+    _t("governance.vote_closing", "governance", "info",
+       default_enabled={"inapp": True, "push_desktop": True}, desc_key="notifCatalog.governance_vote_closing.desc"),
+    _t("governance.result", "governance", "info",
+       default_enabled={"inapp": True}),
+    _t("commons.season_opened", "governance", "info",
+       default_enabled={"inapp": True}),
+    _t("commons.award", "governance", "info",
+       default_enabled={"inapp": True, "push_desktop": True, "push_mobile": True}),
+    _t("commons.season_paid", "governance", "info",
+       default_enabled={"inapp": True, "push_desktop": True}),
+
+    # ── organizations (V0652 (af)) ────────────────────────────────────────
+    # An invitation waits for you (pushed: it is yours to answer); the one you sent was accepted; a member joined or
+    # left (the owner and admins, and the member who was removed).
+    _t("org.invitation_received", "organizations", "info",
+       default_enabled={"inapp": True, "push_desktop": True, "push_mobile": True}),
+    _t("org.invitation_accepted", "organizations", "info",
+       default_enabled={"inapp": True, "push_desktop": True}),
+    _t("org.member_joined", "organizations", "info",
+       default_enabled={"inapp": True}, coalesce_window_s=300),
+    _t("org.member_left", "organizations", "info",
+       default_enabled={"inapp": True, "push_desktop": True}),
+
+    # ── legal (V0652 (af)) ─────────────────────────────────────────────────
+    # The terms change: the version, the date it takes effect and the link (the legal set 2.5 takes effect 2026-11-03)
+    _t("legal.terms_updated", "legal", "info",
+       default_enabled={"inapp": True, "push_desktop": True}, desc_key="notifCatalog.legal_terms_updated.desc"),
 
     # ── broadcast (delivery stays on the pre-v2 store; panel unifies display) ──
     _t("broadcast.critical", "broadcast", "critical", mandatory=True,
@@ -273,6 +387,17 @@ CATALOG: Tuple[NotificationType, ...] = (
        default_enabled={"push_desktop": True, "push_mobile": True}),
     _t("operator.provisioned", "ops", "info", audience="admin",
        default_enabled={"push_desktop": True}),
+    # V0652 (af) — the frame admin's requests: a frame asks to federate (a decision, in no hurry: it keeps quiet hours),
+    # an operator application arrived; and for the applicant, the decision on it. A webhook whose deliveries keep
+    # failing is said before it is switched off (the developer who owns it).
+    _t("federation.invitation_received", "ops", "warning", audience="admin",
+       default_enabled={"inapp": True, "push_desktop": True, "push_mobile": True}),
+    _t("operator.application_received", "ops", "info", audience="admin",
+       default_enabled={"inapp": True, "push_desktop": True}),
+    _t("operator.application_decided", "ops", "info",
+       default_enabled={"inapp": True, "push_desktop": True, "push_mobile": True}),
+    _t("webhook.failing", "ops", "warning",
+       default_enabled={"inapp": True, "push_desktop": True}, coalesce_window_s=3600, desc_key="notifCatalog.webhook_failing.desc"),
     # §MONEY-R43 (2026-09-04) — "the treasury is running low" reaches a person BEFORE it
     # reaches a caller (background_tasks/treasury_low_watch.py). Default ON for the admin
     # audience on both pushes because the whole point is that somebody hears; NOT mandatory,
@@ -322,6 +447,10 @@ def _validate() -> None:
         if t.threshold_kind == "none":
             assert t.threshold_default is None, f"{t.key}: threshold_default without kind"
         assert t.coalesce_window_s >= 0, f"{t.key}: negative coalesce window"
+        if t.inapp_only:
+            assert not any(t.default_enabled.get(c) for c in PUSH_CHANNELS), f"{t.key}: in-app only, yet a push default"
+        if t.crosses_quiet_hours:
+            assert not t.mandatory, f"{t.key}: mandatory already crosses every rule"
         if t.mandatory:
             # A mandatory type must be deliverable somewhere by default, and severe.
             assert t.severity == "critical", f"{t.key}: mandatory but not critical"

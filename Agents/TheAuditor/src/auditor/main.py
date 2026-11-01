@@ -3005,10 +3005,23 @@ if FRONTEND_DIR.exists() and (FRONTEND_DIR / "assets").exists():
     )
 
 
+def _frontend_file(full_path: str):
+    """The file under FRONTEND_DIR that a request path names, or None. The resolved path must stay inside the resolved
+    directory (code scanning, 2026-11-01), so the catch-all serves the built frontend and nothing beside it."""
+    base = FRONTEND_DIR.resolve()
+    try:
+        candidate = (base / full_path).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+    if not candidate.is_relative_to(base) or not candidate.is_file():
+        return None
+    return candidate
+
+
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
-    static_path = FRONTEND_DIR / full_path
-    if static_path.exists() and static_path.is_file():
+    static_path = _frontend_file(full_path)
+    if static_path is not None:
         content = static_path.read_text()
         media = "text/html"
         if full_path.endswith(".js"):

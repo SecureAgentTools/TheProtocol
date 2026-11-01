@@ -157,6 +157,9 @@ class AutoTallyWorker:
             async with get_db_context() as db:
                 # Refresh dashboard gauge regardless of whether we tally anything
                 await self._refresh_active_gauge(db)
+                # V0652 (af): a vote that closes within a day reminds whoever may vote and has not (once per proposal)
+                from agentvault_registry.services import governance_notices
+                await governance_notices.remind_closing(db)
 
                 expired = await self._find_expired_proposals(db)
                 if not expired:
@@ -205,6 +208,10 @@ class AutoTallyWorker:
                             data=common_payload,
                             idempotency_key=f"proposal_tallied:{proposal.id}",
                         ))
+                        # V0652 (af): its voters and its proposer hear the result (once per proposal)
+                        governance_notices.tell_result(proposal.id, proposal.title, tally_result["status"],
+                                                       tally_result["votes_for"], tally_result["votes_against"],
+                                                       proposal.proposer_did)
                     except ValueError as e:
                         # e.g. "has not ended yet" — race condition, skip
                         logger.debug(f"[AutoTally] Skipping proposal #{proposal.id}: {e}")

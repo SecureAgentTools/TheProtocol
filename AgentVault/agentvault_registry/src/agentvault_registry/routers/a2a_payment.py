@@ -828,6 +828,21 @@ async def authorize_payment(
     if _A2A_PROM_AVAILABLE:
         A2A_PAYMENT_AUTHORIZED_TOTAL.labels(registry=_a2a_registry_label()).inc()
 
+    # V0652 (af): work waits for the payee: its owner hears it (once: a replayed request returned above, before the
+    # insert). Not for the /buy rail, which authorizes and settles in the same call: there nothing waits for anyone.
+    if request.headers.get("x-a2a-rail") != "buy":
+        try:
+            import asyncio as _aio
+            from agentvault_registry.background_tasks.push_notify import notify_agent_owners
+            _aio.create_task(notify_agent_owners(
+                "a2a.payment_authorized", [req.target_agent_did],
+                title="A payment waits on your agent's work",
+                message=f"{caller_did} authorized {amount} {_FRAME_CCY} to your agent {req.target_agent_did} "
+                        f"for its work, until {expires.strftime('%Y-%m-%d %H:%M')} UTC.",
+                tags="moneybag", click="/ui#/a2a-payments"))
+        except Exception:  # noqa: BLE001 — a notice never blocks an authorization
+            logger.debug("[A2APay] authorized notice skipped", exc_info=True)
+
     _resp = AuthorizeResponse(
         token=plain_token,
         token_id=auth.id,
@@ -1362,7 +1377,8 @@ async def buy_service(
                 f"{_SELF_BASE}/api/v1/a2a-payment/authorize",
                 json={"target_agent_did": req.target_agent_did, "amount": amount,
                       "ttl_seconds": req.ttl_seconds},
-                headers=_caller_headers(request, caller_jwt), timeout=30.0,
+                # V0652 (af): the payee is not told of an authorization this call settles itself
+                headers={**_caller_headers(request, caller_jwt), "X-A2A-Rail": "buy"}, timeout=30.0,
             )
         except httpx.RequestError as e:
             resp.stage, resp.error = "failed", f"Authorization unreachable: {e.__class__.__name__}"

@@ -125,6 +125,33 @@ async def _settlement_outcome(token_id: str, token_hash: str, scope: str,
     return "wait", None
 
 
+def _tell_expired(unused_rows, consumed_rows) -> None:
+    """V0652 (af): a2a.payment_expired, after the commit, one notice per agent (a burst of expiries is one line).
+    The payer of an authorization nobody used: its units were never held, nothing was charged. And for one the payee
+    had verified (it did the work) but nobody settled: the payer, and the payee, whose work went unpaid."""
+    from collections import Counter
+    try:
+        import asyncio as _aio
+        from agentvault_registry.background_tasks.push_notify import notify_agent_owners
+        for did, n in Counter(r[0] for r in unused_rows if r[0]).items():
+            _aio.create_task(notify_agent_owners(
+                "a2a.payment_expired", [did], title="A payment authorization expired unused",
+                message=(f"{n} payment authorization{'s' if n != 1 else ''} your agent {did} gave expired unused; "
+                         "nothing was charged."), tags="hourglass", click="/ui#/a2a-payments"))
+        for did, n in Counter(r[0] for r in consumed_rows if r[0]).items():
+            _aio.create_task(notify_agent_owners(
+                "a2a.payment_expired", [did], title="A payment authorization expired before it was settled",
+                message=(f"{n} authorization{'s' if n != 1 else ''} your agent {did} gave expired before settlement "
+                         "after the work was taken up; nothing was charged."), tags="hourglass", click="/ui#/a2a-payments"))
+        for did, n in Counter(r[1] for r in consumed_rows if r[1]).items():
+            _aio.create_task(notify_agent_owners(
+                "a2a.payment_expired", [did], title="Work went unpaid: its authorization expired",
+                message=(f"{n} payment{'s' if n != 1 else ''} your agent {did} took up expired before {'they were' if n != 1 else 'it was'} "
+                         "settled, so the work was not paid."), tags="hourglass", click="/ui#/a2a-payments"))
+    except Exception:  # noqa: BLE001 — a notice never blocks the sweep
+        logger.debug("[A2APay] expiry notices skipped", exc_info=True)
+
+
 async def _expire_stale_tokens():
     """Find and expire tokens past their TTL + recover stale settlements."""
     try:
@@ -137,8 +164,11 @@ async def _expire_stale_tokens():
                 .where(A2APaymentAuthorization.status == A2APaymentStatus.AUTHORIZED.value)
                 .where(A2APaymentAuthorization.expires_at < now)
                 .values(status=A2APaymentStatus.EXPIRED.value)
+                # V0652 (af): who to tell (each row changes status once, so each is told once)
+                .returning(A2APaymentAuthorization.caller_did, A2APaymentAuthorization.target_agent_did)
             )
-            expired = result.rowcount
+            unused_rows = result.all()
+            expired = len(unused_rows)
 
             # 1b. Expire CONSUMED-but-never-settled tokens past TTL. A CONSUMED token
             # (service verified + did the work) whose TTL lapsed without settlement is an
@@ -152,9 +182,12 @@ async def _expire_stale_tokens():
                 .where(A2APaymentAuthorization.status == A2APaymentStatus.CONSUMED.value)
                 .where(A2APaymentAuthorization.expires_at < now)
                 .values(status=A2APaymentStatus.EXPIRED.value)
+                .returning(A2APaymentAuthorization.caller_did, A2APaymentAuthorization.target_agent_did)
             )
-            expired_consumed = result_consumed.rowcount
+            consumed_rows = result_consumed.all()
+            expired_consumed = len(consumed_rows)
             await db.commit()   # the store reads below hold no transaction open
+            _tell_expired(unused_rows, consumed_rows)
 
             # 2. Recover stale SETTLING tokens (background task died)
             # D1 fix (2026-06-12): `consumed_at < cutoff` is NULL-blind — rows that

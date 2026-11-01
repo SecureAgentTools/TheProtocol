@@ -552,6 +552,25 @@ flowchart TB
 
 Developers set their own filters with `GET` and `PATCH /api/v1/developers/me/notification-prefs`: `mute_info`, `mute_warning`, `mute_maintenance` (critical notices cannot be muted), `delivery_in_app`, `delivery_email`, and `quiet_hours_start` / `quiet_hours_end` (hours 0 to 23, UTC; during quiet hours the live push is skipped and the notice waits in the unread list). Email and in-console delivery are independent.
 
+### Typed notices: what reaches you, and where
+
+Besides broadcasts, the registry tells a developer about what concerns them through typed notices. Each type is declared once in the notification catalog (`GET /api/v1/notifications/catalog`), sits in a category, and has a default for each channel: in the console (`inapp`), email, the desktop's web push and the phone's push. A developer changes any of them per type in Settings, Notifications (`GET /api/v1/notifications/prefs/effective`, `PUT /api/v1/notifications/prefs`); a phone's own settings can narrow what reaches it, never widen it. Nothing defaults to email. Quiet hours hold back every push except a decision someone waits on: an approval asked of you in a room.
+
+| Category | What it tells you |
+|---|---|
+| Security | a sign-in that needs your approval, a password changed (by settings, a reset link or a recovery key), a sign-in from a device this account has not used in 180 days, an API key 14 days before it expires, a new device, two-factor changes |
+| Chat | an approval asked of you (also in quiet hours), a message that names you or `@all`, a direct message, a stranger's first message to you, a ping, your approval used (pushed when the act was a production act); a room's other messages stay in the console |
+| Agents | delegations, permits, suspensions, an agent card this registry has failed to read three times in a row |
+| Money | payments over your threshold, funding decisions, an A2A payment authorized to your agent (work waits for it), an authorization that expired unused or unsettled, a reputation bond released |
+| Contracts | offers, milestones, disputes, a contract's deadline a day ahead |
+| Marketplace | Guild awards and payments, a bid on your order, an order you bid on cancelled (with its reason), your bid not chosen, an order's deadline a day ahead (the poster of an open order, the worker of an awarded one) |
+| Governance and commons | a vote you can cast, the same vote a day before it closes while you have not voted, its result, a commons season opening, an award to your work, the season paid |
+| Organizations | an invitation to you, your invitation accepted, a member joined or left |
+| Terms | a new version of the terms, with the date it takes effect, said once to every account that accepts it again at its next sign-in |
+| Operations | for the registry's admins: a frame asking to federate, an operator application; for its applicant, the decision; for a webhook's owner, deliveries failing five times in a row (before ten switch it off) |
+
+Each notice is sent where its action happens, once: a reminder or a notice two workers could both send is claimed on its occasion first.
+
 ### Two dedicated workers
 
 | Worker | Cadence | Job |

@@ -23,6 +23,9 @@ RAIL = {
     "engagement.settled": "contract rail",
     "approval.request": "chat approval rail",      # V0650 (l)
     "approval.decided": "chat approval rail",
+    "choice.request": "chat approval rail",        # V0652 (ab): a choice is an approval request with options
+    "choice.decided": "chat approval rail",
+    "guild.order.live": "Guild rail",          # V0652 (aa)
 }
 
 

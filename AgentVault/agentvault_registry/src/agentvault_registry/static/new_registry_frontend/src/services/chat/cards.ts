@@ -17,6 +17,12 @@
  * file returns semantic fields only.
  */
 
+/** V0652 (ae): how a text file is shown (the registry's chat_media.PREVIEW_KINDS). */
+export type FileKind = 'markdown' | 'json' | 'csv' | 'log' | 'text'
+export const FILE_KINDS: readonly string[] = ['markdown', 'json', 'csv', 'log', 'text']
+/** The types the registry takes as text (chat_media.TEXT_MIME): the files "Open" can show in the thread. */
+export const TEXT_MIMES: ReadonlySet<string> = new Set(['text/plain', 'text/markdown', 'application/json', 'text/csv'])
+
 export interface ChatCard {
   v: number
   type: string
@@ -74,6 +80,13 @@ export type CardView =
   | {
       type: 'media'; attachmentId: string; name: string; mime: string
       bytes: number; human: string; defanged: boolean
+      // V0652 (ae): a text file's first lines, as its registry read them (null when the card carries none, or in a
+      // request from a stranger, where a file shows nothing on sight)
+      preview: string | null; previewKind: FileKind | null; previewTruncated: boolean
+      // why a text file shows no preview: it is not text, or it looks like it holds a credential
+      previewWithheld: 'binary' | 'credential' | null
+      // a text file: "Open" can show it in the thread
+      isText: boolean
     }
   // §OURSTATE-5f — a declarative form. `fields` is data, never markup, and
   // `action` names a door this app already has. Nothing here can fire.
@@ -145,8 +158,38 @@ export type CardView =
       type: 'approval.decided'; approvalId: string; decision: 'approved' | 'denied'; title: string
       decidedAt: string | null; decidedByName: string; decidedById: number | null; role: string
       artifactSha256: string | null; requestDigest: string | null; note: string | null
+      /** V0652 (aa): the one act it opened (V0651 (o)), shown on the card itself; null until used */
+      used: { act: string; actSha256: string | null; at: string | null } | null
+    }
+  // V0652 (aa) — cards that live: updated in place, their history kept (services/chat_live_cards.py)
+  | {
+      type: 'progress'; title: string; state: ProgressState; note: string | null
+      steps: Array<{ label: string; state: StepState; note: string | null }>
+    }
+  | {
+      type: 'guild.order.live'; orderId: string; title: string; status: string; bounty: string | null
+      currency: string; bids: number; workerDid: string | null; workerName: string | null
+      posterName: string | null; events: Array<{ type: string; at: string | null }>
+    }
+  // V0652 (ab) — a choice: an approval request whose decision is one of its options (or none). The same rail posts both.
+  | {
+      type: 'choice.request'; approvalId: string; title: string; options: string[]; reason: string | null
+      expiresAt: string | null; productionImpact: boolean; requesterDid: string
+    }
+  | {
+      type: 'choice.decided'; approvalId: string; decision: 'chosen' | 'denied'; title: string; options: string[]
+      chosen: { index: number; label: string } | null; decidedAt: string | null; decidedByName: string
+      decidedById: number | null; role: string; note: string | null
     }
   | { type: 'unknown'; rawType: string }
+
+export type ProgressState = 'running' | 'passed' | 'failed' | 'cancelled'
+export type StepState = 'pending' | 'running' | 'done' | 'failed' | 'skipped'
+const PROGRESS_STATES: readonly ProgressState[] = ['running', 'passed', 'failed', 'cancelled']
+const STEP_STATES: readonly StepState[] = ['pending', 'running', 'done', 'failed', 'skipped']
+/** V0652 (aa): a verdict closes a progress card; an order's end closes its card (the server's closed_reason). */
+export const PROGRESS_TERMINAL: ReadonlySet<string> = new Set(['passed', 'failed', 'cancelled'])
+export const GUILD_TERMINAL: ReadonlySet<string> = new Set(['settled', 'cancelled', 'expired'])
 
 /** The applet's doors: the server's closed list (services/chat_applet.py ACTIONS), re-applied here. D6-553: open_trade
  *  (the AGORA order ticket for a symbol, which the Pocket thread opens) was accepted by the server and dropped here, so
@@ -158,7 +201,8 @@ const KNOWN = new Set(['pay.request', 'pay.receipt', 'service.call', 'service.re
                        'media', 'applet', 'exchange.listing', 'share.certificate', 'org.work.receipt',
                        'engagement.proposal', 'engagement.counter', 'engagement.offer',
                        'engagement.accepted', 'engagement.milestone', 'engagement.settled',
-                       'approval.request', 'approval.decided'])
+                       'approval.request', 'approval.decided', 'choice.request', 'choice.decided',
+                       'progress', 'guild.order.live'])
 
 /** Trim a decimal string for DISPLAY. The venue stores prices at eighteen
  *  places, so a listing card rendered `1.500000000000000000 BVT` — technically
@@ -418,7 +462,57 @@ export function cardView(card: ChatCard | null | undefined, ctx: CardCtx = {}): 
         artifactSha256: d.artifact_sha256 ? String(d.artifact_sha256) : null,
         requestDigest: d.request_digest ? String(d.request_digest) : null,
         note: d.note ? String(d.note) : null,
+        used: d.used && typeof d.used === 'object' && d.used.act
+          ? { act: String(d.used.act), actSha256: d.used.act_sha256 ? String(d.used.act_sha256) : null,
+              at: d.used.at ? String(d.used.at) : null }
+          : null,
       }
+    case 'progress':
+      return {
+        type: 'progress',
+        title: String(d.title ?? ''),
+        state: (PROGRESS_STATES as readonly string[]).includes(d.state) ? d.state as ProgressState : 'running',
+        note: d.note ? String(d.note) : null,
+        steps: (Array.isArray(d.steps) ? d.steps : []).filter((x: any) => x && typeof x === 'object').map((x: any) => ({
+          label: String(x.label ?? ''),
+          state: (STEP_STATES as readonly string[]).includes(x.state) ? x.state as StepState : 'pending',
+          note: x.note ? String(x.note) : null,
+        })),
+      }
+    case 'guild.order.live':
+      return {
+        type: 'guild.order.live',
+        orderId: String(d.order_id ?? refs.order_id ?? ''),
+        title: String(d.title ?? ''), status: String(d.status ?? 'open'),
+        bounty: d.bounty != null ? trimDecimal(String(d.bounty)) : null, currency: String(d.currency ?? ''),
+        bids: Number(d.bids ?? 0) || 0,
+        workerDid: d.worker_did ? String(d.worker_did) : null, workerName: d.worker_name ? String(d.worker_name) : null,
+        posterName: d.poster_name ? String(d.poster_name) : null,
+        events: (Array.isArray(d.events) ? d.events : []).map((e: any) => ({ type: String(e?.type ?? ''),
+          at: e?.at ? String(e.at) : null })),
+      }
+    case 'choice.request':
+      return {
+        type: 'choice.request',
+        approvalId: String(d.approval_id ?? ''), title: String(d.title ?? ''),
+        options: Array.isArray(d.options) ? d.options.map((o: unknown) => String(o)).slice(0, 5) : [],
+        reason: d.reason ? String(d.reason) : null, expiresAt: d.expires_at ? String(d.expires_at) : null,
+        productionImpact: !!d.production_impact, requesterDid: String(d.requester_did ?? ''),
+      }
+    case 'choice.decided': {
+      const options = Array.isArray(d.options) ? d.options.map((o: unknown) => String(o)).slice(0, 5) : []
+      const ch = d.chosen && typeof d.chosen.index === 'number' && options[d.chosen.index] === String(d.chosen.label ?? '')
+        ? { index: d.chosen.index as number, label: String(d.chosen.label) } : null
+      return {
+        type: 'choice.decided',
+        approvalId: String(d.approval_id ?? ''),
+        decision: d.decision === 'chosen' && ch ? 'chosen' : 'denied',
+        title: String(d.title ?? ''), options, chosen: ch,
+        decidedAt: d.decided_at ? String(d.decided_at) : null, decidedByName: String(d.decided_by_name ?? ''),
+        decidedById: typeof d.decided_by_developer_id === 'number' ? d.decided_by_developer_id : null,
+        role: String(d.role ?? ''), note: d.note ? String(d.note) : null,
+      }
+    }
     case 'engagement.settled':
       return {
         type: 'engagement.settled',
@@ -450,14 +544,24 @@ export function cardView(card: ChatCard | null | undefined, ctx: CardCtx = {}): 
       }
     case 'media': {
       const bytes = Number(d.bytes ?? 0)
+      const mime = String(d.mime ?? '')
+      // the registry's bound (chat_media.PREVIEW_CHARS) applied again: a card shows no more than it may carry
+      const preview = !defanged && typeof d.preview === 'string' && d.preview.trim() ? d.preview.slice(0, 600) : null
+      const kind = FILE_KINDS.includes(d.preview_kind) ? (d.preview_kind as FileKind) : 'text'
+      const withheld = d.preview_withheld === 'binary' || d.preview_withheld === 'credential' ? d.preview_withheld : null
       return {
         type: 'media',
         attachmentId: String(d.attachment_id ?? ''),
         name: String(d.name ?? 'file'),
-        mime: String(d.mime ?? ''),
+        mime,
         bytes,
         human: humanBytes(bytes),
         defanged,
+        preview,
+        previewKind: preview ? kind : null,
+        previewTruncated: !!preview && d.preview_truncated === true,
+        previewWithheld: defanged ? null : withheld,
+        isText: TEXT_MIMES.has(mime),
       }
     }
 
