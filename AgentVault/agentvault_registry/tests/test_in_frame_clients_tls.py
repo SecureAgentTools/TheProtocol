@@ -80,6 +80,8 @@ EXEMPT = {
     ("routers/public_status.py", "_stack_health"): "this registry's own SELF_URL",
     ("routers/teg_integration.py", "fx_rate_public"): "a gateway frame's public host, verified with the system roots",
     ("routers/teg_integration.py", "fx_rates_public"): "a gateway frame's public host, verified with the system roots",
+    # V0651 (r): an operator's quote reads its parent frame's public /fx/rates, the same host the two proxies above read
+    ("routers/teg_integration.py", "_fx_gateway_spot"): "a gateway frame's public host, verified with the system roots",
     ("services/agent_cicd_service.py", "_send_webhook"): "a developer's webhook URL: the frame's SVID is never shown to a third party",
     ("services/exchange_service.py", "run_peg_keeper"): "the retiring mainframes' plain venue list",
     ("services/exchange_service.py", "repatriate_gateway_credits"): "this registry's own loopback, http://localhost:8000",

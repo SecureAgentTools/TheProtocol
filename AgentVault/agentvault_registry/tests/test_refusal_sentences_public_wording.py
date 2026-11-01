@@ -134,7 +134,10 @@ def test_the_reader_finds_the_sentences_it_holds():
     joined = "\n".join(t for _f, _l, t in found)
     for sentence in ("Lock amount must be positive", "No payouts to claim", "Too many pending payment authorizations",
                      "Locking is not enabled on this registry", "Owed, computed, and never paid",
-                     "This is a shared demonstration identity", "nothing was issued", "issuing the certificate failed"):
+                     "This is a shared demonstration identity", "issuing the certificate failed",
+                     # V0651 (p): the bridge's "nothing was issued" left with the bridge; its retirement sentence is
+                     # a module constant the 410 names (the reader follows it)
+                     "The token bridge is retired"):
         assert sentence in joined, sentence
 
 

@@ -126,10 +126,6 @@ MCP_AUTOGEN_CONTRACTS: Dict[str, McpContract] = {
         tier="2",
         skip_reason="autogen-skip: destructive/state-changing \u2014 explicit contract needed",
     ),
-    "theprotocol_bridgeTransfer": McpContract(
-        tier="2",
-        skip_reason="autogen-skip: destructive/state-changing \u2014 explicit contract needed",
-    ),
     "theprotocol_cancelAccountDeletion": McpContract(
         tier="3",
         skip_reason="autogen-skip: destructive/state-changing \u2014 explicit contract needed",

@@ -214,7 +214,8 @@
     <!-- V0650 (l) — approvals pinned ABOVE the history: outside the scroll, so the messages move underneath and the
          requests stay put (his words: "it should stay locked above the chat window"). Org rooms only; decisions go
          with the developer token, never the speaking agent's. -->
-    <OurChatApprovals v-if="kind === 'org'" ref="approvalsPanel" :conversation-id="convId" :token="token" />
+    <OurChatApprovals v-if="kind === 'org'" ref="approvalsPanel" :conversation-id="convId" :token="token"
+                      :focus-id="focusApprovalId" />
 
     <div ref="scrollEl" class="ost-scroll" data-testid="ost-messages">
       <ReadFailedNotice v-if="olderFailed" dense :retry="loadOlder"
@@ -827,6 +828,8 @@ const { actingCurrencyLabel } = useActingContext()
 const walletDid = computed<string>(() => String((auth as any).activeAgent?.did || ''))
 
 const convId = computed(() => String(route.params.id || ''))
+// V0651 (y): the request a link opened (a push, Pocket's Approvals): the pinned panel shows it highlighted
+const focusApprovalId = computed(() => String(route.query.approval || ''))
 const token = computed(() => (auth as any).token || readAccessToken() || '')
 
 const messages = ref<any[]>([])

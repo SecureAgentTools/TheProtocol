@@ -26,8 +26,10 @@ def _env(monkeypatch):
     monkeypatch.setenv("FEDERATION_ENABLED", "true")
 
 
-@pytest.mark.parametrize("name,value", [("TOKEN_BRIDGE_ENABLED", "false"), ("FIAT_ONRAMP_ENABLED", "true"),
-                                        ("ZKP_PHASE_2_ENABLED", "true"), ("IS_CENTRAL_REGISTRY", "true")])
+# V0651 (p): the bridge's switch left this list with the bridge (retired; it turns nothing: the card test pins that)
+@pytest.mark.parametrize("name,value", [("FEDERATION_ENABLED", "false"), ("FIAT_ONRAMP_ENABLED", "true"),
+                                        ("ZKP_PHASE_2_ENABLED", "true"), ("ZKP_PHASE_6_ENABLED", "true"),
+                                        ("IS_CENTRAL_REGISTRY", "true")])
 def test_a_capability_switch_turns_the_tag(monkeypatch, name, value):
     before = _tag()
     monkeypatch.setenv(name, value)

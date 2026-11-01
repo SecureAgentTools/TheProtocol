@@ -3143,7 +3143,7 @@ PARENT_POSTURE_KEYS = (
     # console or target), not posture: EU runs it on as the sandbox tester's console, so amsterdam and lisbon
     # were born with execution on, no target (a run targets the operator itself) and the shared key at its
     # source literal. An operator now starts with the tester off unless someone turns it on deliberately.
-    "TREASURY_MM_ENABLED", "LEGACY_CONTRACTS_ENABLED", "TOKEN_BRIDGE_ENABLED",
+    "TREASURY_MM_ENABLED", "LEGACY_CONTRACTS_ENABLED",   # TOKEN_BRIDGE_ENABLED: retired in V0651, not written
     "ARENA_BETTING_ENABLED", "REGISTRY_STAKING_CLAIM_REWARDS_ENABLED", "TEG_ONBOARDING_MINT_ENABLED",
     "TEG_STAKING_REWARD_CYCLE_ENABLED", "AGENT_RBAC_DEFAULT_ROLES", "LIABILITY_MODE",
     # §BATCH5 — the sync cadence is posture too: the source default is 600 s and the fleet runs 120

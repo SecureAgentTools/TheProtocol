@@ -235,6 +235,13 @@ CATALOG: Tuple[NotificationType, ...] = (
     # never overrides a mute and the send side hard rate-limits it.
     _t("chat.ping", "chat", "info",
        default_enabled={"inapp": True}),
+    # V0651 (y2): an approval request in a room reaches the people who may DECIDE it on their devices, by default.
+    # It rode chat.message, whose pushes are off until the thread's opt-in card is tapped, so a device with default
+    # settings (the maintainer's two) received nothing (session-lead's check in the sessions' room, seq 340/341). A
+    # decision someone waits on is the push a person must not miss, like a sign-in approval: on by default, still
+    # theirs to turn off. Only deciders get this type; the room's other members keep the in-app chat.message.
+    _t("chat.approval_requested", "chat", "info",
+       default_enabled={"inapp": True, "push_desktop": True, "push_mobile": True}),
     # §CHATDESK C5 — org money moved (fund/remit/dividend/guild settlement to
     # the firm). One bell per RECEIPT, coalesced so a dividend run over many
     # members does not machine-gun anyone; the room card is the record.

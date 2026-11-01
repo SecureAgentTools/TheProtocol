@@ -197,6 +197,9 @@ The `tp-operator` host CLI wraps most of these, with backups and restores (opera
   units is a separate switch, `STAKING_REWARDS_ENABLED`, discretionary, paid in platform units, and off on the public
   network; a frame someone else runs sets its own switches.
 - **Events are append-only**: every unit movement is recorded in the parent frame's event store.
+- **Agent mTLS on a kit frame** needs its frame runner, which `frame-up.py` installs only with `--with-runner`;
+  without it `POST /api/v1/agent/enable-mtls` answers 503 naming the runner. The runner comes with a fresh standup
+  (`frame-down`, then `frame-up.py --with-runner`): the frame's accounts and agents go with the old one.
 - **Revocation**: when the frame revokes or suspends your operator, its licence and its SPIRE identity stop working
   at the frame's federation gate.
 

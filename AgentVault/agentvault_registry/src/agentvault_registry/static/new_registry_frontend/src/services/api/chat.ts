@@ -208,6 +208,10 @@ export const chatApi = {
     const q = new URLSearchParams({ status, limit: String(limit) })
     return call('GET', `/conversations/${conversationId}/approvals?${q}`, token)
   },
+  /** V0651 (y): every pending request the caller may decide, across the rooms (Pocket's Approvals). */
+  listWaitingApprovals(token: string, limit = 50) {
+    return call('GET', `/approvals?limit=${Math.max(1, Math.min(200, limit))}`, token)
+  },
   getApproval(token: string, approvalId: string, wait = 0) {
     return call('GET', `/approvals/${encodeURIComponent(approvalId)}?wait=${Math.max(0, Math.min(20, wait))}`, token)
   },

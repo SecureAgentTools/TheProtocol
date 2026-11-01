@@ -33,7 +33,9 @@ vi.mock('vue-router', () => ({ useRoute: () => ({ query: {}, path: '/pocket/appr
 
 import PocketApprovals from './PocketApprovals.vue'
 
-const opts = { global: { stubs: { Icon: true, DecisionQueue: true, ConfirmActionModal: true, Teleport: true, teleport: true, RouterLink: true } } }
+// V0651 (y): the chat's approval requests are their own section with their own tests (PocketChatApprovals.test.ts)
+const opts = { global: { stubs: { Icon: true, DecisionQueue: true, ConfirmActionModal: true, Teleport: true, teleport: true, RouterLink: true,
+  PocketChatApprovals: true } } }
 const grant = (principal: string) => ({ id: principal, principal, permissions: ['teg.transfer'], revoked: false })
 function deferred<T>() {
   let resolve!: (v: T) => void

@@ -970,7 +970,7 @@ def main() -> int:
             urllib.request.urlopen(req, timeout=20); log(f"[push] repo {a.push} exists")
         except urllib.error.HTTPError as e:
             if e.code != 404: raise
-            body = json.dumps({"name": repo, "private": True, "default_branch": "main", "description": "OSS export DRY RUN (fresh history; private; deleted or kept on his word)"}).encode()
+            body = json.dumps({"name": repo, "private": True, "default_branch": "main", "description": "OSS export DRY RUN (fresh history; private; deleted or kept as the maintainer decides)"}).encode()
             req = urllib.request.Request(f"https://git.theprotocol.cloud/api/v1/orgs/{owner}/repos", data=body, method="POST", headers={"Authorization": f"token {tok}", "Content-Type": "application/json"})
             r = json.load(urllib.request.urlopen(req, timeout=30)); log(f"[push] created PRIVATE repo {a.push} (private={r.get('private')})")
         r2 = json.load(urllib.request.urlopen(urllib.request.Request(f"https://git.theprotocol.cloud/api/v1/repos/{owner}/{repo}", headers={"Authorization": f"token {tok}"}), timeout=20))

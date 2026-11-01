@@ -82,15 +82,21 @@ async def refusal_step(rpc: RpcCall, parse: ParseResult, tool: str, tier: str, a
     permission_first_unmeasured (§MCPTEST30 V0639, agentvault2-aa): where the asking agent may lack the permission the
     route checks first (a cloud operator enforcing agent permissions, whose run agent holds no governance role), a 403
     that is the permission check's is NOT MEASURED, naming the permission: the rule under test was not reached, and the
-    403 neither proves nor disproves it. Off by default: everywhere else such a 403 stays the failure it is."""
+    403 neither proves nor disproves it. Off by default: everywhere else such a 403 stays the failure it is.
+
+    §MCPTEST30 (V0651, agentvault2-d3): the words are read in the tool's answer AND in a JSON-RPC error's message. A
+    refusal the MCP layer gives (a tier-3 tool called with an agent's token: require_developer_auth's MCPAuthError,
+    -32001) arrives as error.message, which `parse` never keeps: V0650's pair proof failed a correct refusal on it."""
     scratch: Dict[str, dict] = {}
-    _ok, inner = await step(rpc, parse, tool, tier, args, jwt, scratch, expect_status="error_4xx")
+    _ok, inner = await step(rpc, parse, tool, tier, args, jwt, scratch, expect_status="error_4xx", keep_rpc_message=True)
     name = refusal_row(tool, what)
     row = scratch.get(tool) or lc()._not_measured(name, tier, "NOT MEASURED: the refusal step recorded no answer")
     row["tool_name"] = name
+    rpc_said = str(row.pop("_rpc_message", "") or "")
+    answer = (json.dumps(inner, default=str)[:1200] if inner else "") + (f" {rpc_said}" if rpc_said else "")
     texts = tuple(t for t in ((text,) if isinstance(text, str) else tuple(text)) if t)
     if permission_first_unmeasured and row.get("status_code") == 403:
-        m = _PERMISSION_FIRST.search(json.dumps(inner, default=str)[:1200] if inner else "")
+        m = _PERMISSION_FIRST.search(answer)
         if m:
             outcomes[name] = lc()._not_measured(
                 name, tier, f"NOT MEASURED: the agent permission check answered first (HTTP 403, {m.group(1)}): this "
@@ -110,8 +116,7 @@ async def refusal_step(rpc: RpcCall, parse: ParseResult, tool: str, tier: str, a
             row["healthy"] = False
             row["fail_reason"] = f"{bare(tool)} refused {what} with HTTP {st}, not one of {list(codes)}"
         elif texts:
-            blob = json.dumps(inner, default=str)[:1200] if inner else ""
-            if not any(t.lower() in blob.lower() for t in texts):
+            if not any(t.lower() in answer.lower() for t in texts):
                 said = repr(texts[0]) if len(texts) == 1 else "any of " + ", ".join(repr(t) for t in texts)
                 row["healthy"] = False
                 row["fail_reason"] = (f"{bare(tool)} refused {what} with HTTP {st}, but not for the rule under test "

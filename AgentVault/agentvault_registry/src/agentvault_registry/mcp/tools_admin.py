@@ -3160,36 +3160,8 @@ async def get_attestations_analytics(auth: MCPAuthContext) -> Dict[str, Any]:
     return await _admin_get(auth, "/api/v1/admin/attestations/analytics")
 
 
-# ===========================================================================
-# §pass70 Sprint 18 — Admin (4 new — bridge mutations)
-# ===========================================================================
-
-async def bridge_mint_wrapped(auth: MCPAuthContext, agent_did: str, amount: str, source_frame: str) -> Dict[str, Any]:
-    """HIGHLY DESTRUCTIVE: mint wrapped AVT on this frame after cross-frame bridge transfer (sovereign-mainframe-only). Admin only."""
-    if not agent_did or not amount or not source_frame:
-        return {"error": "agent_did, amount, source_frame are required"}
-    return await _admin_post(auth, "/api/v1/bridge/mint-wrapped", json_body={"agent_did": agent_did, "amount": amount, "source_frame": source_frame})
-
-
-async def bridge_redeem(auth: MCPAuthContext, bridge_tx_id: str, agent_did: str) -> Dict[str, Any]:
-    """HIGHLY DESTRUCTIVE: redeem wrapped units (burns wrapped, unlocks original). Admin only."""
-    if not bridge_tx_id or not agent_did:
-        return {"error": "bridge_tx_id and agent_did are required"}
-    return await _admin_post(auth, "/api/v1/bridge/redeem", json_body={"bridge_tx_id": bridge_tx_id, "agent_did": agent_did})
-
-
-async def bridge_unlock(auth: MCPAuthContext, bridge_tx_id: str) -> Dict[str, Any]:
-    """HIGHLY DESTRUCTIVE: unlock bridged AVT on source frame after redeem confirmation. Admin only."""
-    if not bridge_tx_id:
-        return {"error": "bridge_tx_id is required"}
-    return await _admin_post(auth, "/api/v1/bridge/unlock", json_body={"bridge_tx_id": bridge_tx_id})
-
-
-async def get_bridge_status(auth: MCPAuthContext, bridge_tx_id: str) -> Dict[str, Any]:
-    """Get status of a cross-frame bridge transfer by tx_id. Admin only."""
-    if not bridge_tx_id:
-        return {"error": "bridge_tx_id is required"}
-    return await _admin_get(auth, f"/api/v1/bridge/status/{seg(bridge_tx_id)}")
+# §pass70 Sprint 18's four bridge tools (issue wrapped, redeem, unlock, status) were retired in V0651 (p) with the
+# token bridge: /api/v1/bridge/* answers 410 Gone (routers/token_bridge.py).
 
 
 # ===========================================================================
@@ -4592,10 +4564,6 @@ ADMIN_TOOL_SCHEMAS = [
     {"name": "theprotocol_testApiFlow", "description": "Test a complete API flow scenario. Admin only.", "inputSchema": {"type": "object", "properties": {"flow_name": {"type": "string"}}, "required": ["flow_name"]}},
     {"name": "theprotocol_getAttestationsAnalytics", "description": "Aggregate attestation analytics. Admin only.", "inputSchema": {"type": "object", "properties": {}}},
     # ─── §pass70 Sprint 18 (Admin — 4 new) ────────────────────────────────
-    {"name": "theprotocol_bridgeIssueWrapped", "description": "HIGHLY DESTRUCTIVE: issue wrapped units after a cross-frame bridge transfer. Sovereign-mainframe-only. Admin.", "inputSchema": {"type": "object", "properties": {"agent_did": {"type": "string"}, "amount": {"type": "string"}, "source_frame": {"type": "string"}}, "required": ["agent_did", "amount", "source_frame"]}},
-    {"name": "theprotocol_bridgeRedeem", "description": "HIGHLY DESTRUCTIVE: redeem wrapped units (burns wrapped, unlocks original). Admin.", "inputSchema": {"type": "object", "properties": {"bridge_tx_id": {"type": "string", "minLength": 1, "maxLength": 64}, "agent_did": {"type": "string"}}, "required": ["bridge_tx_id", "agent_did"]}},
-    {"name": "theprotocol_bridgeUnlock", "description": "HIGHLY DESTRUCTIVE: unlock bridged units on the source frame. Admin.", "inputSchema": {"type": "object", "properties": {"bridge_tx_id": {"type": "string", "minLength": 1, "maxLength": 64}}, "required": ["bridge_tx_id"]}},
-    {"name": "theprotocol_getBridgeStatus", "description": "Get cross-frame bridge transfer status. Admin.", "inputSchema": {"type": "object", "properties": {"bridge_tx_id": {"type": "string"}}, "required": ["bridge_tx_id"]}},
     # ─── §pass70 Sprint 19 (Admin — 8 new) ────────────────────────────────
     {"name": "theprotocol_listAdminBundlesReports", "description": "List pending bundle moderation reports. Admin only.", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "theprotocol_dismissBundleReport", "description": "Dismiss a bundle report. resolution is a short word or phrase (1-40 characters), note optional. Admin only.", "inputSchema": {"type": "object", "properties": {"report_id": {"type": "integer"}, "resolution": {"type": "string", "minLength": 1, "maxLength": 40}, "note": {"type": "string", "maxLength": 500}}, "required": ["report_id", "resolution"]}},

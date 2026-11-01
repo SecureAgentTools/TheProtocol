@@ -26,10 +26,10 @@ Running a cloud operator, the stack of chapters 00 to 10, is open today: apply, 
 | Issuance | none (`MINTING_AUTHORITY=disabled`) | its own TEG issues the frame's unit |
 | Unit | its parent frame's (ECU under EU) | its own |
 | Trust setup | a federation licence from its parent frame | a bilateral handshake with each peer, plus the network licence where the network enforces licences |
-| Value across registries | cross-registry transfers; another unit only through its frame's FX route | the same-unit rail, cross-frame FX and, where switched on, the wrapped-unit bridge |
+| Value across registries | cross-registry transfers; another unit only through its frame's FX route | the same-unit rail and cross-frame FX |
 | Relationship | a tenant of one frame | a sovereign peer |
 
-The boundary is enforced in code. The frame-only routes (issuance, federation licence issuance, the wrapped-unit bridge, the admin side of frame invitations, cloud-operator provisioning) answer **HTTP 404** on any registry that is not a frame, with a `detail` that starts with the code word `mainframe_only:` (a registry before V0640 answered 503). A registry counts as a frame only when its name is on the frame allowlist (`MAINFRAME_REGISTRY_NAMES` extends it) and `IS_CENTRAL_REGISTRY=true`. A cloud operator never passes that gate, by design.
+The boundary is enforced in code. The frame-only routes (issuance, federation licence issuance, the admin side of frame invitations, cloud-operator provisioning) answer **HTTP 404** on any registry that is not a frame, with a `detail` that starts with the code word `mainframe_only:` (a registry before V0640 answered 503). A registry counts as a frame only when its name is on the frame allowlist (`MAINFRAME_REGISTRY_NAMES` extends it) and `IS_CENTRAL_REGISTRY=true`. A cloud operator never passes that gate, by design.
 
 ## The topology today
 
@@ -128,42 +128,9 @@ Each frame's supply ledger must stay self-contained: a transfer across the bound
 
 When both sides settle in the same unit (a frame and its operators, or two frames that both settle in ECU), the cross-registry transfer moves the amount one to one. The two TEGs settle it between them (a two-phase commit by default, `TEG_CROSS_FRAME_BACKEND`), and the 0.5% cross-registry fee goes to the receiving registry (`fees.cross_registry` on its card). There is no wrapping and no exchange rate. EU and ASIA have different units, so payments between them take the FX path.
 
-### The wrapped-unit bridge (off on the production frames)
+### The wrapped-unit bridge (retired)
 
-The bridge moves units to another frame as a wrapped representation: it locks the amount on the source frame and credits a wrapped balance of the same amount on the destination; redeeming burns the wrapped balance and unlocks the original. The original stays on the source ledger, locked (the supply audit reports it as `bridge_locked`), and the destination reports the wrapped units apart (`wrapped_foreign`), so each frame's own supply audit holds.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant A as Agent on frame 1
-    participant R1 as Frame 1 registry and TEG
-    participant R2 as Frame 2 registry and TEG
-    participant B as Agent on frame 2
-    A->>R1: POST /api/v1/bridge/transfer<br/>(target_agent_did, amount)
-    R1->>R1: lock the amount (still in frame 1's supply)
-    R1->>R2: POST /api/v1/bridge/mint-wrapped (mutual TLS)
-    R2->>R1: POST /api/v1/bridge/confirm-lock (mutual TLS)
-    R1-->>R2: confirmed: the lock is held
-    R2->>B: credit a wrapped balance of the amount
-    Note over R1,R2: an issuance that fails unlocks the amount at once<br/>a lock left without an issuance expires after 5 minutes
-    B->>R2: POST /api/v1/bridge/redeem (later)
-    R2->>R2: burn the wrapped balance
-    R2->>R1: POST /api/v1/bridge/unlock (mutual TLS)
-    R1->>A: the original units unlocked
-```
-
-The bridge is a registry switch, `TOKEN_BRIDGE_ENABLED`. Where it is off, its routes are not mounted and answer 404. The production frames run with it off, and so does a frame stood up with the kit; the code default is on. A registry says which it runs in `token_bridge_enabled` of its public `/api/v1/public/registry-config`, and its signed card agrees: `capabilities.bridge_capability` is `frame_to_frame` only where the bridge is mounted on a federated registry, and `none` otherwise.
-
-Where the bridge runs, its routes are frame-only (404 `mainframe_only` elsewhere):
-
-| Call | Who calls it |
-|---|---|
-| `POST /api/v1/bridge/transfer` | an agent (agent token, permission `teg.transfer`); body `target_agent_did`, `amount` (above 0, at most 100,000), optionally `target_trust_domain` or `target_frame_url` |
-| `POST /api/v1/bridge/redeem` | the agent the wrapped units were issued to (agent token); body `bridge_tx_id`, the transfer to redeem (whole, once); the amount, the locked agent and the source frame come from the frame's record of that transfer |
-| `GET /api/v1/bridge/status/{bridge_tx_id}` | anyone |
-| `POST /api/v1/bridge/mint-wrapped`, `POST /api/v1/bridge/unlock`, `POST /api/v1/bridge/confirm-lock` | the other frame's registry, over mutual TLS; an issuance comes only from an active frame peer that names itself as the source, and is made only after that frame confirms the lock (`confirm-lock`: a transfer it recorded and still holds locked, for the same sending agent, receiver and amount, answered only to the frame the transfer targets); an unlock names a transfer this frame locked, and only the frame holding its wrapped units can release it, once |
-
-Nothing checks automatically that the amount locked on one frame equals the wrapped amount outstanding on the other. Each frame's own supply audit holds its side, and the cross-frame audit (`GET /api/v1/admin/supply-auditor/cross-frame-audit`, admin) lists, per peer frame, the bridge events this frame replicated: counts of locks, unlocks, issues and burns, not amounts.
+The bridge moved units to another frame as a wrapped representation: it locked the amount on the source frame and credited a wrapped balance of the same amount on the destination, and a redemption burned the wrapped balance and unlocked the original. It is retired since V0651, on every registry: every `/api/v1/bridge/*` route answers `410 Gone` with a sentence that names the way on, whatever the registry's `TOKEN_BRIDGE_ENABLED` line says. That line changes nothing and can go from the env; the configuration catalog (`/api/v1/public/env-catalog`) lists it under `retired`. `token_bridge_enabled` in `/api/v1/public/registry-config` is false on every registry, and the signed card's `capabilities.bridge_capability` is `none`. A frame keeps its bridge history in `bridge_transactions`.
 
 ### Cross-frame FX (unit swap): a reserve-mediated AMM
 
@@ -194,6 +161,8 @@ There is no separate swap call: the FX path runs inside `POST /api/v1/teg/cross-
 - `GET /api/v1/teg/fx/pool` (agent token): the two reserves, the spot price, `k` and the mark-to-market, each with its unit named (`x_currency`, `y_currency`, `mtm_currency`): on a sovereign frame, x is the peer frame's reserve and y the frame's own.
 
 A cloud operator holds no reserve. Its cross-currency transfers go through the **route engine**: the operator sends one to one to its frame's `@fx_router` agent, the frames convert once between their reserves, and the far frame delivers one to one to the receiver. The engine is its own switch, `FX_ROUTE_ENABLED` (off by default, on at EU and ASIA, `fees.fx.route_enabled` on the card), and it needs the frame's `@fx_router` agent named in `FX_ROUTER_DID`. The kit's standup issues that agent and turns the switch on with it, and the provisioner gives each cloud operator its frame as its gateway. The frames continue a route between themselves with `POST /api/v1/teg/fx/route-hop`, a federation-authenticated call, not one you make.
+
+An operator's quote is priced where its transfer converts, at its frame: the ingress leg's 0.5% fee (`origin_fee`), then the frame's live spot from its public rates less the pool fee, and the delivery leg's 0.5% when the receiver is on an operator of the far frame (`delivery_fee`); `rate_mode` says `gateway_spot` and `reserve_frame` names the frame. When the frame's rate cannot be read, the quote answers 503 rather than a rate of its own. An operator's `GET /api/v1/teg/fx/rate` and `/rates` answer its frame's, found the way its transfers find the frame (its peer row's address, on the public port).
 
 Frame admins watch the corridor in the console's FX Desk (`#/admin/fx`, the treasury admin flag): live rates, the pool, the reserves, the swap feed and an integrity panel. The panel reads the cross-frame audit above, which checks three invariants: the frame's supply delta is 0, its reserve is at or above its floor (`FX_RESERVE_FLOOR_<UNIT>`, 0 by default), and every settled swap conserves value (amount in times rate equals amount out plus fee).
 
@@ -246,4 +215,4 @@ What the federation decides together goes through federation proposals. Where `F
 
 - The full sovereign stack: its own SPIRE server, Event Store and a TEG that issues its own unit, under its own DNS name and certificate, plus the kit above.
 - A treasury issued at stand-up (1,000,000 units unless the request says otherwise). One issuance call accepts at most `TEG_MINT_MAX_AVT` (1,000,000 in the kit's network profile), so a larger treasury is issued in pieces of at most that size.
-- The handshake, for the day it federates; either side can still revoke it on its own. Federation brings the same-unit rail; cross-frame FX and the wrapped-unit bridge are switched on separately, on both frames.
+- The handshake, for the day it federates; either side can still revoke it on its own. Federation brings the same-unit rail; cross-frame FX is switched on separately, on both frames.

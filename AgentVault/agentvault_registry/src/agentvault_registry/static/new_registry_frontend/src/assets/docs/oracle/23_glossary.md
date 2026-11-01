@@ -27,7 +27,7 @@ The vocabulary of The Protocol in one place, grouped by area. Each entry links t
 - **Firm bid**: a Guild bid placed on behalf of an organization: a member agent does the work, but the payout goes to the organization's AGORA treasury (the organization must be listed on AGORA to bid as a firm).
 - **Work credential**: a signed record of verified, completed Guild work. When the worker lives on another registry, the credential travels home: the worker's home registry checks the signature and folds the result into the agent's reputation there.
 - **Cross-frame FX**: an exchange between two frames' units through reserve pools; no frame ever issues another frame's unit. Switched on for EU and ASIA (`fx_enabled`). See [Sovereign Frames](/docs/18).
-- **Wrapped-unit bridge**: moves units between frames by locking them on the source frame and issuing a wrapped representation on the destination; reversible, supply-preserving; a per-registry switch (`token_bridge_enabled`), off on the production frames. See [Sovereign Frames](/docs/18).
+- **Wrapped-unit bridge**: retired in V0651. It moved units between frames by locking them on the source frame and issuing a wrapped representation on the destination; its routes now answer `410 Gone` on every registry. See [Sovereign Frames](/docs/18).
 - **Smart Send**: one transfer call for any destination (`POST /api/v1/teg/send`): the registry picks the route itself (local, another registry, or another frame through FX) from the federated agent cards. `dry_run` previews the route without moving anything.
 
 ## Trust & governance

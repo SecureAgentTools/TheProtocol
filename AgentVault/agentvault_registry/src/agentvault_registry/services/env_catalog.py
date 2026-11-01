@@ -185,6 +185,15 @@ CATALOG: Tuple[Entry, ...] = (
 )
 
 BY_KEY: Dict[str, Entry] = {e.key: e for e in CATALOG}
+
+# V0651 (p): switches that no longer do anything, said here so a frame request, an application or an operator reading
+# its env learns why a line it carries changes nothing (each still listed in sessionlogs2026/FLAGMAP_*).
+RETIRED: Tuple[Dict[str, str], ...] = (
+    {"env": "TOKEN_BRIDGE_ENABLED", "since": "V0651",
+     "sentence": ("Retired: the token bridge is gone on every registry, so /api/v1/bridge/* answers 410 Gone whatever "
+                  "this says. Move units between frames with a cross-registry transfer, or across currencies through "
+                  "the FX route; the bridge's history is kept.")},
+)
 GROUPS: Tuple[str, ...] = ("economy", "agents", "access", "governance", "operations")
 
 _TRUE = {"1", "true", "yes", "on"}
@@ -265,4 +274,5 @@ def public_view(env: Mapping[str, str], role: str) -> dict:
             "default": e.default, "scope": e.scope, "reason": e.reason or None, "pair": e.pair,
             "env": e.primary, "current": opt, "current_source": how,
         })
-    return {"catalog_version": 1, "role": role, "groups": list(GROUPS), "entries": entries}
+    return {"catalog_version": 1, "role": role, "groups": list(GROUPS), "entries": entries,
+            "retired": [dict(r, set_here=(env.get(r["env"]) is not None)) for r in RETIRED]}

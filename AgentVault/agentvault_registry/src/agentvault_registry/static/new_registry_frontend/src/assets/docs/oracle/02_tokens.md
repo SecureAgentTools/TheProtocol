@@ -39,8 +39,8 @@ Every agent's account in its registry's TEG (the ledger service, which holds bal
 | Balance | TEG field | What it is | What you can do with it |
 |---|---|---|---|
 | **Liquid** | `token_balance` | Spendable units | transfer, pay for services, fund a bond or an escrow, lock (where locking is on) |
-| **Locked** | `locked_balance` | Units set aside: lock positions and the units the wrapped-unit bridge holds where it runs. While a two-phase-commit transfer to another registry is in flight, its amount is marked here too, and it leaves the liquid balance only when the transfer commits | release a lock position once its lock has run out (chapter 03) |
-| **Wrapped** | `wrapped_balance` | Wrapped units received from another frame through the wrapped-unit bridge (chapter 18), on a registry that runs it | spend on the receiving frame; redeem across the bridge |
+| **Locked** | `locked_balance` | Units set aside: lock positions. While a two-phase-commit transfer to another registry is in flight, its amount is marked here too, and it leaves the liquid balance only when the transfer commits | release a lock position once its lock has run out (chapter 03) |
+| **Wrapped** | `wrapped_balance` | Units the wrapped-unit bridge issued against a lock on another frame; the bridge is retired since V0651 (chapter 18), so no registry issues them any more | nothing |
 
 A fourth field, `audited_balance`, is an integrity copy that the TEG keeps equal to `token_balance`. A transfer refuses to run when the two differ for its sender or receiver (the TEG setting `AUDITED_BALANCE_ENABLED`, on by default). It is not a wallet you interact with.
 
@@ -358,16 +358,15 @@ sequenceDiagram
 - **Licence check.** A receiving registry whose federation licence is suspended, revoked or missing is refused where the sending registry sets `FEDERATION_ENFORCEMENT_ACTIVE`; otherwise the attempt is recorded and the transfer proceeds (see above).
 - **Quarantine check.** A receiving registry that the sending registry holds in compliance quarantine, or has blacklisted, is refused (`403`) before anything moves, whatever `FEDERATION_ENFORCEMENT_ACTIVE` says. No FX route leg is sent to it either. The receiving side asks too: a credit that arrives on the asynchronous rail from a trust domain in which the receiving registry holds a registry in quarantine, soft quarantine or blacklisted is not booked. The message names only the sender's trust domain, which a frame shares with its operators, so one of them in quarantine stops the domain's credits. The transfer is recorded as refused, no settlement goes back, and the sending registry refunds its sender when the transfer times out; a refused transfer is not credited later.
 
-## Transfer Modes: The Four Paths
+## Transfer Modes: The Three Paths
 
-There are **four** ways units can move between agents. The first three move the frame's own units; the fourth moves wrapped units and is switched off on the production frames.
+There are **three** ways units can move between agents, all three in the frame's own units. A fourth, the wrapped-unit bridge, is retired (below).
 
 | Path | Endpoint | Units | Settlement | On the production frames |
 |---|---|---|---|---|
 | **1. Same registry** | `POST /api/v1/teg/transfer` | native | one TEG transaction | every transfer inside one registry |
 | **2. Cross-registry, two-phase commit** | `POST /api/v1/teg/cross-registry-transfer` (`backend=2pc`, the default) | native | both TEGs commit before the answer | between a frame and its cloud operators, and between two operators of one frame |
 | **3. Cross-registry, asynchronous** | `POST /api/v1/teg/cross-registry-transfer?backend=async` | native | locked at once, credited later, refunded on timeout | not used: a frame and its operators are in one trust domain, which always takes path 2 |
-| **4. Wrapped-unit bridge** | `POST /api/v1/bridge/transfer` | **wrapped** | lock on the source, issue wrapped units on the target | off (`TOKEN_BRIDGE_ENABLED=false`; the routes answer `404`) |
 
 A transfer between EU and ASIA (two units) goes through the conversion pool, through the same cross-registry endpoint.
 
@@ -390,35 +389,12 @@ Q: Is the receiver on the same registry as the sender?
 | Same registry | `TokensTransferred`, `TransactionFeeCollected` | (the same frame) |
 | Two-phase commit | `TokensTransferred`, `TransactionFeeCollected`, `CrossRegistryTransferCompleted`; also `CrossFrameTransferSettled` when the two registries are in different trust domains | none of its own for the credit, which happens inside the same two-phase commit; when the sender's registry asks it to sync the receiver's balance, the receiving registry records `CrossRegistryTransferCompleted` and the same `TokensTransferred` (same key, so one row where the two registries share an event store) |
 | Asynchronous | `TokensTransferred`, `TransactionFeeCollected`, `CrossFrameTransferInitiated`; `CrossFrameTransferRefunded` on timeout | `CrossFrameTransferSettled` |
-| Wrapped-unit bridge | `TokensBridgeLocked`; `TokensBridgeUnlocked` on redemption | `WrappedTokensMinted` |
 
 `CrossRegistryTransferCompleted` and `CrossFrameTransferSettled` are records for audit (the event store does not project them into balances). On every path the balances themselves reach the ledger as `LedgerBalanceChanged` events from the TEGs involved.
 
-### Path 4: the wrapped-unit bridge
+### The retired bridge
 
-The bridge leaves the original units on the source frame and creates a stand-in on the target frame. A bridge transfer moves the amount (at most 100,000 per call) from the sender's liquid balance into its locked balance on the source frame, then asks the target frame to add the same amount to the receiver's `wrapped_balance`:
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant SA as Sender Agent
-    participant RA as Registry A (source frame)
-    participant TA as TEG A
-    participant RB as Registry B (target frame)
-    participant TB as TEG B
-
-    SA->>RA: POST /bridge/transfer<br/>target_agent_did, amount
-    RA->>TA: /bridge/lock: liquid to locked
-    RA->>RB: /bridge/mint-wrapped (federation mTLS)
-    RB->>RA: /bridge/confirm-lock: is this lock held?
-    RA-->>RB: confirmed
-    RB->>TB: /bridge/mint: wrapped_balance + amount
-    RB->>RB: record WrappedTokensMinted
-    RA->>RA: record TokensBridgeLocked
-    RA-->>SA: status COMPLETED
-```
-
-The target frame issues only after the source frame confirms the lock: that it recorded this transfer and still holds it locked, for the same sending agent, receiver and amount. Redeeming (`POST /api/v1/bridge/redeem` on the target frame, naming the transfer's `bridge_tx_id`) burns the wrapped units of that transfer there and, on the source frame, releases exactly that transfer's lock: its amount moves from the locked balance of the agent that sent it back to that agent's liquid balance (`TokensBridgeUnlocked`). Only the agent the wrapped units were issued to can redeem them, and a transfer is redeemed once. Only a frame runs a bridge (a cloud operator does not), and only where `TOKEN_BRIDGE_ENABLED` is on; on EU and ASIA it is off and value moves between the frames through the conversion pool instead. Chapter 18 describes the bridge in full.
+A fourth path, the wrapped-unit bridge, locked the amount on the source frame and issued the same amount of wrapped units on the target frame. It was off on the production frames from their start and is retired since V0651, on every registry: every `/api/v1/bridge/*` route answers `410 Gone` with a sentence that names the way on, and its MCP tool `bridgeTransfer` is gone. Between frames of one unit, use path 2 or 3; between units, the conversion pool. Each registry keeps the bridge's history in `bridge_transactions` (an admin reads its totals through `getBridgeAggregate`).
 
 ## Getting Units
 

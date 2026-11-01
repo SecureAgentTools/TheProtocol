@@ -6,7 +6,8 @@ sets them OFF. A surface that is off is not mounted (or, for the arena bet, refu
 so it cannot move value on a network that never chose it.
 
   LEGACY_CONTRACTS_ENABLED   the pre-spine /api/v1/contracts/ RUC family (routers/contracts.py)
-  TOKEN_BRIDGE_ENABLED       /api/v1/bridge/* wrapped-token transfers (routers/token_bridge.py)
+  TOKEN_BRIDGE_ENABLED       RETIRED in V0651 (p): /api/v1/bridge/* answers 410 Gone on every registry whatever it
+                             says (routers/token_bridge.py; services/env_catalog.RETIRED)
   ARENA_BETTING_ENABLED      the Robo Wars `robowars_bet` tool (arena/mcp_server.py)
   (TEG side, same shape)     TEG_ONBOARDING_MINT_ENABLED — the TEG's own onboarding faucet
   (already flagged)          TREASURY_MM_ENABLED, TEG_STAKING_REWARD_CYCLE_ENABLED,
@@ -16,7 +17,8 @@ from __future__ import annotations
 
 import os
 
-LEGACY_SURFACES = ("LEGACY_CONTRACTS_ENABLED", "TOKEN_BRIDGE_ENABLED", "ARENA_BETTING_ENABLED")
+# the surfaces still retired behind a flag (the token bridge left this list in V0651 (p): retired outright)
+LEGACY_SURFACES = ("LEGACY_CONTRACTS_ENABLED", "ARENA_BETTING_ENABLED")
 _OFF = {"0", "false", "no", "off"}
 
 

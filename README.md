@@ -182,7 +182,9 @@ root a peer needs before it can verify you. Everything else stays on loopback. `
 relay (it mails nobody), `--edge-tls internal` uses Caddy's own CA on a host that cannot answer on 80/443, and the
 port flags move any of the five. On Windows, run all of it inside WSL2 and keep a WSL shell open while the frame runs:
 WSL stops an idle distribution, and every container in it. `--with-runner` also installs the frame runner (a root systemd service).
-Agents on the frame get their mTLS certificates through it (without it the frame refuses them and records nothing),
+Agents on the frame get their mTLS certificates through it (without it the frame refuses them and records nothing; the
+runner comes with a standup, so a frame stood up without it gets it by a fresh standup: `frame-down.py`, then `frame-up.py
+--with-runner`, and the frame's accounts and agents go with the old one),
 and Frame Management can provision cloud operators on the same host, each reachable as `<slug>.frame.example.org` through the
 same edge (point `*.frame.example.org`, or one record per operator, at the host). An operator is four steps in the
 console: the operator applies (Operator applications), the frame admin approves (the answer carries a one-time

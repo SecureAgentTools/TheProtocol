@@ -5949,6 +5949,9 @@ class FxQuoteResponse(BaseModel):
     # §MCPTEST30 (V0528): set only for a receiver on a leaf of the destination frame
     reserve_frame: Optional[str] = None   # the frame whose pool priced the swap (not the receiver's home)
     delivery_fee: Optional[str] = None    # the 1:1 delivery leg's 0.5% cross-registry fee, already out of amount_out
+    # V0651 (r): set only when the SENDER is on a leaf (a cloud operator): the ingress leg's 0.5% cross-registry fee to
+    # the parent frame, already out of what the parent converts (reserve_frame then names the parent)
+    origin_fee: Optional[str] = None
     expires_at: str
 
 
@@ -6012,11 +6015,35 @@ async def fx_quote(
     rate_mode = (os.environ.get("FX_RATE_MODE", "fixed") or "fixed").strip().lower()
     _slippage = Decimal("0")
     _pool_x = _pool_y = _pool_spot = _pool_k = _pool_mtm = None
+    # V0651 (r): a SENDER on a leaf (a cloud operator: no FX booth of its own, a parent gateway) converts at its parent
+    # frame (_fx_route_origin: the 1:1 ingress leg to the parent's @fx_router, then the parent's pool), so its quote is
+    # priced there: the ingress leg's 0.5% fee, then the parent's live spot (its public /fx/rates) less the pool fee.
+    # It priced 1:1 by this node's own fixed table instead: 0.995 quoted where 0.972085 arrived (sandbox, 2026-10-31).
+    _origin_gw = None if (same or _fx_enabled()) else _fx_route_my_gateway()
+    _origin_fee = None
     if same:
         rate = Decimal("1")
         amount_out_gross = amount_in.quantize(q)
         fee = Decimal("0")
         amount_out = amount_out_gross
+    elif _origin_gw is not None:
+        spot = await _fx_gateway_spot(db, local_ccy, peer_ccy)
+        if spot is None:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                detail=(f"FX quote: this registry converts {local_ccy} at its parent frame "
+                                        f"{_origin_gw['registry_id']}, whose live rate could not be read just now; no "
+                                        f"quote is given rather than a wrong one"))
+        rate_mode = "gateway_spot"
+        _origin_fee = (amount_in * Decimal("0.5") / Decimal("100")).quantize(q)
+        rate = spot
+        amount_out_gross = ((amount_in - _origin_fee) * spot).quantize(q)
+        fee = (amount_out_gross * fee_rate).quantize(q)
+        amount_out = amount_out_gross - fee
+        _fx_enforce_caps(amount_in, local_ccy, None)
+        # a receiver whose home is not a frame is on a leaf of the destination frame: the parent delivers to it 1:1 and
+        # that leg pays the 0.5% cross-registry fee too (the frame side's _leaf_gd, which needs a booth of its own)
+        if target_peer is not None and (getattr(target_peer, "peer_type", "") or "").lower() != "frame":
+            _leaf_gd = {"registry_id": _origin_gw["registry_id"]}
     elif rate_mode == "pool":
         admin_key = os.environ.get("TEG_ADMIN_API_KEY", "")
         local_teg_base = os.environ.get("TEG_API_BASE_URL", "http://teg-layer:8080")
@@ -6066,8 +6093,10 @@ async def fx_quote(
         pool_spot_p=(str(_pool_spot) if _pool_spot is not None else None),
         pool_k=(str(_pool_k) if _pool_k is not None else None),
         pool_mtm_avt=(str(_pool_mtm) if _pool_mtm is not None else None),
-        reserve_frame=(str(_leaf_gd.get("registry_id", "")) if _leaf_gd is not None else None),
+        reserve_frame=(str(_leaf_gd.get("registry_id", "")) if _leaf_gd is not None
+                       else (str(_origin_gw.get("registry_id", "")) if _origin_gw is not None else None)),
         delivery_fee=(str(_delivery_fee) if _delivery_fee is not None else None),
+        origin_fee=(str(_origin_fee) if _origin_fee is not None else None),
         expires_at=expires_at,
     )
 
@@ -6205,6 +6234,67 @@ _FX_FRAME_PUBLIC_HOSTS = {
 }
 
 
+async def _fx_gateway_public_origin(db: AsyncSession) -> str:
+    """V0651 (r): the public origin (https://host, the 443 vhost) of the frame this leaf converts through, found the way
+    the transfer finds it (_fx_route_origin: the gateway's url, else its ACTIVE peer row's base_url), port stripped:
+    the base_url is the mTLS federation address and the keyless public rates are on the normal vhost. FX_RATE_PROXY_URL
+    overrides. _FX_FRAME_PUBLIC_HOSTS is the last resort, for the retired frames' operators it was written for: on its
+    own it knew no current frame, so all six of today's operators answered fx_disabled (2026-10-31)."""
+    explicit = (os.environ.get("FX_RATE_PROXY_URL", "") or "").strip().rstrip("/")
+    if explicit:
+        return explicit
+    url = ""
+    gw = _fx_route_my_gateway()
+    if gw is not None:
+        url = gw["url"]
+        if not url:
+            peer = await _fx_route_find_active_peer(db, gw["registry_id"])
+            url = (getattr(peer, "base_url", "") or "") if peer is not None else ""
+    if url:
+        from urllib.parse import urlparse as _up
+        p = _up(url)
+        if p.scheme and p.hostname:
+            return f"{p.scheme}://{p.hostname}"
+    gw_reg = (os.environ.get("FX_ROUTE_GATEWAY_REGISTRY_ID", "") or "").strip().lower()
+    return _FX_FRAME_PUBLIC_HOSTS.get(gw_reg, "")
+
+
+_FX_GATEWAY_SPOT_CACHE: Dict[str, Any] = {}
+
+
+async def _fx_gateway_spot(db: AsyncSession, src_ccy: str, dst_ccy: str) -> Optional[Decimal]:
+    """V0651 (r): how many dst_ccy one src_ccy buys at the parent frame's pool now, from its public, keyless /fx/rates
+    (a ratio, never a reserve; 30 s cached like the rates proxy). None when it cannot be read or names no such pair."""
+    import time as _t
+    origin = await _fx_gateway_public_origin(db)
+    if not origin:
+        return None
+    url = origin if origin.endswith("/fx/rates") else f"{origin.rstrip('/')}/api/v1/teg/fx/rates"
+    hit = _FX_GATEWAY_SPOT_CACHE.get(url)
+    payload = hit[1] if hit and (_t.time() - hit[0]) < _FX_RATE_TTL else None
+    if payload is None:
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(6.0, connect=4.0)) as _c:
+                _rr = await _c.get(url)
+            payload = _rr.json() if _rr.status_code == 200 else None
+        except Exception as _e:  # noqa: BLE001
+            logger.info(f"[fx_quote] the parent frame's rates at {url} could not be read: {type(_e).__name__}: {_e}")
+            payload = None
+        if not (isinstance(payload, dict) and payload.get("available")):
+            return None
+        _FX_GATEWAY_SPOT_CACHE[url] = (_t.time(), payload)
+    for pair in payload.get("pairs") or []:
+        try:
+            a, b = str(pair.get("a") or ""), str(pair.get("b") or "")
+            if a == src_ccy and b == dst_ccy:
+                return Decimal(str(pair["b_per_a"]))
+            if a == dst_ccy and b == src_ccy:
+                return Decimal(str(pair["a_per_b"]))
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
 def _fx_pool_payload(local_ccy: str, peer_ccy: str, local_res: Decimal, dest_res: Decimal, as_of: str) -> dict:
     """The public single-pair spot from the two reserves (§BATCH9). Keys are named by the currencies on
     the two sides; the legacy avt_per_bvt/bvt_per_avt keys are present only on a real AVT/BVT pool and
@@ -6258,20 +6348,8 @@ async def fx_rate_public(request: Request, db: AsyncSession = Depends(get_db)):
             # at most one parent hit per operator per 30s). FX_ROUTE_GATEWAY_URL points
             # at the mTLS :8443 route-hop port; the public keyless rate is on the normal
             # vhost (443), so we proxy the port-stripped origin (override: FX_RATE_PROXY_URL).
-            _proxy = (os.environ.get("FX_RATE_PROXY_URL", "") or "").strip().rstrip("/")
-            if not _proxy:
-                _gw = (os.environ.get("FX_ROUTE_GATEWAY_URL", "") or "").strip()
-                if _gw:
-                    from urllib.parse import urlparse as _up
-                    _p = _up(_gw)
-                    if _p.scheme and _p.hostname:
-                        _proxy = f"{_p.scheme}://{_p.hostname}"
-            if not _proxy:
-                # Frame-A operators carry the gateway IDENTITY (FX_ROUTE_GATEWAY_REGISTRY_ID)
-                # but no FX_ROUTE_GATEWAY_URL — map the parent frame's registry-id to its
-                # public host so they also proxy a live rate (was: stuck "rate syncing…").
-                _gw_reg = (os.environ.get("FX_ROUTE_GATEWAY_REGISTRY_ID", "") or "").strip().lower()
-                _proxy = _FX_FRAME_PUBLIC_HOSTS.get(_gw_reg, "")
+            # V0651 (r): the parent's public origin by the transfer's own rule (_fx_gateway_public_origin)
+            _proxy = await _fx_gateway_public_origin(db)
             if _proxy:
                 _url = _proxy if _proxy.endswith("/fx/rate") else f"{_proxy}/api/v1/teg/fx/rate"
                 try:
@@ -6385,17 +6463,8 @@ async def fx_rates_public(request: Request, db: AsyncSession = Depends(get_db)):
         if not _fx_enabled():
             # Operator rate-proxy — proxy the parent frame's PUBLIC /fx/rates (mirrors
             # the /fx/rate gateway-proxy block; 30s cache caps parent hits).
-            _proxy = (os.environ.get("FX_RATE_PROXY_URL", "") or "").strip().rstrip("/")
-            if not _proxy:
-                _gw = (os.environ.get("FX_ROUTE_GATEWAY_URL", "") or "").strip()
-                if _gw:
-                    from urllib.parse import urlparse as _up
-                    _p = _up(_gw)
-                    if _p.scheme and _p.hostname:
-                        _proxy = f"{_p.scheme}://{_p.hostname}"
-            if not _proxy:
-                _gw_reg = (os.environ.get("FX_ROUTE_GATEWAY_REGISTRY_ID", "") or "").strip().lower()
-                _proxy = _FX_FRAME_PUBLIC_HOSTS.get(_gw_reg, "")
+            # V0651 (r): the parent's public origin by the transfer's own rule (_fx_gateway_public_origin)
+            _proxy = await _fx_gateway_public_origin(db)
             if _proxy:
                 _url = _proxy if _proxy.endswith("/fx/rates") else f"{_proxy}/api/v1/teg/fx/rates"
                 try:

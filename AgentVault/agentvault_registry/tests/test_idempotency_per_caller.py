@@ -6,8 +6,8 @@ older image kept under the key alone is neither replayed nor run past. So two me
 the same key value each move their own units, a member's retry replays only its own legs, and an agent's kept answer
 (a payment token included) is given again only to that agent.
 
-Through FastAPI on the real routes: organizations (fund, remit), a2a_payment (authorize), bundles (restore) and the
-token bridge (transfer). The database, the TEG's escrow mover and Redis are doubles (the mover answers a key it has seen
+Through FastAPI on the real routes: organizations (fund, remit), a2a_payment (authorize) and bundles (restore); the
+token bridge (transfer) was here until it was retired in V0651 (p). The database, the TEG's escrow mover and Redis are doubles (the mover answers a key it has seen
 with that key's leg, as the TEG's /admin/exchange/move does). RED on 15620967: every test except the two controls
 (the same caller's retry; another body under the same caller), which are green before and after; the sweep and record
 tests need the caller API this change adds.
@@ -331,58 +331,7 @@ def test_two_developers_sending_one_key_value_each_restore_their_own_bundle(monk
     assert a2.status_code == 200 and a2.json()["installer"] == 5 and ran == [5, 6], "a retry restored twice"
 
 
-# ── the bridge transfer: its answer is kept under the client's key ─────────────────────────────────────────────────
-
-def test_a_bridge_transfer_retried_under_its_key_is_answered_again_and_locks_once(monkeypatch, redis):
-    """The answer is kept under the client's key (the bridge row keeps its own key, bridge-<id>, apart): a retry under
-    the client's key is answered with the first transfer, and the units are locked once."""
-    from agentvault_registry.core.mainframe_gate import require_mainframe_only
-    from agentvault_registry.routers import token_bridge
-    teg = []
-
-    async def _teg(endpoint, body):
-        teg.append(endpoint)
-        return {"tx_id": f"teg-{len(teg)}"}
-
-    async def _remote(url, endpoint, body):
-        return {"status": "minted", "mint_tx_id": "mint-1"}
-
-    async def _none(*a, **k):
-        return None
-    monkeypatch.setattr(token_bridge, "_call_teg", _teg)
-    monkeypatch.setattr(token_bridge, "_call_remote_frame", _remote)
-    monkeypatch.setattr(token_bridge, "enforce_agent_spend", _none)
-    emitter_calls: list = []
-
-    async def _emitted(*a, **k):
-        emitter_calls.append((a, k))
-        return None
-    monkeypatch.setattr(token_bridge, "emit_or_report", _emitted)
-    monkeypatch.setattr(token_bridge, "get_event_emitter", lambda: None)
-    monkeypatch.setenv("AGENT_RBAC_MODE", "off")
-
-    class _Db:
-        def add(self, obj):
-            pass
-
-        async def commit(self):
-            pass
-
-    app = FastAPI()
-    app.include_router(token_bridge.router)
-    app.dependency_overrides[get_db] = lambda: _Db()
-    app.dependency_overrides[require_mainframe_only] = lambda: None
-    app.dependency_overrides[security.get_current_agent] = lambda: SimpleNamespace(did="did:theprotocol:a:sender", id=1)
-    app.dependency_overrides[security.verify_agent_token] = lambda: {"type": "agent"}
-    c = TestClient(app, raise_server_exceptions=False)
-    body = {"target_agent_did": "did:theprotocol:b:holder", "amount": "5",
-            "target_frame_url": "https://frame-b.example.invalid:8443"}
-    first = c.post("/api/v1/bridge/transfer", json=body, headers={"Idempotency-Key": "bridge-retry-1"})
-    reported = len(emitter_calls)
-    again = c.post("/api/v1/bridge/transfer", json=body, headers={"Idempotency-Key": "bridge-retry-1"})
-    assert (first.status_code, again.status_code) == (200, 200), (first.text[:300], again.text[:300])
-    assert len(emitter_calls) == reported, "the replay reported the transfer a second time"
-    assert again.json()["bridge_tx_id"] == first.json()["bridge_tx_id"] and teg == ["lock"]
+# (the bridge transfer's case went with the token bridge, retired in V0651 (p): /api/v1/bridge/* answers 410 Gone)
 
 
 # ── the readers: the stale-settlement sweep reads the record the transfer kept for the payer's side ─────────────────

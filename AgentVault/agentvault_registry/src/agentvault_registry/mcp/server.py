@@ -38,7 +38,7 @@ from .tool_aliases import resolve_alias  # §AGORAWORDS (V0419)
 from .tool_switches import filter_listed, listed as _tool_listed   # W3: the registry's switches decide the listing
 
 from .auth_bridge import (
-    authenticate_mcp_token, MCPAuthError, set_mcp_client_ip,
+    authenticate_mcp_token, MCPAuthError, set_mcp_client_ip, set_mcp_bearer,
     set_mcp_capability_token, get_mcp_capability_token,
     MCPAuthUnavailable, safe_exception_text, format_tool_exception,   # §MCPTEST30 V0529
 )
@@ -171,7 +171,6 @@ from .tools_agent import (
     get_my_balance,
     transfer_tokens,
     smart_send_tool,
-    bridge_transfer,
     stake_tokens,
     unstake_tokens,
     cast_vote,
@@ -244,6 +243,7 @@ from .tools_agent import (
     # §OURSTATE-1 (2026-08-24) — OurChat chat (dual-auth passthrough)
     chat_list_conversations,
     chat_read_thread,
+    chat_sync,
     chat_send_message,
     chat_respond_request,
     chat_block_principal,
@@ -590,7 +590,6 @@ TOOL_DISPATCH: Dict[str, Any] = {
     "theprotocol_lockUnits": stake_tokens,
     "theprotocol_unlockUnits": unstake_tokens,
     "theprotocol_castVote": cast_vote,
-    "theprotocol_bridgeTransfer": bridge_transfer,
     # Tier 3 — developer auth
     "theprotocol_getMyAgents": get_my_agents,
     "theprotocol_createAgent": create_agent,
@@ -906,6 +905,7 @@ TOOL_DISPATCH: Dict[str, Any] = {
     # §OURSTATE-1 — OurChat chat (dual-auth: dev key or agent JWT both work)
     "theprotocol_listConversations": chat_list_conversations,
     "theprotocol_readThread": chat_read_thread,
+    "theprotocol_syncChat": chat_sync,                     # V0651 (t)
     "theprotocol_sendChatMessage": chat_send_message,
     "theprotocol_respondChatRequest": chat_respond_request,
     "theprotocol_blockChatPrincipal": chat_block_principal,
@@ -1044,7 +1044,6 @@ TIER2_TOOLS = {
     "theprotocol_deleteMyAgent",  # §pass73.3.19: agent self-delete (DELETE /agents/me, get_current_agent) — was mis-tiered T3
     "theprotocol_transferUnits",
     "theprotocol_smartSend",
-    "theprotocol_bridgeTransfer",
     "theprotocol_lockUnits",
     "theprotocol_unlockUnits",
     "theprotocol_castVote",
@@ -1119,6 +1118,7 @@ TIER2_TOOLS = {
     # API is dual-auth, so a developer bridge token passes through unchanged.
     "theprotocol_listConversations",
     "theprotocol_readThread",
+    "theprotocol_syncChat",
     "theprotocol_sendChatMessage",
     "theprotocol_respondChatRequest",
     "theprotocol_blockChatPrincipal",
@@ -1596,6 +1596,7 @@ async def _handle_tools_call(
         effective_token = inline_jwt or token
     else:
         effective_token = token
+    set_mcp_bearer(effective_token)   # V0651 (s): a public tool may forward it as an optional identity
 
     # ── B6 (RBAC plan): per-TOOL capability scoping at dispatch ────────────────────
     # A capability token may arrive as the X-Capability-Token transport header (already
@@ -2063,7 +2064,8 @@ async def handle_rpc(request: Request) -> JSONResponse:
                         bg_result, bg_ctx = await _handle_tools_call(tool_name, arguments, token)
                         outcome, payload = "success", bg_result
                     except (MCPAuthError, MCPAuthUnavailable) as e:
-                        outcome = "failure"
+                        # V0651: a refusal the tool raised is audited under the caller it refused (V0545's rule)
+                        outcome, bg_ctx = "failure", getattr(e, "mcp_auth_ctx", None)
                         payload = {"content": [{"type": "text", "text": f"Error: {e}"}], "isError": True}
                     except ToolArgumentsRefused as e:   # §MCPTEST30 (V0545): the caller's arguments, not a failure
                         outcome, bg_ctx = "failure", e.auth_ctx
@@ -2112,7 +2114,9 @@ async def handle_rpc(request: Request) -> JSONResponse:
                 await emit_mcp_audit(
                     tool_name=tool_name,
                     arguments=arguments,
-                    auth_ctx=auth_ctx_for_audit,
+                    # V0651: a tool's own refusal (require_developer_auth under an agent context) is audited under
+                    # the caller it refused, not as anonymous: the context rides on the exception (V0545)
+                    auth_ctx=auth_ctx_for_audit or getattr(auth_err, "mcp_auth_ctx", None),
                     outcome="failure",
                     result_or_error=str(auth_err),
                     latency_ms=latency_ms,
@@ -2545,6 +2549,7 @@ ALL_TOOL_SCHEMAS.extend(COMMONS_PUBLIC_TOOL_SCHEMAS + COMMONS_DEVELOPER_TOOL_SCH
 from .tools_chat_approvals import (  # noqa: E402
     CHAT_APPROVAL_AGENT_TOOL_SCHEMAS,
     CHAT_APPROVAL_DEVELOPER_TOOL_SCHEMAS,
+    consume_chat_approval as _approval_consume,
     decide_chat_approval as _approval_decide,
     get_chat_approval_status as _approval_status,
     request_chat_approval as _approval_request,
@@ -2555,8 +2560,10 @@ TOOL_DISPATCH.update({
     "theprotocol_requestChatApproval": _approval_request,
     "theprotocol_getChatApprovalStatus": _approval_status,
     "theprotocol_decideChatApproval": _approval_decide,
+    "theprotocol_consumeChatApproval": _approval_consume,      # V0651 (o)
 })
-_APPROVAL_T2 = {"theprotocol_requestChatApproval", "theprotocol_getChatApprovalStatus"}
+_APPROVAL_T2 = {"theprotocol_requestChatApproval", "theprotocol_getChatApprovalStatus",
+                "theprotocol_consumeChatApproval"}
 _APPROVAL_T3 = {"theprotocol_decideChatApproval"}
 TIER2_TOOLS.update(_APPROVAL_T2)
 TIER3_TOOLS.update(_APPROVAL_T3)

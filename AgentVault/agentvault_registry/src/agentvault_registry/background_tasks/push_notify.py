@@ -51,6 +51,9 @@ DELEGATION_DEFAULT_EVENTS = {
     "LiabilityChallenge",
     # A sign-in approval is the other push a human must never miss — without it they cannot log in.
     "LoginApproval",
+    # V0651 (y2): an approval request in a room, to the people who may decide it (registries not on the v2 notices
+    # decide by this set; the v2 resolver reads the catalog's default, which is on).
+    "chat.approval_requested",
 }
 
 

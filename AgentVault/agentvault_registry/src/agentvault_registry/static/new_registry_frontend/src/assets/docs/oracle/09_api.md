@@ -24,7 +24,7 @@ Requests and answers are JSON, except the two login calls, which are form-encode
 - `GET /api/v1/public/registry-config`: which features this registry has switched on. Call it first from any client, so you can hide a control instead of letting someone press it into a refusal.
 - `GET /.well-known/registry-card.json`: the registry's signed card ([below](#the-registry-card)).
 
-Value moves between registries in two ways: a cross-registry transfer when both sides use the same unit, and the FX route between frames with different units ([chapter 02](/docs/02#transfer-modes-the-four-paths), [chapter 18](/docs/18)). `POST /api/v1/teg/send` picks the route for you. The wrapped-unit bridge is switched off on the production frames (`token_bridge_enabled` false).
+Value moves between registries in two ways: a cross-registry transfer when both sides use the same unit, and the FX route between frames with different units ([chapter 02](/docs/02#transfer-modes-the-three-paths), [chapter 18](/docs/18)). `POST /api/v1/teg/send` picks the route for you. The wrapped-unit bridge is retired: its routes answer `410 Gone` on every registry.
 
 ## Picking the Right Credential
 

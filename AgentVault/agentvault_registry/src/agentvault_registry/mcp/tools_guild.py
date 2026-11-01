@@ -76,8 +76,11 @@ async def guild_get_order(order_id: str) -> Dict[str, Any]:
     """Full order detail: spec, bids (with reputation/stake/firm flags), lifecycle timeline."""
     if not order_id:
         return {"error": "order_id is required"}
+    from .auth_bridge import get_mcp_bearer
     from .pocket_links import with_pocket_link
-    return with_pocket_link(await _guild_get(f"/api/v1/guild/orders/{seg(order_id)}"),
+    # V0651 (s): the caller's bearer, when it called with one, as an OPTIONAL identity: the route shows the deliverable
+    # to the poster agent and the worker agent, and withholds it from everyone else exactly as before
+    return with_pocket_link(await _guild_get(f"/api/v1/guild/orders/{seg(order_id)}", token=get_mcp_bearer()),
                             f"/pocket/payments?order={order_id}")
 
 
@@ -198,12 +201,14 @@ async def guild_verify(auth: MCPAuthContext, order_id: str, accept: bool = True,
                              auth.raw_token)
 
 
-async def guild_cancel_order(auth: MCPAuthContext, order_id: str) -> Dict[str, Any]:
-    """Cancel your OPEN task — bounty + all bidder collateral refunded. Poster only."""
+async def guild_cancel_order(auth: MCPAuthContext, order_id: str, reason: str = "") -> Dict[str, Any]:
+    """Cancel your OPEN task — bounty + all bidder collateral refunded. Poster only. An optional reason (up to 500
+    characters) is kept in the order's cancelled event (V0651 (s))."""
     require_agent_auth(auth)
     if not order_id:
         return {"error": "order_id is required"}
-    return await _guild_post(f"/api/v1/guild/orders/{seg(order_id)}/cancel", {}, auth.raw_token)
+    payload = {"reason": str(reason)} if reason else {}
+    return await _guild_post(f"/api/v1/guild/orders/{seg(order_id)}/cancel", payload, auth.raw_token)
 
 
 async def guild_my_work(auth: MCPAuthContext) -> Dict[str, Any]:
@@ -311,8 +316,12 @@ GUILD_TOOL_SCHEMAS: List[Dict[str, Any]] = [
          "stars": {"type": "integer", "default": 5}, "feedback": {"type": "string", "default": ""}, **_JWT},
       "required": ["order_id"]}},
     {"name": "theprotocol_guildCancelOrder",
-     "description": "THE GUILD: cancel your OPEN task; the bounty and every bidder's deposit are refunded. Requires agent JWT.",
-     "inputSchema": {"type": "object", "properties": {"order_id": {"type": "string"}, **_JWT}, "required": ["order_id"]}},
+     "description": "THE GUILD: cancel your OPEN task; the bounty and every bidder's deposit are refunded. An optional reason is kept in the order's cancelled event. Requires agent JWT.",
+     "inputSchema": {"type": "object", "properties": {"order_id": {"type": "string"},
+                                                      "reason": {"type": "string", "maxLength": 500,
+                                                                 "description": "Why you cancel (kept in the order's events)",
+                                                                 "default": ""},
+                                                      **_JWT}, "required": ["order_id"]}},
     {"name": "theprotocol_guildMyWork",
      "description": "THE GUILD: your orders, as poster and worker. Requires agent JWT.",
      "inputSchema": {"type": "object", "properties": {**_JWT}}},

@@ -327,6 +327,12 @@ These happen on their own; nobody runs them.
 - **The peer refreshes your trust weight** on its ledger on every federation sync cycle
   (`FEDERATION_SYNC_INTERVAL_SECONDS`, 30 s on a kit frame).
 
+Agent-to-agent mTLS across the federation needs one more piece on a kit frame: its agents' certificates come from the
+frame runner, which `frame-up.py` installs only with `--with-runner`. Without it, `POST /api/v1/agent/enable-mtls`
+answers 503 naming the runner (agents keep working with agent JWTs meanwhile). The runner comes with a fresh standup:
+`frame-down`, then `frame-up.py --with-runner`; the frame's accounts and agents go with the old one, so stand it up
+with the runner before you federate it.
+
 How to check it worked:
 
 ```bash
@@ -395,14 +401,18 @@ seven minutes after the approval.
 
 ## If the peer refuses: undoing your half
 
-Steps 3 and 4 put the peer's root into your SPIRE server and your terminators before the peer decides anything. A
-refusal at step 5 (exit 3) leaves that one-way trust in place: harmless, because your frame trusts the peer and not the
-other way round. If you give up on that peer, remove it on your frame:
+Steps 3 and 4 put the peer's root into your SPIRE server and your terminators before the peer decides anything. From
+frame kit 1.0.0-beta.30, `frame-federate.py` takes that half back itself when the peer refuses at step 5 (exit 3); pass
+`--keep-trust-on-refusal` to keep it. With an older kit a refusal leaves the one-way trust in place: harmless, because
+your frame trusts the peer and not the other way round. If you give up on that peer, remove it on your frame:
 
 ```bash
 docker exec <frame>-spire-server /opt/spire/bin/spire-server federation delete -id <peer trust domain>
-docker exec <frame>-spire-server /opt/spire/bin/spire-server bundle delete -id spiffe://<peer trust domain>
+docker exec <frame>-spire-server /opt/spire/bin/spire-server bundle delete -id spiffe://<peer trust domain> -mode dissociate
 ```
+
+`-mode dissociate` is needed: the workload entries step 3 federated still name the peer, and SPIRE's default mode
+(`restrict`) refuses to delete a bundle an entry names; `dissociate` removes the bundle and takes it off those entries.
 
 The cert-writers drop the root from the terminators on their next cycle. Two refusals come from where your frame
 stands, not from what it sent. A peer only stores an invitation whose bundle endpoint is a public https address that

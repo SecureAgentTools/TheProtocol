@@ -152,7 +152,7 @@ The variant fields name display styles from a renderer's catalog. Visual styling
 | `fiat_onramp_enabled` | boolean | Whether the registry's fiat purchase lane is switched on. It is off on the EU and ASIA frames. |
 | `fiat_providers` | array of `stripe`, `mollie` | Payment providers of the fiat purchase lane; empty while it is off. |
 | `minting_capability` | `sovereign` or `disabled` | `sovereign` for a central registry, which issues its own unit; `disabled` otherwise. The schema also admits the older values `genesis_only` and `limited`. |
-| `bridge_capability` | `none`, `frame_to_frame` or `multi_frame` | Cross-frame bridging. The reference implementation publishes `frame_to_frame` when the registry federates and serves its wrapped-unit bridge (its `TOKEN_BRIDGE_ENABLED` setting, reported as `token_bridge_enabled` in `/api/v1/public/registry-config`), and `none` otherwise. |
+| `bridge_capability` | `none`, `frame_to_frame` or `multi_frame` | Cross-frame bridging. The reference implementation publishes `none` since V0651, which retired its wrapped-unit bridge on every registry (`token_bridge_enabled` is false in `/api/v1/public/registry-config`); a card from an older registry may still say `frame_to_frame`. |
 | `a2a_versions_supported` | array of strings | A2A protocol versions, for example `["1.0"]`. |
 | `registry_card_versions_served` | array of strings | A version 0.6 registry MUST include `"0.6"`. |
 | `supports_payment_protocol` | array of strings | Payment protocols; `a2a-payment-v1` names the A2A payment extension (see `a2a-payment-extension-v1.md`). |

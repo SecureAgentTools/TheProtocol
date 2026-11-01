@@ -10,7 +10,8 @@
      says so (never an empty list). When the room asks for a phone confirmation the existing step-up dialog opens and
      the same decision is sent again with the approved challenge. Decisions go with the developer token only. -->
 <template>
-  <section v-if="enabled && (shown.length || readFailed)" class="oca" data-testid="ost-approvals" aria-live="polite">
+  <section v-if="enabled && (shown.length || readFailed || focusGone)" ref="rootEl" class="oca" data-testid="ost-approvals"
+           aria-live="polite">
     <ReadFailedNotice v-if="readFailed" dense :retry="refresh" data-testid="oca-read-failed"
                       :text="t('ourstate.approvals.readFailed', 'Approval requests could not be read just now.')" />
     <template v-else>
@@ -22,11 +23,13 @@
                 :disabled="busyIds.size > 0" @click="approveAll">
           <Icon name="mdi:check" /> {{ tp('ourstate.approvals.approveAll', 'Approve all ({n})', { n: allIds.length }) }}</button>
       </header>
-      <p v-if="!canDecide" class="oca-who" data-testid="oca-not-decider">
+      <p v-if="focusGone" class="oca-gone" data-testid="oca-gone">
+        {{ t('ourstate.approvals.notWaiting', 'This request no longer waits for a decision: its decision, or its expiry, is in the thread.') }}</p>
+      <p v-if="!canDecide && shown.length" class="oca-who" data-testid="oca-not-decider">
         {{ t('ourstate.approvals.whoDecides', "The organization's owner or a named approver decides these.") }}</p>
       <ul class="oca-list">
-        <li v-for="a in shown" :key="a.id" class="oca-item" :data-testid="`oca-item-${a.id}`"
-            :data-expired="isExpired(a, now) ? '1' : '0'">
+        <li v-for="a in shown" :key="a.id" class="oca-item" :class="{ 'oca-focus': a.id === focusId }"
+            :data-testid="`oca-item-${a.id}`" :data-oca-id="a.id" :data-expired="isExpired(a, now) ? '1' : '0'">
           <div class="oca-title">{{ a.title }}</div>
           <div v-if="a.unlocks" class="oca-unlocks">
             {{ tp('ourstate.approvals.unlocks', 'Unlocks: {what}', { what: a.unlocks }) }}</div>
@@ -66,7 +69,7 @@
 </template>
 
 <script setup lang="ts">
-import { toRef } from 'vue'
+import { computed, nextTick, ref, toRef, watch } from 'vue'
 import Icon from '@/components/Icon.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import StepUpConfirm from '@/components/membership/StepUpConfirm.vue'
@@ -80,13 +83,29 @@ const props = withDefaults(defineProps<{
   token: string
   /** Org rooms only: approvals live there. */
   enabled?: boolean
-}>(), { enabled: true })
+  /** V0651 (y): the request a link opened (?approval=, a push or Pocket's Approvals): highlighted and scrolled to. */
+  focusId?: string
+}>(), { enabled: true, focusId: '' })
 
 const { t, tp } = useI18n()
 const {
-  shown, allIds, canDecide, readFailed, busyIds, lastError, stepUp, now,
+  shown, allIds, canDecide, loaded, readFailed, busyIds, lastError, stepUp, now,
   refresh, approve, deny, approveAll, resendWithChallenge,
 } = useChatApprovals(toRef(props, 'conversationId'), toRef(props, 'token'), toRef(props, 'enabled'))
+
+// V0651 (y): a link names one request. Read again when it changes (a push can open a request this screen has not read
+// yet), show it highlighted and in view, and say so when it no longer waits (decided or expired: the thread has it).
+const rootEl = ref<HTMLElement | null>(null)
+const focusGone = computed(() => !!props.focusId && loaded.value && !readFailed.value
+  && !shown.value.some((a) => a.id === props.focusId))
+watch(() => props.focusId, (v) => { if (v) void refresh() })
+watch([() => props.focusId, () => shown.value.length], async () => {
+  if (!props.focusId) return
+  await nextTick()
+  const id = props.focusId.replace(/[^A-Za-z0-9_]/g, '')   // an apr_<hex> id; nothing else reaches a selector
+  const el = rootEl.value?.querySelector(`[data-oca-id="${id}"]`) as HTMLElement | null
+  el?.scrollIntoView?.({ block: 'nearest' })
+}, { immediate: true })
 
 function leftText(a: ApprovalItem): string {
   if (isExpired(a, now.value)) return t('ourstate.approvals.expired', 'expired')
@@ -116,6 +135,8 @@ defineExpose({ refresh })
   background: var(--nc-surface, rgba(255, 255, 255, 0.04));
 }
 .oca-head { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.oca-focus { outline: 2px solid var(--nc-primary, #00d4ff); outline-offset: 2px; border-radius: 8px; }
+.oca-gone { margin: 4px 0 0; font-size: 0.85em; opacity: 0.85; }
 .oca-count { flex: 1 1 auto; }
 .oca-who { margin: 4px 0 0; font-size: 0.85em; opacity: 0.8; }
 .oca-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }

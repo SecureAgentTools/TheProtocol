@@ -2,13 +2,13 @@
 
 # API Reference
 
-Generated from the registry's own OpenAPI description at `TheProtocolReleaseV0650`. The page is written by `agentvault_registry/scripts/gen_reference_docs.py`; do not edit it, regenerate it. 712 routes in 69 groups.
+Generated from the registry's own OpenAPI description at `TheProtocolReleaseV0651`. The page is written by `agentvault_registry/scripts/gen_reference_docs.py`; do not edit it, regenerate it. 717 routes in 69 groups.
 
 Each route's parameters, request bodies and answers are in the interactive description every registry serves: [api.theprotocol.cloud/docs](https://api.theprotocol.cloud/docs), machine-readable at [openapi.json](https://api.theprotocol.cloud/openapi.json); on your own registry, `<your-registry-url>/docs`.
 
 **Credentials.** *public*: none. *developer*: a developer token (`POST /api/v1/auth/login`) or an API key (`Authorization: Bearer avreg_…`). *agent*: an agent token (`POST /api/v1/auth/agent/token`). *bootstrap*: the five-minute token that creates an agent (`POST /api/v1/onboard/bootstrap/request-token`).
 
-**Left out:** 489 admin routes, 58 routes registries call each other on (mTLS or the federation licence), 14 internal routes (in-network lookups and the sandbox proxies), 51 MCP transport routes (see the MCP Tool Catalog) and 22 routes under `/api/v1/fiat`: the fiat on-ramp, switched off on the public network.
+**Left out:** 489 admin routes, 55 routes registries call each other on (mTLS or the federation licence), 14 internal routes (in-network lookups and the sandbox proxies), 51 MCP transport routes (see the MCP Tool Catalog) and 22 routes under `/api/v1/fiat`: the fiat on-ramp, switched off on the public network.
 
 ## .well-known (14)
 
@@ -318,13 +318,16 @@ Each route's parameters, request bodies and answers are in the interactive descr
 | POST | `/api/v1/auth/set-new-password` | Set New Password After Recovery | developer |
 | GET | `/api/v1/auth/verify-email` | Verify Email Address | public |
 
-## bridge (3)
+## bridge (6)
 
 | Method | Path | What it does | Credential |
 |---|---|---|---|
-| POST | `/api/v1/bridge/redeem` | Bridge Redeem | agent |
-| GET | `/api/v1/bridge/status/{bridge_tx_id}` | Bridge Status | public |
-| POST | `/api/v1/bridge/transfer` | Bridge Transfer | agent |
+| POST | `/api/v1/bridge/confirm-lock` | Retired (V0651): 410 Gone | public |
+| POST | `/api/v1/bridge/mint-wrapped` | Retired (V0651): 410 Gone | public |
+| POST | `/api/v1/bridge/redeem` | Retired (V0651): 410 Gone | public |
+| GET | `/api/v1/bridge/status/{bridge_tx_id}` | Retired (V0651): 410 Gone | public |
+| POST | `/api/v1/bridge/transfer` | Retired (V0651): 410 Gone | public |
+| POST | `/api/v1/bridge/unlock` | Retired (V0651): 410 Gone | public |
 
 ## bundles (12)
 
@@ -343,11 +346,13 @@ Each route's parameters, request bodies and answers are in the interactive descr
 | POST | `/api/v1/bundles/{bundle_id}/report` | Report Bundle | developer |
 | POST | `/api/v1/bundles/{bundle_id}/restore` | Restore Bundle | developer |
 
-## chat (51)
+## chat (53)
 
 | Method | Path | What it does | Credential |
 |---|---|---|---|
+| GET | `/api/v1/chat/approvals` | The approval requests waiting for my decision, in every room | agent or developer |
 | GET | `/api/v1/chat/approvals/{approval_id}` | One approval request, its decision and the proof | agent or developer |
+| POST | `/api/v1/chat/approvals/{approval_id}/consume` | Use an approved request to open one act (the agent that asked, once) | agent |
 | GET | `/api/v1/chat/attachments/{attachment_id}` | Download Attachment | agent or developer |
 | GET | `/api/v1/chat/away/authority` | My Away Authority | agent or developer |
 | GET | `/api/v1/chat/away/digest` | Away Digest | agent or developer |

@@ -22,12 +22,18 @@ def test_the_pairs_reject_skip_has_a_code():
     assert skip_codes.classify_skip(SEEN) == "settlement_origin_internal"
 
 
-def test_one_row_can_reach_it():
-    assert skip_codes.BASELINE_SKIPS["settlement_origin_internal"] == 1
-    ok, complaints = skip_codes.skip_verdict({"settlement_origin_internal": 1})
-    assert ok, complaints
+def test_two_rows_can_reach_it():
+    # V0651: the reject test and the approve test (tests/test_cross_registry_settlement_approve.py) both name it
+    assert skip_codes.BASELINE_SKIPS["settlement_origin_internal"] == 2
     ok, complaints = skip_codes.skip_verdict({"settlement_origin_internal": 2})
+    assert ok, complaints
+    ok, complaints = skip_codes.skip_verdict({"settlement_origin_internal": 3})
     assert not ok and complaints
+
+
+def test_the_approve_test_says_it_that_way_too():
+    from agentvault_registry.api_tests.federation_suite.tests import test_cross_registry_settlement_approve as approve
+    assert "as the settlement's origin, an address no peer holds" in inspect.getsource(approve)
 
 
 def test_the_test_still_says_it_that_way():

@@ -21,26 +21,47 @@ from agentvault_registry.api_tests.contracts import earned_ad_ephemeral as eph
 from agentvault_registry.api_tests.contracts.earned_fixtures import effect_name
 
 DID = "did:theprotocol:sandbox-a:mcp-earn-value-agent"
+DID2 = "did:theprotocol:sandbox-a:mcp-earn-value-fee-receiver"   # V0651: the second agent the run pays a fee to
 
 
 class _World:
     """The registry's book and the ledger's projection of one agent, the treasury's mint, receive and payout routes."""
 
-    def __init__(self, *, held: str = "0", fee: str = "3", ledger_skips: str = "", fund_refused: bool = False):
+    def __init__(self, *, held: str = "0", fee: str = "3", ledger_skips: str = "", fund_refused: bool = False,
+                 transfer_refused: bool = False, ledger_lag: int = 0, drains: int = 0, refuse_full: bool = False):
+        # V0651 (the trial pair nt261031x9): another rail drains the fee account between the read and the payout
+        # `drains` times; refuse_full answers the refusal while the account still holds enough
+        self.drains, self.refuse_full = drains, refuse_full
         self.reg = {DID: Decimal(held)}
         self.led = {DID: Decimal(held)}
         self.fee = Decimal(fee)
-        self.ledger_skips, self.fund_refused = ledger_skips, fund_refused
+        self.ledger_skips, self.fund_refused, self.transfer_refused = ledger_skips, fund_refused, transfer_refused
+        # V0650 (the trial pair nt261031x5): each move reaches the ledger's projection only after this many reads
+        self.ledger_lag = ledger_lag
+        self.pending: List[List[Any]] = []
         self.events: List[str] = []
         self.calls: List[Tuple[str, Dict[str, Any]]] = []
 
     def _book(self, tool: str, did: str, delta: Decimal) -> None:
         self.reg[did] = self.reg.get(did, Decimal(0)) + delta
-        if tool != self.ledger_skips:
+        if tool == self.ledger_skips:
+            return
+        if self.ledger_lag:                            # every move reaches the ledger through the outbox, in order
+            self.pending.append([self.ledger_lag, did, delta])
+        else:
             self.led[did] = self.led.get(did, Decimal(0)) + delta
 
     async def public(self, tool: str, args: dict, jwt: str = "", timeout: int = 20):
         self.calls.append((tool, dict(args)))
+        if tool == "theprotocol_transferUnits":   # V0651: the run's own fee, 0.5 % of the amount to the fee account
+            assert args["agent_jwt"] == "agent-jwt" and args["recipient_did"] == DID2 and jwt == "owner-jwt"
+            if self.transfer_refused:
+                return False, {"result": {"_text": "Error: HTTP 403: the scripted refusal"}}, "403"
+            amount = Decimal(args["amount"])
+            self._book(tool, DID, -amount)
+            self._book(tool, DID2, amount - amount / 200)
+            self.fee += amount / 200
+            return True, {"result": {"status": "completed"}}, "200"
         assert tool == eph.BALANCES, f"the value lifecycle called {tool} on the public bridge"
         return True, {"result": {"balances": {d: {"balance": str(self.reg.get(d, 0))} for d in args["agent_dids"]}}}, "200"
 
@@ -51,6 +72,11 @@ class _World:
 
     def _admin(self, tool: str, a: Dict[str, Any]) -> Tuple[bool, Any, str]:
         if tool == eph.ES_QUERY:
+            for p in self.pending:                     # the outbox drains a little with each read
+                p[0] -= 1
+                if p[0] == 0:
+                    self.led[p[1]] = self.led.get(p[1], Decimal(0)) + p[2]
+            self.pending = [p for p in self.pending if p[0] > 0]
             did = a["path"].rsplit("/", 1)[-1]
             return True, {"path": a["path"], "status_code": 200, "ok": True,
                           "response": {"agent_did": did, "liquid_balance": float(self.led.get(did, 0))}}, "200"
@@ -69,6 +95,11 @@ class _World:
             return True, {"status": "completed"}, "200"
         if tool == eph.DISTRIBUTE:
             assert a.get("target_agent_did"), "the payout names no agent"
+            if self.drains > 0 or self.refuse_full:
+                if self.drains > 0:
+                    self.drains -= 1
+                    self.fee = Decimal(0)              # another rail drew on the account a moment ago
+                return False, {"_text": "Error: HTTP 400: Insufficient fee_collector balance"}, "400"
             self.fee -= Decimal(a["amount"])
             self._book(tool, a["target_agent_did"], Decimal(a["amount"]))
             return True, {"status": "completed"}, "200"
@@ -85,6 +116,8 @@ class _Throwaways:
         return {"developer_id": 9, "access_token": "dev-jwt"}
 
     async def agent(self, dev: Dict[str, Any], label: str = "") -> Dict[str, Any]:
+        if label == "fee":
+            return {"did": DID2, "owner_jwt": "owner-jwt", "agent_jwt": "agent-jwt-2"}
         return {"did": DID, "owner_jwt": "owner-jwt", "agent_jwt": "agent-jwt"}
 
     async def close(self) -> None:
@@ -142,7 +175,8 @@ def test_an_ephemeral_frame_earns_both_and_mints_nothing(monkeypatch):
         assert _ok(out[effect_name(tool)]), (tool, out[effect_name(tool)])
         assert "both moved" in out[effect_name(tool)].get("read_back", "")
     assert [t for t, _a in w.calls if t in eph.VALUE_TOOLS] == list(eph.VALUE_TOOLS)
-    assert w.reg[DID] == Decimal("0.01") and w.fee == Decimal("2.99"), "funded 1, returned 1, paid 0.01"
+    assert w.reg[DID] == Decimal("1.01") and w.fee == Decimal("3.01"), \
+        "funded 1, returned 1; the run's own fee (5 in, 4 to its second agent, 0.02 to the account); paid 0.01"
     assert "theprotocol_tegTreasuryIssue" not in [t for t, _a in w.calls]
     assert _Throwaways.closed == 1, "the agent and its developer are cleared away"
 
@@ -159,6 +193,16 @@ def test_a_return_the_ledger_never_recorded_is_red(monkeypatch):
     monkeypatch.setenv(eph.EPHEMERAL_ENV, "true")
     out = _run(_World(ledger_skips=eph.RECEIVE), monkeypatch)
     assert not out[effect_name(eph.RECEIVE)]["healthy"]
+
+
+def test_a_funding_the_ledger_has_not_seen_yet_is_not_counted_in_the_move(monkeypatch):
+    # V0650 (the trial pair nt261031x5, 10:2xZ): the baseline was read before the funding reached the ledger, and the
+    # return of 1 read "the ledger's projection moved 0.0" (the funding's +1 and the return's -1 landing together).
+    # RED on the code before: the baseline was one read
+    monkeypatch.setenv(eph.EPHEMERAL_ENV, "true")
+    out = _run(_World(ledger_lag=3), monkeypatch)
+    for tool in eph.VALUE_TOOLS:
+        assert _ok(out[effect_name(tool)]), (tool, out[effect_name(tool)])
 
 
 def test_a_refused_funding_and_an_empty_fee_account_are_said(monkeypatch):
@@ -193,3 +237,60 @@ def _leave_a_current_event_loop():
         asyncio.get_event_loop()
     except RuntimeError:
         asyncio.set_event_loop(asyncio.new_event_loop())
+
+
+# ── V0651 (tester batch 3 item 3): the fee the run distributes is a fee the run paid ──────────────────────────────────
+def test_a_fresh_fee_account_is_fed_by_the_runs_own_fee_and_paid_out(monkeypatch):
+    monkeypatch.setenv(eph.EPHEMERAL_ENV, "true")
+    w = _World(fee="0")
+    out = _run(w, monkeypatch)
+    row = out[effect_name(eph.DISTRIBUTE)]
+    assert _ok(row), row
+    transfers = [a for t, a in w.calls if t == "theprotocol_transferUnits"]
+    assert len(transfers) == 1 and transfers[0]["amount"] == str(eph.FEE_TRANSFER)
+    assert w.fee == Decimal("0.01"), "0.02 paid in by the run's own transfer, 0.01 paid out"
+    assert "theprotocol_tegTreasuryIssue" not in [t for t, _a in w.calls]
+
+
+def test_the_run_pays_its_own_fee_even_where_the_account_holds_enough(monkeypatch):
+    # V0651 (the trial pair nt261031x9): an account that read enough was empty a moment later at the payout
+    monkeypatch.setenv(eph.EPHEMERAL_ENV, "true")
+    w = _World(fee="3")
+    out = _run(w, monkeypatch)
+    assert [t for t, _a in w.calls].count("theprotocol_transferUnits") == 1
+    assert _ok(out[effect_name(eph.DISTRIBUTE)])
+
+
+def _payouts(w: "_World") -> int:
+    return [t for t, _a in w.calls].count(eph.DISTRIBUTE)
+
+
+def test_a_payout_drained_once_is_paid_for_again_and_measured(monkeypatch):
+    monkeypatch.setenv(eph.EPHEMERAL_ENV, "true")
+    w = _World(fee="3", drains=1)
+    out = _run(w, monkeypatch)
+    assert _ok(out[effect_name(eph.DISTRIBUTE)]), out[effect_name(eph.DISTRIBUTE)]
+    assert _payouts(w) == 2 and [t for t, _a in w.calls].count("theprotocol_transferUnits") == 2
+
+
+def test_a_payout_drained_twice_is_not_measured_and_says_why(monkeypatch):
+    monkeypatch.setenv(eph.EPHEMERAL_ENV, "true")
+    w = _World(fee="3", drains=2)
+    row = _run(w, monkeypatch)[effect_name(eph.DISTRIBUTE)]
+    assert not _ok(row) and "drawn on between the read and the payout twice" in str(row.get("skip_reason")), row
+    assert _payouts(w) == 2, "one retry, never more"
+
+
+def test_a_refusal_while_the_account_reads_enough_stays_red(monkeypatch):
+    monkeypatch.setenv(eph.EPHEMERAL_ENV, "true")
+    w = _World(fee="3", refuse_full=True)
+    row = _run(w, monkeypatch)[effect_name(eph.DISTRIBUTE)]
+    assert row.get("healthy") is False and "insufficient fee_collector balance" in str(row.get("fail_reason")).lower()
+    assert not row.get("skip_reason") and _payouts(w) == 1, "the read and the payout disagree: a finding, no retry"
+
+
+def test_a_fee_the_run_could_not_pay_is_said(monkeypatch):
+    monkeypatch.setenv(eph.EPHEMERAL_ENV, "true")
+    out = _run(_World(fee="0", transfer_refused=True), monkeypatch)
+    why = str(out[effect_name(eph.DISTRIBUTE)].get("skip_reason"))
+    assert "fee account holds 0" in why and "the transfer that pays the fee answered HTTP 403" in why, why

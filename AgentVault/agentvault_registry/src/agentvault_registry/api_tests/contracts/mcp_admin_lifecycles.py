@@ -425,7 +425,6 @@ async def lifecycle_admin_id_lookups(rpc: RpcCall, parse: ParseResult,
         # so a malformed id measured its own validation and never the tool. A well-formed id that names nothing reaches the
         # route's lookup and its own refusal (each route read: it looks the id up before it writes, dials or revokes).
         ("theprotocol_getAdmissionStatus",             {"admission_id": "00000000-0000-4000-8000-000000000000"}),
-        ("theprotocol_getBridgeStatus",                {"bridge_tx_id": "phase6-no-such-bridge-tx"}),
         ("theprotocol_getBroadcastStats",              {"broadcast_id": 999999}),
         ("theprotocol_getDiagnosticConfig",            {"target_id": "phase6-no-such-target"}),
         ("theprotocol_getEventsAggregate",             {"aggregate_id": "phase6-no-such-aggregate"}),
@@ -526,9 +525,6 @@ async def lifecycle_admin_destructive_safe(rpc: RpcCall, parse: ParseResult,
         ("theprotocol_approvePendingEnforcement", {"action_id": "phase6-no-such-enforce"}),
         ("theprotocol_backfillPullTokens", {}),
         ("theprotocol_blacklistRegistry", {"peer_id": "999999", "reason": "phase-6 sweep probe"}),
-        ("theprotocol_bridgeIssueWrapped", {"agent_did": fake_did, "amount": "0.001", "source_frame": "phase6-no-such"}),
-        ("theprotocol_bridgeRedeem", {"bridge_tx_id": "phase6-no-such-tx", "agent_did": fake_did}),
-        ("theprotocol_bridgeUnlock", {"bridge_tx_id": "phase6-no-such-tx"}),
         # §pass73.3.19: pass a REAL did so this genuinely runs (200 + {requested,
         # succeeded,failed,skipped} envelope) instead of the empty-list validation
         # error that the eval fix now (correctly) records as a 400. Agents without a

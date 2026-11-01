@@ -238,7 +238,6 @@ _TIER_2_TOOLS = {
     "theprotocol_lockUnits",
     "theprotocol_unlockUnits",
     "theprotocol_castVote",
-    "theprotocol_bridgeTransfer",
     "theprotocol_submitDispute",
     "theprotocol_createProposal",
     # Sprint 2 Wave 1
@@ -825,6 +824,7 @@ _TIER_3_TOOLS.update({
 _TIER_2_TOOLS.update({
     "theprotocol_listConversations",
     "theprotocol_readThread",
+    "theprotocol_syncChat",                 # V0651 (t)
     "theprotocol_sendChatMessage",
     "theprotocol_respondChatRequest",
     "theprotocol_blockChatPrincipal",
@@ -857,6 +857,7 @@ _TIER_3_TOOLS.update({
 _TIER_2_TOOLS.update({
     "theprotocol_requestChatApproval",
     "theprotocol_getChatApprovalStatus",
+    "theprotocol_consumeChatApproval",      # V0651 (o): open one act with an approval
 })
 _TIER_3_TOOLS.update({
     "theprotocol_decideChatApproval",

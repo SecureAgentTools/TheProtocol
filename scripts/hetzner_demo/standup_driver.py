@@ -3081,13 +3081,13 @@ def host_auditor_summary(wire_prod: bool, stack_dir: str, slot=None) -> str:
         return ""
     reachable, entry = slot if slot else (False, None)
     if reachable and entry and entry.get("public_only"):
-        return ("  Host auditor:  this frame's public supply audit only (§MTLSHOPS (a)). Its databases take TLS clients with a\n"
+        return ("  Host auditor:  this frame's public supply audit only. Its databases take TLS clients with a\n"
                 "                 frame certificate only; the frame's own auditor does the exact check and holds its attestation.")
     if not reachable:
         return ("  Host auditor:  not asked (its frame list did not answer). This frame's databases take TLS clients with a frame\n"
                 "                 certificate only; the frame's own auditor does the exact check.")
-    return ("  Host auditor:  no slot for this frame yet (§MTLSHOPS T3). Its databases take TLS clients with a frame certificate\n"
-            "                 only; the frame's own auditor does the exact check. The host's public-only slot (his decision (a))\n"
+    return ("  Host auditor:  no slot for this frame yet. Its databases take TLS clients with a frame certificate\n"
+            "                 only; the frame's own auditor does the exact check. The host's public-only slot\n"
             "                 is written once the host auditor lists that shape.")
 
 
@@ -3682,12 +3682,12 @@ def build_parser():
                          "run against the sandbox tier, not against this frame. `--tester-fixtures` "
                          "on a production posture is REFUSED rather than silently downgraded.")
     ap.add_argument("--theme", default="neural", choices=["neural", "sovereign"],
-                    help="row 62: this frame's mark and palette. Two frames born from one driver "
-                         "wore the same face until his eye caught it.")
+                    help="this frame's mark and palette, so two frames born from one driver do not "
+                         "wear the same face.")
     ap.add_argument("--service-accounts", action=argparse.BooleanOptionalAction, default=True,
-                    help="HIS DECISION 2026-09-07: create svc-provisioning / svc-sim / svc-canary / "
-                         "svc-market for this frame, each with only its rail's authority and its "
-                         "agents hidden from discovery. The Commander onboards nothing.")
+                    help="create svc-provisioning / svc-sim / svc-canary / svc-market for this frame, "
+                         "each with only its rail's authority and its agents hidden from discovery; the "
+                         "frame's admin account onboards nothing itself.")
     ap.add_argument("--federation-license-key", default=os.getenv("FRAME_FEDERATION_LICENSE_KEY") or "",
                     help="§FRAMELIC: the licence THIS frame presents, issued by the anchor frame "
                          "before standup. Seeded into the env so the frame is licensed from its "

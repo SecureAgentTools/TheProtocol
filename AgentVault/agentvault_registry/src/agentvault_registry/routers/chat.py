@@ -842,6 +842,9 @@ async def sync(
                                   description="next_cursor from the previous answer (instead of since)"),
     wait: int = Query(0, ge=0, le=cs.SYNC_WAIT_MAX_S,
                       description="Seconds to wait for something new when nothing is there yet (0 to 25)"),
+    for_: Optional[str] = Query(None, alias="for", max_length=8,
+                                description="`me`: only what reaches you in particular (a mention of you, @all, the "
+                                            "room owner's message, a direct message, an approval card of yours)"),
     actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
@@ -852,13 +855,23 @@ async def sync(
     With `wait` (up to 25 seconds) the call answers as soon as something new reaches one of your threads, or answers
     empty at the bound, so a client can stay current without polling. Your own sends are included, as before.
 
+    With `for=me` the answer holds only what reaches you in particular: a message that mentions you, @all or
+    @everyone, a message from the room's owner, any message in a direct conversation, and an approval card you asked
+    for or may decide; never your own. Everything else stays on the server, and a `wait` ends only on such a message.
+    Its `next_cursor` continues the filtered stream; `plain_cursor` is where it started, so a plain sync from there
+    later loses nothing the filter left behind.
+
     \f
     V0650 (g), order gwo_e0c0c8b4d1a5c6a016077567: the long-poll (services.chat_service.sync_wait). While a call waits
     it holds no database connection and runs no query; fan_out_message wakes it, on any worker over Redis. A registry
     before V0650 answers without next_cursor, which is how a client tells that wait and cursor were not understood.
+    V0651 (t), order gwo_cddfbd743842eb65906ef8ab: for=me (services.chat_service.for_me_clause). A registry before
+    V0651 drops the parameter and answers everything; the answer's `for` field says the filter was applied.
     """
+    if for_ not in (None, "", "me"):
+        raise cs.ChatError(422, "for takes one value, me (only what reaches you in particular)")
     actor = cs.actor_from_auth(actor_dict)
-    return await cs.sync_wait(db, actor, since=since, cursor=cursor, wait_s=wait)
+    return await cs.sync_wait(db, actor, since=since, cursor=cursor, wait_s=wait, for_me=(for_ == "me"))
 
 
 @router.get("/unread-count")
@@ -1859,6 +1872,17 @@ class ApprovalDecideBody(BaseModel):
     surface: Optional[str] = Field(None, max_length=40, description="Where the decision was made (client-stated)")
 
 
+class ApprovalConsumeBody(BaseModel):
+    """V0651 (o): the act an approval opens, named by the sha256 the approval was asked with."""
+    act_label: str = Field(..., min_length=1, max_length=200,
+                           description="What the act is, as the room should read it (e.g. 'V0651 production roll')")
+    act_sha256: str = Field(..., min_length=64, max_length=71,
+                            description="The act's sha256 (64 hex, `sha256:` accepted): it must equal the approval's "
+                                        "artifact_sha256")
+    production: bool = Field(True, description="The act is a production act: the approval must have been asked with "
+                                               "production_impact")
+
+
 def approval_errors(fn):
     """chat_errors, plus the approval rail's refusals; a 428 step-up answer is a JSON body, never a stringified
     detail (the RFC 7807 layer would flatten a dict)."""
@@ -2046,6 +2070,45 @@ async def list_approvals(
     }
 
 
+@router.get("/approvals", summary="The approval requests waiting for my decision, in every room")
+@approval_errors
+async def approvals_waiting_for_me(
+    limit: int = Query(50, ge=1, le=200),
+    actor_dict: dict = Depends(_approval_reader),
+    db: AsyncSession = Depends(get_db),
+):
+    """V0651 (y): every pending, unexpired request the caller may decide, across the organization rooms this registry
+    hosts, for a surface that lists them outside a room (Pocket's Approvals). The rooms' own authority, read live: the
+    caller is the org's owner or an active member the owner named an approver (decider_role's rule), and still an
+    active member of the org (the room's read rule, resolve_membership's). Agents never decide and are refused."""
+    from ..services import chat_approvals as ca
+    _approvals_switched_on()
+    actor = cs.actor_from_auth(actor_dict)
+    if actor.ptype != "developer":
+        raise cs.ChatError(403, "agents never decide approvals: this list is for the organization's owner and its "
+                                "named approvers")
+    now = await ca.db_now(db)
+    found = await ca.waiting_for(db, actor.developer_id, now, limit)
+    member_of: dict = {}
+    rows, rooms = [], {}
+    for row, conv, org in found:
+        if conv.org_id not in member_of:
+            member_of[conv.org_id] = (await cs.actor_org_role(db, conv.org_id, actor)) is not None
+        if member_of[conv.org_id]:
+            rows.append(row)
+            rooms[row.id] = (conv, org)
+    agents, devs = await ca.names_for(db, rows)
+    items = []
+    for r in rows:
+        conv, org = rooms[r.id]
+        item = ca.serialize(r, now, requester_name=agents.get(r.requester_agent_did),
+                            decider_name=devs.get(r.decided_by_developer_id))
+        item["room"] = {"conversation_id": conv.id, "title": conv.title or org.name, "org_id": org.id,
+                        "org_name": org.name}
+        items.append(item)
+    return {"items": items, "count": len(items), "server_time": ca.iso(now)}
+
+
 @router.get("/approvals/{approval_id}", summary="One approval request, its decision and the proof")
 @approval_errors
 async def get_approval(
@@ -2082,6 +2145,81 @@ async def get_approval(
         except Exception:  # noqa: BLE001 — the key is also served by the attestation rail
             out["decision"]["statement_pubkey_b64"] = None
     return out
+
+
+@router.post("/approvals/{approval_id}/consume",
+             summary="Use an approved request to open one act (the agent that asked, once)")
+@approval_errors
+async def consume_approval(
+    approval_id: str,
+    req: ApprovalConsumeBody,
+    current_agent: Agent = Security(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    V0651 (o): a driver opens its act with an approval instead of a typed word. It may only when the approval is
+    approved, by the organization's owner or a named approver who still holds that right now, unexpired, asked with
+    production_impact (for a production act), names this act's sha256 (artifact_sha256: the driver file, which pins
+    the certified image id), and was never used before. The registry records the use once (`consumed` in GET
+    /chat/approvals/{id}), in one UPDATE that repeats every condition, so a race opens one act; a second use answers
+    409 naming the act it opened and when. The room gets one line under the approval card. Agents only: the caller is
+    the agent that asked.
+    """
+    from ..services import chat_approvals as ca
+    from ..services.admin_audit import log_chat_action
+    _approvals_switched_on()
+    did = current_agent.did
+    sha = ca.normalize_sha256(req.act_sha256)
+    label = " ".join(req.act_label.split())
+    if not sha or not label:
+        raise cs.ChatError(422, "act_label must say what the act is and act_sha256 must name it")
+    row = await ca.fetch(db, approval_id, fresh=True)
+    now = await ca.db_now(db)
+    role = None
+    if row is not None and row.decided_by_developer_id is not None and row.org_id:
+        org = await ca.org_facts(db, row.org_id)
+        role = await ca.decider_role(db, row.org_id, int(row.decided_by_developer_id), (org or {}).get("owner_id"))
+    refusal = ca.consume_refusal(row, agent_did=did, act_sha256=sha, now=now, role=role, production=req.production)
+    if refusal:
+        raise cs.ChatError(*refusal)
+    conv = await cs._get_conversation(db, row.conversation_id)
+    actor = await _named_sender(db, cs.Actor("agent", agent_did=did,
+                                             display_name=getattr(current_agent, "name", None) or did))
+    my_row = await cs.resolve_membership(db, conv, actor)
+    if my_row.state != "active":
+        raise cs.ChatError(409, "you are not active in this approval's conversation: nothing opened")
+    used_at = await ca.mark_consumed(db, row.id, agent_did=did, act_label=label, act_sha256=sha)
+    if used_at is None:
+        # the belt: used, decided otherwise or expired between the read and the write; say which, write nothing
+        await db.rollback()
+        again = await ca.fetch(db, approval_id, fresh=True)
+        refusal = ca.consume_refusal(again, agent_did=did, act_sha256=sha, now=await ca.db_now(db), role=role,
+                                     production=req.production)
+        raise cs.ChatError(*(refusal or (409, "this approval could not be used at the moment of writing: "
+                                              "nothing opened")))
+    await log_chat_action(db, action="approval.consumed", actor_type="agent", actor_id=did,
+                          target_type="chat_approval", target_id=row.id,
+                          details={"conversation_id": conv.id, "org_id": conv.org_id, "act": label,
+                                   "act_sha256": sha, "decided_by_developer_id": row.decided_by_developer_id,
+                                   "role": role})
+    await db.commit()
+    used = await ca.fetch(db, row.id, fresh=True)
+    # The line follows the record, as the decided card does: one that fails to post is logged, the record stays the
+    # authority.
+    try:
+        msg, dup = await cs.insert_message(db, conv, my_row, actor, "text", ca.consumed_notice(label, sha, used_at),
+                                           None, client_ref=f"aprused-{row.id}", reply_to=row.request_message_id,
+                                           rail_author=True)
+        if not dup:
+            payload = cs.serialize_message(msg)
+            payload["sender_name"] = actor.display_name
+            recipients = await cs.recipients_snapshot(db, conv, actor)
+            cs.deliver(conv.id, conv.kind, payload, recipients, actor.display_name)
+    except Exception as e:  # noqa: BLE001 — the use is committed; its line is a display
+        logger.warning("[CHATAPPROVAL] the use line for %s was not posted: %s", row.id, e)
+    agents, devs = await ca.names_for(db, [used])
+    return {"approval": ca.serialize(used, now, requester_name=agents.get(used.requester_agent_did),
+                                     decider_name=devs.get(used.decided_by_developer_id))}
 
 
 @router.post("/conversations/{conversation_id}/approvals/decide",

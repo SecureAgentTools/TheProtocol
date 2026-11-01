@@ -2,8 +2,8 @@
  "version": 2,
  "source": "agentvault_registry/core/auth_tiers.py (the FastAPI dependency tree, registration order)",
  "counts": {
-  "a": 156,
-  "e": 62,
+  "a": 155,
+  "e": 64,
   "d": 6
  },
  "routes": [
@@ -634,16 +634,6 @@
   ],
   [
    "POST",
-   "/api/v1/bridge/transfer",
-   "a"
-  ],
-  [
-   "POST",
-   "/api/v1/bridge/redeem",
-   "a"
-  ],
-  [
-   "POST",
    "/api/v1/funding/request",
    "a"
   ],
@@ -831,6 +821,11 @@
    "POST",
    "/api/v1/guild/orders",
    "a"
+  ],
+  [
+   "GET",
+   "/api/v1/guild/orders/{oid}",
+   "e"
   ],
   [
    "POST",
@@ -1124,8 +1119,18 @@
   ],
   [
    "GET",
+   "/api/v1/chat/approvals",
+   "e"
+  ],
+  [
+   "GET",
    "/api/v1/chat/approvals/{approval_id}",
    "e"
+  ],
+  [
+   "POST",
+   "/api/v1/chat/approvals/{approval_id}/consume",
+   "a"
   ]
  ]
 }

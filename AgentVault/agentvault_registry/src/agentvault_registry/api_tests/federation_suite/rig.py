@@ -324,6 +324,52 @@ def container_exists_and_runs(name: str) -> tuple:
     return (True, r.stdout.strip() == "true")
 
 
+async def _did_from_sidecar(container: str) -> str:
+    """The agent DID a fed-test-agent sidecar persisted (/var/lib/agent/creds.json); "" when it cannot be read."""
+    rc, out = await asyncio.to_thread(exec_in_container, container, ["cat", "/var/lib/agent/creds.json"], 10)
+    if rc != 0:
+        return ""
+    try:
+        return str(json.loads(out).get("agent_did") or "")
+    except (ValueError, AttributeError):
+        return ""
+
+
+async def fixture_agent_dids(rig, tag: str, sides: Tuple[str, ...] = ("A", "B")) -> Tuple[str, ...]:
+    """§MCPTEST30 (V0651, tester batch 3 item 2, Guild order gwo_5b6bc38b2e17c317754d6e29; his words "2. approved very
+    good"): an agent DID on each named frame for a test that reads ABOUT an agent (its flare, its enforcement status, its
+    developer's trust graph). The fed-test-agent sidecars where they still run (their persisted creds.json); else, as on
+    every tier since the sandbox tier retired, a throwaway agent of the run's own on that frame, made by the suite's
+    developer there and retired once the test's verdict is in (throwaways). Before it these four tests skipped on every
+    tier, every run, for a fixture no tier has. A frame that makes no agent is a precondition, named."""
+    from agentvault_registry.api_tests.federation_suite import throwaways
+    import uuid
+    out: List[str] = []
+    for side in sides:
+        container = FED_AGENT_A if side == "A" else FED_AGENT_B
+        if container_exists_and_runs(container)[1]:
+            did = await _did_from_sidecar(container)
+            if did:
+                out.append(did)
+                continue
+        label = f"sandbox-{side}"
+        try:
+            r = await rig.mcp(label).call("createAgent", {
+                "name": f"fedsuite-fixture-{tag}-{uuid.uuid4().hex[:8]}",
+                "description": "federation suite: an agent of the run's own for a test that reads about one"})
+        except Exception as e:                                        # noqa: BLE001
+            raise PreconditionUnmet(f"no fed-test-agent sidecar runs and createAgent on {label} failed: {e!r}"[:300])
+        did = None
+        if isinstance(r, dict):
+            did = r.get("did") or r.get("agent_did") or (r.get("agent") or {}).get("did")
+        if not did:
+            raise PreconditionUnmet(f"no fed-test-agent sidecar runs and createAgent on {label} answered no DID "
+                                    f"(keys={sorted(r)[:8] if isinstance(r, dict) else type(r).__name__})")
+        throwaways.made(label, did)
+        out.append(str(did))
+    return tuple(out)
+
+
 def require_running_container(name: str) -> None:
     """PreconditionUnmet unless `name` is a container that EXISTS and is RUNNING.
 

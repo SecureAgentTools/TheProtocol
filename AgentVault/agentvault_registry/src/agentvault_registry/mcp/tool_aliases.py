@@ -93,7 +93,6 @@ _W3_RENAMED: Dict[str, str] = {
     "getRewardFundingPolicy": "getPayoutFundingPolicy",
     # "issue" where units are meant, as the ledger already says (his word through agentvault2-69, 2026-10-25 21:15Z)
     "tegTreasuryMint": "tegTreasuryIssue",
-    "bridgeMintWrapped": "bridgeIssueWrapped",
     "mintFrameBSimulation": "issueFrameBSimulation",
 }
 _RENAMED = {**_AGORA_RENAMED, **_W3_RENAMED}

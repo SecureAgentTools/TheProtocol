@@ -42,10 +42,10 @@ import re
 import secrets
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from sqlalchemy import select, text as sa_text
+from sqlalchemy import and_, or_, select, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import ChatApproval, Conversation
+from ..models import ChatApproval, Conversation, Organization, OrganizationMember
 
 logger = logging.getLogger(__name__)
 
@@ -201,6 +201,53 @@ def effective_status(status: str, expires_at: Optional[_dt.datetime], now: _dt.d
         if ex <= now:
             return "expired"
     return status
+
+
+# V0651 (o) gwo_b81bd623: an approval as the production word, bound to one act. A driver names its act by the sha256 the
+# approval was asked with (the driver file, which pins the certified image id), and the registry records the use once.
+ACT_LABEL_MAX = 200
+
+
+def consume_refusal(row: Any, *, agent_did: str, act_sha256: str, now: _dt.datetime, role: Optional[str],
+                    production: bool = True) -> Optional[Tuple[int, str]]:
+    """Why this approval may not open this act, as (status, sentence), or None when it may. Asked in this order, so the
+    answer names the first thing that stands in the way: the record, the asker, an earlier use, the decision, the
+    expiry, the production flag, the decider's right (`role`, re-derived by the caller now), and the artifact. Nothing
+    here writes; the use itself is one UPDATE that repeats the conditions (mark_consumed), so a race uses it once."""
+    if row is None:
+        return 404, "approval request not found"
+    if (row.requester_agent_did or "").lower() != (agent_did or "").lower():
+        return 403, (f"only the agent that asked may use this approval (it was asked by {row.requester_agent_did}); "
+                     "nothing opened")
+    if getattr(row, "consumed_at", None) is not None:
+        used = row.consumed_act_sha256 or ""
+        return 409, (f"this approval was already used: it opened {row.consumed_act!r} (sha256 {used[:12]}...) at "
+                     f"{iso(row.consumed_at)} for {row.consumed_by_agent_did}. One approval opens one act: ask again")
+    st = effective_status(row.status, row.expires_at, now)
+    if st != "approved":
+        return 409, f"this approval is {st}, not approved: nothing opened"
+    ex = row.expires_at if (row.expires_at is None or row.expires_at.tzinfo) else row.expires_at.replace(
+        tzinfo=_dt.timezone.utc)
+    if ex is not None and ex <= now:
+        return 409, f"this approval expired at {iso(ex)}: it opens an act only before its expiry, ask again"
+    if production and not bool(row.production_impact):
+        return 409, "this approval was asked without production_impact, so it cannot open a production act: ask again"
+    if role not in ("owner", "approver"):
+        return 403, (f"its decider (developer {row.decided_by_developer_id}) no longer owns this organization or "
+                     "approves for it: ask again")
+    if not row.artifact_sha256:
+        return 409, ("this approval names no artifact (artifact_sha256), so it cannot open an act: ask again naming "
+                     "the act's sha256")
+    if row.artifact_sha256 != act_sha256:
+        return 409, (f"this approval names {row.artifact_sha256[:12]}..., this act {act_sha256[:12]}...: "
+                     "nothing opened")
+    return None
+
+
+def consumed_notice(act_label: str, act_sha256: str, at: _dt.datetime) -> str:
+    """The room's line under the approval card when it opens its act (the record is the authority, this shows it)."""
+    return (f"This approval opened one act: {act_label} (sha256 {act_sha256[:12]}...), at {iso(at)}. "
+            "One approval opens one act; it opens nothing else.")
 
 
 def partition_for_decision(rows: Iterable[Any], ids: Sequence[str],
@@ -398,6 +445,11 @@ def serialize(row: Any, now: _dt.datetime, *, requester_name: Optional[str] = No
         "expires_at": iso(row.expires_at),
         "request_message_id": row.request_message_id,
         "request_digest": row.facts_digest,
+        # V0651 (o): the approval's one use, once a driver used it to open its act (None until then)
+        "consumed": ({"at": iso(row.consumed_at), "by_agent_did": getattr(row, "consumed_by_agent_did", None),
+                      "act": getattr(row, "consumed_act", None),
+                      "act_sha256": getattr(row, "consumed_act_sha256", None)}
+                     if getattr(row, "consumed_at", None) is not None else None),
     }
     if st in ("approved", "denied"):
         out["decision"] = {
@@ -422,6 +474,24 @@ def serialize(row: Any, now: _dt.datetime, *, requester_name: Optional[str] = No
 # ---------------------------------------------------------------------------
 # Reads
 # ---------------------------------------------------------------------------
+
+async def mark_consumed(db: AsyncSession, approval_id: str, *, agent_did: str, act_label: str,
+                        act_sha256: str) -> Optional[_dt.datetime]:
+    """V0651 (o): record the approval's one use, or None when it was not usable at the moment of writing. The UPDATE
+    repeats every condition consume_refusal asked (unused, approved, unexpired, this artifact, this asker), so two
+    drivers racing for one approval cannot both open their act: the second finds consumed_at set and writes nothing."""
+    res = await db.execute(sa_text(
+        "UPDATE chat_approvals SET consumed_at = now(), consumed_by_agent_did = :a, consumed_act = :l, "
+        "consumed_act_sha256 = :s "
+        "WHERE id = :id AND consumed_at IS NULL AND status = 'approved' AND expires_at > now() "
+        "AND artifact_sha256 = :s AND lower(requester_agent_did) = lower(:a) RETURNING consumed_at"),
+        {"a": agent_did, "l": act_label[:ACT_LABEL_MAX], "s": act_sha256, "id": approval_id})
+    got = res.first()
+    if got is None:
+        return None
+    ts = got[0]
+    return ts if (ts is None or ts.tzinfo) else ts.replace(tzinfo=_dt.timezone.utc)
+
 
 async def db_now(db: AsyncSession) -> _dt.datetime:
     """The database's clock (constant inside one transaction), so expiry never depends on a worker's clock."""
@@ -457,6 +527,30 @@ async def decider_role(db: AsyncSession, org_id: str, developer_id: int,
     return None
 
 
+async def deciders_among(conversation_id: str, developer_ids, db: Optional[AsyncSession] = None) -> set:
+    """V0651 (y2): which of these developers may decide an approval request in this org room (decider_role's rule:
+    the owner, or an active member named an approver), read live. The chat's offline notices send them
+    chat.approval_requested, pushed by default; everyone else keeps the plain notice. Not an org room, or nobody: an
+    empty set."""
+    ids = sorted({int(d) for d in (developer_ids or []) if d is not None})
+    if not ids:
+        return set()
+    if db is None:
+        from ..database import AsyncSessionLocal
+        async with AsyncSessionLocal() as own:
+            return await deciders_among(conversation_id, ids, db=own)
+    org_id = (await db.execute(sa_text(
+        "SELECT org_id FROM conversations WHERE id = :c AND kind = 'org'"), {"c": conversation_id})).scalar()
+    if not org_id:
+        return set()
+    owner = (await db.execute(sa_text("SELECT owner_id FROM organizations WHERE id = :o"), {"o": org_id})).scalar()
+    out = set()
+    for d in ids:
+        if await decider_role(db, org_id, d, owner_id=owner):
+            out.add(d)
+    return out
+
+
 async def pending_count(db: AsyncSession, conversation_id: str, agent_did: str) -> int:
     return int((await db.execute(sa_text(
         "SELECT count(*) FROM chat_approvals WHERE conversation_id = :c AND requester_agent_did = :a "
@@ -487,6 +581,26 @@ async def list_for_conversation(db: AsyncSession, conversation_id: str, status: 
     else:
         q = q.order_by(ChatApproval.created_at.desc())
     return list((await db.execute(q.limit(max(1, min(int(limit or 50), 200))))).scalars().all())
+
+
+async def waiting_for(db: AsyncSession, developer_id: int, now: _dt.datetime,
+                      limit: int = 50) -> List[Tuple[ChatApproval, Conversation, Organization]]:
+    """V0651 (y): the pending, unexpired requests in the organization rooms this registry hosts where `developer_id`
+    decides (the org's owner, a member holding the owner role, or an active member the owner named an approver; the
+    same rule as decider_role), oldest first, each with its room and organization. The rooms' own read authority (the
+    live org table) is the caller's to apply: this only narrows by the decider rule."""
+    member = OrganizationMember
+    q = (select(ChatApproval, Conversation, Organization)
+         .join(Conversation, Conversation.id == ChatApproval.conversation_id)
+         .join(Organization, Organization.id == Conversation.org_id)
+         .outerjoin(member, and_(member.organization_id == Organization.id,
+                                 member.developer_id == int(developer_id), member.is_active.is_(True)))
+         .where(ChatApproval.status == "pending", ChatApproval.expires_at > now,
+                Conversation.kind == "org", Conversation.host_registry.is_(None),
+                or_(Organization.owner_id == int(developer_id), member.role == "owner", member.can_approve.is_(True)))
+         .order_by(ChatApproval.created_at.asc())
+         .limit(max(1, min(int(limit or 50), 200))))
+    return [tuple(r) for r in (await db.execute(q)).all()]
 
 
 async def names_for(db: AsyncSession, rows: Iterable[Any]) -> Tuple[Dict[str, str], Dict[int, str]]:

@@ -17,6 +17,9 @@
       </div>
     </header>
 
+    <!-- V0651 (y): the chat's approval requests the signed-in person decides, each opening its room on it -->
+    <PocketChatApprovals />
+
     <!-- §POCKETBRIDGE2 P0.1 (Commander feedback): the picker searches the whole
          fleet server-side, balance-ranked — a bare select was unusable at fleet
          scale. Same rail as the Agents tab (getMyAgents q + sort=balance). -->
@@ -226,6 +229,7 @@ import { appLocale } from '@/services/appLocale'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from '@/components/Icon.vue'
+import PocketChatApprovals from '@/views/pocket/PocketChatApprovals.vue'
 import ConfirmActionModal from '@/components/common/ConfirmActionModal.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import { failedForWantOfAnAnswer } from '@/services/api/peerDirect'

@@ -21,7 +21,7 @@ from typing import Optional
 
 import httpx
 import time
-from fastapi import APIRouter, Depends, HTTPException, Request, Security, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Security, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agentvault_registry import models
 from agentvault_registry.database import get_db
 from agentvault_registry.security import admin_credential, get_current_agent, get_current_developer, get_current_developer_optional
+from agentvault_registry.security import get_current_actor_for_read_optional  # V0651 (s): an agent reader
 from agentvault_registry.services import guild_escrow, guild_reputation
 from agentvault_registry.services import payout_outcome as _po  # §DOCSFIX D6-776: the stage-failure reading
 from agentvault_registry.services.ledger_unavailable import refusal_from_error  # §LEDGERGATE (V0598)
@@ -194,6 +195,19 @@ def _emit(event_type: str, agg: str, data: dict, idempotency_key: Optional[str] 
         _count_silent(f"emit_failed:{event_type}")
 
 
+def _notify_poster_agent(oid: str, o: dict, bid_id, bidder_did: str, price, eta_seconds) -> None:
+    """V0651 (s): the bid as an event the POSTER AGENT can wait on (V0650 (g)'s sync): one row in its Guild thread,
+    written in its own session after the bid committed. Beside the owners' push, never instead of it; never raises."""
+    try:
+        from agentvault_registry.services import chat_service as _cs
+        from agentvault_registry.services.guild_thread import notify_bid
+        _cs.spawn(notify_bid(poster_did=o["poster_did"], order_id=oid, title=o.get("title"), bid_id=bid_id,
+                             bidder_did=bidder_did, price=str(price), currency=o.get("currency"),
+                             eta_seconds=eta_seconds), "guild bid notice")
+    except Exception:  # noqa: BLE001 — the bid is committed; its notice is a display
+        logger.debug("guild bid notice to the poster agent skipped", exc_info=True)
+
+
 def _guild_webhook(event: str, dids, data: dict) -> None:
     """§TWOAGENT G3 (2026-09-23): the WEBHOOK half of a guild notice, owner-scoped to each LOCAL agent's owner (a
     remote DID resolves to nobody here). The §NOTIFV2 push reaches a phone; nothing reached an agent RUNTIME, so the
@@ -338,9 +352,15 @@ async def list_orders(status_filter: str = "open", limit: int = 50, db: AsyncSes
     return {"orders": [dict(r) for r in rows], "total": len(rows)}
 
 
-async def _may_see_deliverable(db: AsyncSession, o: dict, dev: Optional[models.Developer]) -> bool:
-    """Who reads delivered work: the developer behind the poster or the worker agent, an active member of the poster's
+async def _may_see_deliverable(db: AsyncSession, o: dict, dev: Optional[models.Developer],
+                               agent_did: Optional[str] = None) -> bool:
+    """Who reads delivered work: the poster agent and the worker agent themselves (V0651 (s): the poster agent is the
+    one that verifies, so it read blind before), the developer behind either of them, an active member of the poster's
     organization when an org treasury posted, and an admin (who resolves disputes over it). Nobody else."""
+    if agent_did:
+        own = {str(d).lower() for d in (o.get("poster_did"), o.get("worker_did")) if d}
+        if str(agent_did).lower() in own:
+            return True
     if dev is None:
         return False
     if admin_credential(dev):   # D6-821: an admin on this request's credential
@@ -358,11 +378,12 @@ async def _may_see_deliverable(db: AsyncSession, o: dict, dev: Optional[models.D
 
 @router.get("/api/v1/guild/orders/{oid}", summary="Order detail + bids + events")
 async def order_detail(oid: str, db: AsyncSession = Depends(get_db),
-                       dev: Optional[models.Developer] = Depends(get_current_developer_optional)):
+                       dev: Optional[models.Developer] = Depends(get_current_developer_optional),
+                       reader: Optional[dict] = Depends(get_current_actor_for_read_optional)):
     """
     Order detail with bids and events. Public, as the board is, but the deliverable belongs to the parties (and an
     admin): anyone else gets `deliverable: null`, `deliverable_withheld: true` and the deliverable's key names. An
-    optional developer token identifies the caller.
+    optional developer token or agent token identifies the caller: the poster agent and the worker agent read it.
 
     \f
     §MCPTEST30 (2026-10-01): public, as the board is, but the DELIVERABLE is the parties' (and an admin's): it was
@@ -378,7 +399,8 @@ async def order_detail(oid: str, db: AsyncSession = Depends(get_db),
     ), {"p": o["poster_did"]})).first()
     if porg:
         o["poster_org_id"], o["poster_org_name"] = str(porg[0]), porg[1]
-    if o.get("deliverable") is not None and not await _may_see_deliverable(db, o, dev):
+    agent_reader = reader.get("agent_did") if isinstance(reader, dict) and reader.get("kind") == "agent" else None
+    if o.get("deliverable") is not None and not await _may_see_deliverable(db, o, dev, agent_reader):
         d = o["deliverable"]
         o["deliverable_keys"] = sorted(d.keys()) if isinstance(d, dict) else []
         o["deliverable"], o["deliverable_withheld"] = None, True
@@ -618,6 +640,7 @@ async def place_bid(oid: str, body: BidIn, agent: models.Agent = Depends(get_cur
             tags="hammer", priority="default", click="/ui/#/guild"))
     except Exception:  # noqa: BLE001
         logger.debug("guild.bid_received notify skipped", exc_info=True)
+    _notify_poster_agent(oid, o, bid_id, agent.did, body.price, body.eta_seconds)   # V0651 (s)
     _guild_webhook("guild.bid_received", [o["poster_did"]], {
         "order_id": oid, "title": o.get("title"), "bid_id": bid_id, "bidder_did": agent.did, "price": str(body.price),
         "currency": o.get("currency"), "via": "local", "firm": body.on_behalf_of_org_id,
@@ -1257,8 +1280,16 @@ async def dispute_payout(oid: str, request: Request, agent: models.Agent = Depen
 
 
 # ── cancel (refund while open) ───────────────────────────────────────────────
+class GuildCancelBody(BaseModel):
+    """V0651 (s): why the poster cancels, kept in the order's events (optional)."""
+    reason: Optional[str] = Field(None, max_length=500, description="Why the order is cancelled (kept in its events)")
+
+
 @router.post("/api/v1/guild/orders/{oid}/cancel", summary="Cancel an OPEN task → refund (poster)")
-async def cancel(oid: str, agent: models.Agent = Depends(get_current_agent), db: AsyncSession = Depends(get_db)):
+async def cancel(oid: str, agent: models.Agent = Depends(get_current_agent), db: AsyncSession = Depends(get_db),
+                 body: Optional[GuildCancelBody] = Body(None)):
+    """Cancel your OPEN order: the bounty and every bidder's collateral are refunded. Poster only. An optional
+    `reason` (up to 500 characters) is kept in the order's `cancelled` event."""
     _require_enabled()
     o = await _load(db, oid)
     if o["poster_did"] != agent.did:
@@ -1271,7 +1302,11 @@ async def cancel(oid: str, agent: models.Agent = Depends(get_current_agent), db:
         "UPDATE guild_work_orders SET status='cancelled', settled_at=now() WHERE id=:o AND status='open'"), {"o": oid})
     if getattr(claimed, "rowcount", 0) == 0:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Order is no longer open (already cancelling/expired)")
-    await _audit(db, oid, await _next_seq(db, oid), "cancelled", agent.did, {"refund": str(o["bounty"])})
+    cancelled = {"refund": str(o["bounty"])}
+    reason = " ".join(((body.reason if body else None) or "").split())
+    if reason:
+        cancelled["reason"] = reason          # V0651 (s): the order's events say why
+    await _audit(db, oid, await _next_seq(db, oid), "cancelled", agent.did, cancelled)
     await db.commit()  # claim durable BEFORE money → a racer sees 'cancelled' and cannot re-refund
     await guild_escrow.escrow_payout(db, o["poster_did"], Decimal(str(o["bounty"])), oid, "refund")
     await _refund_all_stakes(db, oid)  # STAKED WORK: return every bidder's collateral
@@ -1564,6 +1599,7 @@ async def place_bid_federated(oid: str, body: FederatedBidIn, db: AsyncSession =
             tags="hammer", priority="default", click="/ui/#/guild"))
     except Exception:  # noqa: BLE001
         logger.debug("guild.bid_received notify skipped", exc_info=True)
+    _notify_poster_agent(oid, o, bid_id, body.bidder_did, body.price, getattr(body, "eta_seconds", None))   # V0651 (s)
     _guild_webhook("guild.bid_received", [o["poster_did"]], {
         "order_id": oid, "title": o.get("title"), "bid_id": bid_id, "bidder_did": body.bidder_did,
         "price": str(body.price), "currency": o.get("currency"), "via": "federation",

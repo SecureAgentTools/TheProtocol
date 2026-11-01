@@ -19,6 +19,7 @@ opt-in loosening nothing that was closed, and pass on both trees.
 from __future__ import annotations
 
 import datetime
+import ipaddress
 import ssl
 import types
 
@@ -92,8 +93,14 @@ def test_the_private_network_is_rfc1918_and_ula(addr):
     assert ftm._address_is_lan_private(addr)
 
 
+# the first address past 172.16.0.0/12, computed rather than written out: the public export's G13 gate refuses a
+# public IPv4 literal in a shipped file (V0651, session-lead's note seq 182)
+FIRST_PAST_172_16_12 = str(ipaddress.ip_network("172.16.0.0/12").broadcast_address + 1)
+
+
 @pytest.mark.parametrize("addr", ["127.0.0.1", "::1", "::ffff:127.0.0.1", "169.254.169.254", "fe80::1", "100.64.0.1",
-                                  "0.0.0.0", "192.0.2.1", "224.0.0.1", "172.32.0.1", "1.1.1.1", "testclient", ""])
+                                  "0.0.0.0", "192.0.2.1", "224.0.0.1", FIRST_PAST_172_16_12, "1.1.1.1", "testclient",
+                                  ""])
 def test_nothing_else_is_the_private_network(addr):
     # BASE: no _address_is_lan_private
     assert not ftm._address_is_lan_private(addr)

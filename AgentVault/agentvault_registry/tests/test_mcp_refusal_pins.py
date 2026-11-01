@@ -154,11 +154,6 @@ RECORDED = {
         "sandboxalpha": (503, "{\"error\":{\"detail\":\"This feature runs on sovereign mainframes only. Cloud-operators federate with the mainframe via the bilateral trust chain — they don't independently provision sub-operators, issue federation licenses, configure cross-fra"),
         "sandboxdelta": (503, "{\"error\":{\"detail\":\"This feature runs on sovereign mainframes only. Cloud-operators federate with the mainframe via the bilateral trust chain — they don't independently provision sub-operators, issue federation licenses, configure cross-fra"),
     },
-    "theprotocol_getBridgeStatus": {
-        "frame": (404, "{\"error\":{\"detail\":\"Bridge transaction not found\",\"type\":\"not_found\"},\"type\":\"https://docs.theprotocol.cloud/errors/not_found\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"Bridge transaction not found\",\"instance\":\"/api/v1/bridge/status/phase6"),
-        "sandboxalpha": (503, "{\"error\":{\"detail\":\"This feature runs on sovereign mainframes only. Cloud-operators federate with the mainframe via the bilateral trust chain — they don't independently provision sub-operators, issue federation licenses, configure cross-fra"),
-        "sandboxdelta": (503, "{\"error\":{\"detail\":\"This feature runs on sovereign mainframes only. Cloud-operators federate with the mainframe via the bilateral trust chain — they don't independently provision sub-operators, issue federation licenses, configure cross-fra"),
-    },
     "theprotocol_getCloudOperatorLogs": {
         "frame": (404, "{\"error\":{\"detail\":\"Application not found\",\"type\":\"not_found\"},\"type\":\"https://docs.theprotocol.cloud/errors/not_found\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"Application not found\",\"instance\":\"/api/v1/admin/cloud-operators/phase6-no-su"),
         "sandboxalpha": (503, "{\"error\":{\"detail\":\"This feature runs on sovereign mainframes only. Cloud-operators federate with the mainframe via the bilateral trust chain — they don't independently provision sub-operators, issue federation licenses, configure cross-fra"),
@@ -496,8 +491,9 @@ def _lifecycle_tables():
     return tables
 
 
-def test_the_section_pins_all_87():
-    assert len(RECORDED) == 87
+def test_the_section_pins_all_86():
+    # 87 until V0651, when getBridgeStatus left with the token bridge (his word "retire.")
+    assert len(RECORDED) == 86
     assert all(tool in MCP_CONTRACTS for tool in RECORDED)
 
 

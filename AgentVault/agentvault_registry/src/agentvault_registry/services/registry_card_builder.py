@@ -677,7 +677,6 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 def _build_capabilities_block() -> Dict[str, Any]:
     """DERIVED — snapshot of env-var capability flags. Operator cannot lie."""
-    from ..core.legacy_surfaces import surface_enabled
     fiat_providers: List[str] = []
     if _env_bool("FIAT_ONRAMP_ENABLED"):
         if _env_bool("STRIPE_API_KEY_PRESENT", True) or os.environ.get("STRIPE_API_KEY"):
@@ -708,11 +707,9 @@ def _build_capabilities_block() -> Dict[str, Any]:
         # "genesis_only" label contradicted that and read as "can't really mint".
         # Federated cloud-ops still cannot mint → "disabled".
         "minting_capability":             "sovereign" if _env_bool("IS_CENTRAL_REGISTRY") else "disabled",
-        # §DOCSFIX CB-277: the bridge's routes are mounted only where TOKEN_BRIDGE_ENABLED is on (main.py asks
-        # surface_enabled, as registry-config's token_bridge_enabled does). The card said frame_to_frame on every
-        # federated registry, EU's included, where /api/v1/bridge/* is not mounted.
-        "bridge_capability":              ("frame_to_frame" if _env_bool("FEDERATION_ENABLED", True)
-                                           and surface_enabled("TOKEN_BRIDGE_ENABLED") else "none"),
+        # V0651 (p): the token bridge is retired on every registry (/api/v1/bridge/* answers 410 Gone, whatever
+        # TOKEN_BRIDGE_ENABLED says), so no card offers it.
+        "bridge_capability":              "none",
         "a2a_versions_supported":         ["1.0"],
         "registry_card_versions_served":  ["0.6"],
         "supports_payment_protocol":      ["a2a-payment-v1"],

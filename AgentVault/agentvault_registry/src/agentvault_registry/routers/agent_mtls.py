@@ -184,7 +184,8 @@ def _attach_delivery(
             f"mounted at {mount_dir}: docker run --label {label} -v {volume or '<that volume>'}:{mount_dir}:ro ... "
             f"The SPIRE agent's Workload API socket is then {socket_path} "
             f"(SPIFFE_ENDPOINT_SOCKET=unix://{socket_path}); a SPIFFE Workload API client "
-            f"(pyspiffe WorkloadApiClient) fetches your SVID there and the SPIRE agent renews it."
+            f"(pyspiffe WorkloadApiClient) fetches your SVID there and the SPIRE agent renews it. The first fetch can "
+            f"be refused for a few seconds (\"no identity issued\") while the new entry reaches the SPIRE agent: retry it."
         )
         return response
 
@@ -257,8 +258,10 @@ def _runner_unavailable_detail(e: Exception) -> str:
     certificates through its runner (IRONHAND_SPIRE_MODE=runner), which frame-up installs only with --with-runner."""
     return (f"Agent certificates on this frame are issued through its frame runner, which did not serve this "
             f"request ({str(e)[:200]}). A frame stood up from the kit issues agent certificates only with the "
-            f"runner (frame-up.py --with-runner); agent-to-agent calls keep working with agent JWTs meanwhile. How "
-            f"mTLS identities are issued: https://docs.theprotocol.cloud/learn/security")
+            f"runner (frame-up.py --with-runner), and the runner comes with a fresh standup: frame-down, then "
+            f"frame-up.py --with-runner (the frame's accounts and agents go with the old one); agent-to-agent calls keep "
+            f"working with agent JWTs meanwhile. How mTLS identities are issued: "
+            f"https://docs.theprotocol.cloud/learn/security")
 
 
 def _detect_deployment(request: Optional[Request], agent_did: str) -> tuple[str, str]:

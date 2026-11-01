@@ -29,8 +29,9 @@ describe('the token map is the server\'s', () => {
   })
 
   it('the routes the old rules sent the wrong token to', () => {
-    // agent-tier routes the old rules sent a DEVELOPER token to (a 401)
-    for (const [m, u] of [['get', '/agents/me'], ['post', '/bridge/transfer'], ['post', '/agents/reputation-bond/deposit'],
+    // agent-tier routes the old rules sent a DEVELOPER token to (a 401); V0651 (p): /bridge/transfer left this list with
+    // the token bridge (it answers 410 to every caller and takes no token)
+    for (const [m, u] of [['get', '/agents/me'], ['post', '/agents/reputation-bond/deposit'],
       ['get', '/enforcement/my-status'], ['post', '/agent/enable-mtls']] as const) {
       expect(tierOf(m, u)).toBe('agent')
       expect(isAgentEndpoint(u, m)).toBe(false)          // the control: the old rule

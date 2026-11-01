@@ -492,3 +492,65 @@ def test_an_untrusted_peer_certificate_is_named_in_the_refusal(monkeypatch):
     with pytest.raises(ff.Refused) as exc:
         ff.step2_peer("https://sandbox-b.devframe.example", None, "sandbox.devframe.example", log=lambda *a, **k: None)
     assert "CERTIFICATE_VERIFY_FAILED" in str(exc.value) and "SSL_CERT_FILE" in str(exc.value)
+
+
+# ---- kit beta.30 (agentvault2-7c, 2026-10-31): the dev machine's beta.29 findings 13 to 16 -------------------------------
+
+EU_422 = ('the peer at https://theprotocol.cloud refused the invitation: HTTP 422: {"error":{"detail":"Bundle endpoint probe '
+          'failed: the bundle endpoint must be a public https address that answers","type":"validation_error"},"title":"Validation Er')
+
+
+def test_a_peer_refusal_is_said_whole_and_tagged_and_an_outage_is_not_a_refusal():
+    with pytest.raises(ff.PeerRefused) as exc:
+        ff.step5_outbound(_facts(), "https://theprotocol.cloud", "tok", "a@b", "d",
+                          post=lambda m, u, **kw: (502, {"detail": EU_422}), log=lambda *_: None)
+    msg = str(exc.value)
+    assert msg.startswith("[5/7] the peer at https://theprotocol.cloud refused the invitation (HTTP 422): ")
+    assert msg.endswith("the bundle endpoint must be a public https address that answers") and "Validation Er" not in msg
+    with pytest.raises(ff.StepFailed) as exc2:   # a 502 that is not a refusal (the peer did not answer) stays a failure
+        ff.step5_outbound(_facts(), "https://theprotocol.cloud", "tok", "a@b", "d",
+                          post=lambda m, u, **kw: (502, {"detail": "the peer did not answer"}), log=lambda *_: None)
+    assert not isinstance(exc2.value, ff.PeerRefused) and str(exc2.value).startswith("[5/7] the outbound invitation answered 502")
+
+
+def test_after_a_refusal_the_undo_removes_only_what_this_run_added():
+    calls = []
+
+    def exec_in(container, argv):
+        calls.append(argv[1:])
+        return 0, ""
+    left = ff.undo_import(_facts(), "eu.theprotocol.cloud", {"relationship": "create", "already_held": False},
+                          exec_in=exec_in, log=lambda *_: None)
+    assert left == [] and calls == [["federation", "delete", "-id", "spiffe://eu.theprotocol.cloud"],
+                                    ["bundle", "delete", "-id", "spiffe://eu.theprotocol.cloud", "-mode", "dissociate"]]
+    calls.clear()   # a relationship and a root this frame held before the run stay
+    ff.undo_import(_facts(), "eu.theprotocol.cloud", {"relationship": "already", "already_held": True},
+                   exec_in=exec_in, log=lambda *_: None)
+    assert calls == []
+    said = []
+    left = ff.undo_import(_facts(), "eu.theprotocol.cloud", {"relationship": "create", "already_held": False},
+                          exec_in=lambda c, argv: (1, "rpc error"), log=said.append)
+    assert len(left) == 2 and "by hand" in said[0] and "-mode dissociate" in left[1]
+
+
+def test_the_waiting_line_is_said_when_it_changes_not_every_poll():
+    counts = iter([1, 1, 1, 1, 2])
+    t = {"now": 0.0}
+
+    def clock():
+        return t["now"]
+
+    def sleep(s):
+        t["now"] += s
+    said = []
+    ff.wait_for_roots(lambda c, argv: (0, f"{next(counts)}\n"), ["hello-nginx-teg"], "/certs", {"hello-nginx-teg": 1}, 300,
+                      clock=clock, sleep=sleep, log=said.append)
+    assert len([s for s in said if "waiting:" in s]) == 1   # four polls at 1 root: one line, then the root arrives
+
+
+def test_an_untrusted_certificate_is_not_called_no_connection(monkeypatch):
+    reason = "URLError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate"
+    monkeypatch.setattr(ff, "http_json", lambda method, url, **kw: (0, reason))
+    with pytest.raises(ff.Refused) as exc:
+        ff.step2_peer("https://sandbox-b.devframe.example", None, "sandbox.devframe.example", log=lambda *a, **k: None)
+    assert "no connection" not in str(exc.value) and "a certificate this host does not trust" in str(exc.value)

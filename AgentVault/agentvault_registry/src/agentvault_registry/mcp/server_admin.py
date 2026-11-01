@@ -329,10 +329,6 @@ from .tools_admin import (
     test_api_flow,
     get_attestations_analytics,
     # §pass70 Sprint 18 (Admin — 4 new: bridge)
-    bridge_mint_wrapped,
-    bridge_redeem,
-    bridge_unlock,
-    get_bridge_status,
     # §pass70 Sprint 19 (Admin)
     list_admin_bundles_reports,
     dismiss_bundle_report,
@@ -696,10 +692,6 @@ ADMIN_TOOL_DISPATCH: Dict[str, Any] = {
     "theprotocol_testApiFlow":                  test_api_flow,
     "theprotocol_getAttestationsAnalytics":     get_attestations_analytics,
     # ─── §pass70 Sprint 18 — 4 new admin tools (bridge) ───────────────────
-    "theprotocol_bridgeIssueWrapped":            bridge_mint_wrapped,
-    "theprotocol_bridgeRedeem":                 bridge_redeem,
-    "theprotocol_bridgeUnlock":                 bridge_unlock,
-    "theprotocol_getBridgeStatus":              get_bridge_status,
     # ─── §pass70 Sprint 19 — 8 new admin tools ────────────────────────────
     "theprotocol_listAdminBundlesReports":      list_admin_bundles_reports,
     "theprotocol_dismissBundleReport":          dismiss_bundle_report,

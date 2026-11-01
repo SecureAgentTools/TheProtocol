@@ -2458,6 +2458,17 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         success_path_unmeasured="a request exists only in an organization room of the run's own, earned only on the "
                                 "nightly and proof pairs (earned_ad_chat_approvals)",
     ),
+    # V0651 (o): opening one act with an approval; the sweep pins the refusal of an approval that does not exist
+    "theprotocol_consumeChatApproval": McpContract(
+        tier="2",
+        requires_fixtures=["sentinel_jwt"],
+        arguments={"agent_jwt": "${sentinel_jwt}", "approval_id": "apr_phase6_no_such", "act_label": "phase-6 probe",
+                   "act_sha256": "0" * 64},
+        expect_status="error_4xx",
+        expect_error_message_contains="approval request not found",
+        success_path_unmeasured="an approved request exists only in an organization room of the run's own, earned "
+                                "only on the nightly and proof pairs (earned_ad_chat_approvals)",
+    ),
     "theprotocol_decideChatApproval": McpContract(
         tier="3",
         arguments={"conversation_id": "phase6-no-such-room", "decision": "approve",
@@ -2520,51 +2531,6 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         # (ADMIN_PEER_ONLY_TOOLS); the refusal is a refusal row there
         success_path_unmeasured="a federation peer's route: no MCP caller carries a peer identity, by design",
         notes="V0549: no MCP caller can succeed (PEER_ROUTE); refusal pinned on every node class.",
-    ),
-    "theprotocol_bridgeIssueWrapped": McpContract(
-        tier="admin",
-        # §MCPTEST30 (V0549): no MCP caller can succeed (the request survey's PEER_ROUTE, V0547): the route authenticates
-        # only a federation peer. Measured 2026-10-02 on the frame and both operators: 401 "Federation authentication required"; 503 "This feature runs on sovereign mainframes only" on an operator. The refusal is
-        # the contract; whether the tool stays on the surface is his decision (FINDINGS_2026-10-02_PEER_ONLY_MCP_TOOLS).
-        arguments={"agent_did": "did:theprotocol:00000000-0000-4000-8000-000000000000", "amount": "0", "source_frame": "apitest-no-such-frame"},
-        expect_status="error",
-        expect_error_message_contains=["Federation authentication required", "This feature runs on sovereign mainframes only"],
-        override_coverage_fan=True,
-        notes="V0549: no MCP caller can succeed (PEER_ROUTE); refusal pinned on every node class.",
-    ),
-    "theprotocol_bridgeRedeem": McpContract(
-        tier="admin",
-        # §MCPTEST30 (tester batch 2 item 2, agentvault2-d3): read on V0649: the wrapper can never succeed. The route
-        # acts for the agent the wrapped units were minted to (require_agent_permission), while this admin tool sends the
-        # admin's developer token (401 "Could not validate agent credentials") and an agent_did the route does not
-        # declare. Left as it is on his D8 decision (tests/test_mcp_tool_requests_meet_their_routes.py KNOWN).
-        success_path_unmeasured=(
-            "the success path, redeeming a real bridge transaction, is exercised by nothing, and this wrapper cannot reach "
-            "it: an admin tool at an agent route (it sends the admin's token; the route answers 401 for any caller that "
-            "is no agent), left as it is because the Token Bridge is on the D8 retire list, his decision; its refusal is "
-            "the admin destructive-safe probe's"
-        ),
-        notes="FANCLAIM: money rail; refusal measured, success deliberately not swept.",
-    ),
-    "theprotocol_bridgeUnlock": McpContract(
-        tier="admin",
-        # §MCPTEST30 (V0549): no MCP caller can succeed (the request survey's PEER_ROUTE, V0547): the route authenticates
-        # only a federation peer. Measured 2026-10-02 on the frame and both operators: 401 "Federation authentication required"; 503 "This feature runs on sovereign mainframes only" on an operator. The refusal is
-        # the contract; whether the tool stays on the surface is his decision (FINDINGS_2026-10-02_PEER_ONLY_MCP_TOOLS).
-        arguments={"bridge_tx_id": "00000000-0000-4000-8000-000000000000"},
-        expect_status="error",
-        expect_error_message_contains=["Federation authentication required", "This feature runs on sovereign mainframes only"],
-        override_coverage_fan=True,
-        notes="V0549: no MCP caller can succeed (PEER_ROUTE); refusal pinned on every node class.",
-    ),
-    "theprotocol_bridgeTransfer": McpContract(
-        tier="2",
-        arguments={"target_agent_did": "did:theprotocol:00000000-0000-4000-8000-000000000000", "amount": "1", "agent_jwt": "${sentinel_jwt}"},
-        expect_status="error_4xx",
-        expect_error_message_contains=["not found in federation\",\"type\":\"not_found\"},\"type\":\"https://docs.thep"],
-        # EVTYPES2 probed on the mainframe AND the operator with a non-existent
-        # entity; both refusals pinned
-        notes="EVTYPES2: probed on sbx-alpha; see the section header.",
     ),
     "theprotocol_unblockFederationAgent": McpContract(
         tier="admin",
@@ -4002,6 +3968,16 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         expect_error_message_contains=["readThread returned HTTP"],
         notes="EVTYPES3: probed on a mainframe AND a cloud operator 2026-09-06; both agreed.",
     ),
+    # V0651 (t): a sync of the caller's own threads, filtered, answered at once (wait 0): a success, and it says the
+    # filter it applied (a registry before V0651 drops for=me and answers without the field)
+    "theprotocol_syncChat": McpContract(
+        tier="2",
+        requires_fixtures=["sentinel_jwt"],
+        arguments={"agent_jwt": "${sentinel_jwt}", "for_me": True, "wait_seconds": 0},
+        expect_status="success",
+        expect_keys=["messages", "next_cursor", "plain_cursor", "for"],
+        notes="V0651 (t): for=me echoes the filter (for: me) and carries plain_cursor beside next_cursor",
+    ),
     "theprotocol_sendChatMessage": McpContract(
         tier="3",
         arguments={"conversation_id": "00000000-0000-4000-8000-000000000000", "body": "apitest contract probe"},
@@ -4470,14 +4446,6 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         arguments={"invitation_id": "phase6-no-such-invite"},
         expect_status="error",
         expect_error_message_contains=["Invitation not found", "This feature runs on sovereign mainframes only"],
-        override_coverage_fan=True,
-        notes="V0550 pin (rule 1): the probe's own nonexistent target; refused on the frame; the operators refuse it as mainframe-only (503) in round 15.",
-    ),
-    "theprotocol_getBridgeStatus": McpContract(
-        tier="admin",
-        arguments={"bridge_tx_id": "phase6-no-such-bridge-tx"},
-        expect_status="error",
-        expect_error_message_contains=["Bridge transaction not found", "This feature runs on sovereign mainframes only"],
         override_coverage_fan=True,
         notes="V0550 pin (rule 1): the probe's own nonexistent target; refused on the frame; the operators refuse it as mainframe-only (503) in round 15.",
     ),

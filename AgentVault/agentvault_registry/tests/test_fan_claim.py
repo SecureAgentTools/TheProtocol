@@ -191,16 +191,17 @@ def test_success_path_unmeasured_is_a_separate_sentence_from_do_not_call(verdict
     CONTROL: the tool must not be in the do-not-call population, or the two
     sentences are still sharing one field and nothing has been separated."""
     from agentvault_registry.api_tests.contracts.mcp_contracts import MCP_CONTRACTS
-    # (V0549: bridgeIssueWrapped, the example until then, reaches a peer-only route and now pins its refusal; its
-    # sibling bridgeRedeem is still deliberately called with its success path unmeasured)
-    c = MCP_CONTRACTS["theprotocol_bridgeRedeem"]
+    # (V0549: bridgeIssueWrapped, the example until then, reached a peer-only route and pinned its refusal; its sibling
+    # bridgeRedeem was the example until V0651 (p) retired the token bridge and its tools; restoreBundle is in the
+    # same class: deliberately called, its success path unmeasured)
+    c = MCP_CONTRACTS["theprotocol_restoreBundle"]
     assert c.success_path_unmeasured, "the declaration is missing"
     assert c.skip_reason is None, (
         "a deliberately-called tool must NOT claim 'do not call' — that is the "
         "contradiction the §MCPADMSKIP-3 gate exists to find")
-    out = verdict(_row(), "theprotocol_bridgeRedeem")
+    out = verdict(_row(), "theprotocol_restoreBundle")
     assert out["healthy"] is False
-    assert "redeeming a real bridge transaction" in out["skip_reason"], (
+    assert "a real restore is exercised by nothing" in out["skip_reason"], (
         "the verdict must quote the declared reason, not a generic sentence")
 
 
@@ -208,20 +209,22 @@ def test_all_twelve_reported_tools_are_now_declared(verdict):
     """The deliverable, asserted as a whole rather than tool by tool: none of the twelve named to us reads as a
     silent pass.
 
-    §MCPTEST30 (V0549): six of them reach a route only a federation peer can call (the request survey's PEER_ROUTE),
+    §MCPTEST30 (V0549): six of them reached a route only a federation peer can call (the request survey's PEER_ROUTE),
     so no MCP caller has a success path to leave unmeasured: their contracts pin the refusal and run it against
-    nonexistent targets (`override_coverage_fan`), which IS a measurement. The other six stay NOT MEASURED."""
+    nonexistent targets (`override_coverage_fan`), which IS a measurement. The other six stay NOT MEASURED. V0651 (p)
+    retired the token bridge with its three tools here (bridgeRedeem, bridgeIssueWrapped, bridgeUnlock): nine remain."""
     import sys
     from agentvault_registry.api_tests.contracts.mcp_contracts import MCP_CONTRACTS
     unmeasured = ["tegSystemTransfer", "claimTegPayouts", "authRefresh", "selectFlare",
-                  "requestSelfRevocation", "bridgeRedeem"]
+                  "requestSelfRevocation"]
     still_silent = [t for t in unmeasured
                     if verdict(_row(), "theprotocol_" + t)["healthy"] is not False]
     assert not still_silent, f"still sold as a pass with nothing measuring them: {still_silent}"
     peer_only = ["blockFederationAgent", "unblockFederationAgent", "ironhandDeleteAgentProxy",
-                 "bridgeIssueWrapped", "bridgeUnlock", "getCloudOperatorSelfLogs"]
+                 "getCloudOperatorSelfLogs"]
     # §MCPTEST30 (V0641): three of them are said by design on their own rows now (ADMIN_PEER_ONLY_TOOLS), their
-    # refusal a refusal row, so their contracts name why and pin nothing; the other three keep the pinned refusal
+    # refusal a refusal row, so their contracts name why and pin nothing; the other keeps the pinned refusal (two
+    # more did until V0651 (p): bridgeIssueWrapped and bridgeUnlock, retired with the token bridge)
     said_by_design = {"blockFederationAgent", "unblockFederationAgent", "ironhandDeleteAgentProxy"}
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
     import test_mcp_tool_requests_meet_their_routes as gate  # noqa: PLC0415

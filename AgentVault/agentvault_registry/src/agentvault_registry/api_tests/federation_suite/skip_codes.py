@@ -39,6 +39,16 @@ _PATTERNS: List[Tuple[str, "re.Pattern[str]", str]] = [
         "off on a node): the row measured no answer. The census may only shrink as rows learn to measure",
     ),
     (
+        # §MCPTEST30 (V0651, agentvault2-d3): the pairs take production's posture (FEDERATION_BALLOT_MODE on, member
+        # weights), so an elevated proposal is decided by a cycle across runs: one run starts it, a later one casts both
+        # registries' ballots after the members' votes close and tallies. A throwaway pair has no later run.
+        "ballot_cycle",
+        re.compile(r"^(precondition unmet: )?cycle_(started|pending): ", re.I),
+        "a federation ballot is a cycle across runs under production's ballot posture: this run started (or found "
+        "pending) a cycle that a later run finishes after the members' votes close; a throwaway pair has no later run "
+        "(the standing sandbox finishes its cycles), so the row is NOT MEASURED here, never a pass",
+    ),
+    (
         # §MCPTEST30 (V0550): the target switched the row's subject off and says so in its registry-config
         "switched_off",
         re.compile(r"^switched_off: ", re.I),
@@ -148,6 +158,18 @@ _PATTERNS: List[Tuple[str, "re.Pattern[str]", str]] = [
         "never more money attempts",
     ),
     (
+        # §MCPTEST30 (V0651, agentvault2-d3, the trial pair nt261031x0): the send-early leg waits until the CONVERTING
+        # frame knows the receiver, never the sending operator itself; on a fresh pair the operator's own mirror can lag,
+        # and its cross-registry send refuses before any FX check. The same two rows otherwise read
+        # operator_fx_disabled (the operators run no FX booth: production's posture), so the two trade.
+        "operator_receiver_unresolved",
+        re.compile(r"the send was refused before anything could be judged \(unresolved, HTTP 400\): Cannot resolve "
+                   r"registry for receiver", re.I),
+        "the sending operator could not resolve the receiver's registry yet (its card had not reached the operator; "
+        "the test waits only for the converting frame), so the send was refused before anything moved: NO FUNDS "
+        "MOVED, a federation-sync timing question on a fresh pair, never a pass",
+    ),
+    (
         "operator_fx_disabled",
         re.compile(r"FX_ENABLED=false|no FX booth configured|FX swap booth", re.I),
         # §SBXFXROUTE 2026-09-06 — the old meaning ("cloud operators ship FX_ENABLED
@@ -214,9 +236,89 @@ _PATTERNS: List[Tuple[str, "re.Pattern[str]", str]] = [
         "peer refuses its slash request and the home's half of the path cannot run there; the sandbox runs it",
     ),
     (
+        # §MCPTEST30 (V0651, tester batch 3 item 2, agentvault2-d3, on his "2. approved"): read on the trial pair
+        # nt261031x5's federation run (2026-10-31), where it was one of 25 unclassified skips
+        'fixture_sidecar_retired',
+        re.compile(r"fixture agent container '[^']+' does not exist on this tier", re.I),
+        "the test is about a fed-test-agent sidecar itself (its own onboarding, its IRONHAND enrolment, its card "
+        "and its pull-sync), and those sidecars retired with the sandbox tier: no tier runs one. The tests that "
+        "only read about an agent use one of the run's own instead (rig.fixture_agent_dids, V0651)",
+    ),
+    (
+        # §MCPTEST30 (V0651, tester batch 3 item 2, agentvault2-d3, on his "2. approved"): read on the trial pair
+        # nt261031x5's federation run (2026-10-31), where it was one of 25 unclassified skips
+        'young_frame',
+        re.compile(r'no updated_at is shared by two cards|only \d+ types have rows|holds NO events yet|'
+                   r'a young ledger|older than one pull-sync cycle', re.I),
+        'the check needs a ledger or a card population that has run for a while; a frame a few minutes old (a '
+        'nightly or proof pair) has too little of it to measure',
+    ),
+    (
+        # §MCPTEST30 (V0651, tester batch 3 item 2, agentvault2-d3, on his "2. approved"): read on the trial pair
+        # nt261031x5's federation run (2026-10-31), where it was one of 25 unclassified skips
+        'population_moved',
+        re.compile(r'the ranked population changed under the walk', re.I),
+        'the population a paged walk reads grew while it walked, which a non-total ordering cannot be told apart '
+        'from; the walk is not measurable then, not wrong',
+    ),
+    (
+        # §MCPTEST30 (V0651, tester batch 3 item 2, agentvault2-d3, on his "2. approved"): read on the trial pair
+        # nt261031x5's federation run (2026-10-31), where it was one of 25 unclassified skips
+        'no_genesis',
+        re.compile(r"no frame of the pair holds the network's genesis certificate", re.I),
+        "the licence certificates' tests need a genesis certificate; a pair is not the network's genesis and runs"
+        " no ceremony",
+    ),
+    (
+        # §MCPTEST30 (V0651, tester batch 3 item 2, agentvault2-d3, on his "2. approved"): read on the trial pair
+        # nt261031x5's federation run (2026-10-31), where it was one of 25 unclassified skips
+        'rail_never_failed',
+        re.compile(r'no FxRouteRefunded or FxRouteStranded on this store', re.I),
+        'the refund claim is read off a failed FX route; on a store where the rail never failed there is no claim',
+    ),
+    (
+        # §MCPTEST30 (V0651, tester batch 3 item 2, agentvault2-d3, on his "2. approved"): read on the trial pair
+        # nt261031x5's federation run (2026-10-31), where it was one of 25 unclassified skips
+        'peer_sidecar_unknown',
+        re.compile(r"the peer's sidecar address is unknown", re.I),
+        "TEG_SIDECAR_MAP names no address for the peer's TEG sidecar on this frame (the pairs set none), so the "
+        "scope of a peer frame's TEG admin cannot be dialled",
+    ),
+    (
+        # §MCPTEST30 (V0651, tester batch 3 item 2, agentvault2-d3, on his "2. approved"): read on the trial pair
+        # nt261031x5's federation run (2026-10-31), where it was one of 25 unclassified skips
+        'no_guild_order',
+        re.compile(r'no guild order posted on (?:either|this) frame|no order carried a status on either frame', re.I),
+        "the Guild's reads need an order; a frame where nobody posted one has none to read (a candidate: an order"
+        " of the run's own on a pair)",
+    ),
+    (
+        # §MCPTEST30 (V0651, tester batch 3 item 2, agentvault2-d3, on his "2. approved"): read on the trial pair
+        # nt261031x5's federation run (2026-10-31), where it was one of 25 unclassified skips
+        'no_signing_key',
+        re.compile(r'no developer on this frame has published a signing key', re.I),
+        "a developer JWKS read needs a published signing key; a fresh frame has none (a candidate: a key of the "
+        "run's own)",
+    ),
+    (
+        # §MCPTEST30 (V0651, tester batch 3 item 2, agentvault2-d3, on his "2. approved"): read on the trial pair
+        # nt261031x5's federation run (2026-10-31), where it was one of 25 unclassified skips
+        'no_trading_listing',
+        re.compile(r'no listing is TRADING on this venue', re.I),
+        'the order escrow test needs a TRADING listing; a fresh venue lists none',
+    ),
+    (
         "fixture_absent",
         re.compile(r"fixture .* (absent|missing)|no such (agent|developer|container)", re.I),
         "a named fixture this test reads does not exist on the tier",
+    ),
+    # §MCPTEST30 (tester batch 2 item 4): a test that moves units or changes a frame only the throwaway pairs may (the
+    # approve leg of a cross-frame settlement slashes the run's own throwaway); a standing frame skips it, named
+    (
+        "pair_only",
+        re.compile(r"only where its target is torn down after its run", re.I),
+        "the test moves units or changes the frame, which only a throwaway pair may (MCP_TESTER_EPHEMERAL_TARGET: the "
+        "nightly and proof pairs); a standing frame skips it",
     ),
 ]
 
@@ -261,6 +363,8 @@ BASELINE_SKIPS: Dict[str, int] = {
     "operator_fx_disabled": 3,
     "topology_missing": 0,
     "fixture_absent": 0,
+    # §MCPTEST30 (tester batch 2 item 4): ONE test can produce it on a standing frame (the settlement's approve leg)
+    "pair_only": 1,
     # This code and `operator_fx_disabled` TRADE: a cross-currency test skips as
     # "no FX booth" when it gets that far and as "cannot seed the sender" when the
     # seeding is attempted first, so which one fires depends on ordering. Measured
@@ -275,9 +379,25 @@ BASELINE_SKIPS: Dict[str, int] = {
     # seed is spent. Tightening to today's 0 would buy a red run the first time a
     # sweep drains the operator, which is how a gate earns the right to be ignored.
     "operator_treasury_unfundable": 3,
-    # §MCPTEST30 (V0650): ONE test can produce it (the settlement's reject test, where its origin names an internal
-    # address), so a second would mean a row nobody has accounted for.
-    "settlement_origin_internal": 1,
+    # §MCPTEST30 (V0650): the settlement's reject test, where its origin names an internal address; V0651 (tester batch
+    # 3): its approve test too, on a pair that does not deliver (the pairs' NIGHTLY_FLAGS turn delivery on, so 0 there).
+    # Two tests can produce it, so a third would mean a row nobody has accounted for.
+    "settlement_origin_internal": 2,
+    # §MCPTEST30 (V0651, tester batch 3 item 2): the counts read on the trial pair nt261031x5 (a fresh pair, where
+    # each is largest); a standing frame carries fewer, which is never a complaint
+    "fixture_sidecar_retired": 7,
+    "young_frame": 7,     # four reads of a young ledger or card population, three pull-syncs with no agent old enough
+    "population_moved": 1,
+    "no_genesis": 2,
+    "rail_never_failed": 1,
+    "peer_sidecar_unknown": 1,
+    "no_guild_order": 3,
+    "no_signing_key": 1,
+    "no_trading_listing": 1,
+    # V0651: the elevation test alone raises cycle_started / cycle_pending, once per run
+    "ballot_cycle": 1,
+    # V0651: the two cross-cloud-op directions, trading with operator_fx_disabled (its group below)
+    "operator_receiver_unresolved": 2,
 }
 
 # ─── Codes that TRADE, and the ceiling that actually binds them ─────────────
@@ -298,7 +418,7 @@ _TRADING_GROUPS: List[Tuple[str, List[str], int]] = [
       "operator_fx_route_ingress_refused",
       "operator_fx_route_card_not_propagated"], 2),
     ("the cross-currency seeding pair (which one fires depends on ordering)",
-     ["operator_fx_disabled", "operator_treasury_unfundable"], 3),
+     ["operator_fx_disabled", "operator_treasury_unfundable", "operator_receiver_unresolved"], 3),
 ]
 
 

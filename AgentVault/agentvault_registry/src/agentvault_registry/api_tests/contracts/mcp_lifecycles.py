@@ -207,6 +207,7 @@ async def _exec_step(rpc_call: RpcCall, parse: ParseResult,
                       verify_against_check: Optional[Callable[[dict], Optional[str]]] = None,
                       expect_events: Optional[List[str]] = None,
                       event_verifier: Optional[Callable[..., Awaitable[Tuple[bool, Optional[str]]]]] = None,
+                      keep_rpc_message: bool = False,
                       ) -> Tuple[bool, dict]:
     """Run one step of a lifecycle. Records outcome. Returns (ok, parsed_inner).
 
@@ -325,6 +326,11 @@ async def _exec_step(rpc_call: RpcCall, parse: ParseResult,
                                        skip_reason=probe_skip)
         if _sw is not None:
             outcomes[tool]["switched_off"] = _sw.label()
+        # §MCPTEST30 (V0651, agentvault2-d3): a refusal the MCP layer answers (the tool's MCPAuthError, a JSON-RPC
+        # error) carries its words in error.message, which `inner` never holds: the caller that judges words asks for
+        # them (earned_fixtures.refusal_step, which pops the key before the row is kept)
+        if keep_rpc_message and _rpc_msg:
+            outcomes[tool]["_rpc_message"] = _rpc_msg
 
     # Phase-5 read-after-write assertion: if the call succeeded AND a
     # verify check is provided, run it and propagate any failure back to
@@ -4069,19 +4075,6 @@ async def lifecycle_safe_invalid_input_paths(rpc: RpcCall, parse: ParseResult,
                            dev_jwt, outcomes, "peer data without the fields the route requires", codes=(422,),
                            text="required")
 
-    # Bridge transfer — the declared arguments (§MCPSWEEP 2026-09-27: it sent `target_frame`, refused by the
-    # dispatcher) with amount 0, refused by the route's own schema (gt=0) before the handler. NEVER a positive amount to
-    # a frame that does not exist: the route then commits an INITIATED bridge row, LOCKS the amount at the TEG, dials the
-    # URL, unlocks and answers 500 (routers/token_bridge.py, read 2026-09-27), the refusal-becomes-an-action hazard.
-    # The bridge family is on his D8 RETIRE? list: only the probe changes.
-    await _ef.refusal_step(rpc, parse, "theprotocol_bridgeTransfer", "2",
-                           {"agent_jwt": sentinel_jwt,
-                            "target_agent_did": bag.sentinel_did,
-                            "amount": "0",
-                            "target_frame_url": "https://phase5-no-such-frame.invalid"},
-                           dev_jwt, outcomes, 'an amount of 0',
-                           codes=(404, 422))
-
     # Cross-TEG balance sync — a peer-registry callback, with the required `notification` it never sent (§MCPSWEEP
     # 2026-09-27) and NO agent in it. The route takes a peer-registry identity, so an agent bearer is refused before the
     # handler, and a notification without agent_did is a 400 before any read even for a peer. NEVER put a local agent_did
@@ -6358,7 +6351,6 @@ NAN_TOOLS: Tuple[Tuple[str, Dict[str, Any]], ...] = (
     ("theprotocol_authorizePayment", {"target_agent_did": "${receiver}", "amount": "NaN"}),
     ("theprotocol_tegCrossRegistryTransferDirect", {"receiver_did": "${receiver}", "amount": "NaN"}),
     ("theprotocol_smartSend", {"receiver_did": "${receiver}", "amount": "NaN"}),
-    ("theprotocol_bridgeTransfer", {"target_agent_did": "${receiver}", "amount": "NaN"}),
 )
 
 
@@ -6796,6 +6788,83 @@ async def _commons_peer_work(rpc: RpcCall, parse: ParseResult, bag: Any, sid: in
     return {**out, "submission_id": xid}
 
 
+async def _commons_member_of_the_run(rpc: RpcCall, parse: ParseResult, bag: Any, tag: str,
+                                     which: str = "") -> Dict[str, Any]:
+    """§MCPTEST30 (V0651, tester batch 3 item 2, Guild order gwo_5b6bc38b2e17c317754d6e29): on a target torn down after
+    its run, a member of the run's own. A member holds a reputation bond its agent or its owner paid (a treasury backstop
+    bond never makes one, services/membership.py) at least GOVERNANCE_MEMBER_MIN_BOND_AGE_DAYS old; a pair's runner holds
+    none, so the ballot, the tally and the season's pay were never measured on a pair. A throwaway developer (verified
+    by the admin rail), its agent funded from the treasury with the bond and a margin (fund-agent, admin_grant: a
+    transfer, nothing minted) and bonding itself from that balance (depositReputationBond, the agent's own deposit). The
+    pairs set the minimum age to 0 (their NIGHTLY_FLAGS), so the bond makes a member at once. Never recorded as a row
+    of its own (setup). Returns {"agent_jwt", "access_token", "did", "email", "password"} or {"why", ...}."""
+    import math
+    from decimal import Decimal, InvalidOperation
+    mint, rpc_admin = getattr(bag, "mint_throwaway", None), getattr(bag, "rpc_admin", None)
+    if mint is None or rpc_admin is None:
+        return {"why": "the runner injected no mint_throwaway or no admin bridge"}
+    sub = await mint(f"commons-member{which}")
+    jwt, dev_id = (sub or {}).get("access_token"), (sub or {}).get("developer_id")
+    out: Dict[str, Any] = {"email": (sub or {}).get("email"), "password": (sub or {}).get("password")}
+    if not jwt:
+        return {**out, "why": f"no member developer could be minted ({(sub or {}).get('why')})"}
+    try:
+        dev_id = int(dev_id)
+    except (TypeError, ValueError):
+        return {**out, "why": f"the member developer's id is not a number ({dev_id!r})"}
+    ok, body, code = await rpc_admin("theprotocol_forceEmailVerify", {"developer_id": dev_id}, jwt=bag.developer_jwt,
+                                     timeout=20)
+    said = _said(parse(body)) if not ok else ""
+    if not ok and not (str(code) == "400" and "already verified" in said.lower()):
+        return {**out, "why": f"forceEmailVerify for the member developer answered HTTP {code}: {said}"}
+    ok, body, code = await rpc("theprotocol_createAgent",
+                               {"name": f"mcp-commons-member{which}-{tag}",
+                                "description": "The MCP tester's member of its own on a throwaway pair: bonds itself "
+                                               "and casts the run's commons ballot."}, jwt=jwt, timeout=60)
+    made = parse(body)
+    made = made if isinstance(made, dict) else {}
+    did = made.get("did") or made.get("agent_did")
+    cid, csec = made.get("client_id"), made.get("client_secret")
+    if not (ok and did and cid and csec):
+        return {**out, "why": f"createAgent for the member developer answered HTTP {code}: {_said(made)}"}
+    ok, body, code = await rpc("theprotocol_getAgentToken", {"client_id": cid, "client_secret": csec}, jwt=jwt,
+                               timeout=20)
+    tok = parse(body)
+    agent_jwt = tok.get("access_token") if isinstance(tok, dict) else None
+    del made, cid, csec, tok      # a credential never outlives this line
+    if not agent_jwt:
+        return {**out, "why": f"getAgentToken for the member's agent answered HTTP {code}"}
+    ok, body, code = await rpc_admin("theprotocol_adminRequest",
+                                     {"method": "GET", "endpoint": "/api/v1/reputation-bond/config"},
+                                     jwt=bag.developer_jwt, timeout=30)
+    cfg = parse(body) if ok else {}
+    cfg = cfg.get("response") if isinstance(cfg, dict) and isinstance(cfg.get("response"), dict) else cfg
+    try:
+        bond = Decimal(str((cfg or {}).get("amount")))
+    except (InvalidOperation, ValueError, TypeError):
+        bond = Decimal(0)
+    if bond <= 0:
+        return {**out, "why": f"the bond config names no amount (HTTP {code}: {str(cfg)[:120]})"}
+    deposit = int(math.ceil(bond))
+    fund = (Decimal(deposit) + Decimal(deposit) / 100 + 1).quantize(Decimal("0.000001"))
+    ok, body, code = await rpc_admin("theprotocol_adminRequest", {
+        "method": "POST", "endpoint": "/api/v1/teg/treasury/fund-agent",
+        "body": {"target_agent_did": did, "amount": str(fund), "reason": "admin_grant",
+                 "reference_id": f"mcp-commons-member{which}-{tag}"}}, jwt=bag.developer_jwt, timeout=60)
+    a = parse(body) if isinstance(body, dict) else {}
+    st = a.get("status_code") if isinstance(a, dict) else None
+    if not ok or (isinstance(st, int) and st >= 400):
+        return {**out, "why": f"funding the member's agent with its bond answered HTTP {st or code}"}
+    ok, body, code = await rpc("theprotocol_depositReputationBond", {"amount": deposit, "agent_jwt": agent_jwt},
+                               jwt=jwt, timeout=60)
+    b = parse(body)
+    b = b if isinstance(b, dict) else {}
+    status = b.get("status")      # routers/enforcement_agent.deposit_reputation_bond: funded_by "self"
+    if not ok or status not in ("locked", "matured"):
+        return {**out, "why": f"the member's own bond deposit answered HTTP {code} with status {status!r}: {_said(b)}"}
+    return {**out, "agent_jwt": agent_jwt, "access_token": jwt, "did": did}
+
+
 async def _commons_member_vote(rpc: RpcCall, parse: ParseResult, bag: Any, outcomes: Dict[str, dict], sid: int,
                                tag: str, own_refusal: Any) -> Dict[str, Any]:
     """The runner's member gives 10 points to the second developer's submission. Records the vote row (the tally row is
@@ -6803,26 +6872,53 @@ async def _commons_member_vote(rpc: RpcCall, parse: ParseResult, bag: Any, outco
     email and password for its own deletion}."""
     t0 = time.time()
     said = _switches.answer_text(own_refusal)
+    voter_jwt, voter_dev_jwt = bag.sentinel_jwt, bag.developer_jwt
+    own: Dict[str, Any] = {}     # members of the run's own (a pair only): their accounts are deleted with the peer's
+    second: Dict[str, Any] = {}
     if "not_a_member" in said:
-        why = ("NOT MEASURED: the runner's developer is not a member on this target (its own-submission ballot was "
-               "refused not_a_member: no qualifying bond), so it has no ballot to give")
-        _commons_row(outcomes, COMMONS_VOTE_CHECK, False, 0, t0, skip=why)
-        return {"voted": None, "why": why}
-    if "own_submission" not in said:
+        from agentvault_registry.api_tests.contracts.earned_ad_ephemeral import ephemeral_target
+        if not ephemeral_target():
+            why = ("NOT MEASURED: the runner's developer is not a member on this target (its own-submission ballot was "
+                   "refused not_a_member: no qualifying bond), so it has no ballot to give")
+            _commons_row(outcomes, COMMONS_VOTE_CHECK, False, 0, t0, skip=why)
+            return {"voted": None, "why": why}
+        made = await _commons_member_of_the_run(rpc, parse, bag, tag)
+        own = {"member_email": made.get("email"), "member_password": made.get("password")}
+        if not made.get("agent_jwt"):
+            why = (f"NOT MEASURED: the runner's developer is not a member here, and no member of the run's own could "
+                   f"be made: {made.get('why')}")
+            _commons_row(outcomes, COMMONS_VOTE_CHECK, False, 0, t0, skip=why)
+            return {**own, "voted": None, "why": why}
+        voter_jwt, voter_dev_jwt = made["agent_jwt"], made["access_token"]
+        # a submission is funded only with COMMONS_MIN_VOTERS_PER_SUBMISSION voters (2 by default; the trial pair
+        # nt261031x5 closed one member's ballot with no award): a second member of the run's own gives the same points
+        # as setup, recorded on no row; the rule stays as it is
+        second = await _commons_member_of_the_run(rpc, parse, bag, tag, which="-2")
+        own.update({"member2_email": second.get("email"), "member2_password": second.get("password")})
+    elif "own_submission" not in said:
         why = ("NOT MEASURED: the runner's own-submission ballot was not refused own_submission, so whether its developer "
                "is a member here is not known")
         _commons_row(outcomes, COMMONS_VOTE_CHECK, False, 0, t0, skip=why)
         return {"voted": None, "why": why}
     peer = await _commons_peer_work(rpc, parse, bag, sid, tag)
+    peer = {**peer, **own}
     if not isinstance(peer.get("submission_id"), int):
         why = f"NOT MEASURED: {peer.get('why')}"
         _commons_row(outcomes, COMMONS_VOTE_CHECK, False, 0, t0, skip=why)
         return {**peer, "voted": None, "why": why}
     x2 = peer["submission_id"]
     ok, body, code = await rpc("theprotocol_castCommonsBallot",
-                               {"agent_jwt": bag.sentinel_jwt, "season_id": sid, "allocations": {str(x2): 10}},
-                               jwt=bag.developer_jwt, timeout=30)
+                               {"agent_jwt": voter_jwt, "season_id": sid, "allocations": {str(x2): 10}},
+                               jwt=voter_dev_jwt, timeout=30)
     inner = parse(body)
+    if own and "not_a_member" in _switches.answer_text(inner):
+        # the run's own member bonded and is still refused: this pair keeps the 30-day minimum age (a pair stood up
+        # without the batch 3 NIGHTLY_FLAGS), which is the rule working, not a ballot that failed
+        why = ("NOT MEASURED: the run's own member bonded and was refused not_a_member: this target holds "
+               "GOVERNANCE_MEMBER_MIN_BOND_AGE_DAYS above 0, so a bond made by the run cannot qualify")
+        _commons_row(outcomes, COMMONS_VOTE_CHECK, False, code, t0, skip=why)
+        outcomes["theprotocol_castCommonsBallot"] = _not_measured("theprotocol_castCommonsBallot", "2", why)
+        return {**peer, "voted": None, "why": why}
 
     def _tool_row(healthy: bool, fail: Optional[str] = None, skip: Optional[str] = None) -> None:
         # §MCPTEST30 (V0636): the ballot is castCommonsBallot's own row as well (the check row names no tool)
@@ -6842,7 +6938,13 @@ async def _commons_member_vote(rpc: RpcCall, parse: ParseResult, bag: Any, outco
             and (inner.get("allocations") or {}) == {str(x2): 10} and inner.get("digest")):
         _commons_row(outcomes, COMMONS_VOTE_CHECK, True, code, t0, evidence=ev)
         _tool_row(True)
-        return {**peer, "voted": x2, "why": None}
+        second_jwt = second.get("agent_jwt") if own else None
+        if second_jwt:     # the second member's ballot (setup): the season's award needs two voters
+            await rpc("theprotocol_castCommonsBallot",
+                      {"agent_jwt": second_jwt, "season_id": sid, "allocations": {str(x2): 10}},
+                      jwt=second["access_token"], timeout=30)
+        return {**peer, "voted": x2, "why": None,
+                "second_voter": bool(second_jwt) if own else None}
     _fail = (f"castCommonsBallot did not take a member's ballot for another developer's work as cast: HTTP {code}: "
              f"{_said(inner)}")
     _commons_row(outcomes, COMMONS_VOTE_CHECK, False, code, t0, evidence=ev, fail=_fail)
@@ -7132,6 +7234,12 @@ async def lifecycle_commons_season(rpc: RpcCall, parse: ParseResult, bag: Any, o
         if member.get("email") and member.get("password"):
             await _schedule_own_deletion(rpc, bag, member["email"], member["password"],
                                          "the commons season's second developer")
+        if member.get("member_email") and member.get("member_password"):
+            await _schedule_own_deletion(rpc, bag, member["member_email"], member["member_password"],
+                                         "the commons season's member of the run's own")
+        if member.get("member2_email") and member.get("member2_password"):
+            await _schedule_own_deletion(rpc, bag, member["member2_email"], member["member2_password"],
+                                         "the commons season's second member of the run's own")
 
 
 LIFECYCLES: List[Dict[str, Any]] = [

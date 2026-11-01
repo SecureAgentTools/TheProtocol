@@ -12,7 +12,7 @@ from __future__ import annotations
 from agentvault_registry.api_tests.federation_suite.decorator import federation_test
 from agentvault_registry.api_tests.federation_suite.rig import (
     FederationTestRig, AssertionResult,
-    require_running_container, FED_AGENT_A, FED_AGENT_B,
+    fixture_agent_dids,
 )
 
 
@@ -170,29 +170,12 @@ async def test_enforcement_agent_status_reachable(rig: FederationTestRig) -> Ass
     Each mainframe is queried with the DID of the fed-test-agent that lives
     in that frame (loaded from the container's persistent creds volume).
     """
-    import json as _j
     statuses: dict = {}
 
     # Resolve DIDs from the fed-test-agent containers
-    async def _read_did(container: str) -> str:
-        from agentvault_registry.api_tests.multiframe_helpers import exec_in_container
-        import asyncio as _asyncio
-        rc, out = await _asyncio.to_thread(
-            exec_in_container, container, ["cat", "/var/lib/agent/creds.json"], 10,
-        )
-        if rc != 0:
-            return ""
-        try:
-            return _j.loads(out).get("agent_did", "")
-        except Exception:
-            return ""
-
-    # §FEDFIXTURE: the fed-test-agent containers are Exited on this tier.
-    # Skip loudly on an absent fixture instead of reporting missing_did.
-    require_running_container(FED_AGENT_A)
-    require_running_container(FED_AGENT_B)
-    did_a = await _read_did(FED_AGENT_A)
-    did_b = await _read_did(FED_AGENT_B)
+    # V0651 (tester batch 3 item 2): the sidecar's agent where one still runs, else an agent of the run's
+    # own on each frame (rig.fixture_agent_dids): these skipped on every tier since the sidecars retired
+    did_a, did_b = await fixture_agent_dids(rig, "enforcement-status")
     statuses["_dids"] = {"sandbox-A": did_a, "sandbox-B": did_b}
 
     async def predicate():

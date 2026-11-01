@@ -6,6 +6,8 @@
                               the decision)
     decideChatApproval        developer key or JWT: approve or deny one request, several, or every pending one (the
                               org's owner or a named approver; an agent context is refused)
+    consumeChatApproval       agent JWT (V0651 (o)): open ONE act with an approval the agent asked for, named by the
+                              act's sha256; the registry records the use once and refuses a second
 
 A refusal carries its reason INSIDE `error` (the dispatcher renders a result carrying `error` as `Error: <error>` and
 drops every other key, §BATCH3). A decision that waits for a phone confirmation answers `status: step_up_required`
@@ -104,6 +106,23 @@ async def get_chat_approval_status(auth: MCPAuthContext, approval_id: str, wait_
     return err or _answer(r, "getChatApprovalStatus")
 
 
+async def consume_chat_approval(auth: MCPAuthContext, approval_id: str, act_label: str, act_sha256: str,
+                                production: bool = True) -> Dict[str, Any]:
+    """V0651 (o): open one act with an approval you asked for: the registry checks it is approved by the org's owner
+    or a named approver who still holds that right, unexpired, asked with production_impact (for a production act),
+    names this act's sha256, and never used, then records the use once; a second use is refused naming the act it
+    opened (agent JWT, the agent that asked)."""
+    require_agent_auth(auth)
+    if (miss := _token(auth)):
+        return miss
+    if not approval_id or not act_label or not act_sha256:
+        return {"error": "approval_id, act_label and act_sha256 are required"}
+    r, err = await _call("POST", f"/api/v1/chat/approvals/{seg(approval_id)}/consume", token=auth.raw_token,
+                         body={"act_label": str(act_label), "act_sha256": str(act_sha256),
+                               "production": bool(production)})
+    return err or _answer(r, "consumeChatApproval")
+
+
 async def decide_chat_approval(auth: MCPAuthContext, conversation_id: str, decision: str,
                                approval_ids: Optional[List[str]] = None, note: str = "",
                                challenge_id: str = "") -> Dict[str, Any]:
@@ -193,6 +212,26 @@ CHAT_APPROVAL_AGENT_TOOL_SCHEMAS: List[Dict[str, Any]] = [
                                                                "(0 to 20)", "default": 0},
             "agent_jwt": _AGENT_JWT,
         }, "required": ["approval_id"]},
+    },
+    {
+        "name": "theprotocol_consumeChatApproval",
+        "description": ("Open ONE act with an approval you asked for (V0651): the registry checks it is approved by "
+                        "the org's owner or a named approver who still holds that right, unexpired, asked with "
+                        "production_impact for a production act, names this act's sha256 (the artifact_sha256 it was "
+                        "asked with), and never used; then it records the use once and posts a line under the "
+                        "approval card. A second use is refused, naming the act it opened. Agent JWT: the agent that "
+                        "asked."),
+        "inputSchema": {"type": "object", "properties": {
+            "approval_id": {"type": "string", "description": "The request's id (apr_...)"},
+            "act_label": {"type": "string", "minLength": 1, "maxLength": 200,
+                          "description": "What the act is, as the room should read it (1 to 200 characters)"},
+            "act_sha256": {"type": "string", "minLength": 64, "maxLength": 71,
+                           "description": "The act's sha256 (64 hex, `sha256:` accepted): it must equal the "
+                                          "approval's artifact_sha256"},
+            "production": {"type": "boolean", "description": "A production act: the approval must have been asked "
+                                                            "with production_impact (default true)", "default": True},
+            "agent_jwt": _AGENT_JWT,
+        }, "required": ["approval_id", "act_label", "act_sha256"]},
     },
 ]
 

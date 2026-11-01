@@ -9,7 +9,7 @@
        Below `--ocs-wide` it renders exactly what it rendered before: the list at
        /pocket/ourchat, the thread at /pocket/ourchat/:id, one at a time. Paths
        and route names are unchanged, so every deep link and battery still lands. -->
-  <div ref="rootEl" class="ocs" :class="{ 'ocs-two': wide }" :style="paneStyle" data-testid="ocs-root">
+  <div ref="rootEl" class="ocs" :class="{ 'ocs-two': wide, 'ocs-bounded': bounded }" :style="paneStyle" data-testid="ocs-root">
     <section v-if="wide || !threadOpen" class="ocs-list" data-testid="ocs-list">
       <PocketOurState />
     </section>
@@ -33,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from '@/composables/useI18n'
 import Icon from '@/components/Icon.vue'
@@ -56,16 +56,41 @@ const sync = () => { wide.value = !!mq?.matches; measure() }
    the panes scroll internally and the composer never sinks below the fold. The
    offset is the shell's own MEASURED top — never an assumed chrome height
    (`--nc-header-h` is defined nowhere; PART 1 gotcha). Below the breakpoint the
-   shell stays in document flow exactly as before (Pocket unchanged). */
+   shell stays in document flow exactly as before (Pocket unchanged).
+   V0651 (y): except for an OPEN THREAD. In document flow the thread grew to its whole history and the page scrolled,
+   so the approvals panel pinned above the history (V0650 (l)) scrolled away with it: on the maintainer's phone it sat
+   about 2,800 px above the latest message (measured at 393 px), while the card in the thread said "decided in the
+   panel pinned above". A thread on a phone is bounded like the desktop's pane now: the viewport less the shell's
+   measured top and the bottom space the page keeps for its own bar (Pocket's tab bar sits over its main scroller's
+   padding), so the history scrolls inside the thread and the panel and the composer stay in view. The list keeps
+   the document flow. */
 const rootEl = ref<HTMLElement | null>(null)
 const topPx = ref(0)
+const bottomPx = ref(0)
+/** The padding-bottom of the nearest scrolling ancestor: the room a page keeps under its content for a bar that
+ *  overlays it (Pocket's .pk-main reserves its tab bar this way). Read, never an assumed bar height. */
+function scrollerPaddingBottom(el: HTMLElement): number {
+  for (let e = el.parentElement; e; e = e.parentElement) {
+    const cs = window.getComputedStyle(e)
+    if (/(auto|scroll)/.test(cs.overflowY)) return Math.max(0, Math.round(parseFloat(cs.paddingBottom) || 0))
+  }
+  return 0
+}
 const measure = () => {
   try {
-    if (rootEl.value) topPx.value = Math.max(0, Math.round(rootEl.value.getBoundingClientRect().top + (window.scrollY || 0)))
+    if (rootEl.value) {
+      topPx.value = Math.max(0, Math.round(rootEl.value.getBoundingClientRect().top + (window.scrollY || 0)))
+      bottomPx.value = scrollerPaddingBottom(rootEl.value)
+    }
   } catch { /* noop */ }
 }
-const paneStyle = computed(() =>
-  wide.value ? { height: `calc(100vh - ${topPx.value}px)` } : undefined)
+const bounded = computed(() => !wide.value && threadOpen.value)
+const paneStyle = computed(() => {
+  if (wide.value) return { height: `calc(100vh - ${topPx.value}px)` }
+  if (bounded.value) return { '--ocs-offset': `${topPx.value + bottomPx.value}px` }
+  return undefined
+})
+watch(threadOpen, () => { void nextTick().then(measure) })
 
 onMounted(() => {
   try {
@@ -98,6 +123,10 @@ onBeforeUnmount(() => {
 }
 .ocs-two > .ocs-thread { flex: 1 1 auto; overflow: hidden; }
 .ocs-two > .ocs-thread > :deep(.ost) { flex: 1; min-height: 0; }
+
+.ocs-bounded { height: calc(100vh - var(--ocs-offset, 0px)); height: calc(100dvh - var(--ocs-offset, 0px)); overflow: hidden; }
+.ocs-bounded > .ocs-thread { overflow: hidden; }
+.ocs-bounded > .ocs-thread > :deep(.ost) { flex: 1; min-height: 0; }
 
 .ocs-empty {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;

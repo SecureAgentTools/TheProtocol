@@ -1522,13 +1522,9 @@ PEER_ONLY_DEV_TOOLS: Tuple[Tuple[str, Dict[str, Any]], ...] = (
 )
 
 
-# a tool that can succeed, held back on purpose where it is switched on (where it is off, its switch's verdict stands)
-HELD_BACK = (
-    ("theprotocol_bridgeTransfer", "2", "token_bridge_enabled",
-     "held back on purpose: a transfer locks units here and mints wrapped units on the peer frame, and no MCP tool "
-     "brings them back (bridgeRedeem is an admin tool on an agent-only route); the bridge family is on his D8 retire "
-     "list. Its refusal (an amount of 0) is a refusal row"),
-)
+# a tool that can succeed, held back on purpose where it is switched on (where it is off, its switch's verdict stands).
+# V0651 (p, his word "retire."): its one entry, bridgeTransfer, left with the token bridge's five tools
+HELD_BACK: Tuple[Tuple[str, str, str, str], ...] = ()
 
 
 # a tool whose success needs the peer frame in a way no lifecycle can reach yet: said, with what it needs (the cross-

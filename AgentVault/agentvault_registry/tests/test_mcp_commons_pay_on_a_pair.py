@@ -27,12 +27,22 @@ PAY_ROW = "admin_effect: adminCommonsPaySeason"
 WRITE_OFF_ROW = "refusal: adminCommonsWriteOffAward an award that was never sent"
 CANCEL_ROW = "refusal: adminCommonsCancelSeason a season that was paid"
 PEER = "did:theprotocol:peer"
+MEMBER = "did:theprotocol:member-of-the-run"   # V0651 (tester batch 3 item 2): a member of the run's own, on a pair
+MEMBER2 = "did:theprotocol:second-member-of-the-run"   # the second: a submission needs two voters to be funded
+NOT_A_MEMBER = (403, "Error: HTTP 403: not_a_member: Only members of this registry can do this. A member is a developer "
+                     "with an agent holding the reputation bond here, funded by the agent or the owner's wallet, at "
+                     "least 30 days old (GOVERNANCE_WEIGHT_MODE=member).")
 OWN = (422, "Error: HTTP 422: own_submission: a member never gives points to their own developer's work: 9.")
 
 
 class _World:
-    def __init__(self, *, ledger_moves=True, stays_closed=False, partial=False):
+    def __init__(self, *, ledger_moves=True, stays_closed=False, partial=False, runner_member=True,
+                 member_age_rule=False, deposit_refused=False):
         self.ledger_moves, self.stays_closed, self.partial = ledger_moves, stays_closed, partial
+        # V0651: whether the runner's developer is a member here, whether the target keeps the 30-day bond age (a pair
+        # without batch 3's NIGHTLY_FLAGS), whether the member's own deposit is refused
+        self.runner_member, self.member_age_rule, self.deposit_refused = runner_member, member_age_rule, deposit_refused
+        self.deposits = []
         self.state = {}
         self.opens = 0
         self.award = {"id": 31, "status": "pending", "amount": "1.000000", "funded_amount": "0.000000"}
@@ -62,6 +72,10 @@ class _World:
         if tool == "theprotocol_getMyCommonsSeason":
             return 200, {"season_id": 4, "my_submissions": [{"id": 9}], "is_member": True}
         if tool == "theprotocol_castCommonsBallot":
+            if args["agent_jwt"] == "sentinel" and not self.runner_member:
+                return NOT_A_MEMBER
+            if args["agent_jwt"] in ("member-agent", "member2-agent") and self.member_age_rule:
+                return NOT_A_MEMBER
             if args["allocations"] == {"9": 10}:
                 return OWN
             return 200, {"season_id": 4, "allocations": dict(args["allocations"]), "total_points": 10, "digest": "ab"}
@@ -102,9 +116,32 @@ class _World:
         if tool == "theprotocol_forceEmailVerify":
             return 200, {"id": 501, "is_verified": True}
         if tool == "theprotocol_createAgent":
+            if args["name"].startswith("mcp-commons-member-2-"):
+                return 200, {"did": MEMBER2, "client_id": "member2-cid", "client_secret": "member2-csec"}
+            if args["name"].startswith("mcp-commons-member-"):
+                return 200, {"did": MEMBER, "client_id": "member-cid", "client_secret": "member-csec"}
             return 200, {"did": PEER, "client_id": "cid", "client_secret": "csec"}
         if tool == "theprotocol_getAgentToken":
+            if args["client_id"] == "member-cid":
+                return 200, {"access_token": "member-agent", "token_type": "bearer"}
+            if args["client_id"] == "member2-cid":
+                return 200, {"access_token": "member2-agent", "token_type": "bearer"}
             return 200, {"access_token": "peer-agent", "token_type": "bearer"}
+        if tool == "theprotocol_adminRequest":
+            if (args["method"], args["endpoint"]) == ("GET", "/api/v1/reputation-bond/config"):
+                return 200, {"status_code": 200, "ok": True, "response": {"mode": "enforce", "amount": "250.000000"}}
+            if (args["method"], args["endpoint"]) == ("POST", "/api/v1/teg/treasury/fund-agent"):
+                b = args["body"]
+                assert b["target_agent_did"] in (MEMBER, MEMBER2) and b["reason"] == "admin_grant"
+                assert Decimal(b["amount"]) >= Decimal("252.5"), "the bond and its margin"
+                return 200, {"status_code": 200, "ok": True, "response": {"status": "completed"}}
+            raise AssertionError(args)
+        if tool == "theprotocol_depositReputationBond":
+            assert args["agent_jwt"] in ("member-agent", "member2-agent"), "a member bonds itself, from its own balance"
+            self.deposits.append(args["amount"])
+            if self.deposit_refused:
+                return 400, "Error: HTTP 400: insufficient_balance: the agent holds less than the bond."
+            return 200, {"bond_id": 3, "amount": "250.000000", "status": "locked", "message": "Bond locked"}
         if tool == "theprotocol_requestAccountDeletion":
             return 202, {"status": "pending_deletion"}
         raise AssertionError(tool)
@@ -134,6 +171,12 @@ def _run(w: _World, monkeypatch, *, pair=True):
     monkeypatch.setattr(asyncio, "sleep", fast)
 
     async def mint_throwaway(role):
+        if role == "commons-member":
+            return {"email": "member@throwaway-pl.example.com", "password": "pw2", "developer_id": "502",
+                    "access_token": "member-dev"}
+        if role == "commons-member-2":
+            return {"email": "member2@throwaway-pl.example.com", "password": "pw3", "developer_id": "503",
+                    "access_token": "member2-dev"}
         return {"email": "peer@throwaway-pl.example.com", "password": "pw", "developer_id": "501",
                 "access_token": "peer-dev"}
 
@@ -189,6 +232,48 @@ def test_a_payment_the_reads_do_not_show_is_a_finding(monkeypatch, world, needle
     if w.state.get(4) == "paid":
         # the season IS paid, whatever the read-back found: its cancel stays the refusal row, never a red cancel
         assert _ok(rows.get(CANCEL_ROW)) and _ok(admin.get(CANCEL)), (rows.get(CANCEL_ROW), admin.get(CANCEL))
+
+
+# ── V0651 (tester batch 3 item 2): a member of the run's own, on a pair ─────────────────────────────────────────────────
+def _ballots(w):
+    return [a for t, a in w.seen if t == "theprotocol_castCommonsBallot"]
+
+
+def test_a_pair_without_a_member_makes_its_own_and_pays(monkeypatch):
+    w = _World(runner_member=False)
+    rows, admin = _run(w, monkeypatch)
+    assert _ok(rows.get(PAY_ROW)), rows.get(PAY_ROW)
+    assert _ok(rows.get("theprotocol_castCommonsBallot")), rows.get("theprotocol_castCommonsBallot")
+    assert [b["agent_jwt"] for b in _ballots(w)] == ["sentinel", "member-agent", "member2-agent"], \
+        "refused, then the run's member, then its second (a submission is funded with two voters)"
+    assert w.deposits == [250, 250] and w.state == {4: "paid", 5: "cancelled"}
+    deletions = [t for t, _a in w.seen if t == "theprotocol_requestAccountDeletion"]
+    assert len(deletions) == 3, "the second developer and both members ask for their deletion"
+    assert "member-csec" not in repr(rows) and "member-agent" not in repr(rows) and "member2-agent" not in repr(rows)
+
+
+def test_a_standing_frame_without_a_member_makes_none(monkeypatch):
+    w = _World(runner_member=False)
+    rows, admin = _run(w, monkeypatch, pair=False)
+    assert "not a member on this target" in str(rows["theprotocol_castCommonsBallot"].get("skip_reason"))
+    assert w.deposits == [] and PAY_ROW not in rows
+    assert not [a for t, a in w.seen if t == "theprotocol_createAgent" and a["name"].startswith("mcp-commons-member-")]
+
+
+def test_a_member_the_age_rule_refuses_is_said_not_failed(monkeypatch):
+    w = _World(runner_member=False, member_age_rule=True)
+    rows, admin = _run(w, monkeypatch)
+    why = str(rows["theprotocol_castCommonsBallot"].get("skip_reason"))
+    assert "GOVERNANCE_MEMBER_MIN_BOND_AGE_DAYS" in why and not rows["theprotocol_castCommonsBallot"].get("fail_reason")
+    assert PAY_ROW not in rows and w.state.get(4) == "cancelled"
+
+
+def test_a_refused_deposit_is_said(monkeypatch):
+    w = _World(runner_member=False, deposit_refused=True)
+    rows, admin = _run(w, monkeypatch)
+    why = str(rows["theprotocol_castCommonsBallot"].get("skip_reason"))
+    assert "no member of the run's own could be made" in why and "bond deposit answered HTTP 400" in why, why
+    assert len(_ballots(w)) == 1, "no ballot without a member"
 
 
 @pytest.fixture(autouse=True)

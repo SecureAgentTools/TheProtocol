@@ -5,7 +5,7 @@ Every check answers with one sentence a person can act on. Nothing is written. E
 2 = usage. `frame-up` runs the same checks before it touches anything.
 
     ./frame-doctor.py --public-name frame.example.org [--stack-root /opt/theprotocol/stack]
-                      [--images-prefix theprotocol] [--version 1.0.0-beta.4]
+                      [--images-prefix images.theprotocol.cloud/theprotocol] [--version 1.0.0-beta.4]
                       [--federation-port 8443] [--bundle-port 8444] [--ledger-port 8445]
                       [--edge-https-port 443] [--edge-http-port 80] [--min-mem-gib 8] [--min-disk-gb 20]
 """
@@ -22,6 +22,11 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 EXPORT_ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 IMAGES = ("registry", "teg-layer", "event-store", "auditor", "directory", "cert-writer")
+# kit beta.30 (agentvault2-7c, 2026-10-31; the dev machine's beta.29 run, finding 2): a downloaded kit's six images are
+# public, in the release channel's namespace (scripts/frame_kit/publish.py pushes them there), so that is the default;
+# the local names build.sh makes win when all six are on this host; IMAGE_REGISTRY or --images-prefix name another.
+PUBLIC_IMAGES_PREFIX = "images.theprotocol.cloud/theprotocol"
+LOCAL_IMAGES_PREFIX = "theprotocol"
 PUBLIC_IMAGES = ("docker:cli", "alpine/openssl@sha256:045a40a53b8e283cff95052e0c39f256b7467d48c7445260d4f180fc0e767999", "ghcr.io/spiffe/spire-server:1.15.3",
                  "ghcr.io/spiffe/spire-agent:1.15.3", "nginx:1.30.5-alpine")
 # the helper images the standup driver `docker run`s (its HELPER_IMAGES: two names, kept in step by hand)
@@ -72,6 +77,18 @@ def finished_frame(stack_root, name):
     except OSError:
         return False
     return bool(dirs) and os.path.isfile(os.path.join(stack_root or "/opt/theprotocol/stack", dirs[-1], "frame-up.json"))
+
+
+def default_images_prefix(version, inspect=None):
+    """The images prefix when none is named: IMAGE_REGISTRY, else build.sh's local names when all six are on this host,
+    else the release channel's public namespace (frame-up pulls from it with retries)."""
+    env = os.getenv("IMAGE_REGISTRY")
+    if env:
+        return env
+    inspect = inspect or (lambda ref: run(["docker", "image", "inspect", ref])[0] == 0)
+    if all(inspect(f"{LOCAL_IMAGES_PREFIX}/{n}:{version}") for n in IMAGES):
+        return LOCAL_IMAGES_PREFIX
+    return PUBLIC_IMAGES_PREFIX
 
 
 def run(argv, timeout=60):
@@ -280,7 +297,8 @@ def main():
     ap.add_argument("--public-name", required=True, help="the frame's public DNS name (also its trust domain)")
     ap.add_argument("--name", default=None, help="the frame's short name: a port its own containers hold (an interrupted standup) is a note, not a refusal")
     ap.add_argument("--stack-root", default=os.getenv("FRAME_STACK_ROOT", "/opt/theprotocol/stack"))
-    ap.add_argument("--images-prefix", default=os.getenv("IMAGE_REGISTRY", "theprotocol"))
+    ap.add_argument("--images-prefix", default=None,
+                    help="default: IMAGE_REGISTRY, else build.sh's local images when all six are here, else " + PUBLIC_IMAGES_PREFIX)
     ap.add_argument("--version", default=version_of(os.path.join(HERE, "VERSION")))
     ap.add_argument("--federation-port", type=int, default=8443)
     ap.add_argument("--bundle-port", type=int, default=8444)
@@ -292,6 +310,7 @@ def main():
     ap.add_argument("--min-disk-gb", type=int, default=20)
     ap.add_argument("--json", action="store_true", help="machine-readable result")
     a = ap.parse_args()
+    a.images_prefix = a.images_prefix or default_images_prefix(a.version)
     problems, notes = checks(a)
     if a.json:
         print(json.dumps({"ready": not problems, "problems": problems, "notes": notes, "export_root": EXPORT_ROOT}, indent=1))

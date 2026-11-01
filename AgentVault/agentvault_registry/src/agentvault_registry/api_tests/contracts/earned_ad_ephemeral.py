@@ -52,7 +52,11 @@ anywhere else reads it unset: the safe answer.
              refresh): a move the registry shows and the event store never recorded is the drift a delta of 0.0 cannot
              see (CLAUDE.md PART 4):
                tegTreasuryReceive           1 unit back to the treasury (TreasurySlashReceived)
-               distributeFromFeeCollector   0.01 from the fee account to the agent, only where the fee account holds it
+               distributeFromFeeCollector   0.01 from the fee account to the agent; the run first pays a fee of
+                                            its own (V0651: 4 units from its agent to a second agent of its own,
+                                            the frame's transfer fee); a payout refused because another rail drew
+                                            on the account between the read and the payout is paid for again and
+                                            retried once, then NOT MEASURED, named (never a pass)
              What the agent holds at the end goes back to the treasury, and the agent and its developer are removed
              (Throwaways.close). tegTreasuryIssue is not run, here or anywhere: minting is never automated (his decision
              D9), so its row keeps that reason (the by-design reasons table). Why only there: a payout from the fee account is
@@ -432,6 +436,23 @@ async def _held(rpc: Any, parse: Any, bag: Any, did: str, owner_jwt: str) -> Tup
     return reg, led
 
 
+async def _settled(rpc: Any, parse: Any, bag: Any, did: str, owner_jwt: str, tries: int = 10,
+                   pause: float = 3.0) -> Tuple[Optional[Decimal], Optional[Decimal]]:
+    """The baseline a move is measured from: (registry, ledger) once both read the same balance. The funding just before
+    a step reaches the ledger's projection a few seconds after the registry (the TEG's outbox), and a baseline read in
+    between counts the funding inside the step's own delta (V0650 trial pair nt261031x5: a return of 1 read "the ledger's
+    projection moved 0.0", the +1 of the funding and the -1 of the return landing together after the baseline). Waits
+    `tries` x `pause` at most; the last read when they never agree (the move's read-back then says what it sees)."""
+    reg = led = None
+    for i in range(tries):
+        reg, led = await _held(rpc, parse, bag, did, owner_jwt)
+        if reg is not None and led is not None and abs(reg - led) <= Decimal("0.000001"):
+            break
+        if i < tries - 1:
+            await asyncio.sleep(pause)
+    return reg, led
+
+
 async def _moved(rpc: Any, parse: Any, bag: Any, outcomes: Dict[str, dict], tool: str, did: str, owner_jwt: str,
                  before: Tuple[Optional[Decimal], Optional[Decimal]], delta: Decimal, tries: int = 6,
                  pause: float = 4.0) -> None:
@@ -471,6 +492,42 @@ async def _fee_held(bag: Any, parse: Any) -> Optional[Decimal]:
     return None
 
 
+FEE_TRANSFER = Decimal("4")   # the frame's 0.5 % transfer fee on it is 0.02, twice FEE_UNIT
+
+
+def _drained(row: Optional[Dict[str, Any]]) -> bool:
+    """Whether a payout row was refused because the fee account held less than the payout (the TEG's own words)."""
+    return bool(row) and not row.get("healthy") and "insufficient fee_collector balance" in str(
+        row.get("fail_reason") or "").lower()
+
+
+async def _pay_a_fee(rpc: Any, parse: Any, bag: Any, t: Any, dev: Dict[str, Any], ag: Dict[str, Any],
+                     tag: str) -> Optional[str]:
+    """§MCPTEST30 (V0651, tester batch 3 item 3, Guild order gwo_5b6bc38b2e17c317754d6e29): a fresh pair's fee account
+    holds less than FEE_UNIT when this lifecycle reaches it (the trial pairs nt261031x3 and nt261031x4), so the payout was
+    never measured. The run pays a fee of its own first: FEE_TRANSFER and a unit from the treasury to its agent
+    (fund-agent, a transfer), then FEE_TRANSFER from its agent to a second agent of its own (transferUnits: the frame's
+    transfer fee goes to the fee account). Both agents give back what they hold when the run closes. Returns None, or
+    why no fee could be paid (the payout is then NOT MEASURED, named)."""
+    ag2 = await t.agent(dev, "fee")
+    if ag2.get("why"):
+        return f"no second agent of the run's own to pay a fee to: {ag2['why']}"
+    ok, ans, code = await _admin(bag, parse, FUND, {"method": "POST", "endpoint": "/api/v1/teg/treasury/fund-agent",
+                                                    "body": {"target_agent_did": ag["did"],
+                                                             "amount": str(FEE_TRANSFER + 1), "reason": "admin_grant",
+                                                             "reference_id": f"mcp-earn-feefund-{tag}"}})
+    st = ans.get("status_code") if isinstance(ans, dict) else None
+    if not ok or (isinstance(st, int) and st >= 400):
+        return f"funding the transfer that pays the fee answered HTTP {st or code}"
+    ok, body, code = await rpc("theprotocol_transferUnits",
+                               {"agent_jwt": ag["agent_jwt"], "recipient_did": ag2["did"], "amount": str(FEE_TRANSFER),
+                                "message": "MCP tester: a fee of the run's own", "idempotency_key": f"mcp-earn-fee-{tag}"},
+                               jwt=ag["owner_jwt"], timeout=60)
+    if not ok:
+        return f"the transfer that pays the fee answered HTTP {code}"
+    return None
+
+
 async def lifecycle_earn_ephemeral_value(rpc: Any, parse: Any, bag: Any, outcomes: Dict[str, dict]) -> None:
     """Units moved by hand to and from an agent of the run's own, each read back on the registry AND on the ledger's
     projection (the module docstring)."""
@@ -496,7 +553,7 @@ async def lifecycle_earn_ephemeral_value(rpc: Any, parse: Any, bag: Any, outcome
         await _admin(bag, parse, FUND, {"method": "POST", "endpoint": "/api/v1/teg/treasury/fund-agent",
                                         "body": {"target_agent_did": did, "amount": "1", "reason": "admin_grant",
                                                  "reference_id": f"mcp-earn-fund-{tag}"}})
-        before = await _held(rpc, parse, bag, did, owner)
+        before = await _settled(rpc, parse, bag, did, owner)
         if before[0] is None or before[0] < ONE:
             effect_unmeasured(outcomes, RECEIVE, f"the run's agent holds {before[0]}, under the 1 unit the step returns")
         else:
@@ -505,15 +562,39 @@ async def lifecycle_earn_ephemeral_value(rpc: Any, parse: Any, bag: Any, outcome
                                  outcomes, expect_events=["TreasurySlashReceived"])
             if ok:
                 await _moved(rpc, parse, bag, outcomes, RECEIVE, did, owner, before, -ONE)
+        # §MCPTEST30 (V0651, a fix the live trial nt261031x9 found): the run pays its own fee every time, right before
+        # the payout. The suites run side by side on a pair, and the reward rails draw on the fee account first, so an
+        # account that read enough a moment earlier was empty at the payout ("Insufficient fee_collector balance")
+        paid_why = await _pay_a_fee(rpc, parse, bag, t, dev, ag, tag)
         fee = await _fee_held(bag, parse)
         if fee is None or fee < FEE_UNIT:
             effect_unmeasured(outcomes, DISTRIBUTE, f"this frame's fee account holds {fee} (read by getFeeCollectorInfo), "
-                                                    f"under the {FEE_UNIT} the step pays out")
+                                                    f"under the {FEE_UNIT} the step pays out"
+                                                    + (f", and the run's own fee was not paid: {paid_why}" if paid_why
+                                                       else ""))
         else:
-            before = await _held(rpc, parse, bag, did, owner)
+            before = await _settled(rpc, parse, bag, did, owner)
             ok, _ = await effect(bag, parse, DISTRIBUTE, {"target_agent_did": did, "amount": str(FEE_UNIT),
                                                           "reason": "manual_payout",
                                                           "reference_id": f"mcp-earn-payout-{tag}"}, outcomes)
+            if not ok and _drained(outcomes.get(effect_name(DISTRIBUTE))):
+                now = await _fee_held(bag, parse)
+                if now is not None and now < FEE_UNIT:
+                    # another rail drew on the account between the read and the payout: pay again, retry once
+                    paid_why = await _pay_a_fee(rpc, parse, bag, t, dev, ag, f"{tag}-again")
+                    fee = await _fee_held(bag, parse)
+                    if paid_why is None and fee is not None and fee >= FEE_UNIT:
+                        before = await _settled(rpc, parse, bag, did, owner)
+                        ok, _ = await effect(bag, parse, DISTRIBUTE, {
+                            "target_agent_did": did, "amount": str(FEE_UNIT), "reason": "manual_payout",
+                            "reference_id": f"mcp-earn-payout-{tag}-again"}, outcomes)
+                    if not ok and _drained(outcomes.get(effect_name(DISTRIBUTE))):
+                        effect_unmeasured(outcomes, DISTRIBUTE, (
+                            f"the fee account was drawn on between the read and the payout twice (it read {fee} "
+                            f"and then {await _fee_held(bag, parse)}): another rail on this frame pays out of it "
+                            f"while the suites run, so the payout could not be measured"))
+                # an account that still reads enough after the refusal keeps the row red: the read and the payout
+                # disagree, which is a finding
             if ok:
                 await _moved(rpc, parse, bag, outcomes, DISTRIBUTE, did, owner, before, FEE_UNIT)
                 after_fee = await _fee_held(bag, parse)

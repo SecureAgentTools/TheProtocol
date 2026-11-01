@@ -4742,7 +4742,10 @@ _SYNTHETIC_ROW_PREFIXES = ("mcp_protocol: ", "owner_scoping: ", "pagination: ", 
                            "zk v2: ",
                            # §MCPTEST30 (V0636): a real success a lifecycle measured under a tool's own name where
                            # the tool's contract pins a refusal (kept_lifecycle_rows; earned_fixtures.EARNED_ROW)
-                           "earned: ")
+                           "earned: ",
+                           # §MCPTEST30 (V0651, order (p)): a retired surface measured where it is retired
+                           # (earned_ad_retired: the token bridge's six routes answer 410)
+                           "retired: ")
 
 
 def _real_success(d: Dict[str, Any]) -> bool:

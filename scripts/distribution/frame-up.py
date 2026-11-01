@@ -4,7 +4,7 @@
     ./frame-up.py --name myframe --public-name frame.example.org --ticker MYF --currency-name "My Unit" \\
                   --admin-email ops@example.org [--mail-server smtp.example.org --mail-port 587 \\
                   --mail-address noreply@example.org --mail-token-file /root/.smtp_token] \\
-                  [--stack-root /opt/theprotocol/stack] [--images-prefix theprotocol --version <VERSION file>] \\
+                  [--stack-root /opt/theprotocol/stack] [--images-prefix <prefix> --version <VERSION file>] \\
                   [--federation-port 8443 --bundle-port 8444 --ledger-port 8445 --edge-https-port 443 --edge-http-port 80] \\
                   [--edge-tls acme|internal] [--posture production|sandbox] [--mint 1000000] [--frame-label ...] [--skip-doctor]
     ./frame-up.py --name myframesbx --sandbox-of myframe --public-name sandbox.frame.example.org --ticker SBX ... \
@@ -550,7 +550,8 @@ def main():
     ap.add_argument("--posture", choices=["production", "sandbox"], default="production")
     ap.add_argument("--stack-root", default=os.getenv("FRAME_STACK_ROOT", "/opt/theprotocol/stack"))
     ap.add_argument("--secrets-dir", default=None, help="where the admin and service-account secrets are written (default <stack-root>/<name>-secrets)")
-    ap.add_argument("--images-prefix", default=os.getenv("IMAGE_REGISTRY", "theprotocol"))
+    ap.add_argument("--images-prefix", default=None,
+                    help="default: IMAGE_REGISTRY, else build.sh's local images when all six are here, else the release channel's public namespace")
     ap.add_argument("--version", default=version_of(os.path.join(HERE, "VERSION")))
     ap.add_argument("--federation-port", type=int, default=8443, help="the mTLS federation lane peers dial")
     ap.add_argument("--bundle-port", type=int, default=8444, help="the SPIRE bundle endpoint peers fetch")
@@ -587,6 +588,11 @@ def main():
     ap.add_argument("--reach-probe", default=None, help="the network's reach probe (frame-reach.py's default)")
     ap.add_argument("--dry-run", action="store_true", help="print the runner installer's and the driver's commands, run nothing")
     a = ap.parse_args()
+    if not a.images_prefix:   # kit beta.30: the doctor's one rule (public namespace unless build.sh's six images are here)
+        spec = importlib.util.spec_from_file_location("frame_doctor_prefix", os.path.join(HERE, "frame-doctor.py"))
+        dmod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(dmod)
+        a.images_prefix = dmod.default_images_prefix(a.version)
 
     if not os.path.isfile(DRIVER):
         raise SystemExit(f"frame-up: the standup driver is not at {DRIVER}; run this from the export's scripts/distribution.")
@@ -646,7 +652,9 @@ def main():
     mine = frame_names.frame_resources(a.name, a.stack_root, kinds=("containers",))["containers"]   # exactly: `a` never counts `a-b`'s
     if not resume and mine:
         log(f"{len(mine)} container(s) of a frame named {a.name} already exist on this host ({', '.join(mine[:3])}"
-            f"{', ...' if len(mine) > 3 else ''}): run frame-down.py --name {a.name} first, or choose another name.")
+            f"{', ...' if len(mine) > 3 else ''}): run frame-down.py --name {a.name} first, or choose another name."
+            + (" The runner cannot be added to a standing frame: --with-runner comes with a fresh standup (frame-down, then "
+               "frame-up --with-runner; the frame's accounts and agents go with the old one)." if a.with_runner else ""))
         return 1
     mail_token = ""
     if a.mail_token_file:

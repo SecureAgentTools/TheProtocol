@@ -4,7 +4,8 @@
 and A2A authorize: a failure is logged at ERROR with the event's type, aggregate and key, counted in
 `registry_value_emit_failed_total`, and returned as False; it is never raised (the money already moved) and never
 silent. The background wrapper reports the same way. The last tests run the emission census over the tree: the six
-value sites the nightly named no longer swallow, and the two ratchets read at or under their baselines.
+value sites the nightly named no longer swallow (three since V0651 (p) retired the token bridge's), and the two
+ratchets read at or under their baselines.
 """
 from __future__ import annotations
 
@@ -81,9 +82,10 @@ async def test_the_background_wrapper_reports_a_lost_emit(caplog):
     assert len(lost) == 1 and "TokensTransferred" in lost[0] and "xfer-1" in lost[0] and "emit_background" in lost[0]
 
 
+# V0651 (p): the token bridge's three (TokensBridgeLocked, WrappedTokensMinted, TokensBridgeUnlocked) left with the
+# bridge, retired: its routes answer 410 Gone and emit nothing
 NAMED_SITES = {
-    ("routers/token_bridge.py", "TokensBridgeLocked"), ("routers/token_bridge.py", "WrappedTokensMinted"),
-    ("routers/token_bridge.py", "TokensBridgeUnlocked"), ("routers/a2a_payment.py", "A2APaymentAuthorized"),
+    ("routers/a2a_payment.py", "A2APaymentAuthorized"),
     ("services/teg_stream_proxy.py", "TokensTransferred"), ("services/teg_stream_proxy.py", "TransactionFeeCollected"),
 }
 KEYED_SITES = {

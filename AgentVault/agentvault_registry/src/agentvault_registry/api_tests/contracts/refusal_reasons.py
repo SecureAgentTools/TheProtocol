@@ -67,14 +67,6 @@ BY_DESIGN_REFUSAL: Dict[str, str] = {
     'theprotocol_deleteFederationLicense':
         'a run mints a federation licence of its own only on the nightly and proof pairs (earned_ad_ephemeral), so on a '
         'standing frame it has none to delete',
-    # §MCPTEST30 (tester batch 2 item 2): the two bridge routes only the bridge's other registry calls; refusal-only on
-    # sbx-alpha, the one frame running the bridge (the switch table holds them elsewhere)
-    'theprotocol_bridgeIssueWrapped':
-        "a route only the bridge's other registry calls (a federation peer's identity), so no MCP caller has a success "
-        "path; the Token Bridge is on the D8 retire list, his decision, and runs only where TOKEN_BRIDGE_ENABLED is on",
-    'theprotocol_bridgeUnlock':
-        "a route only the bridge's other registry calls (a federation peer's identity), so no MCP caller has a success "
-        "path; the Token Bridge is on the D8 retire list, his decision, and runs only where TOKEN_BRIDGE_ENABLED is on",
     # §MCPTEST30 (tester batch 2 item 3): the commons season's money steps
     'theprotocol_adminCommonsPaySeason':
         "paying a season moves units from the payout waterfall to its winners, so a run pays only a season of its own, "

@@ -34,6 +34,7 @@ import base64
 import datetime
 import json
 import logging
+import re
 import uuid
 from decimal import Decimal, InvalidOperation
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Set, Tuple
@@ -1538,6 +1539,10 @@ async def insert_message(db: AsyncSession, conv: Conversation,
         # ticket first and mirrors second.
         raise ChatError(409, "a support thread is written through the support rail — "
                              "reply to the ticket and it appears here")
+    if conv.kind == "system" and not rail_author:
+        # V0651 (s): a system thread (the Guild's notices to an agent) is written by its rail only; there is nobody in
+        # it to answer, and the order's own routes are where an agent acts on what it read here.
+        raise ChatError(409, "a system thread is written by its rail only: act on the order itself")
     if kind == "text":
         if not (body or "").strip():
             raise ChatError(422, "a text message needs a body")
@@ -2161,12 +2166,100 @@ def next_sync_cursor(prev_t: datetime.datetime, prev_i: Optional[str],
     return t, i, sorted(kept.items(), key=lambda kv: kv[1])
 
 
+# V0651 (t) gwo_cddfbd743842eb65906ef8ab: an @all / @everyone in a message's body, as a word (the mentions column (h)
+# resolves @name to a participant and stores nothing for these two).
+FOR_ME_ALL_RE = re.compile(r"(?<!\w)@(all|everyone)(?!\w)", re.IGNORECASE)
+_APPROVAL_CARDS = ("approval.request", "approval.decided")
+
+
+def _card_approval_id(card: Any) -> Optional[str]:
+    if isinstance(card, str):                  # a JSON column read as text (SQLite; asyncpg decodes it to a dict)
+        try:
+            card = json.loads(card)
+        except ValueError:
+            return None
+    if not isinstance(card, dict) or card.get("type") not in _APPROVAL_CARDS:
+        return None
+    aid = (card.get("refs") or {}).get("approval_id") or (card.get("data") or {}).get("approval_id")
+    return str(aid) if aid else None
+
+
+def _mentions_list(value: Any) -> List[dict]:
+    if isinstance(value, str):                 # a JSON column read as text (SQLite)
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return []
+    return [x for x in value if isinstance(x, dict)] if isinstance(value, list) else []
+
+
+def reaches_me(actor: Actor, row: dict, conv: Optional[dict], approval: Optional[dict],
+               approver_orgs: Set[str]) -> bool:
+    """V0651 (t): does this message reach THIS caller in particular? Never its own; otherwise any of: a mention of the
+    caller ((h)'s mentions), @all or @everyone in the body, a message from the room's owner developer (the
+    organization's owner_id), any message in a direct conversation (the pair kinds), or an approval card of (l) the
+    caller asked (an agent) or may decide (a developer: the org's owner or an active owner or approver member). Pure:
+    the caller passes the conversation (kind, owner_id), the card's approval (requester, org) and the developer's
+    approver orgs, read once per sync."""
+    if row.get("sender_ptype") == actor.ptype and str(row.get("sender_id") or "").lower() == actor.sender_id.lower():
+        return False
+    if any(m.get("key") == actor.key for m in _mentions_list(row.get("mentions"))):
+        return True
+    body = row.get("body")
+    if body and FOR_ME_ALL_RE.search(body):
+        return True
+    if conv:
+        if conv.get("kind") in PAIR_KINDS:
+            return True
+        owner = conv.get("owner_id")
+        if owner is not None and row.get("sender_ptype") == "developer" and str(row.get("sender_id")) == str(owner):
+            return True
+    if approval:
+        if actor.ptype == "agent":
+            return str(approval.get("requester_agent_did") or "").lower() == (actor.agent_did or "").lower()
+        if actor.ptype == "developer":
+            return str(approval.get("org_id") or "") in approver_orgs
+    return False
+
+
+async def _for_me_context(db: AsyncSession, actor: Actor, rows: List[dict]) -> Tuple[Dict[str, dict],
+                                                                                        Dict[str, dict], Set[str]]:
+    """The three facts reaches_me needs, each read once for the whole sync page: the conversations' kinds and owners,
+    the approvals the page's cards name, and (for a developer) the organizations it owns or approves for."""
+    conv_ids = sorted({r["conversation_id"] for r in rows if r.get("conversation_id")})
+    convs: Dict[str, dict] = {}
+    if conv_ids:
+        res = await db.execute(sa_text(
+            "SELECT c.id, c.kind, o.owner_id FROM conversations c LEFT JOIN organizations o ON o.id = c.org_id "
+            "WHERE c.id IN :ids").bindparams(bindparam("ids", expanding=True)), {"ids": conv_ids})
+        convs = {r[0]: {"kind": r[1], "owner_id": r[2]} for r in res.all()}
+    aids = sorted({a for a in (_card_approval_id(r.get("card")) for r in rows) if a})
+    approvals: Dict[str, dict] = {}
+    if aids:
+        res = await db.execute(sa_text(
+            "SELECT id, requester_agent_did, org_id FROM chat_approvals WHERE id IN :ids").bindparams(
+            bindparam("ids", expanding=True)), {"ids": aids})
+        approvals = {r[0]: {"requester_agent_did": r[1], "org_id": r[2]} for r in res.all()}
+    approver_orgs: Set[str] = set()
+    if actor.ptype == "developer" and approvals:
+        me = int(actor.developer_id)
+        res = await db.execute(sa_text(
+            "SELECT id FROM organizations WHERE owner_id = :me UNION SELECT organization_id FROM organization_members "
+            "WHERE developer_id = :me AND is_active = true AND (role = 'owner' OR can_approve = true)"), {"me": me})
+        approver_orgs = {str(r[0]) for r in res.all()}
+    return convs, approvals, approver_orgs
+
+
 async def sync_since(db: AsyncSession, actor: Actor, since: Optional[str], *,
-                     cursor: Optional[str] = None) -> dict:
+                     cursor: Optional[str] = None, for_me: bool = False) -> dict:
     """Polling catch-up for clients and agent runtimes: every message in my
     active threads since a timestamp, or after a cursor, hidden floors respected, bound stated. Every answer carries
     next_cursor (V0650 (g)): pass it back and nothing is missed or returned twice, including a message that committed
-    after a later one."""
+    after a later one.
+
+    V0651 (t): with for_me, only the rows that reach this caller in particular (reaches_me); everything else stays on
+    the server. Its next_cursor continues THAT stream (pass it back with for=me); `plain_cursor` is the position it
+    started from, unchanged, so a plain sync from it later loses nothing the filter left behind."""
     if cursor and since:
         raise ChatError(422, "give since or cursor, not both")
     now = message_clock()                      # read BEFORE the query: the horizon may only trail what it saw
@@ -2198,10 +2291,11 @@ async def sync_since(db: AsyncSession, actor: Actor, since: Optional[str], *,
         skip = "AND m.id NOT IN :seen"
         params["seen"] = [mid for mid, _ in prev_seen]
         binds.append(bindparam("seen", expanding=True))
+    extra = ", m.mentions" if for_me else ""     # V0651 (t): the filter reads (h)'s mentions
 
     stmt = sa_text(f"""
         SELECT m.id, m.conversation_id, m.seq, m.sender_ptype, m.sender_id, m.kind,
-               m.body, m.card, m.reply_to, m.client_ref, m.created_at, m.deleted_at
+               m.body, m.card, m.reply_to, m.client_ref, m.created_at, m.deleted_at{extra}
         FROM chat_messages m
         JOIN conversation_participants p ON p.conversation_id = m.conversation_id
         WHERE ({reach}) AND p.state = 'active'
@@ -2222,23 +2316,39 @@ async def sync_since(db: AsyncSession, actor: Actor, since: Optional[str], *,
         if r[10] is not None:
             returned.append((r[0], _as_utc(r[10])))
         deleted = r[11] is not None
-        msgs.append({"id": r[0], "conversation_id": r[1], "seq": int(r[2]),
-                     "sender_ptype": r[3], "sender_id": r[4],
-                     "kind": "system" if deleted else r[5],
-                     "body": None if deleted else r[6],
-                     "card": None if deleted else r[7],
-                     "deleted": deleted,
-                     "reply_to": r[8], "client_ref": r[9],
-                     "created_at": _as_utc(r[10]).isoformat() if r[10] else None})
+        msg = {"id": r[0], "conversation_id": r[1], "seq": int(r[2]),
+               "sender_ptype": r[3], "sender_id": r[4],
+               "kind": "system" if deleted else r[5],
+               "body": None if deleted else r[6],
+               "card": None if deleted else r[7],
+               "deleted": deleted,
+               "reply_to": r[8], "client_ref": r[9],
+               "created_at": _as_utc(r[10]).isoformat() if r[10] else None}
+        if for_me:
+            msg["mentions"] = None if deleted else r[12]
+        msgs.append(msg)
+    if for_me:
+        # V0651 (t): the page was read whole and is filtered here, so `returned` (every row scanned) moves the
+        # filtered stream past what it left behind, and only what reaches the caller leaves the server
+        convs, approvals, approver_orgs = await _for_me_context(db, actor, msgs)
+        msgs = [m for m in msgs if reaches_me(actor, m, convs.get(m["conversation_id"]),
+                                              approvals.get(_card_approval_id(m.get("card")) or ""), approver_orgs)]
+        for m in msgs:
+            m.pop("mentions", None)
     truncated = len(rows) >= SYNC_MAX
     nt, ni, ns = next_sync_cursor(prev_t, prev_i, prev_seen, returned, truncated, now)
-    return {"since": prev_t.isoformat(), "messages": msgs,
-            "truncated": truncated, "bound": SYNC_MAX,
-            "next_cursor": encode_sync_cursor(nt, ni, ns)}
+    out = {"since": prev_t.isoformat(), "messages": msgs,
+           "truncated": truncated, "bound": SYNC_MAX,
+           "next_cursor": encode_sync_cursor(nt, ni, ns)}
+    if for_me:
+        # the filtered stream moves on (next_cursor); the plain stream stays where it was (plain_cursor)
+        out["for"] = "me"
+        out["plain_cursor"] = encode_sync_cursor(prev_t, prev_i, prev_seen)
+    return out
 
 
 async def sync_wait(db: AsyncSession, actor: Actor, *, since: Optional[str] = None,
-                    cursor: Optional[str] = None, wait_s: int = 0) -> dict:
+                    cursor: Optional[str] = None, wait_s: int = 0, for_me: bool = False) -> dict:
     """V0650 (g): sync_since, or, with wait_s > 0, a long-poll: answer at once when something is there, else wait up to
     wait_s seconds for a message to one of the caller's threads and answer it, or answer empty at the bound.
 
@@ -2247,9 +2357,12 @@ async def sync_wait(db: AsyncSession, actor: Actor, *, since: Optional[str] = No
     every send reaches, here or (over Redis) on another worker. The waiter is armed BEFORE each query, so a message that
     commits between the query and the wait still wakes it. A wake that brings nothing for this caller (a thread where its
     row is not active) keeps it waiting. Without Redis a wake from another worker is not heard: the call ends at the
-    bound and the next call returns the message (no loss)."""
+    bound and the next call returns the message (no loss).
+
+    V0651 (t): with for_me the same wait ends only on a row reaches_me keeps (a message naming another agent wakes
+    the waiter, the filtered query finds nothing, and it waits on), so nothing else leaves the server."""
     if not wait_s:
-        out = await sync_since(db, actor, since, cursor=cursor)
+        out = await sync_since(db, actor, since, cursor=cursor, for_me=for_me)
         out.update({"wait_s": 0, "waited_ms": 0, "woken": False})
         return out
     from agentvault_registry.routers.websocket import _release_ws_session, manager
@@ -2267,7 +2380,7 @@ async def sync_wait(db: AsyncSession, actor: Actor, *, since: Optional[str] = No
             await manager.chat_wake_subscribe()
         except Exception as e:  # noqa: BLE001 — without the channel, a wake from this worker still arrives
             logger.debug("[CHAT] sync wait: the wake channel is not subscribed: %s", e)
-        out = await sync_since(db, actor, since, cursor=cursor)
+        out = await sync_since(db, actor, since, cursor=cursor, for_me=for_me)
         while not out["messages"]:
             await _release_ws_session(db)          # no connection held while idle
             remaining = deadline - loop.time()
@@ -2279,7 +2392,7 @@ async def sync_wait(db: AsyncSession, actor: Actor, *, since: Optional[str] = No
             woken = True
             manager.chat_waiter_remove(key, fut)
             fut = manager.chat_waiter_add(key)     # re-armed before the query that follows the wake
-            out = await sync_since(db, actor, since, cursor=cursor)
+            out = await sync_since(db, actor, since, cursor=cursor, for_me=for_me)
     finally:
         manager.chat_waiter_remove(key, fut)
     out.update({"wait_s": int(wait_s), "waited_ms": int((loop.time() - started) * 1000), "woken": woken})
@@ -2474,6 +2587,29 @@ async def _tell_agent_owners(conv_id: str, conv_kind: str, message: dict, agent_
     return told
 
 
+def approval_notice(message: dict, sender_name: str) -> Optional[Dict[str, str]]:
+    """V0651 (y): the notice of an approval card says what it is about and opens the request, never "[approval.request]"
+    and the bare room: the push's title names the ask or the decision, its text the request's title, and the request's
+    id goes with the room's link (`?approval=`), so the thread opens on that request in its pinned panel."""
+    card = message.get("card") if isinstance(message.get("card"), dict) else None
+    ctype = (card or {}).get("type")
+    if ctype not in ("approval.request", "approval.decided"):
+        return None
+    data = card.get("data") if isinstance(card.get("data"), dict) else {}
+    aid = str(data.get("approval_id") or "")
+    if not (aid.startswith("apr_") and 12 <= len(aid) <= 44 and all(c in "0123456789abcdef" for c in aid[4:])):
+        return None   # a link carries only an id this registry mints (chat_approvals.new_id), nothing a card made up
+    what = str(data.get("title") or "")
+    if ctype == "approval.request":
+        title = f"Approval requested by {sender_name}" if sender_name else "Approval requested"
+        text = what + (" (affects production)" if data.get("production_impact") else "")
+    else:
+        title = "Approved" if data.get("decision") == "approved" else "Denied"
+        by = str(data.get("decided_by_name") or "")
+        text = f"{what} ({by})" if by else what
+    return {"approval_id": aid, "title": title[:120], "message": text[:PREVIEW_LEN] or title}
+
+
 async def _notify_absent(conv_id: str, message: dict, notices: List[int], sender_name: str, is_ping: bool,
                          manager: Any) -> None:
     """The offline notices, one developer after another, each given NOTIFY_BOUND_S: a notice that takes longer is
@@ -2481,6 +2617,20 @@ async def _notify_absent(conv_id: str, message: dict, notices: List[int], sender
     from agentvault_registry.background_tasks.push_notify import notify
     preview = message.get("body") or (
         f"[{(message.get('card') or {}).get('type', 'card')}]" if message.get("card") else "…")
+    title, click = sender_name or "OurChat", f"/ui#/pocket/ourchat/{conv_id}"
+    approval = approval_notice(message, sender_name)
+    if approval is not None:
+        title, preview, click = approval["title"], approval["message"], f"{click}?approval={approval['approval_id']}"
+    # V0651 (y2): a request's deciders get its own type, pushed by default (chat.message's pushes are off until the
+    # opt-in card); a failed read leaves everyone on the plain notice, never on none
+    deciders: set = set()
+    if approval is not None and str(((message.get("card") or {}).get("type")) or "") == "approval.request" and not is_ping:
+        try:
+            from . import chat_approvals as _ca
+            deciders = await _ca.deciders_among(conv_id, notices)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[CHAT] the deciders of approval %s in %s could not be read: the plain notice goes: %s: %s",
+                           approval.get("approval_id"), conv_id, type(e).__name__, e)
     for dev_id in notices:
         # §PRESENCE — this used to read `manager.active_connections`, a PER-WORKER
         # dict, so it only ever suppressed the duplicate when the recipient's
@@ -2499,10 +2649,10 @@ async def _notify_absent(conv_id: str, message: dict, notices: List[int], sender
             continue   # they already received it live — don't double-notify
         try:
             await asyncio.wait_for(notify(
-                "chat.ping" if is_ping else "chat.message", [dev_id],
-                title=sender_name or "OurChat",
+                "chat.ping" if is_ping else ("chat.approval_requested" if dev_id in deciders else "chat.message"), [dev_id],
+                title=title,
                 message=("pinged you" if is_ping else str(preview)[:PREVIEW_LEN]),
-                click=f"/ui#/pocket/ourchat/{conv_id}"), NOTIFY_BOUND_S)
+                click=click), NOTIFY_BOUND_S)
         except asyncio.TimeoutError:
             logger.warning("[CHAT] the notice of message %s in %s to developer %s took over %ss: given up, the next "
                            "developer is still told", message.get("id"), conv_id, dev_id, NOTIFY_BOUND_S)

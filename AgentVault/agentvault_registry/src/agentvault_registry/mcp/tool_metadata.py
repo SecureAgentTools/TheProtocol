@@ -253,7 +253,7 @@ OUTPUT_SCHEMAS: Dict[str, Dict[str, Any]] = {
 # ---------------------------------------------------------------------------
 
 TASK_TOOLS_PUBLIC = frozenset({
-    "tegCrossRegistryTransferDirect", "bridgeTransfer", "crossTegBalanceSync",
+    "tegCrossRegistryTransferDirect", "crossTegBalanceSync",
     "exportTegTransactions", "agentBulkExport", "triggerFederationSync",
     "agentBuilderGenerate",
 })

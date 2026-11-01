@@ -18,7 +18,8 @@ SRC = (pathlib.Path(__file__).resolve().parents[1] / "src" / "agentvault_registr
 # the TEG's own list (agentvault_teg_layer_mvp .../api/v1/endpoints_governance.py); the TEG tree is not in this image
 TEG_POLICY_TYPES = {"attestation", "governance", "compliance", "economic"}
 HEX_NONCE = re.compile(r"^[a-fA-F0-9]{16,64}$")   # schemas.py `_HEX_NONCE_RE`, the frame-invitation schema
-REFUSALS = ["bridgeTransfer", "crossTegBalanceSync", "applyReputationSignal", "submitDispute", "createTegPolicy",
+# V0651: bridgeTransfer left with the token bridge (his word "retire."): its probe and its own test went with it
+REFUSALS = ["crossTegBalanceSync", "applyReputationSignal", "submitDispute", "createTegPolicy",
             "createFrameInvitation", "federationSlashConfirmation"]
 
 
@@ -54,12 +55,6 @@ def test_each_refusal_probe_expects_the_refusal(tool):
     """error_4xx, never "any": an invalid probe the route ACCEPTS must fail loudly, not read healthy."""
     for _tier, _args, kws in _steps(tool):
         assert kws.get("expect_status") == "'error_4xx'", (tool, kws.get("expect_status"))
-
-
-def test_the_bridge_probe_moves_nothing():
-    for _t, args, _k in _steps("bridgeTransfer"):
-        assert Decimal(_lit(args["amount"])) <= 0   # gt=0 refuses it before the handler; a positive one LOCKS funds
-        assert "target_frame" not in args
 
 
 def test_the_balance_sync_probe_names_no_agent():

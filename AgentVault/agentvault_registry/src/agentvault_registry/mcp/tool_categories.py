@@ -82,7 +82,7 @@ PUBLIC_OVERLAY_BUCKETS: Dict[str, Tuple[str, FrozenSet[str]]] = {
             "authorizePayment", "verifyPayment", "settlePayment", "releasePayment",
             "getMyPaymentAuthorizations", "getMyContracts", "acceptContract",
             # §OURSTATE-1 — OurChat chat: the phone's conversation surface
-            "listConversations", "readThread", "sendChatMessage", "respondChatRequest",
+            "listConversations", "readThread", "syncChat", "sendChatMessage", "respondChatRequest",
             "blockChatPrincipal", "unblockChatPrincipal",
             # AGORA trading
             "getAgoraListings", "getAgoraListing", "getAgoraOrderBook",
@@ -140,6 +140,7 @@ PUBLIC_TOOL_CATEGORIES: Dict[str, str] = {
     # §OURSTATE-1 (2026-08-24) — OurChat chat
     "listConversations": "account",
     "readThread": "account",
+    "syncChat": "account",              # V0651 (t)
     "sendChatMessage": "account",
     "respondChatRequest": "account",
     "blockChatPrincipal": "account",
@@ -147,8 +148,8 @@ PUBLIC_TOOL_CATEGORIES: Dict[str, str] = {
     # V0650 (l) (2026-10-31) — approvals in the chat
     "requestChatApproval": "account",
     "getChatApprovalStatus": "account",
+    "consumeChatApproval": "account",     # V0651 (o)
     "decideChatApproval": "account",
-    "bridgeTransfer": "wallet",
     "buyAgoraLaunch": "exchange",
     "cancelAccountDeletion": "account",
     "cancelAgoraOrder": "exchange",
@@ -589,9 +590,6 @@ ADMIN_TOOL_CATEGORIES: Dict[str, str] = {
     "backfillPullTokens": "treasury-economy",
     "blacklistRegistry": "enforcement-security",
     "blockFederationAgent": "enforcement-security",
-    "bridgeIssueWrapped": "treasury-economy",
-    "bridgeRedeem": "treasury-economy",
-    "bridgeUnlock": "treasury-economy",
     "bulkRefreshAgentCards": "fleet-ops",
     "bulkReinstateAgents": "fleet-ops",
     "bulkSuspendAgents": "fleet-ops",
@@ -689,7 +687,6 @@ ADMIN_TOOL_CATEGORIES: Dict[str, str] = {
     "getApiTestSandboxCredentials": "diagnostics-tester",
     "getAttestationsAnalytics": "fleet-ops",
     "getBridgeAggregate": "treasury-economy",
-    "getBridgeStatus": "treasury-economy",
     "getBroadcastEmailRetryDeadLetter": "broadcast",
     "getBroadcastEmailRetryStatus": "broadcast",
     "getBroadcastSchedulerStatus": "broadcast",

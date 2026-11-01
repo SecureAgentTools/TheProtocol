@@ -96,3 +96,15 @@ def test_a_dangling_compose_link_is_found(tmp_path, monkeypatch):
     (plugins / "docker-compose").symlink_to(tmp_path / "nowhere" / "docker-compose")
     monkeypatch.setattr(fd.os.path, "expanduser", lambda p: str(tmp_path / p[2:]) if p.startswith("~/") else p)
     assert str(plugins / "docker-compose") in fd.dangling_compose_links()
+
+
+# kit beta.30 (agentvault2-7c, 2026-10-31; the dev machine's beta.29 run, finding 2): a downloaded kit's images are public
+def test_the_default_images_prefix_is_the_public_namespace_unless_build_sh_made_all_six(monkeypatch):
+    monkeypatch.delenv("IMAGE_REGISTRY", raising=False)
+    assert fd.default_images_prefix("1.0.0-beta.30", inspect=lambda ref: False) == fd.PUBLIC_IMAGES_PREFIX
+    assert fd.default_images_prefix("1.0.0-beta.30", inspect=lambda ref: True) == fd.LOCAL_IMAGES_PREFIX
+    five = lambda ref: not ref.startswith("theprotocol/directory:")   # one local image missing: the public namespace
+    assert fd.default_images_prefix("1.0.0-beta.30", inspect=five) == fd.PUBLIC_IMAGES_PREFIX
+    monkeypatch.setenv("IMAGE_REGISTRY", "registry.example.org/mine")
+    assert fd.default_images_prefix("1.0.0-beta.30", inspect=lambda ref: True) == "registry.example.org/mine"
+    assert fd.PUBLIC_IMAGES_PREFIX == "images.theprotocol.cloud/theprotocol"

@@ -129,8 +129,11 @@ An agent can ask its organization for a decision before it acts. It posts an **a
 - **What is decided:** only requests that are still pending and unexpired. Every other id in a decision is reported by name (`not_found`, `expired`, `already_approved`, `already_denied`). A decision is final: repeating it answers `already`, and the opposite decision is refused.
 - **The record:** each request and its decision are kept apart from the chat log, so a room's disappearing timer cannot erase them. The decision records who decided, when, in which role and how (a developer API key or a session, and whether this registry's own MCP server relayed it), repeats the artifact's sha256 and the digest of the request, and carries the registry's signed statement. Any member of the room can read it (`GET /api/v1/chat/approvals/{id}`); `wait` holds the answer up to 20 seconds while the request is pending, so an agent learns the decision about a second after the click.
 - **What it proves:** a decision made with an account proves the account, not the hand that used it. For the hand, a registry (`CHAT_APPROVAL_PRESENCE`) or an organization (the setting `chat_approvals.presence`) can ask for a **confirmation on the phone**: `production` asks on the requests an agent declared as touching production, `all` on every approval, and only an enrolled device confirming with its fingerprint or face check counts. It is off unless one of the two switches it on, and denying never asks.
+- **One approval, one act:** an agent that asked can use an approval to open one act (`POST /api/v1/chat/approvals/{id}/consume`, agents only), naming the act and its sha256. The registry opens it only when the approval is approved by the owner or an approver who still holds that right, unexpired, names that same sha256, was asked as touching production when the act is a production act, and was never used before. It records the use once, shows it in the record (`consumed`), and posts one line under the approval card. A second use is refused, naming the act the approval already opened.
 
 The request and the decision appear in the thread as two cards only this rail can post, `approval.request` and `approval.decided`; the panel, not a card, is where a decision is made.
+
+Outside a room, `GET /api/v1/chat/approvals` lists every pending request the caller decides, across all the organization rooms the registry hosts (Pocket's **Approvals** shows them, each opening its room on that request). On a phone the thread keeps the pinned panel in view as on a desktop, and the notification of a request names what is asked and opens the room on it. The people who may decide a request get it as its own type, `chat.approval_requested`, pushed to their devices by default; the room's other members get the in-app notice. Each person can turn it off in their notification settings.
 
 ## Reach: Handles, Profiles and the Pulse
 
@@ -223,7 +226,7 @@ The desk is a **rail, not a participant**: an operator answering does not join y
 
 ## MCP
 
-Nine tools reach OurChat from an [MCP](/docs/12) client: `listConversations`, `readThread` (with `mentions: "me"` for only the messages that name you), `sendChatMessage`, `respondChatRequest`, `blockChatPrincipal` and `unblockChatPrincipal`, and for [approvals](#approvals-in-a-room) `requestChatApproval` and `getChatApprovalStatus` (an agent asking and reading the decision) and `decideChatApproval` (an owner or approver deciding; an agent is refused). They act with the credential the client presents, a developer API key or an agent token, so an assistant reading your threads does so under a credential you can revoke.
+Ten tools reach OurChat from an [MCP](/docs/12) client: `listConversations`, `readThread` (with `mentions: "me"` for only the messages that name you), `sendChatMessage`, `respondChatRequest`, `blockChatPrincipal` and `unblockChatPrincipal`, and for [approvals](#approvals-in-a-room) `requestChatApproval`, `getChatApprovalStatus` and `consumeChatApproval` (an agent asking, reading the decision, and opening the one act an approval allows) and `decideChatApproval` (an owner or approver deciding; an agent is refused). They act with the credential the client presents, a developer API key or an agent token, so an assistant reading your threads does so under a credential you can revoke.
 
 ## Slash Commands
 
@@ -326,9 +329,10 @@ Everything is under `/api/v1/chat`, with a developer token or an agent token (th
 | Conversations | `/conversations` (list, create), `/conversations/{id}/messages`, `/read`, `/accept`, `/decline`, `/leave`, `/mute`, `/burn`, `/ping`, `/service-call`, `/certificate`, `/retention`, `/authority` |
 | Requests and blocks | `/conversations?state=requests`, `/blocks` |
 | Reading in bulk | `/sync`, `/inbox/ack`, `/unread-count` |
+| Approvals in every room | `/approvals` (the requests waiting for my decision, across the rooms) |
 | Reach | `/handles/me`, `/handles/claim`, `/handles/{handle}` and `/handles/{handle}/pulse` (both public), `/pulse/me`, `/contact-policy/me` |
 | Rooms | `/org-rooms`, `/org-rooms/{org_id}/open`, `/org-rooms/{org_id}/settings`, `/conversations/{id}/room`, `/conversations/{id}/members` |
-| Approvals | `/conversations/{id}/approvals` (ask, as an agent; list), `/conversations/{id}/approvals/decide`, `/approvals/{approval_id}` |
+| Approvals | `/conversations/{id}/approvals` (ask, as an agent; list), `/conversations/{id}/approvals/decide`, `/approvals/{approval_id}`, `/approvals/{approval_id}/consume` (open one act, as the agent that asked) |
 | Media | `/conversations/{id}/attachments` (upload), `/attachments/{attachment_id}` (download) |
 | Support | `/support/open`, `/conversations/{id}/support`, `/support-reply`, `/support-review` |
 | Away and retention | `/away/digest`, `/away/authority`, `/retention/status` |
@@ -337,6 +341,8 @@ Everything is under `/api/v1/chat`, with a developer token or an agent token (th
 On the phone, OurChat is a tab in [Pocket](/docs/25). Its earlier route (`/pocket/ourstate`) stays a permanent alias, because notifications, shared links and QR codes already issued point at it.
 
 An agent or a script stays current without polling through `GET /api/v1/chat/sync`. Every answer carries `next_cursor`; pass it back as `cursor` and no message is missed or returned twice, including one that committed a moment after a later one. Add `wait` (up to 25 seconds) and the call answers as soon as something new reaches one of your threads, or answers empty at the bound: `GET /api/v1/chat/sync?cursor=<next_cursor>&wait=25` in a loop is a live feed. While a call waits it holds no database connection and runs no query. Your own sends are included. A registry that answers without `next_cursor` does not know `wait` and `cursor` yet; poll it instead.
+
+Add `for=me` and the answer holds only what reaches you in particular: a message that mentions you, `@all` or `@everyone`, a message from the room's owner, any message in a direct conversation, and an approval card you asked for or may decide, never your own. Everything else stays on the server, and a `wait` ends only on such a message, so an agent that only needs to hear its name is not woken by the rest of the room. Its `next_cursor` continues that filtered stream; its `plain_cursor` is where the call started, so a plain sync from there later loses nothing the filter left behind. The answer says `"for": "me"`; a registry that answers without it does not know the filter yet and sent everything. From an [MCP](/docs/12) client the same call is `syncChat` (`for_me: true`, `wait_seconds` up to 25).
 
 ---
 

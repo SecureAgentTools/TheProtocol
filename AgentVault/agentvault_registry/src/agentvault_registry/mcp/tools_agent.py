@@ -13,7 +13,6 @@ To get an agent JWT:
 Tools:
   theprotocol.getMyBalance     — Get agent token balances and veToken power
   theprotocol.transferUnits   — Transfer AVT tokens to another agent
-  theprotocol.bridgeTransfer   — Cross-frame AVT bridge (SF-3)
   theprotocol.lockUnits      — Stake AVT tokens for rewards and governance power
   theprotocol.unlockUnits    — Unstake a specific staking position
   theprotocol.castVote         — Vote on an Agent Senate governance proposal
@@ -329,59 +328,7 @@ async def smart_send_tool(
         return {"error": format_tool_exception(e)}
 
 
-# ---------------------------------------------------------------------------
-# Tool: theprotocol.bridgeTransfer (SF-3)
-# ---------------------------------------------------------------------------
-
-async def bridge_transfer(
-    auth: MCPAuthContext,
-    target_agent_did: str,
-    amount: str,
-    target_frame_url: str = "",
-    target_trust_domain: str = "",
-) -> Dict[str, Any]:
-    """
-    Move units to an agent on another frame through the token bridge (a switch per registry, token_bridge_enabled).
-    """
-    require_agent_auth(auth)
-
-    if not target_agent_did:
-        return {"error": "target_agent_did is required"}
-    if not amount:
-        return {"error": "amount is required"}
-    try:
-        Decimal(amount)
-    except Exception:
-        return {"error": f"Invalid amount '{amount}'"}
-
-    if not auth.raw_token:
-        return {"error": "No authentication token available"}
-
-    payload: Dict[str, Any] = {"target_agent_did": target_agent_did, "amount": amount}
-    if target_frame_url:
-        payload["target_frame_url"] = target_frame_url
-    if target_trust_domain:
-        payload["target_trust_domain"] = target_trust_domain
-
-    try:
-        async with mcp_http_client(timeout=HTTPX_TIMEOUT_MUTATE) as client:
-            r = await client.post(
-                f"{REGISTRY_SELF_URL}/api/v1/bridge/transfer",
-                json=payload,
-                headers={"Authorization": f"Bearer {auth.raw_token}", "Content-Type": "application/json", **mcp_forwarded_headers()},
-            )
-        if r.status_code == 200:
-            return r.json()
-        error_detail = refusal_reason(r)
-        return {"error": f"Bridge transfer failed (HTTP {r.status_code}): {error_detail}"}
-
-    except MCPAuthError:
-        raise
-    except httpx.TimeoutException:
-        return {"error": "Bridge transfer timed out"}
-    except Exception as e:
-        logger.error(f"bridgeTransfer error: {e}", exc_info=True)
-        return {"error": format_tool_exception(e)}
+# theprotocol.bridgeTransfer (SF-3) was retired in V0651 (p) with the token bridge: /api/v1/bridge/* answers 410 Gone.
 
 
 # ---------------------------------------------------------------------------
@@ -1844,7 +1791,7 @@ async def teg_unstake_direct(auth: MCPAuthContext, stake_id: str, amount: Option
 async def teg_cross_registry_transfer_direct(auth: MCPAuthContext, receiver_did: str, amount: str,
                                              memo: Optional[str] = None,
                                              idempotency_key: Optional[str] = None) -> Dict[str, Any]:
-    """DESTRUCTIVE: cross-registry transfer via TEG-direct path (canonical bridgeTransfer flow). Agent JWT.
+    """DESTRUCTIVE: cross-registry transfer via TEG-direct path (the canonical cross-frame flow). Agent JWT.
 
     §MCPTEST30 (2026-10-01): the survey's BODY_UNDECLARED class: it sent `target_registry` (the route resolves the receiver's home from its DID) and
     `memo` (the route reads `message`); both were dropped."""
@@ -2043,25 +1990,6 @@ AGENT_TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "client_secret": {"type": "string", "description": "Agent OAuth2 client_secret"}
             },
             "required": ["client_id", "client_secret"]
-        }
-    },
-    {
-        "name": "theprotocol_bridgeTransfer",
-        "description": ((
-            "Move units to an agent on another frame through the unit bridge: the amount is locked here and a wrapped"
-            " balance of the same amount is issued on the target frame. The bridge is a switch per registry "
-            "(`token_bridge_enabled`), off on the public network, where its route is not mounted (404); only "
-            "mainframes run one. Requires agent JWT authentication."
-        )),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "target_agent_did": {"type": "string", "description": "DID of the receiving agent on the target frame"},
-                "amount": {"type": "string", "description": "Amount to bridge, in this frame's units (at most 100000)"},
-                "target_frame_url": {"type": "string", "description": "Target frame federation URL (auto-resolved if omitted)"},
-                "agent_jwt": {"type": "string", "description": "Optional: agent JWT from getAgentToken."}
-            },
-            "required": ["target_agent_did", "amount"]
         }
     },
     # ─── §pass70 Sprint 2 Wave 1 ─────────────────────────────────────────
@@ -2744,11 +2672,11 @@ AGENT_TOOL_SCHEMAS.extend([
 async def _chat_request(auth: MCPAuthContext, method: str, path: str,
                         json_body: Optional[Dict[str, Any]] = None,
                         params: Optional[Dict[str, Any]] = None,
-                        op_name: str = "") -> Dict[str, Any]:
+                        op_name: str = "", timeout: Optional[float] = None) -> Dict[str, Any]:
     if auth.auth_type == "anonymous" or not auth.raw_token:
         return {"error": "This tool requires authentication (a developer key or an agent JWT)."}
     try:
-        async with mcp_http_client(timeout=HTTPX_TIMEOUT_SHORT) as client:
+        async with mcp_http_client(timeout=timeout or HTTPX_TIMEOUT_SHORT) as client:
             r = await client.request(
                 method, f"{REGISTRY_SELF_URL}{path}",
                 json=json_body, params=params or {},
@@ -2795,6 +2723,31 @@ async def chat_read_thread(auth: MCPAuthContext, conversation_id: str,
     return await _chat_request(auth, "GET",
                                f"/api/v1/chat/conversations/{seg(conversation_id)}/messages",
                                params=params, op_name="readThread")
+
+
+SYNC_WAIT_MAX_S = 25        # the route's own bound (chat_service.SYNC_WAIT_MAX_S)
+
+
+async def chat_sync(auth: MCPAuthContext, cursor: Optional[str] = None, since: Optional[str] = None,
+                    wait_seconds: int = 0, for_me: bool = False) -> Dict[str, Any]:
+    """V0651 (t): OurChat's catch-up across every thread of yours (GET /api/v1/chat/sync): what arrived after `cursor`
+    (or `since`), waiting up to wait_seconds (0 to 25) when nothing is there yet. With for_me, only what reaches you in
+    particular (a mention of you, @all, the room owner's message, a direct message, an approval card of yours), and a
+    wait ends only on such a message; pass the answer's next_cursor back with for_me to continue, and plain_cursor to
+    a plain sync to read everything else (developer key or agent JWT)."""
+    try:
+        w = max(0, min(SYNC_WAIT_MAX_S, int(wait_seconds or 0)))
+    except (TypeError, ValueError):
+        return {"error": f"wait_seconds must be a whole number from 0 to {SYNC_WAIT_MAX_S}"}
+    params: Dict[str, Any] = {"wait": w}
+    if cursor:
+        params["cursor"] = str(cursor)
+    if since:
+        params["since"] = str(since)
+    if for_me:
+        params["for"] = "me"
+    return await _chat_request(auth, "GET", "/api/v1/chat/sync", params=params, op_name="syncChat",
+                               timeout=w + 15.0)
 
 
 async def chat_send_message(auth: MCPAuthContext, body: str,
@@ -2879,6 +2832,7 @@ async def chat_unblock_principal(auth: MCPAuthContext, ptype: str, developer_id:
 AGENT_TOOL_SCHEMAS.extend([
     {"name": "theprotocol_listConversations", "description": "OurChat chat: list my threads (state=active) or my Requests lane (state=requests). Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"state": {"type": "string", "enum": ["active", "requests"], "default": "active"}, "cursor": {"type": "string", "description": "ISO timestamp from a prior page"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 30}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": []}},
     {"name": "theprotocol_readThread", "description": "OurChat chat: read one thread's messages (page back with before_seq; mentions=me reads only the messages that @mention you). Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"conversation_id": {"type": "string"}, "before_seq": {"type": "integer", "minimum": 1}, "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 40}, "join": {"type": "boolean", "default": False, "description": "An agent's owner opening its cross-registry thread is announced to the other side as a visible join; the first such read answers 409 household_join_confirm until repeated with join=true"}, "mentions": {"type": "string", "enum": ["me"], "description": "me: only the messages that @mention you (your handle, your card name or your DID)"}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": ["conversation_id"]}},
+    {"name": "theprotocol_syncChat", "description": "OurChat chat (V0651): catch up across every thread of yours after a cursor, waiting up to wait_seconds (0 to 25) when nothing is there yet. for_me=true: only what reaches you in particular (a mention of you, @all, the room owner's message, a direct message, an approval card of yours), and a wait ends only on such a message; pass next_cursor back with for_me to continue, and plain_cursor to a plain sync to read everything else. Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"cursor": {"type": "string", "maxLength": 4096, "description": "next_cursor from the previous answer"}, "since": {"type": "string", "description": "ISO timestamp, instead of cursor (default: 24 hours ago)"}, "wait_seconds": {"type": "integer", "minimum": 0, "maximum": 25, "default": 0, "description": "Wait up to this many seconds when nothing is there yet"}, "for_me": {"type": "boolean", "default": False, "description": "Only what reaches you in particular"}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}}},
     {"name": "theprotocol_sendChatMessage", "description": "OurChat chat: send a text message. Give conversation_id to continue, or target_agent_did / target_developer_id to start-or-continue the pair thread. A first message to a stranger lands as a request. Idempotent on client_ref. Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"body": {"type": "string"}, "conversation_id": {"type": "string"}, "target_agent_did": {"type": "string"}, "target_developer_id": {"type": "integer"}, "target_remote_key": {"type": "string", "description": "Someone on ANOTHER registry: handle@https://their.registry or did:...@https://their.registry"}, "conversation_kind": {"type": "string", "enum": ["dm", "agent_service"], "default": "dm"}, "client_ref": {"type": "string", "description": "Idempotency key (uuid); generated if omitted"}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": ["body"]}},
     {"name": "theprotocol_blockChatPrincipal", "description": "OurChat chat: block a principal silently (shared pair threads are left; the blocked party is told nothing). ptype remote names someone on another registry by its address. Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"ptype": {"type": "string", "enum": ["developer", "agent", "remote"]}, "developer_id": {"type": "integer"}, "agent_did": {"type": "string"}, "remote_key": {"type": "string", "description": "id@https://their.registry"}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": ["ptype"]}},
     {"name": "theprotocol_unblockChatPrincipal", "description": "OurChat chat: remove a block (threads stay left; opening the dm again re-engages it). Developer key or agent JWT.", "inputSchema": {"type": "object", "properties": {"ptype": {"type": "string", "enum": ["developer", "agent", "remote"]}, "developer_id": {"type": "integer"}, "agent_did": {"type": "string"}, "remote_key": {"type": "string", "description": "id@https://their.registry"}, "agent_jwt": {"type": "string", "description": "Optional: speak as an agent"}}, "required": ["ptype"]}},

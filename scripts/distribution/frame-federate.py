@@ -74,6 +74,11 @@ class StepFailed(Exception):
     """A step ran and failed; the message says which and what to look at."""
 
 
+class PeerRefused(StepFailed):
+    """kit beta.30 (the dev machine's beta.29 findings 15 and 16): the peer answered the invitation with a refusal (a 4xx,
+    which this frame's registry relays as a 502 naming it): a decision, not an outage, so this frame's half is undone."""
+
+
 class TimedOut(Exception):
     """A wait ran out; the message names the clock that decides it."""
 
@@ -365,6 +370,7 @@ def wait_for_roots(exec_in, containers: List[str], cert_dir: str, before: Dict[s
     deadline = clock() + 2 * refresh_sec + ROOT_WAIT_MARGIN_SEC
     pending = list(containers)
     now: Dict[str, Optional[int]] = dict(before)
+    said, said_at = None, None   # kit beta.30 (the dev machine's beta.29 finding 13): a line when it changes, else every 30 s
     while True:
         counts = root_counts(exec_in, pending, cert_dir)
         now.update(counts)
@@ -377,8 +383,11 @@ def wait_for_roots(exec_in, containers: List[str], cert_dir: str, before: Dict[s
                 f"{2 * refresh_sec + ROOT_WAIT_MARGIN_SEC} s; the cert-writer copies the bundle every "
                 f"FT_CW_REFRESH_SEC={refresh_sec} s (docker logs {containers[0].rsplit('-', 2)[0]}-cert-writer), "
                 f"check it runs, then re-run this command (every step is idempotent).")
-        log(f"    waiting: {', '.join(f'{c}={now.get(c)}' for c in pending)} (need more than "
-            f"{', '.join(str(before.get(c) or 0) for c in pending)})")
+        line = (f"    waiting: {', '.join(f'{c}={now.get(c)}' for c in pending)} (need more than "
+                f"{', '.join(str(before.get(c) or 0) for c in pending)})")
+        if line != said or clock() - said_at >= 30:
+            log(line)
+            said, said_at = line, clock()
         sleep(POLL_SEC)
 
 
@@ -515,7 +524,8 @@ def step2_peer(with_url: str, override_endpoint: Optional[str], own_td: str, log
     if st != 200 or not isinstance(card, dict):
         # §EXTTEST run 2: the reason travels in the sentence (it said "no connection" for a certificate the host did not
         # trust, a peer on its edge's internal CA, while the card answered 200 to curl -k)
-        why = f"{st}" if st else f"no connection ({str(card)[:200]})"
+        why = (f"{st}" if st else f"a certificate this host does not trust ({str(card)[:200]})"
+               if "CERTIFICATE_VERIFY_FAILED" in str(card) else f"no connection ({str(card)[:200]})")
         hint = (" The peer's edge certificate is not trusted by this host (a frame stood up with --edge-tls internal "
                 "uses its own CA): point SSL_CERT_FILE at a bundle holding the system CAs and that CA."
                 if not st and "CERTIFICATE_VERIFY_FAILED" in str(card) else "")
@@ -640,6 +650,26 @@ def existing_outbound(facts: Facts, target: str, token: str, *, get=http_json) -
     return pick_resumable(rows, target)
 
 
+def undo_import(facts: Facts, peer_td: str, imported: dict, *, exec_in=docker_exec, log=print) -> List[str]:
+    """Undo what step 3 added in THIS run, after the peer refused: the relationship it created, and the bundle it set when
+    this frame held none before (`-mode dissociate` also takes the peer out of the workload entries step 3 federated;
+    they could federate with it only once the bundle existed, so nothing older is touched). Returns what is left to do
+    by hand (empty when everything was undone)."""
+    left = []
+    td = normalize_td(peer_td)
+    if imported.get("relationship") == "create":
+        rc, out = exec_in(facts.spire_container, [SPIRE_BIN, "federation", "delete", "-id", f"spiffe://{td}"])
+        if rc != 0:
+            left.append(f"docker exec {facts.spire_container} {SPIRE_BIN} federation delete -id spiffe://{td}  ({out.strip()[:120]})")
+    if not imported.get("already_held"):
+        rc, out = exec_in(facts.spire_container, [SPIRE_BIN, "bundle", "delete", "-id", f"spiffe://{td}", "-mode", "dissociate"])
+        if rc != 0:
+            left.append(f"docker exec {facts.spire_container} {SPIRE_BIN} bundle delete -id spiffe://{td} -mode dissociate  ({out.strip()[:120]})")
+    log("[5/7] this frame's half undone: " + ("everything step 3 added" if not left else f"{len(left)} step(s) left, by hand: "
+        + "; ".join(left)) + " (the terminators drop the root at the cert-writers' next cycle)")
+    return left
+
+
 def step5_outbound(facts: Facts, target: str, token: str, contact_email: str,
                    description: str, *, post=http_json, log=print) -> str:
     base = f"http://127.0.0.1:{facts.registry_port}{API}"
@@ -652,7 +682,13 @@ def step5_outbound(facts: Facts, target: str, token: str, contact_email: str,
         if st == 404:
             raise StepFailed("this frame's registry has no outbound invitation endpoint "
                              "(POST /api/v1/admin/federation/frame-invitations/outbound): its image predates it; roll it.")
-        raise StepFailed(f"the outbound invitation answered {st}: {str(detail)[:300]}")
+        text = str(detail)
+        m = re.search(r"refused the invitation: HTTP (4\d\d)", text)
+        if m:   # the peer's own sentence, not its JSON cut mid-word
+            said = re.search(r'"detail"\s*:\s*"((?:[^"\\]|\\.)+)"', text)
+            raise PeerRefused(f"[5/7] the peer at {target} refused the invitation (HTTP {m.group(1)}): "
+                              f"{said.group(1) if said else text[:300]}")
+        raise StepFailed(f"[5/7] the outbound invitation answered {st}: {text[:300]}")
     log(f"[5/7] outbound invitation {data['id']} sent to {target} and recorded on this frame (status {data.get('status') or 'pending'}); "
         f"the peer's admin now approves it in Frame Management")
     return data["id"]
@@ -765,6 +801,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--timeout-min", type=float, default=20.0, help="how long to wait for the peer's approval")
     ap.add_argument("--dry-run", action="store_true", help="stop after reading the frame and the peer; touch nothing")
     ap.add_argument("--no-licence", action="store_true", help="do not take and apply the delivered licence key (step 7)")
+    ap.add_argument("--keep-trust-on-refusal", action="store_true",
+                    help="when the peer refuses the invitation, keep the peer's root this run added (default: undo it)")
     ap.add_argument("--fresh", action="store_true",
                     help="send a NEW invitation even when an earlier one of this frame is still pending or approved (the peer's admin "
                          "rejected or lost it; a re-run without this flag resumes the earlier row)")
@@ -799,8 +837,13 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"[5/7] resuming the outbound invitation {inv_id} this frame recorded earlier for {target} "
                   f"(status {prior.get('status')}); no new invitation is sent")
         else:
-            inv_id = step5_outbound(facts, target, token, a.contact_email or email,
-                                    a.description or f"outbound invitation to {target}")
+            try:
+                inv_id = step5_outbound(facts, target, token, a.contact_email or email,
+                                        a.description or f"outbound invitation to {target}")
+            except PeerRefused:
+                if not a.keep_trust_on_refusal:
+                    undo_import(facts, peer_td, imported)
+                raise
         inv = step6_wait(facts, inv_id, token, a.timeout_min)
         row = peer_row(facts, inv.get("peer_registry_id"))
         prefix = licence_prefix(inv.get("review_notes"))

@@ -223,7 +223,7 @@ Two frames make up the public network: EU (trust domain `eu.theprotocol.cloud`, 
 
 **The conversion pool.** A payment from an agent on EU to an agent on ASIA is a conversion. The sender pays into EU's reserve account (`@fx_reserve`) and the receiver is paid out of ASIA's, at a rate set by the two reserves as a constant-product pool (k = x · y); a fee of 0.5% of the output stays in the pool, as both registry cards state. A keeper can top up each frame's reserve from that frame's own treasury; it moves units and never issues, so each frame's supply stays its own and both invariants hold. The pool converts one frame's unit into the other's and nothing else: units still cannot leave the platform.
 
-**The bridge.** The software also contains a wrapped-unit bridge. It locks units on the source frame (`locked_balance`) and credits a separate wrapped balance on the target (`wrapped_balance`); redemption burns the wrapped units and unlocks the originals. The frames authenticate each other with their SPIRE certificates, with no validator committee and no oracle. The bridge is switched off on the production frames (`token_bridge_enabled` false).
+**The bridge.** The software contained a wrapped-unit bridge until V0651 retired it on every registry. It locked units on the source frame (`locked_balance`) and credited a separate wrapped balance on the target (`wrapped_balance`); redemption burned the wrapped units and unlocked the originals. It was switched off on the production frames from their start, and its routes now answer `410 Gone`.
 
 ### 4.5 Production topology
 

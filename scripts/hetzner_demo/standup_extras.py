@@ -978,7 +978,7 @@ def mint_fx_router(
     Created by `svc-provisioning`, never the Commander, and its agents are unlisted by default, so
     the router does not appear in discovery (his *"option to hide system agents … fx router"*).
 
-    ⚠ THE CREDENTIAL IS DELIBERATELY NOT RETURNED OR STORED — his standing word. The rail issues a
+    ⚠ THE CREDENTIAL IS DELIBERATELY NOT RETURNED OR STORED (by design). The rail issues a
     registry JWT server-side when it needs to act as the router (`get_teg_token_for_agent`), and the
     admin sweep rail acts as it without one; nothing needs the client_secret, so nothing keeps it.
     """
@@ -1012,7 +1012,7 @@ def mint_fx_router(
     if st not in (200, 201) or not did:
         log(f"!! fx_router: create_agent {st}: {str(res)[:240]}")
         return ""
-    log(f"fx_router created for {frame_slug}: {did[-12:]} (credential discarded, by his standing word)")
+    log(f"fx_router created for {frame_slug}: {did[-12:]} (its credential is not kept: the registry mints a token server-side when the router acts)")
     return did
 
 

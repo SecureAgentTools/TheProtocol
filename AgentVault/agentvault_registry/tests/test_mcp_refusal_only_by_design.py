@@ -39,9 +39,7 @@ OPERATORS_V0641 = """acceptComplianceBaseline guildCrossRegistryBid slashAgent""
 # §MCPTEST30 V0644 (agentvault2-aa's word 2026-10-26): three sandbox-only routes, which SANDBOX_MODE (a sandbox
 # frame's switch, unset on an operator) opens; on an operator each row says why
 OPERATORS_SANDBOX_ONLY = """previewVotingPowerAttestation runAttestationExpirySweep runAttestationScheduleCron""".split()
-# §MCPTEST30 (tester batch 2 item 2): the two bridge routes only the bridge's other registry calls, refusal-only on
-# sbx-alpha (the one frame with TOKEN_BRIDGE_ENABLED on; elsewhere the switch table holds them)
-BRIDGE_SBX_ALPHA = """bridgeIssueWrapped bridgeUnlock""".split()
+# (tester batch 2 item 2's two bridge routes left with the token bridge in V0651, his word "retire.")
 # §MCPTEST30 (tester batch 2 item 3): the commons season's money steps, refusal-only on a standing frame (write-off
 # everywhere: a healthy target never gives a run a failed payment)
 COMMONS_MONEY = """adminCommonsPaySeason adminCommonsWriteOffAward""".split()
@@ -50,7 +48,7 @@ COMMONS_MONEY = """adminCommonsPaySeason adminCommonsWriteOffAward""".split()
 def test_every_one_of_the_frames_41_has_its_reason():
     assert len(NT261025X3_FRAME) == 41 and not set(NT261025X3_FRAME) & set(OPERATORS_V0641 + OPERATORS_SANDBOX_ONLY)
     assert set(R.BY_DESIGN_REFUSAL) == {"theprotocol_" + t for t in NT261025X3_FRAME + OPERATORS_V0641
-                                         + OPERATORS_SANDBOX_ONLY + BRIDGE_SBX_ALPHA + COMMONS_MONEY}
+                                         + OPERATORS_SANDBOX_ONLY + COMMONS_MONEY}
     for tool, why in R.BY_DESIGN_REFUSAL.items():
         assert why and why[0].islower() and not why.endswith(".") and "—" not in why, tool
     assert R.declared("theprotocol_tegTreasuryIssue").startswith("minting is never automated")

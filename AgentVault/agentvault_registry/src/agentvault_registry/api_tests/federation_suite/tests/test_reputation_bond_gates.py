@@ -40,7 +40,7 @@ from typing import Any, Dict, Optional, Tuple
 from agentvault_registry.api_tests.federation_suite import throwaways
 from agentvault_registry.api_tests.federation_suite.decorator import federation_test
 from agentvault_registry.api_tests.federation_suite.rig import (
-    FederationTestRig, AssertionResult, PreconditionUnmet, bond_config,
+    FederationTestRig, AssertionResult, PreconditionUnmet, bond_config, _bond_from_own_funds,
 )
 from agentvault_registry.api_tests.federation_suite.tests.test_ironkey_authority_clamp import (
     _call, _rest, _detail,
@@ -140,7 +140,14 @@ async def _assert_visible_and_unbonded(rig, did: str) -> None:
 
 
 async def _bond(rig, did: str) -> str:
-    """Bond via the treasury backstop — moves no money. Returns the new status."""
+    """Bond the agent and return its new status: through the treasury backstop where the tier offers one (it moves no
+    money), else from the agent's own funds (rig._bond_from_own_funds: funded with its bond from the treasury, then the
+    agent's own deposit), as ensure_bonded does: production's posture since V0649, the pairs' since tester batch 2 item 6.
+    §MCPTEST30 (V0651, agentvault2-d3): on the trial pair nt261031x9 (the backstop off) six of these tests skipped on
+    "This registry does not backstop bonds from its treasury", so the gate went unmeasured on a frame posed as production."""
+    cfg = await bond_config(rig, _LABEL)
+    if cfg and not cfg.get("treasury_backstop"):
+        return await _bond_from_own_funds(rig, _LABEL, did, cfg)
     code, body = await _rest(
         rig, "POST", f"/api/v1/developers/me/agents/{did}/reputation-bond/backstop", label=_ADMIN)
     if code != 200 or not isinstance(body, dict):

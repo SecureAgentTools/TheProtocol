@@ -75,6 +75,21 @@ def get_mcp_capability_token() -> Optional[str]:
     return _MCP_CAP_TOKEN.get()
 
 
+# V0651 (s): the bearer this tools/call was made with (the effective token: an inline agent_jwt where the tool takes one,
+# else the transport's), set by the dispatcher for every call. A PUBLIC tool is called with no auth context, so a route
+# whose answer depends on who asks (the Guild order detail's deliverable) could never learn the caller; such a tool
+# forwards this as an OPTIONAL identity, and the route alone decides what it shows. Never logged, never returned.
+_MCP_BEARER: "_contextvars.ContextVar[Optional[str]]" = _contextvars.ContextVar("mcp_bearer", default=None)
+
+
+def set_mcp_bearer(tok: Optional[str]) -> None:
+    _MCP_BEARER.set((tok or "").strip() or None)
+
+
+def get_mcp_bearer() -> Optional[str]:
+    return _MCP_BEARER.get()
+
+
 def mcp_forwarded_headers() -> dict:
     """Headers every internal (tool → own REST API) call must forward:
     the real client IP (§EXTMTLS) and, when presented, the capability token (B6)."""

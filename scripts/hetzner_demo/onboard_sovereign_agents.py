@@ -411,7 +411,7 @@ def main() -> int:
         log(f"!! NO flare block on the card at all (the sidecar was never injected; this is a "
             f"read-path question, not an owner-map one): {missing}")
     if unlisted:
-        log(f"   not in discovery yet (unbonded — listing is a §REPBOND site): {unlisted}")
+        log(f"   not in discovery yet (unbonded: a listing needs the reputation bond): {unlisted}")
     return 0 if not (stripped or missing) else 6
 
 

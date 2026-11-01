@@ -47,10 +47,6 @@ GATED = ("NO_ROUTE", "METHOD", "MISSING_ALWAYS", "MISSING_OPTIONAL", "BOUND", "U
 # FIX ONE, REMOVE IT HERE. Never add a tool to this list to make the gate pass.
 KNOWN = {
     "theprotocol_adminRequest": "a generic proxy: the survey's dummy endpoint is not a route, a caller's is",
-    "theprotocol_bridgeIssueWrapped": "the Token Bridge is on the D8 RETIRE? list, his decision; its minting wrapper "
-                                     "is left as it is until then",
-    "theprotocol_bridgeRedeem": "the Token Bridge is on the D8 RETIRE? list, his decision; its wrapper is left as "
-                                "it is until then (since V0538 also TIER: an admin tool at an agent route)",
 }
 
 
@@ -115,8 +111,8 @@ def test_the_switch_map_is_the_routes_switches(survey):
     (api_tests/contracts/mcp_switches.py). Its map must be the code's: every tool whose route carries a §BAFIN switch
     dependency is in it with that dependency, and every dependency it names is one the survey found on the tool's route.
     A new switched route, or a tool moved to one, fails here until the map says so (the inline switches, which no
-    dependency carries, are held to their handlers by tests/test_mcp_switches.py; the unmounted ones, a router create_app
-    leaves out, by tests/test_mcp_bridge_switch.py)."""
+    dependency carries, are held to their handlers by tests/test_mcp_switches.py; the token bridge, the one router
+    create_app left out, is retired in V0651 and its tools are gone: tests/test_token_bridge_retired.py)."""
     from agentvault_registry.api_tests.contracts import mcp_switches as M
     found: dict = {}
     for surface in ("admin", "public"):
@@ -155,7 +151,6 @@ def test_no_tool_sends_a_request_its_route_always_refuses(survey):
 PEER_ROUTE_BASELINE = {
     "theprotocol_blockFederationAgent", "theprotocol_unblockFederationAgent",          # admin: the peer blocklist entry
     "theprotocol_ironhandRegisterAgentProxy", "theprotocol_ironhandDeleteAgentProxy",  # admin: the operators' SPIRE proxy
-    "theprotocol_bridgeIssueWrapped", "theprotocol_bridgeUnlock",                       # admin: the bridge (D8, his)
     "theprotocol_crossTegBalanceSync", "theprotocol_federationSyncRequest",            # public: peer protocol calls
     "theprotocol_federationSlashRequest", "theprotocol_federationSlashConfirmation",
     "theprotocol_getFederationSyncStatusDev", "theprotocol_getFederationPolicyCompliance",

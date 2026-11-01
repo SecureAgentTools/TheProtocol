@@ -1352,13 +1352,15 @@ def create_app() -> FastAPI:
     app.include_router(agent_mtls.federation_router)   # §OPLANE: the operator proxies on the federation lane
     logger.info("IRONHAND endpoints enabled: /api/v1/agent/*, /api/v1/admin/ironhand/* (+ /api/v1/federation/ironhand/*)")
 
-    # SF-3: Token Bridge (cross-frame wrapped token transfers)
+    # SF-3's Token Bridge, RETIRED in V0651 (p): every /api/v1/bridge/* route answers 410 Gone, on every registry and
+    # whatever TOKEN_BRIDGE_ENABLED says (a retired switch, services/env_catalog.RETIRED)
     from agentvault_registry.routers import token_bridge
-    if _surface_enabled("TOKEN_BRIDGE_ENABLED"):  # D8
-        app.include_router(token_bridge.router)
-        logger.info("Token Bridge enabled: /api/v1/bridge/*")
+    app.include_router(token_bridge.router)
+    if (os.getenv("TOKEN_BRIDGE_ENABLED") or "").strip().lower() in ("1", "true", "yes", "on"):
+        logger.warning("TOKEN_BRIDGE_ENABLED is set, but the token bridge is retired (V0651): /api/v1/bridge/* "
+                       "answers 410 Gone whatever it says; the line can go from this registry's env")
     else:
-        logger.info("D8: token bridge NOT mounted (TOKEN_BRIDGE_ENABLED=false)")
+        logger.info("Token bridge retired (V0651): /api/v1/bridge/* answers 410 Gone")
 
     # Command Center diagnostics (admin-only)
     from agentvault_registry.routers import admin_diagnostics
@@ -4733,7 +4735,7 @@ def create_app() -> FastAPI:
             # D8 (core/legacy_surfaces.py) — a retired legacy surface is not mounted at all, so its routes answer a plain
             # 404 that names nothing: only this says "retired here" rather than "broken" (the MCP tester's bridge rows on
             # the nightly pair nt261008, whose template retires the bridge, 2026-10-08). Both default true.
-            "token_bridge_enabled": _legacy_surface_on("TOKEN_BRIDGE_ENABLED"),
+            "token_bridge_enabled": False,   # V0651 (p): retired; the switch no longer mounts anything
             "legacy_contracts_enabled": _legacy_surface_on("LEGACY_CONTRACTS_ENABLED"),
             # §MEMBERSHIP (2026-10-02) — what weighs a vote here (lock | member) and whether a member's vote is
             # confirmed on a device (off | conditional | required). The console shows the Membership panel and

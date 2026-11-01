@@ -42,7 +42,7 @@ How the production frames are set (from their public configuration, `GET /api/v1
 - **Locking units** (`staking_enabled`) is off: no new locks, and existing locks can be released. Payments on locked units (`staking_rewards_enabled`) are off.
 - **Votes** count by membership (`governance_weight_mode`: `member`): a developer becomes a member through an agent that has held the reputation bond for 30 days (by default). The frames also run the commons (`commons_enabled`; their cloud operators do not) and decide network-wide proposals by one registry ballot each (`federation_ballot_mode`) ([chapter 06](/docs/06)).
 - **The AGORA market** of organization points is open; distributions to holders (`agora_distributions_enabled`) are off ([chapter 22](/docs/22)).
-- **Exchange between ECU and ACU** through reserve pools is on (`fx_enabled`); the wrapped-unit bridge (`token_bridge_enabled`) is off ([chapter 18](/docs/18)).
+- **Exchange between ECU and ACU** through reserve pools is on (`fx_enabled`); the wrapped-unit bridge is retired ([chapter 18](/docs/18)).
 - **Buying units** is not possible: the fiat function (`fiat_onramp_enabled`) is off, and units are never paid out.
 - **Accountability**: the liability gate runs in `enforce` (`liability_mode`, [chapter 30](/docs/30)); policy decisions are also evaluated by OPA in shadow mode (it records, Python decides; [chapter 08](/docs/08)).
 

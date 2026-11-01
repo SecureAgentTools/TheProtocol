@@ -117,7 +117,6 @@ Everything an agent does for itself: balances and transfers, A2A payments, contr
 | `enableMtls` / `getMyAgentHealth` | mTLS enrollment and the agent's health |
 | `submitAttestation` | submit a zero-knowledge proof under one of the v2.0.0 circuits ([chapter 10](/docs/10)) |
 | `agentHeartbeat` / `submitContractWork` | liveness and contract work |
-| `bridgeTransfer` | the wrapped-unit bridge; switched off on the production frames (`token_bridge_enabled` false), where it answers `404` |
 
 Every Tier 2 tool takes an optional `agent_jwt` argument, so one MCP session can act as several agents: pass the token from `getAgentToken` with each call.
 
@@ -223,7 +222,7 @@ On the admin server, `resources/read` requires an admin credential.
 
 ## Async Tasks: Long-Running Tools
 
-A few long-running tools support the experimental MCP tasks extension and say so with `execution.taskSupport: "optional"` in their definitions. On the public server they are `tegCrossRegistryTransferDirect`, `bridgeTransfer`, `crossTegBalanceSync`, `exportTegTransactions`, `agentBulkExport`, `triggerFederationSync` and `agentBuilderGenerate`; the admin server has its own set (API tester flows, diagnostics, drift scans, bulk card refresh and the like).
+A few long-running tools support the experimental MCP tasks extension and say so with `execution.taskSupport: "optional"` in their definitions. On the public server they are `tegCrossRegistryTransferDirect`, `crossTegBalanceSync`, `exportTegTransactions`, `agentBulkExport`, `triggerFederationSync` and `agentBuilderGenerate`; the admin server has its own set (API tester flows, diagnostics, drift scans, bulk card refresh and the like).
 
 1. `tools/call` with `params.task = { "ttl": <milliseconds> }`: the task is accepted and its id returned at once (time to live 5 minutes by default, at most 15).
 2. `tasks/get`: poll the status (`working`, `completed`, `failed`, `cancelled`).

@@ -50,11 +50,8 @@ MEMBER_FEDERATION_VOTE = Switch("governance_weight_mode", "member", ("federation
 # §MEMBERSHIP phase B (V0551): every commons route refuses where COMMONS_ENABLED is off (the read routes in the router,
 # every write in its service function: services/commons.require_enabled); registry-config reports commons_enabled
 COMMONS_OFF = Switch("commons_enabled", False, ("commons_disabled",), 403, "inline: commons.require_enabled")
-# D8 (core/legacy_surfaces.py): a retired legacy surface is not mounted, so its routes answer FastAPI's plain 404 "Not
-# Found"; registry-config reports token_bridge_enabled. The fresh frame's template retires the bridge, and the first
-# nightly pair on the current image (nt261008, 2026-10-08) read the three bridge rows' 404s as broken contracts.
-BRIDGE_OFF = Switch("token_bridge_enabled", False, ("Not Found",), 404,
-                    "unmounted: main.create_app mounts routers/token_bridge.py only where TOKEN_BRIDGE_ENABLED is on")
+# V0651 (p, his word "retire."): the token bridge is retired: its five tools left the catalogs and every /api/v1/bridge/*
+# route answers 410 whatever TOKEN_BRIDGE_ENABLED says, so the switch row that read its 404 went with it
 
 SWITCHED_TOOLS: Dict[str, Switch] = {
     "theprotocol_lockUnits": STAKING_OFF,
@@ -70,8 +67,6 @@ SWITCHED_TOOLS: Dict[str, Switch] = {
         "getCommonsSeasons", "getCommonsSeason", "getMyCommonsSeason", "submitCommonsWork", "castCommonsBallot",
         "adminCommonsOpenSeason", "adminCommonsCloseSeason", "adminCommonsStrikeSubmission", "adminCommonsPaySeason",
         "adminCommonsWriteOffAward", "adminCommonsCancelSeason")},
-    **{f"theprotocol_{n}": BRIDGE_OFF for n in (
-        "bridgeTransfer", "bridgeIssueWrapped", "bridgeRedeem", "bridgeUnlock", "getBridgeStatus")},
 }
 
 # the route dependencies the request survey reports as SWITCHED, with the config key each one follows

@@ -22,7 +22,8 @@ def _schema_names(schemas):
 
 def test_there_are_nineteen_agora_renames_and_thirty_eight_w3_ones_and_oauth_token_exchange_is_not_one():
     from agentvault_registry.mcp.tool_aliases import _AGORA_RENAMED, _W3_RENAMED
-    assert len(_AGORA_RENAMED) == 19 and len(_W3_RENAMED) == 41 and len(TOOL_ALIASES) == 60
+    # V0651 (p): bridgeMintWrapped -> bridgeIssueWrapped left with the retired token bridge (41 -> 40, 60 -> 59)
+    assert len(_AGORA_RENAMED) == 19 and len(_W3_RENAMED) == 40 and len(TOOL_ALIASES) == 59
     assert not any("oauthTokenExchange" in k for k in TOOL_ALIASES)
     assert not set(_AGORA_RENAMED) & set(_W3_RENAMED), "an old name in two families"
 

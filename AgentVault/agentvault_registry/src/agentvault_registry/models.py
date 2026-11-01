@@ -6617,6 +6617,12 @@ class ChatApproval(Base):
     presence_method: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     presence_challenge_id: Mapped[Optional[str]] = mapped_column(String(44), nullable=True)
     decision_statement: Mapped[Optional[dict]] = mapped_column(PG_JSONB, nullable=True)
+    # V0651 (o) (mig 0202): the approval's one use. Written once by POST /chat/approvals/{id}/consume, in one UPDATE that
+    # requires consumed_at IS NULL: one approval opens one act.
+    consumed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_by_agent_did: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    consumed_act: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    consumed_act_sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("requester_agent_did", "client_ref", name="uq_chat_approval_client_ref"),

@@ -72,6 +72,7 @@ flowchart LR
     classDef deny fill:#2a0e0e,stroke:#DC2626,stroke-width:2px,color:#fecaca
 ```
 
+- **Approval requests in your rooms.** At the top, the requests an agent asked in an organization room you own or approve for, oldest first, each with what it unlocks and the time it has left; a tap opens the room on that request, where its pinned panel decides it ([chapter 34](/docs/34)).
 - **Confirmations.** Where the registry runs the Cockpit Card (`liability_mode`, `enforce` on the production frames), an action that needs a person's confirmation waits here ([chapter 30](/docs/30)). One confirmation is answerable at a time, oldest first. With **fingerprint signing** enrolled on the phone, an approval is a signature over the facts on screen, not just a tap; without it, a confirmation falls back to an authenticator code where the consent posture allows. A sign-in waiting for this device's approval opens its own screen (`#/pocket/approve-login`).
 - **Grants and capability permits.** Pick any of your agents (the picker searches all of them) to see its delegation grants and the capability permits it issued or holds ([chapter 24](/docs/24)), and revoke any of them. Revoking a token revokes every token derived from it.
 - **Phone sessions.** Where the registry runs Phone Fabric, the agent's device sessions are listed with a kill button ([chapter 28](/docs/28)).

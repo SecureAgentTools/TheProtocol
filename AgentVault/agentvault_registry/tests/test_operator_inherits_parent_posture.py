@@ -11,10 +11,12 @@ SRC = pathlib.Path(_pkg.__file__).resolve().parent
 def test_inherit_writes_only_what_the_parent_carries(monkeypatch):
     for k in cp.PARENT_POSTURE_KEYS:
         monkeypatch.delenv(k, raising=False)
-    monkeypatch.setenv("REPUTATION_BOND_MODE", "enforce"); monkeypatch.setenv("ENFORCEMENT_PROPAGATION_MODE", "enforce"); monkeypatch.setenv("TOKEN_BRIDGE_ENABLED", "false")
+    monkeypatch.setenv("REPUTATION_BOND_MODE", "enforce"); monkeypatch.setenv("ENFORCEMENT_PROPAGATION_MODE", "enforce"); monkeypatch.setenv("LEGACY_CONTRACTS_ENABLED", "false")
+    monkeypatch.setenv("TOKEN_BRIDGE_ENABLED", "false")   # V0651 (p): a retired switch, never inherited
     buf = io.StringIO(); written = cp._inherit_parent_posture(buf)
-    assert set(written) == {"REPUTATION_BOND_MODE", "ENFORCEMENT_PROPAGATION_MODE", "TOKEN_BRIDGE_ENABLED"}
-    assert "REPUTATION_BOND_MODE=enforce\n" in buf.getvalue() and "TOKEN_BRIDGE_ENABLED=false\n" in buf.getvalue()
+    assert set(written) == {"REPUTATION_BOND_MODE", "ENFORCEMENT_PROPAGATION_MODE", "LEGACY_CONTRACTS_ENABLED"}
+    assert "REPUTATION_BOND_MODE=enforce\n" in buf.getvalue() and "LEGACY_CONTRACTS_ENABLED=false\n" in buf.getvalue()
+    assert "TOKEN_BRIDGE_ENABLED" not in buf.getvalue()
     assert "CANARY_ENABLED" not in buf.getvalue(), "the canary flags are written by their own block"
 
 

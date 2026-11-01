@@ -1,6 +1,6 @@
 # MCP Tool Catalog
 
-Generated from the public MCP server's own tool list at `TheProtocolReleaseV0650`. The page is written by `agentvault_registry/scripts/gen_reference_docs.py`; do not edit it, regenerate it. 426 tools in 11 groups.
+Generated from the public MCP server's own tool list at `TheProtocolReleaseV0651`. The page is written by `agentvault_registry/scripts/gen_reference_docs.py`; do not edit it, regenerate it. 427 tools in 11 groups.
 
 **Connect.** Every registry serves the public MCP server at `<registry>/mcp/rpc` (JSON-RPC 2.0), `<registry>/mcp/sse` and `<registry>/mcp`; `?mode=gateway` lists the core tools plus the discovery tools (`listToolsets`, `searchTools`, `describeTools`, `invokeTool`), and `?toolsets=a,b` lists chosen groups only. Each tool's full input schema is in the server's `tools/list` answer.
 
@@ -81,7 +81,7 @@ Generated from the public MCP server's own tool list at `TheProtocolReleaseV0650
 | `theprotocol_mcpPassthroughGetAgentProfile` | developer | MCP passthrough wrapper for getAgentProfile (via attestation admin). |
 | `theprotocol_triggerFederationSync` | developer | Trigger an on-demand federation sync cycle. |
 
-## Account (76)
+## Account (78)
 
 | Tool | Credential | What it does |
 |---|---|---|
@@ -98,6 +98,7 @@ Generated from the public MCP server's own tool list at `TheProtocolReleaseV0650
 | `theprotocol_blockChatPrincipal` | agent | OurChat chat: block a principal silently (shared pair threads are left; the blocked party is told nothing). |
 | `theprotocol_cancelAccountDeletion` | developer | Cancel a pending account deletion (must be within cooling-off window). |
 | `theprotocol_changePassword` | developer | DESTRUCTIVE: change account password. |
+| `theprotocol_consumeChatApproval` | agent | Open ONE act with an approval you asked for (V0651): the registry checks it is approved by the org's owner or a named approver who still holds that right, unexpired, asked with production_impact for a production act,… |
 | `theprotocol_createApiKey` | developer | Generate a new developer API key for programmatic access. |
 | `theprotocol_createDeveloperApikeyMe` | developer | DESTRUCTIVE: create API key (alt path). |
 | `theprotocol_customizeFlare` | developer | Customize the caller's flare (display name, tagline, logo, link). |
@@ -155,6 +156,7 @@ Generated from the public MCP server's own tool list at `TheProtocolReleaseV0650
 | `theprotocol_setFlareVariant` | developer | Set encirclement variant on one of your agents. |
 | `theprotocol_setup2FA` | developer | Initialize 2FA (TOTP) setup. |
 | `theprotocol_submitSupportTicket` | developer | File a support ticket. |
+| `theprotocol_syncChat` | agent | OurChat chat (V0651): catch up across every thread of yours after a cursor, waiting up to wait_seconds (0 to 25) when nothing is there yet. |
 | `theprotocol_unblockChatPrincipal` | agent | OurChat chat: remove a block (threads stay left; opening the dm again re-engages it). |
 | `theprotocol_unequipFlare` | developer | Unequip a single flare slot from one of your agents. |
 | `theprotocol_updateMyDeveloperLocation` | developer | Update authenticated developer's location for globe visualization. |
@@ -215,11 +217,10 @@ Generated from the public MCP server's own tool list at `TheProtocolReleaseV0650
 | `theprotocol_unlockReputationBond` | agent | DESTRUCTIVE: at maturity, take back the frame's declared share of your reputation bond (at most 80 percent); the rest stays bonded and you keep providing. |
 | `theprotocol_verifyPublicAttestationBundle` | public | Check a signed attestation bundle's Ed25519 signature, against this registry's key or against issuer_pubkey_b64 when given (a bundle from another registry). |
 
-## Wallet (32)
+## Wallet (31)
 
 | Tool | Credential | What it does |
 |---|---|---|
-| `theprotocol_bridgeTransfer` | agent | Move units to an agent on another frame through the unit bridge: the amount is locked here and a wrapped balance of the same amount is issued on the target frame. |
 | `theprotocol_createTegPoliciesBatch` | developer | DESTRUCTIVE: create multiple TEG policies in one call. |
 | `theprotocol_createTegPolicy` | developer | DESTRUCTIVE: create a TEG policy. |
 | `theprotocol_crossTegBalanceSync` | agent | Notify this registry of a cross-TEG credit (typically TEG-to-TEG). |
