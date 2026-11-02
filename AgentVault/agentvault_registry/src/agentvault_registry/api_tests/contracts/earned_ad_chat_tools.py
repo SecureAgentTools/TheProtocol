@@ -17,6 +17,12 @@ as a plain member (invited by D, accepted by M); S, a third, is a stranger to it
     listChatApprovals         A asks an approval in the room: D's list names it with can_decide true; M's names it with
                               can_decide false (any member reads, only deciders decide)
     listWaitingChatApprovals  D's waiting list names it; M's (a member, not a decider) does not; A's token is refused
+    enum: listChatApprovals   (V0653, batch 4's finding) its status filter in the room, which holds the request above
+                              pending and a second one decided at once (denied): pending names the pending one alone,
+                              decided the decided one alone, all both, no status the pending one (the documented
+                              default); a value the tool advertises and this check does not know is red. Recorded under
+                              the sweep's own row name and marked measured_in, which the sweep's enum probe keeps (it asks
+                              with no room of the caller's, so its own row read NOT MEASURED)
   (aa) the progress card
     postChatProgress          A posts a progress card (running, two steps)
     updateChatProgress        A moves its steps on: changed, and getChatCardHistory holds the revision
@@ -28,8 +34,8 @@ as a plain member (invited by D, accepted by M); S, a third, is a stranger to it
     updateChatBoard           D writes it against the revision read: the next read shows the text at the next revision
                               refused: a write against the replaced revision ("the board changed since you read it"),
                               the board still D's text; M, whom the owner did not name ("keeps its status board")
-The approval is denied after (deny never asks a phone); the organization is deleted after; the developers and the agent
-are removed (Throwaways). Nothing moves money."""
+The approvals are denied (deny never asks a phone); the organization is deleted after; the developers and the agent are
+removed (Throwaways). Nothing moves money."""
 from __future__ import annotations
 
 import json
@@ -38,6 +44,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from agentvault_registry.api_tests.contracts.earned_ad_ephemeral import EPHEMERAL_ENV, ephemeral_target
+from agentvault_registry.api_tests.contracts.enum_filter import PREFIX as ENUM_PREFIX
 from agentvault_registry.api_tests.contracts.earned_fixtures import (
     Throwaways, lc, refusal_step, said, step, unmeasured,
 )
@@ -54,6 +61,9 @@ BOARD = "theprotocol_getChatBoard"
 WBOARD = "theprotocol_updateChatBoard"
 TIERS = {UNREAD: "2", MARK: "2", ATTACH: "2", LISTA: "2", WAITING: "3", POSTP: "2", UPDP: "2", HIST: "2", BOARD: "2",
          WBOARD: "2"}
+# V0653: the sweep's enum row for listChatApprovals, measured in the run's own room (the module docstring)
+ENUM_ROW = ENUM_PREFIX + "listChatApprovals"
+STATUS_WANT = ("pending", "decided", "all")          # the vocabulary this check knows: pending is the default
 MEMBER_LIST_ROW = "chat: a member who is not a decider reads a room's requests, can_decide false"
 MEMBER_WAIT_ROW = "chat: a member who is not a decider waits on none of a room's requests"
 MEMBER_BOARD_ROW = "chat: a member the owner did not name reads the board, can_edit false"
@@ -262,6 +272,72 @@ async def _phone_set(rpc: Any, parse: Any, bag: Any, r: Dict[str, Any], tag: str
                                                             + said(theirs)), {"named": names_request(theirs, aid)})
     await refusal_step(rpc, parse, WAITING, "3", {}, ajwt, outcomes, "an agent's own token",
                        text=("agents never decide approvals", "requires developer authentication"))
+    await _enum_in_room(rpc, parse, r, tag, outcomes)
+
+
+def _status_vocabulary() -> List[str]:
+    """listChatApprovals' advertised status values, from the tool's own schema (STATUS_WANT when it cannot be read)."""
+    try:
+        from agentvault_registry.mcp import server as S
+        t = next((x for x in S.ALL_TOOL_SCHEMAS if (x or {}).get("name") == LISTA), None)
+        props = ((t or {}).get("inputSchema") or {}).get("properties") or {}
+        return [str(v) for v in (props.get("status") or {}).get("enum") or []] or list(STATUS_WANT)
+    except Exception:                                                  # noqa: BLE001 - the schema unreadable here
+        return list(STATUS_WANT)
+
+
+async def _enum_in_room(rpc: Any, parse: Any, r: Dict[str, Any], tag: str, outcomes: Dict[str, dict]) -> None:
+    """listChatApprovals' status filter in the run's own room: r["aid"] pending, a second request decided at once (deny
+    never asks a phone). pending names the pending one alone, decided the decided one alone, all both, and no status the
+    pending one (the documented default). Written under the sweep's own row name, marked measured_in."""
+    conv, djwt, ajwt, aid = r["conv"], r["djwt"], r["ajwt"], str(r.get("aid") or "")
+    if not aid:
+        return                       # the list rows said why: the sweep's own row stands
+    t0 = time.time()
+
+    def row(ok: bool, why: Optional[str], seen: Dict[str, Any], skip: Optional[str] = None) -> None:
+        out = lc()._make_outcome(ENUM_ROW, "enum", ok, "0", int((time.time() - t0) * 1000), None if ok else why, {},
+                                 expect_status="any", skip_reason=skip)
+        out["result_excerpt"] = seen
+        out["measured_in"] = "earn_chat_tools_v0652: an organization room of the run's own"
+        outcomes[ENUM_ROW] = out
+
+    vocab = _status_vocabulary()
+    ok, asked, code = await _call(rpc, parse, "theprotocol_requestChatApproval", {
+        "agent_jwt": ajwt, "conversation_id": conv, "title": f"MCP tester request {tag} (decided at once)",
+        "client_ref": f"mcp-earn-enum-{tag}", "reason": "The MCP tester asks, to read the status filter.",
+        "expires_in_seconds": 600}, ajwt)
+    a1 = asked.get("approval") if isinstance(asked.get("approval"), dict) else asked
+    a2 = str((a1 or {}).get("id") or "") if ok else ""
+    if not a2:
+        return row(False, None, {}, skip=f"NOT MEASURED: no second request of the run's own (requestChatApproval HTTP "
+                                         f"{code}: {said(asked)})")
+    okd, decided, coded = await _call(rpc, parse, "theprotocol_decideChatApproval", {
+        "conversation_id": conv, "decision": "deny", "approval_ids": [a2],
+        "note": "the MCP tester's own request, decided at once to read the status filter"}, djwt)
+    if not okd:
+        return row(False, None, {}, skip=f"NOT MEASURED: the second request could not be decided (HTTP {coded}: "
+                                         f"{said(decided)})")
+    want = {"pending": [aid], "decided": [a2], "all": sorted([aid, a2]), "(none)": [aid]}
+    seen: Dict[str, Any] = {"pending request": aid, "decided request": a2}
+    bad: List[str] = []
+    for v in ("pending", "decided", "all", None):
+        key = v or "(none)"
+        okv, ans, codev = await _call(rpc, parse, LISTA, {"conversation_id": conv, **({"status": v} if v else {})}, djwt)
+        if not okv:
+            seen[key] = f"HTTP {codev}"
+            bad.append(f"{key}: refused (HTTP {codev}: {said(ans)})")
+            continue
+        items = ans.get("items") if isinstance(ans.get("items"), list) else []
+        ids = sorted({str(i.get("id")) for i in items if isinstance(i, dict)} & {aid, a2})
+        seen[key] = ids
+        if ids != sorted(want[key]):
+            bad.append(f"{key}: {ids or 'none'} (want {sorted(want[key])})")
+    unknown = sorted(set(vocab) - set(STATUS_WANT))
+    if unknown:
+        bad.append(f"the tool advertises {', '.join(unknown)}, which this check does not know: add its expectation")
+    row(not bad, ("BUG-FIND: enum: listChatApprovals' status filter does not name the room's requests as its vocabulary "
+                  "says: " + "; ".join(bad)) if bad else None, seen)
 
 
 async def _progress(rpc: Any, parse: Any, r: Dict[str, Any], tag: str, outcomes: Dict[str, dict]) -> None:

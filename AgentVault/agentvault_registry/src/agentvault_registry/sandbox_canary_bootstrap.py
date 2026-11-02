@@ -44,6 +44,7 @@ from sqlalchemy.orm import sessionmaker
 
 from agentvault_registry.config import settings
 from .core.sandbox_creds import SANDBOX_ADMIN_EMAIL, SANDBOX_ADMIN_PASSWORD  # §SBROTATE
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger("sandbox_canary_bootstrap")
 logging.basicConfig(
@@ -130,7 +131,7 @@ async def _login(client: httpx.AsyncClient, admin_url: str, email: str, password
         )
         if r.status_code == 200:
             return r.json().get("access_token")
-        logger.warning(f"login failed {admin_url} ({email}): {r.status_code} {r.text[:120]}")
+        logger.warning(f"login failed {admin_url} ({email_for_log(email)}): {r.status_code} {r.text[:120]}")
         return None
     except Exception as e:
         logger.warning(f"login error {admin_url}: {e}")

@@ -29,6 +29,7 @@ from fastapi.responses import StreamingResponse
 
 from agentvault_registry import schemas, models, security
 from agentvault_registry.core import zkp_verifier as _zkp
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 
@@ -309,7 +310,7 @@ async def generate_template_bundle(
         logger.exception(f"Bundle generation failed for {cfg.human_readable_id}: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Bundle generation failed: {type(e).__name__}: {e}"
+            detail=internal_detail(e, 'Bundle generation failed', logger)
         )
 
     filename = f"{cfg.human_readable_id}.zip"

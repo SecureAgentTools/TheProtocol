@@ -22,6 +22,7 @@ from agentvault_registry.services import TwoFactorAuthService, TwoFactorResponse
 
 # Import security utilities
 from agentvault_registry.security import get_current_developer, create_access_token
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +206,7 @@ async def verify_two_factor_setup(
         await db.commit()
         
         # Log the event
-        logger.info(f"2FA enabled for developer {current_developer.id} ({current_developer.email})")
+        logger.info(f"2FA enabled for developer {current_developer.id} ({email_for_log(current_developer.email)})")
 
         # §NOTIFV2 security.2fa_changed — call site 1 of 3 (self-enable). The other two are the
         # self-disable below and the admin force-disable in routers/admin_developers.py. The
@@ -309,7 +310,7 @@ async def disable_two_factor(
         await db.commit()
         
         # Log the event
-        logger.info(f"2FA disabled for developer {current_developer.id} ({current_developer.email})")
+        logger.info(f"2FA disabled for developer {current_developer.id} ({email_for_log(current_developer.email)})")
 
         # §NOTIFV2 security.2fa_changed — call site 2 of 3 (self-disable). Losing a second factor
         # is exactly the change a compromised-account owner needs to hear about, so this one is

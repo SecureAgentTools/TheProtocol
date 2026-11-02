@@ -28,6 +28,7 @@ from ..models import (
 )
 from ..event_emitter import get_event_emitter
 from ..core.base_network_params import DriftSeverity, GRACE_PERIOD_HOURS
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -270,7 +271,7 @@ class FederationComplianceMonitor:
         )
 
         logger.info(
-            f"[ComplianceMonitor] Quarantine lifted for peer {peer_id} by {admin_email}"
+            f"[ComplianceMonitor] Quarantine lifted for peer {peer_id} by {email_for_log(admin_email)}"
         )
 
         # The TEG partner rule (ledgergate3): the RegistryQuarantined reactor removed this peer from this frame's TEG
@@ -344,7 +345,7 @@ class FederationComplianceMonitor:
 
         logger.critical(
             f"[ComplianceMonitor] ⛔ Peer {peer_id} ({peer_name}) BLACKLISTED "
-            f"by {admin_email}: {reason}"
+            f"by {email_for_log(admin_email)}: {reason}"
         )
 
     # ── Treasury Health (D-FED-10) ────────────────────────────────────────────

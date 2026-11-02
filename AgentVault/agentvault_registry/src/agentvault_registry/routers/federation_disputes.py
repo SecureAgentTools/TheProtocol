@@ -34,6 +34,7 @@ from agentvault_registry.core.frame_currency import frame_currency
 # TITANIUM VAULT D3: Settlement Saga integration
 from agentvault_registry.services.settlement_saga import get_settlement_saga, SAGA_TIMEOUT_HOURS
 from datetime import timedelta
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -218,21 +219,27 @@ async def receive_slash_request(
         select(PeerRegistry.base_url).where(PeerRegistry.status == "ACTIVE")
     )
     known_peer_urls = [row[0].rstrip("/") for row in peer_urls_result.all()]
-    callback_lower = request.callback_url.lower().rstrip("/")
-    if not any(callback_lower.startswith(p.lower()) for p in known_peer_urls):
+    # V0653 (am) item 9: under a peer's base URL with a '/' boundary (_is_under, as the slash routes check their caller's
+    # own addresses): a bare prefix let https://peer.example.evil.test/... pass for the peer https://peer.example
+    if not any(_is_under(request.callback_url, p) for p in known_peer_urls):
         logger.warning(
             f"Callback URL {request.callback_url} does not match any known peer. "
             f"Known peers: {known_peer_urls}"
         )
-        # §MCPTEST30 V0639: the answer names what it compared, hosts only, so the next mismatch names itself (dispute
-        # 50: an origin naming its internal proxy, refused by every peer with the bare sentence)
+        # §MCPTEST30 V0639: the answer names what it compared, so the next mismatch names itself (dispute 50: an origin
+        # naming its internal proxy, refused by every peer with the bare sentence). V0653 (am) item 9: the address (host
+        # and port, never a path or a user part), since the '/' boundary also refuses a matching host on another port
         from urllib.parse import urlsplit
-        _cb_host = urlsplit(request.callback_url).hostname or "(none)"
-        _peer_hosts = sorted({urlsplit(p).hostname or "(none)" for p in known_peer_urls})
+
+        def _address(u):
+            netloc = urlsplit(u).netloc.rsplit("@", 1)[-1]
+            return netloc.lower() or "(none)"
+        _cb_addr = _address(request.callback_url)
+        _peer_addrs = sorted({_address(p) for p in known_peer_urls})
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(f"Callback URL must belong to a registered peer registry: its host {_cb_host} is under no "
-                    f"active peer's base URL (active peer hosts: {', '.join(_peer_hosts) or 'none'})")
+            detail=(f"Callback URL must belong to a registered peer registry: its address {_cb_addr} is under no "
+                    f"active peer's base URL (active peer addresses: {', '.join(_peer_addrs) or 'none'})")
         )
 
     # Step 1: Verify defendant is a local agent
@@ -1325,7 +1332,7 @@ async def update_peer_slash_config(
     await db.commit()
 
     logger.info(
-        f"Peer '{peer.name}' auto-slash config updated by {current_admin.email}: "
+        f"Peer '{peer.name}' auto-slash config updated by {email_for_log(current_admin.email)}: "
         f"enabled {old_enabled}->{config.auto_slash_enabled}, "
         f"max_avt {old_max}->{peer.auto_slash_max_avt}"
     )

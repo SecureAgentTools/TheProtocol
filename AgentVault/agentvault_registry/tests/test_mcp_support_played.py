@@ -101,8 +101,13 @@ class _World:
         if tool == "theprotocol_supportCloseTicket":
             assert jwt == DESK
             self.status = args["status"]
+            said_ = (args.get("message") or "").strip()
+            if said_:                      # V0652: the closing message is the desk's message, mirrored before the status row
+                self.row("text", said_, "system", "support")
             self.row("system", f"support.{args['status']}", "system", "support")
-            self.tell_requester(f"Your ticket #{TID} is {args['status']}", "The desk marked it resolved.",
+            words = (f'"the ticket": {said_}' if said_ and not self.d.get("close_without_words")
+                     else "The desk marked it resolved.")
+            self.tell_requester(f"Support Ticket #{TID}: {args['status'].title()}", words,
                                 raw_extra=1 if self.old else 0)
             return True, _body({"id": TID, "status": self.status}), "200"
         if tool == "theprotocol_adminRequest":
@@ -180,7 +185,8 @@ def test_v0651_is_red_on_every_row(monkeypatch):
 @pytest.mark.parametrize("defect,row,needle", [
     ("no_desk_new", S.DESK_NEW, "no support.desk entry for ticket #41"),
     ("triple_reply", S.ONE_PER_ACT, "left the requester 3 new notice(s)"),
-    ("reply_without_words", S.ONE_PER_ACT, "does not carry its first words"),
+    ("reply_without_words", S.ONE_PER_ACT, "the desk's reply's notice does not carry its first words"),
+    ("close_without_words", S.ONE_PER_ACT, "the desk's resolve's notice does not carry its first words"),
     ("no_reopen_row", S.REOPEN_ROW, "holds no support.open row"),
     ("no_desk_reopen", S.DESK_REOPEN, "no support.desk entry for the reopen of #41"),
 ])

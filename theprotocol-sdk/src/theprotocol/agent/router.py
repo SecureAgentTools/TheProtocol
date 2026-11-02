@@ -42,6 +42,7 @@ from ..models.v1_compat import (
     state_to_v1,
 )
 from ..exceptions import AgentServerError, TaskNotFoundError
+from .caller_errors import caller_message   # V0653 (am) item 2: the caller gets no exception text
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,7 @@ async def _sse_wrapper(task_id: str, gen: AsyncGenerator[A2AEvent, None]) -> Asy
     except TaskNotFoundError as e:
         yield f'event: error\ndata: {json.dumps({"error": "task_not_found", "message": str(e)})}\n\n'.encode()
     except Exception as e:
-        yield f'event: error\ndata: {json.dumps({"error": "stream_error", "message": str(e)})}\n\n'.encode()
+        yield f'event: error\ndata: {json.dumps({"error": "stream_error", "message": caller_message(e, "Error generating events", logger)})}\n\n'.encode()
 
 
 def create_a2a_router(
@@ -299,9 +300,9 @@ def create_a2a_router(
         except TaskNotFoundError as e:
             return JSONResponse(_jsonrpc_error(req_id, JSONRPC_TASK_NOT_FOUND, str(e)))
         except (ValueError, TypeError, pydantic.ValidationError, ValidationError) as e:
-            return JSONResponse(_jsonrpc_error(req_id, JSONRPC_INVALID_PARAMS, f"Invalid parameters: {e}"))
+            return JSONResponse(_jsonrpc_error(req_id, JSONRPC_INVALID_PARAMS, caller_message(e, "Invalid parameters", logger)))
         except AgentServerError as e:
-            return JSONResponse(_jsonrpc_error(req_id, JSONRPC_APP_ERROR, f"Agent error: {e}"))
+            return JSONResponse(_jsonrpc_error(req_id, JSONRPC_APP_ERROR, caller_message(e, "Agent error", logger)))
         except Exception as e:
             logger.exception(f"Unhandled error in A2A handler: {e}")
             return JSONResponse(

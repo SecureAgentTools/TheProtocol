@@ -24,6 +24,7 @@ from fastapi import APIRouter, HTTPException, Security
 
 from agentvault_registry import models, security
 from agentvault_registry.es_ssl_helper import get_httpx_verify
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 router = APIRouter()
 
@@ -60,7 +61,7 @@ async def balance_reconcile_local(
                 headers={"Authorization": f"Bearer {key}"},
             )
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"local TEG unreachable: {exc}")
+        raise HTTPException(status_code=502, detail=internal_detail(exc, 'local TEG unreachable'))
     if resp.status_code != 200:
         raise HTTPException(
             status_code=502, detail=f"local TEG all-agent-balances HTTP {resp.status_code}"
@@ -86,7 +87,7 @@ async def balance_reconcile_es_balances(
                 headers={"X-Internal-Key": key},
             )
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"ES unreachable: {exc}")
+        raise HTTPException(status_code=502, detail=internal_detail(exc, 'ES unreachable'))
     if resp.status_code != 200:
         raise HTTPException(
             status_code=502, detail=f"ES materialized-balances HTTP {resp.status_code}"

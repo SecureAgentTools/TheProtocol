@@ -81,6 +81,8 @@ from agentvault_registry.services.cloud_provisioner import (
     CLOUD_DOMAIN_SUFFIX,
     _safe_name,
 )
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 
@@ -494,7 +496,7 @@ async def self_provision_cloud_operator(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Bundle generation failed: {str(exc)[:300]}",
+            detail=internal_detail(exc, 'Bundle generation failed', logger),
         )
 
     logger.info(
@@ -555,7 +557,7 @@ async def self_provision_cloud_operator(
         # Application row stays in DB so admin can recover via the manual path.
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Provisioning failed: {str(exc)[:400]}",
+            detail=internal_detail(exc, 'Provisioning failed', logger),
         )
 
     # Persist cloud-hosted state on the application
@@ -1459,7 +1461,7 @@ async def request_frame(
             # either way. The admin sees one row, not two.
             frame_request_id = dupe.id
             logger.info("[frame-request] duplicate pending request from %s, kept %s",
-                        body.email, dupe.id)
+                        email_for_log(body.email), dupe.id)
     except Exception as exc:
         # A node whose DB predates mig 0172 still accepts the request by email,
         # which is exactly how this endpoint behaved before §FRAMEFORM. Loud in
@@ -1488,7 +1490,7 @@ async def request_frame(
     )
     logger.info(
         "[frame-request] org=%r email=%s trust_domain=%s pair=%s create_account=%s",
-        body.organization, body.email, body.trust_domain, body.pair_with,
+        body.organization, email_for_log(body.email), body.trust_domain, body.pair_with,
         body.create_account,
     )
 
@@ -1535,7 +1537,7 @@ async def request_frame(
             account_created = True
             logger.info(
                 "[frame-request] created Developer id=%s email=%s for frame request",
-                new_dev.id, body.email,
+                new_dev.id, email_for_log(body.email),
             )
 
             # Send magic-link login email to the requester. §FRAMESHOWCASE (2026-09-14): a link a person follows names
@@ -1575,7 +1577,7 @@ async def request_frame(
         else:
             logger.info(
                 "[frame-request] dev id=%s already exists for %s — skipping create",
-                existing_dev.id, body.email,
+                existing_dev.id, email_for_log(body.email),
             )
 
     # ── §FRAMESHOWCASE: every requester hears back once ─────────────

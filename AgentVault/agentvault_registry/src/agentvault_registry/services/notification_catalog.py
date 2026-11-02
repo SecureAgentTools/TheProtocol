@@ -303,9 +303,10 @@ CATALOG: Tuple[NotificationType, ...] = (
     # approval you gave, used: in-app, and pushed when the act it allowed was a production act. A session's status
     # line that expired (the session went quiet) and a finished progress line (a proof or a roll with its verdict):
     # in-app.
-    # V0652 (ab): a choice asked of its deciders (chat_service.notice_type_for). emitter=False below until the live
-    # progress cards ((aa)) post them, and until a status line's expiry is watched (the status board, (ac)): declared
-    # now, so the settings already show them
+    # V0652 (ab): a choice asked of its deciders (chat_service.notice_type_for).
+    # V0653 (session-lead, seq 716): the last two fire now: a progress card's verdict (chat_service.
+    # notify_progress_finished, from the card's closing update) and a session's lapsed status line
+    # (background_tasks/session_offline_watch.py, to the agent's owner, once per lapse)
     _t("chat.choice_requested", "chat", "info",
        default_enabled={"inapp": True, "push_desktop": True, "push_mobile": True}, crosses_quiet_hours=True,
        desc_key="notifCatalog.chat_choice_requested.desc"),
@@ -314,9 +315,9 @@ CATALOG: Tuple[NotificationType, ...] = (
     _t("chat.approval_used_production", "chat", "warning",
        default_enabled={"inapp": True, "push_desktop": True, "push_mobile": True}),
     _t("chat.progress_finished", "chat", "info",
-       default_enabled={"inapp": True}, coalesce_window_s=60, emitter=False),
+       default_enabled={"inapp": True}, coalesce_window_s=60),
     _t("org.session_offline", "chat", "info",
-       default_enabled={"inapp": True}, coalesce_window_s=600, emitter=False),
+       default_enabled={"inapp": True}, coalesce_window_s=600),
     # §CHATDESK C5 — org money moved (fund/remit/dividend/guild settlement to
     # the firm). One bell per RECEIPT, coalesced so a dividend run over many
     # members does not machine-gun anyone; the room card is the record.

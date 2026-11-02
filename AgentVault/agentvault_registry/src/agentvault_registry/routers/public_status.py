@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from agentvault_registry import security
 from agentvault_registry.es_ssl_helper import get_httpx_verify
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Status"])
@@ -462,6 +463,6 @@ async def admin_put_incidents(body: IncidentList, _admin=Depends(security.requir
     try:
         _write_json_atomic(INCIDENTS_FILE, [json.loads(i.model_dump_json()) for i in body.incidents])
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"could not write the incident list: {e}")
+        raise HTTPException(status_code=500, detail=internal_detail(e, 'could not write the incident list', logger))
     _cache["snapshot"] = None
     return {"incidents": load_incidents(), "written": len(ids)}

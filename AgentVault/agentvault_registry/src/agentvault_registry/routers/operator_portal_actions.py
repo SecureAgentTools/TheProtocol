@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentvault_registry import models, security
 from agentvault_registry.database import get_db
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +200,7 @@ async def operator_self_restart(
             detail="No FEDERATION_LICENSE_KEY in this registry's env (cloud-op provisioning didn't seed one?)",
         )
 
-    logger.info(f"[OperatorPortal] self-restart {current_admin.email} service={body.service}")
+    logger.info(f"[OperatorPortal] self-restart {email_for_log(current_admin.email)} service={body.service}")
     try:
         r, lane = await _call_parent(db, "POST", "/api/v1/admin/cloud-operators/self-restart",
                                      "/api/v1/federation/operator-self/restart", license_key,
@@ -283,7 +284,7 @@ async def operator_self_rename(
         )
     except Exception as e:
         logger.warning("[OperatorPortal] self-rename emit failed (non-fatal): %s", e)
-    logger.info(f"[OperatorPortal] self-rename {current_admin.email}: display_name {prior!r} → {new_name!r}")
+    logger.info(f"[OperatorPortal] self-rename {email_for_log(current_admin.email)}: display_name {prior!r} → {new_name!r}")
     return {
         "status": "renamed",
         "display_name": new_name,
@@ -324,7 +325,7 @@ async def operator_self_logs(
             detail="No FEDERATION_LICENSE_KEY in this registry's env",
         )
 
-    logger.info(f"[OperatorPortal] self-logs {current_admin.email} service={service} tail={tail}")
+    logger.info(f"[OperatorPortal] self-logs {email_for_log(current_admin.email)} service={service} tail={tail}")
     try:
         r, lane = await _call_parent(db, "GET", "/api/v1/admin/cloud-operators/self-logs",
                                      "/api/v1/federation/operator-self/logs", license_key,

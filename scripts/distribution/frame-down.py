@@ -15,6 +15,7 @@ import glob
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -83,7 +84,11 @@ def main():
     ap.add_argument("--keep-secrets", action="store_true")
     ap.add_argument("--with-sandbox", action="store_true", help="also remove this frame's sandboxes (first)")
     ap.add_argument("--yes", action="store_true", help="do not ask")
+    ap.add_argument("--with-runner", action="store_true",
+                    help="after the frame is gone, take off the frame runner it installed (frame-runner-install.py --remove: "
+                         "its unit, policy, the protected list and the group it created); refused while the runner holds another frame")
     a = ap.parse_args()
+    runner_rec = (frame_record(a.stack_root, a.name) or {}).get("runner") or {}   # read now: down() removes the record
     sbx = sandboxes_of(a.stack_root, a.name)
     if sbx and not a.with_sandbox:
         print(f"{a.name} has sandbox(es) {', '.join(sbx)}: remove them first (frame-down.py --name <sandbox>) or pass "
@@ -96,7 +101,48 @@ def main():
         print(f"== sandbox {s} of {a.name}")
         worst = max(worst, down(a, s, ask=False))
     print(f"== frame {a.name}") if sbx else None
-    return max(worst, down(a, a.name, ask=not sbx))
+    worst = max(worst, down(a, a.name, ask=not sbx))
+    if a.with_runner:
+        worst = max(worst, remove_runner(a, runner_rec, worst))
+    return worst
+
+
+def runner_instance(runner_rec):
+    """The runner instance a frame installed: frame-up records it since V0653; an older record names it by its socket
+    (/run/theprotocol/<instance>/frame-runner.sock, or the single runner's /run/theprotocol/frame-runner.sock). None
+    when neither says (never a guess)."""
+    if "instance" in runner_rec:
+        return str(runner_rec.get("instance") or "")
+    sock = str(runner_rec.get("socket") or "")
+    if sock == "/run/theprotocol/frame-runner.sock":
+        return ""
+    m = re.fullmatch(r"/run/theprotocol/([a-z0-9][a-z0-9-]*)/frame-runner\.sock", sock)
+    return m.group(1) if m else None
+
+
+def remove_runner(a, runner_rec, worst):
+    """V0653 (ao) item 2: --with-runner takes off the runner this frame installed, once the frame is gone. A frame that
+    used its parent's runner (a sandbox) or installed none leaves the host's runner alone."""
+    if worst:
+        print("frame runner: kept (the frame is not fully gone; remove the runner once it is: frame-runner-install.py --remove)")
+        return 0
+    if not runner_rec.get("installed"):
+        how = "its parent's runner" if runner_rec.get("via_parent") else "no runner of its own"
+        print(f"frame runner: kept ({a.name} used {how}; frame-runner-install.py --remove takes a runner off by itself)")
+        return 0
+    instance = runner_instance(runner_rec)
+    if instance is None:
+        print(f"frame runner: kept (the record names the socket {runner_rec.get('socket')!r}, which says no runner instance; "
+              f"frame-runner-install.py --remove [--instance <name>] removes the right one by hand)")
+        return 2
+    argv = [sys.executable, os.path.join(HERE, "frame-runner-install.py"), "--remove", "--export-root", EXPORT_ROOT,
+            "--stack-root", a.stack_root]
+    if instance:
+        argv += ["--instance", instance]
+    r = run(argv, timeout=180)
+    for line in ((r.stdout or "") + (r.stderr or "")).strip().splitlines():
+        print(f"frame runner: {line}")
+    return 0 if r.returncode == 0 else r.returncode
 
 
 def down(a, name, ask=True):

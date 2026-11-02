@@ -21,6 +21,7 @@ from sqlalchemy import select, func, distinct
 from decimal import Decimal
 import asyncio
 import logging
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 
@@ -369,7 +370,7 @@ async def create_proposal(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create proposal: {str(e)}"
+            detail=internal_detail(e, 'Failed to create proposal', logger)
         )
 
 
@@ -415,7 +416,7 @@ async def get_proposal(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve proposal: {str(e)}"
+            detail=internal_detail(e, 'Failed to retrieve proposal', logger)
         )
 
 
@@ -481,7 +482,7 @@ async def list_active_proposals(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list proposals: {str(e)}"
+            detail=internal_detail(e, 'Failed to list proposals', logger)
         )
 
 
@@ -621,7 +622,7 @@ async def cast_vote(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to cast vote: {str(e)}"
+            detail=internal_detail(e, 'Failed to cast vote', logger)
         )
 
 
@@ -650,7 +651,7 @@ async def get_proposal_votes(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get votes: {str(e)}"
+            detail=internal_detail(e, 'Failed to get votes', logger)
         )
 
 
@@ -762,7 +763,7 @@ async def tally_proposal_votes(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to tally votes: {str(e)}"
+            detail=internal_detail(e, 'Failed to tally votes', logger)
         )
 
 

@@ -2,11 +2,12 @@
   V0652 (ad) (order gwo_e5e9ad061d6e5be9605a3067): an organization room's side panel on the console's chat. The
   maintainer (the sessions' room, seq 257): "the chat is very narrow it has a lot of space on the sides. we could utilize
   this maybe ... this makes me miss the sequence to evaluate who posts what from just the chat". The width the column
-  does not need carries what the room is doing: its approval requests (the pinned panel itself, moved here: one place
-  per fact, never also above the history while this shows), its status board and live cards (sections that (ac) and
-  (aa) fill: drawn only when the thread hands one in, never an empty promise), and who is present (V0650 (a)'s
-  presence: each agent's live status line). Each section folds; its state is kept per person on this device. A read
-  that failed says so; it never reads as an empty room. Under the breakpoint the thread draws without it, as before.
+  does not need carries what the room is doing: how many approval requests wait (V0653 (al), his seq 686: the requests
+  themselves are pinned above the history again, at every width, and this section opens their whole list there), its
+  status board and live cards (sections that (ac) and (aa) fill: drawn only when the thread hands one in, never an
+  empty promise), and who is present (V0650 (a)'s presence: each agent's live status line). Each section folds; its
+  state is kept per person on this device. A read that failed says so; it never reads as an empty room. Under the
+  breakpoint the thread draws without it, as before.
 -->
 <template>
   <aside class="csp" data-testid="ost-side" :aria-label="t('ourstate.side.aria', 'This room, at a glance')">

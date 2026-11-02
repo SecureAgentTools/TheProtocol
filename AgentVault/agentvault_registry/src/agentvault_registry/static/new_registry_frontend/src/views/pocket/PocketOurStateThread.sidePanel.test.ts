@@ -4,10 +4,11 @@ import { createPinia, setActivePinia } from 'pinia'
 
 /**
  * V0652 (ad) (order gwo_e5e9ad061d6e5be9605a3067): on the console's chat an organization room whose pane is wide enough
- * shows the room's side panel beside the column, and the approvals live there (one place per fact: not also above the
- * history); a narrower pane, Pocket's mount and a direct thread draw the thread as before, the approvals pinned above
- * the history; the pane's own width decides, and a resize across the breakpoint moves the approvals back. BASE (V0651):
- * no side panel on any mount.
+ * shows the room's side panel beside the column; a narrower pane, Pocket's mount and a direct thread draw the thread as
+ * before; the pane's own width decides. BASE (V0651): no side panel on any mount.
+ * V0653 (al) (order gwo_2f0d7d69673b8f9c9392e5dc, his seq 686: "the pinned version was way more clear to spot"): the
+ * approval requests stay pinned above the history at every width, the panel beside or not; the panel's WAITING ON YOU
+ * keeps the count and opens their list there. BASE (V0652): beside the panel they lived only in it.
  */
 const h = vi.hoisted(() => ({
   chat: {} as Record<string, ReturnType<typeof vi.fn>>,
@@ -110,7 +111,7 @@ describe('the side panel beside the column, on the console', () => {
     if (desc) Object.defineProperty(HTMLElement.prototype, 'clientWidth', desc)
   })
 
-  it('a wide pane in an organization room: the panel beside the column, the approvals in it and not above the history', async () => {
+  it('a wide pane in an organization room: the panel beside the column keeps the count, the request pinned above the history', async () => {
     paneW = SIDE_PANEL_MIN_PX + 200
     h.chat.getMessages = vi.fn().mockResolvedValue(page('org', [text('m1', 1), text('m2', 2)]))
     h.chat.listApprovals = vi.fn().mockResolvedValue(pending)
@@ -120,9 +121,12 @@ describe('the side panel beside the column, on the console', () => {
     expect(side.exists()).toBe(true)
     const panels = w.findAll('[data-testid="ost-approvals"]')
     expect(panels).toHaveLength(1)
-    expect(side.element.contains(panels[0].element)).toBe(true)
+    expect(side.element.contains(panels[0].element)).toBe(false)
+    const scroll = w.find('[data-testid="ost-messages"]')
+    expect(panels[0].element.compareDocumentPosition(scroll.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(w.find('[data-testid="oca-item-apr_1"]').exists()).toBe(true)
     expect(w.find('[data-testid="csp-approvals-count"]').text()).toBe('1')
+    expect(w.find('[data-testid="ost-side-approvals-pinned"]').exists()).toBe(true)
     expect(h.presence).toHaveBeenCalledWith('org1')
     /* the column comes first and holds the history and the composer; the panel is its sibling */
     const col = w.find('.ost-col')
@@ -148,7 +152,7 @@ describe('the side panel beside the column, on the console', () => {
     w.unmount()
   })
 
-  it('a resize across the breakpoint moves the approvals into the panel and back', async () => {
+  it('a resize across the breakpoint brings the panel and takes it away; the request stays pinned above the history', async () => {
     paneW = SIDE_PANEL_MIN_PX - 100
     h.chat.getMessages = vi.fn().mockResolvedValue(page('org', [text('m1', 1)]))
     h.chat.listApprovals = vi.fn().mockResolvedValue(pending)
@@ -157,7 +161,9 @@ describe('the side panel beside the column, on the console', () => {
     expect(w.find('[data-testid="ost-side"]').exists()).toBe(false)
     resizeTo(SIDE_PANEL_MIN_PX + 100)
     await flushPromises()
-    expect(w.find('[data-testid="ost-side"] [data-testid="ost-approvals"]').exists()).toBe(true)
+    expect(w.find('[data-testid="ost-side"]').exists()).toBe(true)
+    expect(w.find('[data-testid="ost-side"] [data-testid="ost-approvals"]').exists()).toBe(false)
+    expect(w.findAll('[data-testid="ost-approvals"]')).toHaveLength(1)
     resizeTo(SIDE_PANEL_MIN_PX - 100)
     await flushPromises()
     expect(w.find('[data-testid="ost-side"]').exists()).toBe(false)

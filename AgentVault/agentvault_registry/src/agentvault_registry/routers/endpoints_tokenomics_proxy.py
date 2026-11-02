@@ -17,6 +17,7 @@ from ..models import Agent, Developer
 from ..security import get_current_agent
 from ..teg_client import get_teg_client, TEGClient, TEGClientError
 import logging
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +123,7 @@ async def get_pending_rewards(
         logger.error(f"Unexpected error getting pending rewards: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal error getting pending payouts: {str(e)}"
+            detail=internal_detail(e, 'Internal error getting pending payouts', logger)
         )
 
 
@@ -196,7 +197,7 @@ async def get_transaction_history(
         logger.error(f"Unexpected error getting transaction history: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal error getting transaction history: {str(e)}"
+            detail=internal_detail(e, 'Internal error getting transaction history', logger)
         )
 
 
@@ -247,5 +248,5 @@ async def get_treasury_info(
         logger.error(f"Unexpected error getting treasury info: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal error getting treasury info: {str(e)}"
+            detail=internal_detail(e, 'Internal error getting treasury info', logger)
         )

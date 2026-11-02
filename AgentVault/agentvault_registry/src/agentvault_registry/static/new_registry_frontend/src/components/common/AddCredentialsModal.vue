@@ -16,13 +16,18 @@
             <div class="ac-agent-did">{{ agent.did }}</div>
           </div>
 
-          <p class="tp-banner tp-banner--info">
+          <p v-if="!savedPlain" class="tp-banner tp-banner--info">
             Paste the <strong>client_id</strong> + <strong>client_secret</strong> issued when this
             agent was created. They're stored only in your browser's local storage so re-auth
             after reload works without re-pasting.
           </p>
 
-          <form @submit.prevent="save" class="ac-form">
+          <!-- V0653 (am) item 6: saved, and still unencrypted here: where it sits and the one press that locks it -->
+          <div v-if="savedPlain" data-testid="add-creds-saved">
+            <p class="tp-banner tp-banner--success" role="status">{{ t('agentSecret.savedHere', 'Saved in this browser.') }}</p>
+            <AgentSecretWhere />
+          </div>
+          <form v-else @submit.prevent="save" class="ac-form">
             <div class="tp-field">
               <label for="ac-client-id" class="tp-label">Client ID</label>
               <input
@@ -89,7 +94,10 @@
         </div>
 
         <!-- Footer -->
-        <div class="tp-modal-footer">
+        <div v-if="savedPlain" class="tp-modal-footer">
+          <button class="tp-btn tp-btn--primary" data-testid="add-creds-done" @click="emit('close')">{{ t('agentSecret.done', 'Done') }}</button>
+        </div>
+        <div v-else class="tp-modal-footer">
           <button class="tp-btn tp-btn--ghost" @click="emit('close')" :disabled="saving">Cancel</button>
           <button
             class="tp-btn tp-btn--primary"
@@ -112,6 +120,10 @@ import { agentCredentialsStore } from '@/services/agentCredentialsStore'
 import { agentApi } from '@/services/api/agents'
 import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
+import { useI18n } from '@/composables/useI18n'
+import { usePocketLock } from '@/composables/usePocketLock'
+import { placeOf } from '@/composables/useLockAgentSecrets'
+import AgentSecretWhere from '@/components/common/AgentSecretWhere.vue'
 
 const props = defineProps<{
   show: boolean
@@ -126,6 +138,10 @@ const emit = defineEmits<{
 
 const uiStore = useUIStore()
 const authStore = useAuthStore()
+const { t } = useI18n()
+const pocketLock = usePocketLock()
+// V0653 (am) item 6: the import offers the lock itself while the secret it saved sits unencrypted in this browser
+const savedPlain = ref(false)
 
 const clientId = ref('')
 const clientSecret = ref('')
@@ -147,6 +163,7 @@ watch(
       errorMsg.value = ''
       successMsg.value = ''
       saving.value = false
+      savedPlain.value = false
       revealSecret.value = false
       testFirst.value = true
       await nextTick()
@@ -217,6 +234,10 @@ async function save() {
     )
 
     emit('saved')
+    if (placeOf(pocketLock.vaultInfo()) === 'plain') {
+      savedPlain.value = true            // stay open: say where the secret sits and offer the lock (one press)
+      return
+    }
     emit('close')
   } catch (e: any) {
     errorMsg.value = e?.message || 'Save failed. Try again.'

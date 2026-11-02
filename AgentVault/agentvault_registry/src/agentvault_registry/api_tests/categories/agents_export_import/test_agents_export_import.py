@@ -5,6 +5,7 @@ Tests for agent configuration export, import, bulk operations, and cloning.
 """
 
 import logging
+from agentvault_registry.api_tests.core import log_safe as _ls   # V0653 (am) item 13: shapes in the log, never values
 from typing import List, Optional, Dict, Any
 import time
 import json
@@ -131,10 +132,10 @@ class TestAgentsExportImport(APITestBase):
                 # The field is 'bootstrap_token', not 'token'!
                 bootstrap_token = bootstrap_result["responseData"].get("bootstrap_token")
                 if bootstrap_token:
-                    logger.info(f"✅ Got bootstrap token: {bootstrap_token[:20]}...")
+                    logger.info(f"✅ Got bootstrap token: {_ls.secret(bootstrap_token)}")
                 else:
                     logger.error("❌ No bootstrap_token in response")
-                    logger.error(f"Response data: {bootstrap_result['responseData']}")
+                    logger.error(f"Response data: {_ls.refusal(bootstrap_result['responseData'])}")
                     flow_success = False
                     return {"success": False, "results": results, "error": "No bootstrap token in response"}
             else:

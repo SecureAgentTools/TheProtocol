@@ -42,6 +42,7 @@ from agentvault_registry.core.federation_auth import get_federation_identity, re
 # (revocations, breaker) use the AWAITED emitter; routine ones keep emit_background.
 from agentvault_registry.services.admin_audit import log_ironkey_action
 from agentvault_registry.core.public_url import credential_home_url  # §FEFRAME W1
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -822,7 +823,7 @@ async def spawn_subagent(
     try:
         await agent_crud.create_agent(db, child_did, child_cid, child_secret, dev_id, None)
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Child identity creation failed: {e}")
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail=internal_detail(e, 'Child identity creation failed', logger))
     # a schema-valid stub card at a unique host (pull-sync overwrites agent-owned fields later)
     suffix = child_did.split(":")[-1]
     host = f"https://sub-{suffix}.agents.local"
@@ -1299,7 +1300,7 @@ async def delegate_cross_registry(
         ok = r.status_code in (200, 201)
         detail = r.json() if ok else {"status": r.status_code, "body": r.text[:200]}
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=f"Ship to delegate's home failed: {e}")
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=internal_detail(e, "Ship to delegate's home failed", logger))
     logger.info("[IRONKEY-XREG] issued delegation cred=%s %s -> %s@%s perms=%s ship_ok=%s",
                 cred_id, issuer_did, body.delegate_did, body.delegate_registry_url, perms, ok)
     # §auditfix: the issuer side persists NOTHING locally (sign + ship only) — this audit

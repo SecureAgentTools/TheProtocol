@@ -46,6 +46,7 @@ import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("test_seed")
@@ -142,14 +143,14 @@ async def seed():
                 is_verified=NON_ADMIN_DEV["is_verified"],
             ))
             await db.commit()
-            logger.info(f"  ✓ Created non-admin fixture: {NON_ADMIN_DEV['email']}")
+            logger.info(f"  ✓ Created non-admin fixture: {email_for_log(NON_ADMIN_DEV['email'])}")
         else:
             # Always rewrite the password in case the row got anonymized.
             non_admin_existing.hashed_password = hash_password(NON_ADMIN_DEV["password"])
             non_admin_existing.is_admin = NON_ADMIN_DEV["is_admin"]
             non_admin_existing.is_verified = NON_ADMIN_DEV["is_verified"]
             await db.commit()
-            logger.info(f"  ↻ Reset non-admin fixture password: {NON_ADMIN_DEV['email']}")
+            logger.info(f"  ↻ Reset non-admin fixture password: {email_for_log(NON_ADMIN_DEV['email'])}")
 
         # ─── Idempotent check ───
         existing = await db.execute(
@@ -170,7 +171,7 @@ async def seed():
         )
         db.add(admin)
         await db.flush()
-        logger.info(f"  ✓ Created admin: {admin.email} (id={admin.id})")
+        logger.info(f"  ✓ Created admin: {email_for_log(admin.email)} (id={admin.id})")
         
         # ─── Create Developer Account ───
         dev = Developer(
@@ -182,7 +183,7 @@ async def seed():
         )
         db.add(dev)
         await db.flush()
-        logger.info(f"  ✓ Created developer: {dev.email} (id={dev.id})")
+        logger.info(f"  ✓ Created developer: {email_for_log(dev.email)} (id={dev.id})")
         
         # ─── Create Tutorial Admin Account ───
         tutorial = Developer(
@@ -194,15 +195,15 @@ async def seed():
         )
         db.add(tutorial)
         await db.flush()
-        logger.info(f"  ✓ Created tutorial admin: {tutorial.email} (id={tutorial.id})")
+        logger.info(f"  ✓ Created tutorial admin: {email_for_log(tutorial.email)} (id={tutorial.id})")
         
         # ─── Commit developer accounts ───
         await db.commit()
         logger.info("✓ Test DB seeded with developer accounts!")
         # the accounts, never their passwords (§TESTBED 2026-09-19: these three lines printed them)
-        logger.info(f"  Admin:     {TEST_ADMIN['email']}")
-        logger.info(f"  Developer: {TEST_DEVELOPER['email']}")
-        logger.info(f"  Tutorial:  {TUTORIAL_ADMIN['email']}")
+        logger.info(f"  Admin:     {email_for_log(TEST_ADMIN['email'])}")
+        logger.info(f"  Developer: {email_for_log(TEST_DEVELOPER['email'])}")
+        logger.info(f"  Tutorial:  {email_for_log(TUTORIAL_ADMIN['email'])}")
         logger.info("")
         logger.info("  Sandbox Sentinel will be onboarded via API after server starts.")
     

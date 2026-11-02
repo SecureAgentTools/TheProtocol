@@ -8074,7 +8074,12 @@
       "foreignPrice": " · not {ccy}",
       "foreignPriceHint": "Priced on another frame — paying converts from your balance.",
       "hostingCross": "Threads you start live on {registry}. A thread another registry starts lives there, with a copy here.",
-      "emptySubNoCast": "Find someone to talk to with the search above. You always see the price and confirm it before anything moves."
+      "emptySubNoCast": "Find someone to talk to with the search above. You always see the price and confirm it before anything moves.",
+      "railAria": "Conversations",
+      "unfold": "Show the conversation list",
+      "railUnread": "{n} unread",
+      "railUnreadWord": "unread",
+      "fold": "Fold the conversation list"
     },
     "thread": {
       "agentAuthFailed": "Could not authenticate as your agent.",
@@ -8208,7 +8213,10 @@
       "threadReplyOne": "1 reply",
       "threadReplies": "{n} replies",
       "pushAskNeeds": "Get a push on this device when you are named, written to directly or asked to decide? Off until you say so.",
-      "pushOnNeeds": "On. Mentions, direct messages and approvals to decide reach this device."
+      "pushOnNeeds": "On. Mentions, direct messages and approvals to decide reach this device.",
+      "lastReplyAt": "last reply {time}",
+      "sentWithKey": "sent with a key",
+      "sentWithKeyTitle": "Sent with an API key (a connector, a bridge or a script), not typed in a signed-in console or Pocket"
     },
     "trust": {
       "cross": "{n} cross-registry",
@@ -8344,7 +8352,11 @@
       "alreadyDeniedMine": "Already denied at {time} (another device)",
       "alreadyApprovedBy": "Already approved at {time} by {who}",
       "alreadyDeniedBy": "Already denied at {time} by {who}",
-      "anotherApprover": "another approver"
+      "anotherApprover": "another approver",
+      "open": "Open",
+      "more": "{n} more",
+      "showOne": "Show one",
+      "hide": "Hide"
     },
     "settings": {
       "aria": "Settings for {name}",
@@ -8484,7 +8496,9 @@
       "presenceFailed": "Who is present could not be read just now.",
       "noAgents": "No agent is assigned to this organization.",
       "noStatus": "no live status",
-      "active": "active {ago} ago"
+      "active": "active {ago} ago",
+      "approvalsPinned": "{n} pinned above the chat",
+      "approvalsOpen": "Show them all there"
     },
     "cardHistory": {
       "title": "History of this card",
@@ -14138,5 +14152,21 @@
       "empty": "None of this organization's agents has called an MCP tool on this registry with its own credentials yet."
     },
     "toolError": "tool error"
+  },
+  "agentSecret": {
+    "enrollCancelled": "The device unlock was not set up; the secret stays unencrypted here.",
+    "noPrf": "This device cannot derive a key from its unlock. A device key still protects copied storage; it is weaker.",
+    "sealFailed": "Locking failed; nothing was changed.",
+    "plain": "This secret is kept in this browser, unencrypted: any script on this page, and anyone with this browser profile, can read it.",
+    "sealedFingerprint": "This secret is encrypted in this browser and opens with your fingerprint or face.",
+    "sealedDevice": "This secret is sealed in this browser with a device key: copied storage cannot be read; this page still can.",
+    "sealedOther": "This secret is sealed in this browser.",
+    "locking": "Locking…",
+    "lock": "Lock it with this device",
+    "deviceKey": "Seal with a device key instead",
+    "savedHere": "Saved in this browser.",
+    "done": "Done",
+    "noUnlock": "This device has no fingerprint or face unlock. A device key still protects copied storage; it is weaker.",
+    "insecure": "This page is not served over HTTPS, so this browser can lock nothing here: the secret stays unencrypted."
   }
 }

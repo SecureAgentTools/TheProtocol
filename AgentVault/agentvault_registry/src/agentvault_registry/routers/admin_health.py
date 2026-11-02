@@ -21,6 +21,8 @@ from agentvault_registry.core.path_segment import seg  # §MCPTEST30 V0526: a va
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +190,7 @@ async def composite_health_check(
     This solves the HTTP single-Authorization-header limitation.
     Frontend can send developer token in header and agent token in body.
     """
-    logger.info(f"Composite health check requested by {current_developer.email}")
+    logger.info(f"Composite health check requested by {email_for_log(current_developer.email)}")
     
     # Extract developer token from header
     auth_header = request.headers.get("authorization", "")
@@ -390,7 +392,7 @@ async def comprehensive_health_check(
     
     Returns detailed health status for each endpoint group.
     """
-    logger.info(f"Running health check requested by developer {current_developer.email}")
+    logger.info(f"Running health check requested by developer {email_for_log(current_developer.email)}")
     
     # Get tokens for testing authenticated endpoints
     developer_token = None
@@ -805,7 +807,7 @@ async def get_docker_stats(
         logger.warning(f"Docker stats unavailable on this node: {e}")
         raise HTTPException(
             status_code=503,
-            detail=f"Docker stats unavailable on this node (docker socket not reachable — e.g. a consumer cloud-op): {str(e)}",
+            detail=internal_detail(e, 'Docker stats unavailable on this node (docker socket not reachable — e.g. a consumer cloud-op)', logger),
         )
 
 
@@ -903,7 +905,7 @@ async def get_combined_health(
         
     except Exception as e:
         logger.error(f"Error getting combined health status: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve combined health status: {str(e)}")
+        raise HTTPException(status_code=500, detail=internal_detail(e, 'Failed to retrieve combined health status', logger))
 
 
 def _collect_system_resources_sync() -> Dict[str, Any]:
@@ -993,7 +995,7 @@ async def get_system_resources(
         
     except Exception as e:
         logger.error(f"Error getting system resources: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve system resources: {str(e)}")
+        raise HTTPException(status_code=500, detail=internal_detail(e, 'Failed to retrieve system resources', logger))
 
 def _format_event_title(event_type: str) -> str:
     """Map EventStore event_type to human-readable title."""
@@ -1847,7 +1849,7 @@ async def distribute_from_fee_collector(
         raise HTTPException(status_code=503, detail="TEG service unavailable")
     except Exception as e:
         logger.error(f"fee_collector distribute: unexpected: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Distribute failed: {e}")
+        raise HTTPException(status_code=500, detail=internal_detail(e, 'Distribute failed', logger))
 
 
 @router.get("/treasury/aggregate", summary="Treasury and fee figures over a period (admin)")
@@ -3603,7 +3605,7 @@ async def take_projection_snapshot(
             if resp.status_code != 200:
                 raise HTTPException(status_code=502, detail=f"TEG treasury info failed: {resp.status_code}")
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Cannot reach TEG: {e}")
+        raise HTTPException(status_code=502, detail=internal_detail(e, 'Cannot reach TEG', logger))
 
     # Step 2: Get all agent balances from Registry DB (synced from TEG)
     result = await db.execute(

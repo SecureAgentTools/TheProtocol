@@ -13,6 +13,9 @@ candle timeframe is not one) is asked once unfiltered (the control) and once per
 Findings: a value refused for being invalid; rows whose field holds another value; a value the control's rows carry that
 returns no rows. A busy registry (-32003) or an empty, unreadable control measures nothing. Read only. Rows `enum: <tool>`;
 they keep counts and value names, never data.
+V0653: a row a lifecycle measured on a subject of the run's own (marked `measured_in`) is kept and asked again by nobody:
+this probe has no such subject (listChatApprovals needs a room of the caller's, so its row read NOT MEASURED here;
+earned_ad_chat_tools measures it in its organization room). Whichever runs first, the measured row stands.
 """
 from __future__ import annotations
 
@@ -142,6 +145,8 @@ async def run_enums(raw: Optional[Callable], bag: Any, outcomes: Dict[str, dict]
         tool, tier, base, param, values = target
         t0 = time.time()
         name = PREFIX + tool.replace("theprotocol_", "")
+        if (outcomes.get(name) or {}).get("measured_in"):
+            return          # measured on a subject of the run's own (the module docstring): kept, asked by nobody
         if raw is None:
             outcomes[name] = make_outcome(name, "enum", False, "0", 0, None, {}, expect_status="any",
                                           skip_reason="NOT MEASURED: the runner injected no raw JSON-RPC transport")

@@ -143,7 +143,10 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     """Handle Pydantic validation errors with unified error schema."""
     logger.warning(
-        f"Validation error on {request.method} {request.url.path}: {exc.errors()}"
+        f"Validation error on {request.method} {request.url.path}: "
+        # V0653 (am) item 7: where and why, never the value pydantic refused (its "input": a password one character
+        # short, a key); the answer to the caller never carried it
+        f"{[{k: e.get(k) for k in ('loc', 'type', 'msg')} for e in exc.errors()]}"
     )
     
     # Format validation errors

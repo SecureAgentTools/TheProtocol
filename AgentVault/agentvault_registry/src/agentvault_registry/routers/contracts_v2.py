@@ -40,6 +40,7 @@ from agentvault_registry.services import contract_settlement as cs
 from agentvault_registry.services import liability as liab
 from agentvault_registry.services import reputation_bond as _rb
 from agentvault_registry.services import enforcement_propagation as _ep  # §ENFPROP
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Contracts v2"])
@@ -1120,8 +1121,7 @@ async def _relay_to_home(db: AsyncSession, rep: dict, actor_did: str, action: st
             "payload": payload or {}, "idempotency_key": key})
     except Exception as e:  # noqa: BLE001 — PassportError(502) or transport: nothing changed anywhere
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
-                            detail=f"This contract lives on {home}, which could not be reached to carry this "
-                                   f"{action} ({getattr(e, 'message', e)}). Nothing changed; try again.")
+                            detail=internal_detail(e, f"This contract lives on {home}, which could not be reached to carry this {action}. Nothing changed; try again.", logger))
     if code >= 400:
         detail = body.get("detail") if isinstance(body, dict) and body.get("detail") else body
         raise HTTPException(code, detail=detail)

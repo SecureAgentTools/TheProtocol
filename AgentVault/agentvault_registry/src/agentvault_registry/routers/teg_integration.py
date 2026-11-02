@@ -39,6 +39,8 @@ from agentvault_registry.core.federation_auth import require_peer_registry_ident
 # P2-008: Event Store integration for attestation events
 from agentvault_registry.crud_agent_enhanced import emit_attestation_event, emit_reputation_changed_event
 from agentvault_registry.services import local_trust_updater  # EigenTrust++ Phase 2
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 
@@ -2855,7 +2857,7 @@ async def get_treasury_balance(
     Returns the current balance of the senate treasury used for ecosystem funding.
     This endpoint proxies to the TEG Layer's governance treasury endpoint.
     """
-    logger.info(f"[Treasury Balance] Fetching treasury balance for user: {current_developer.email}")
+    logger.info(f"[Treasury Balance] Fetching treasury balance for user: {email_for_log(current_developer.email)}")
     
     async with httpx.AsyncClient(verify=get_httpx_verify()) as client:
         try:
@@ -3358,7 +3360,7 @@ async def update_teg_policy(
             logger.error(f"OWL-FIX: update_teg_policy unexpected error: {type(e).__name__}: {e}\n{traceback.format_exc()}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Internal error in update_teg_policy: {type(e).__name__}: {e}"
+                detail=internal_detail(e, 'Internal error in update_teg_policy', logger)
             )
 
 @router.delete("/policies/{policy_id}", summary="Delete TEG Policy")
@@ -5780,7 +5782,7 @@ async def _fx_cross_currency_swap(
         except Exception as e:
             # §REPATLANE (V0603): the swap prices before its first leg, so this refusal says that nothing moved
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                                detail=f"FX pool: reserve read failed {NO_FUNDS_MOVED}: {e}")
+                                detail=internal_detail(e, f"FX pool: reserve read failed {NO_FUNDS_MOVED}", logger))
         _src_is_avt = (source_currency == "AVT")
         x_avt = local_res if _src_is_avt else dest_res
         y_bvt = dest_res if _src_is_avt else local_res
@@ -6053,7 +6055,7 @@ async def fx_quote(
             dest_res = await _fx_read_reserve(dest_teg_base, admin_key)
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                                detail=f"FX pool quote: reserve read failed: {e}")
+                                detail=internal_detail(e, 'FX pool quote: reserve read failed', logger))
         _src_is_avt = (local_ccy == "AVT")
         x_avt = local_res if _src_is_avt else dest_res
         y_bvt = dest_res if _src_is_avt else local_res
@@ -6191,7 +6193,7 @@ async def fx_pool(
         dest_res = await _fx_read_reserve(dest_teg_base, admin_key)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                            detail=f"FX pool: reserve read failed: {e}")
+                            detail=internal_detail(e, 'FX pool: reserve read failed', logger))
     x = local_res if local_ccy == "AVT" else dest_res   # AVT reserve
     y = dest_res if local_ccy == "AVT" else local_res   # BVT reserve
     if x <= 0 or y <= 0:
@@ -10024,7 +10026,7 @@ async def cross_teg_treasury_fund(
     # from routed-fiat webhook), else generate one.
     correlation_id = request.correlation_id or str(uuid.uuid4())
     logger.info(
-        f"[CROSS-TEG TREASURY] Admin {current_admin.email} requesting {request.amount} AVT "
+        f"[CROSS-TEG TREASURY] Admin {email_for_log(current_admin.email)} requesting {request.amount} AVT "
         f"→ {request.target_registry} (reason: {request.reason}, corr: {correlation_id})"
     )
 
@@ -10224,7 +10226,7 @@ async def cross_teg_treasury_fund(
 
     logger.info(
         f"[CROSS-TEG TREASURY] SUCCESS: {request.amount} AVT from TEG-A → {request.target_registry} "
-        f"(corr: {correlation_id}, admin: {current_admin.email})"
+        f"(corr: {correlation_id}, admin: {email_for_log(current_admin.email)})"
     )
 
     peer_resp = send_data.get("peer_response") or {}

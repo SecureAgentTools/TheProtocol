@@ -32,8 +32,11 @@ from agentvault_registry.core.sandbox_creds import (  # §SBROTATE 2026-08-08
     SANDBOX_TUTORIAL_EMAIL, SANDBOX_TUTORIAL_PASSWORD,
 )
 from agentvault_registry.api_tests.db_verifier import db_verifier
+from agentvault_registry.api_tests.core import log_safe as _ls   # V0653 (am) item 13: shapes in the log, never values
 import logging
 import httpx
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 # OWL29: Configurable target URL for API test calls
 # In Docker: set via API_TEST_TARGET_URL env var in docker-compose.yml
@@ -826,7 +829,7 @@ async def _onboard_agent_and_get_token(client, dev_token: str, label: str = "pri
     client_id = create_data.get("client_id")
     client_secret = create_data.get("client_secret")
     if not all([agent_did, client_id, client_secret]):
-        logger.error(f"P8.27: Missing fields in create_agent response for {label}: {create_data}")
+        logger.error(f"P8.27: Missing fields in create_agent response for {label}: {_ls.shape(create_data)}")
         return None, None, None, None
     logger.info(f"P8.27: {label} agent onboarded: did={agent_did}, client_id={client_id}")
 
@@ -1105,7 +1108,7 @@ async def get_sandbox_tokens() -> tuple:
                     _sandbox_tokens["recovery_password"] = _recovery_password
                     DYNAMIC_VALUES["recovery_key"] = _recovery_keys[0]
                     DYNAMIC_VALUES["recovery_email"] = _recovery_email
-                    logger.info(f"GROUP9: Captured recovery_key from registration of {_recovery_email}")
+                    logger.info(f"GROUP9: Captured recovery_key from registration of {email_for_log(_recovery_email)}")
                 else:
                     logger.warning("GROUP9: Registration succeeded but no recovery_keys returned")
             else:
@@ -2527,7 +2530,7 @@ async def _ensure_invitation(dev_token: str) -> Optional[str]:
                 inv_token = inv_data.get("invitation_token") or inv_data.get("token")
                 if inv_token:
                     DYNAMIC_VALUES["invitation_token"] = inv_token
-                    logger.info(f"P8.28 prereq: Invitation token obtained ({inv_token[:20]}...)")
+                    logger.info(f"P8.28 prereq: Invitation token obtained ({_ls.secret(inv_token)})")
                     # Step 3: Login as developer@test.sandbox for accept endpoint
                     lr = await client.post(
                         "/api/v1/auth/login",
@@ -2682,7 +2685,7 @@ async def _ensure_template(dev_token: str) -> Optional[str]:
         DYNAMIC_VALUES["template_id"] = str(rd.get("template_id") or rd.get("id"))
         logger.info(f"P8.28b prereq: Created template {DYNAMIC_VALUES['template_id']}")
         return DYNAMIC_VALUES["template_id"]
-    logger.error(f"P8.28b prereq: template creation failed ({r.get('statusCode')}: {r.get('responseData', {})})")
+    logger.error(f"P8.28b prereq: template creation failed ({r.get('statusCode')}: {_ls.refusal(r.get('responseData', {}))})")
     return None
 
 
@@ -2720,7 +2723,7 @@ async def _ensure_deployment(dev_token: str, agent_token: str) -> Optional[str]:
         DYNAMIC_VALUES["deployment_id"] = str(rd.get("deployment_id") or rd.get("id"))
         logger.info(f"P8.28b prereq: Created deployment {DYNAMIC_VALUES['deployment_id']}")
         return DYNAMIC_VALUES["deployment_id"]
-    logger.error(f"P8.28b prereq: deployment creation failed ({r.get('statusCode')}: {r.get('responseData', {})})")
+    logger.error(f"P8.28b prereq: deployment creation failed ({r.get('statusCode')}: {_ls.refusal(r.get('responseData', {}))})")
     return None
 
 
@@ -3148,7 +3151,7 @@ async def _setup_organizations(dev_token: str, agent_token: str):
                 inv_data = ir.json()
                 _accept_token = inv_data.get("token") or inv_data.get("invitation_token")
                 DYNAMIC_VALUES["accept_test_token"] = _accept_token
-                logger.info(f"P8.28c: Invitation created (token={str(_accept_token)[:20]}...)")
+                logger.info(f"P8.28c: Invitation created (token {_ls.secret(_accept_token)})")
                 # Accept it as dev2 so dev2 becomes a real member
                 if _accept_token and dev2_tok:
                     ar = await client.post(
@@ -5502,9 +5505,9 @@ async def test_endpoint(
                             body = {"token": _apt_token, "verifier_did": _agent2_did}
                         else:
                             body = {"token": _apt_token}
-                        logger.info(f"FIX-A2A-PAYMENT: {original_path} body using fresh token={_apt_token[:15]}...")
+                        logger.info(f"FIX-A2A-PAYMENT: {original_path} body using fresh token {_ls.secret(_apt_token)}")
                     else:
-                        logger.warning(f"FIX-A2A-PAYMENT: failed to acquire apt_ token for {original_path}; auth_resp={str(_auth_resp)[:200]}")
+                        logger.warning(f"FIX-A2A-PAYMENT: failed to acquire apt_ token for {original_path}; its answer: {_ls.refusal(_auth_resp)}")
                 except Exception as _e:
                     logger.warning(f"FIX-A2A-PAYMENT: prereq pre-call failed: {_e}")
         else:
@@ -5832,7 +5835,7 @@ async def test_endpoint(
                 
                 if create_result.get("healthy") and create_result.get("responseData"):
                     key_data = create_result["responseData"]
-                    logger.info(f"API key creation response: {json.dumps(key_data, indent=2)}")
+                    logger.info(f"API key creation response: {_ls.shape(key_data)}")
                     
                     # Try different possible fields for the key ID
                     key_id = None
@@ -5869,7 +5872,7 @@ async def test_endpoint(
                                         logger.info(f"Found created API key via list: {key['id']}")
                                         break
                 else:
-                    logger.error(f"Failed to create API key: {create_result}")
+                    logger.error(f"Failed to create API key: {_ls.outcome(create_result)}")
         except Exception as e:
             logger.error(f"Failed to create API key for deletion test: {e}")
     
@@ -5944,7 +5947,7 @@ async def test_endpoint(
                 else:
                     logger.error("Created webhook but no ID in response")
             else:
-                logger.error(f"Failed to create webhook: {create_result}")
+                logger.error(f"Failed to create webhook: {_ls.outcome(create_result)}")
         except Exception as e:
             logger.error(f"Failed to create webhook for {method} test: {e}")
     
@@ -5973,7 +5976,7 @@ async def test_endpoint(
         if body and isinstance(body, dict) and "bootstrap_token" in body:
             # Extract the token from body (where UI wrongly puts it)
             ui_token = body.get("bootstrap_token")
-            logger.warning(f"UI sent bootstrap_token in body: {ui_token} - will move to header")
+            logger.warning(f"UI sent bootstrap_token in body: {_ls.secret(ui_token)} - will move to header")
             # Remove it from body since it shouldn't be there
             body.pop("bootstrap_token", None)
         
@@ -5995,11 +5998,11 @@ async def test_endpoint(
                 token_data = token_result["responseData"]
                 if "bootstrap_token" in token_data:
                     bootstrap_token = token_data["bootstrap_token"]
-                    logger.info(f"Got fresh bootstrap token: {bootstrap_token} (expires in {token_data.get('expires_in')} seconds)")
+                    logger.info(f"Got fresh bootstrap token: {_ls.secret(bootstrap_token)} (expires in {token_data.get('expires_in')} seconds)")
                 else:
                     logger.error("No bootstrap_token in response")
             else:
-                logger.error(f"Failed to get bootstrap token: {token_result}")
+                logger.error(f"Failed to get bootstrap token: {_ls.outcome(token_result)}")
         except Exception as e:
             logger.error(f"Failed to request bootstrap token: {e}")
     
@@ -6240,7 +6243,7 @@ async def test_endpoint(
                 else:
                     logger.error("Created contract but no ID in response")
             else:
-                logger.error(f"Failed to create contract: {create_result}")
+                logger.error(f"Failed to create contract: {_ls.outcome(create_result)}")
         except Exception as e:
             logger.error(f"Failed to create contract for test: {e}")
     
@@ -6338,7 +6341,7 @@ async def test_endpoint(
                     if not body:
                         body = {"ruling": "IN_FAVOR_OF_COMPLAINANT"}
             else:
-                logger.error(f"Failed to create dispute for ruling: {create_result}")
+                logger.error(f"Failed to create dispute for ruling: {_ls.outcome(create_result)}")
         except Exception as e:
             logger.error(f"Failed to create dispute for ruling test: {e}")
     
@@ -6395,7 +6398,7 @@ async def test_endpoint(
                 else:
                     logger.error("Created dispute but no ID in response")
             else:
-                logger.error(f"Failed to create dispute: {create_result}")
+                logger.error(f"Failed to create dispute: {_ls.outcome(create_result)}")
         except Exception as e:
             logger.error(f"Failed to create dispute for test: {e}")
     
@@ -6442,7 +6445,7 @@ async def test_endpoint(
                 else:
                     logger.error("Created proposal but no ID in response")
             else:
-                logger.error(f"Failed to create proposal: {create_result}")
+                logger.error(f"Failed to create proposal: {_ls.outcome(create_result)}")
         except Exception as e:
             logger.error(f"Failed to create proposal for test: {e}")
     
@@ -6595,7 +6598,7 @@ async def test_endpoint(
                 else:
                     logger.error("Created dispute log but no ID in response")
             else:
-                logger.error(f"Failed to create TEG dispute log: {create_result}")
+                logger.error(f"Failed to create TEG dispute log: {_ls.outcome(create_result)}")
         except Exception as e:
             logger.error(f"Failed to create TEG dispute log: {e}")
     
@@ -6774,8 +6777,8 @@ async def test_endpoint(
         if correct_body:
             body = correct_body
             logger.info(f"Forcing correct body for {original_path}")
-            logger.info(f"UI sent: {json.dumps(ui_sent_body, indent=2)}")
-            logger.info(f"Using correct body: {json.dumps(body, indent=2)}")
+            logger.info(f"UI sent: {_ls.shape(ui_sent_body)}")
+            logger.info(f"Using correct body: {_ls.shape(body)}")
     
     # FORCE correct body for pipeline-templates — UI sends "config" key (wrong), missing "category"
     # service does template_data['category'] directly → KeyError → 500 without this.
@@ -6791,8 +6794,8 @@ async def test_endpoint(
         if correct_body:
             body = correct_body
             logger.info(f"Forcing correct body for {original_path} {method}")
-            logger.info(f"UI sent: {json.dumps(ui_sent_body, indent=2) if ui_sent_body else 'None'}")
-            logger.info(f"Using correct body: {json.dumps(body, indent=2)}")
+            logger.info(f"UI sent: {_ls.shape(ui_sent_body)}")
+            logger.info(f"Using correct body: {_ls.shape(body)}")
         else:
             logger.warning(f"No correct body found for {original_path}")
     
@@ -6810,8 +6813,8 @@ async def test_endpoint(
                 if DYNAMIC_VALUES.get("agent_did"):
                     body["client_agent_did"] = DYNAMIC_VALUES["agent_did"]
                 logger.info(f"Forcing correct body for {original_path}")
-                logger.info(f"UI sent: {json.dumps(ui_sent_body, indent=2) if ui_sent_body else 'None'}")
-                logger.info(f"Using correct body: {json.dumps(body, indent=2)}")
+                logger.info(f"UI sent: {_ls.shape(ui_sent_body)}")
+                logger.info(f"Using correct body: {_ls.shape(body)}")
             else:
                 logger.warning(f"No correct body found for {original_path}")
     
@@ -6826,8 +6829,8 @@ async def test_endpoint(
             if DYNAMIC_VALUES.get("agent_did"):
                 body["complainant_did"] = DYNAMIC_VALUES["agent_did"]
             logger.info(f"Forcing correct body for {original_path}")
-            logger.info(f"UI sent: {json.dumps(ui_sent_body, indent=2) if ui_sent_body else 'None'}")
-            logger.info(f"Using correct body: {json.dumps(body, indent=2)}")
+            logger.info(f"UI sent: {_ls.shape(ui_sent_body)}")
+            logger.info(f"Using correct body: {_ls.shape(body)}")
         else:
             logger.warning(f"No correct body found for {original_path}")
     
@@ -6839,8 +6842,8 @@ async def test_endpoint(
         if correct_body:
             body = correct_body.copy()
             logger.info(f"Forcing correct body for {original_path}")
-            logger.info(f"UI sent: {json.dumps(ui_sent_body, indent=2) if ui_sent_body else 'None'}")
-            logger.info(f"Using correct body: {json.dumps(body, indent=2)}")
+            logger.info(f"UI sent: {_ls.shape(ui_sent_body)}")
+            logger.info(f"Using correct body: {_ls.shape(body)}")
         else:
             logger.warning(f"No correct body found for {original_path}")
     
@@ -6852,8 +6855,8 @@ async def test_endpoint(
         if correct_body:
             body = correct_body.copy()
             logger.info(f"Forcing correct body for {original_path}")
-            logger.info(f"UI sent: {json.dumps(ui_sent_body, indent=2) if ui_sent_body else 'None'}")
-            logger.info(f"Using correct body: {json.dumps(body, indent=2)}")
+            logger.info(f"UI sent: {_ls.shape(ui_sent_body)}")
+            logger.info(f"Using correct body: {_ls.shape(body)}")
         else:
             logger.warning(f"No correct body found for {original_path}")
     
@@ -6865,8 +6868,8 @@ async def test_endpoint(
         if correct_body:
             body = correct_body.copy()
             logger.info(f"Forcing correct body for {original_path}")
-            logger.info(f"UI sent: {json.dumps(ui_sent_body, indent=2) if ui_sent_body else 'None'}")
-            logger.info(f"Using correct body with agent_builder_type field: {json.dumps(body, indent=2)}")
+            logger.info(f"UI sent: {_ls.shape(ui_sent_body)}")
+            logger.info(f"Using correct body with agent_builder_type field: {_ls.shape(body)}")
         else:
             logger.warning(f"No correct body found for {original_path}")
     
@@ -7036,11 +7039,11 @@ async def test_endpoint(
                         logger.info(f"Created test federation peer with ID: {DYNAMIC_VALUES['peer_id']}")
                     else:
                         logger.error("Created peer but no ID in response")
-                        logger.error(f"Response data: {json.dumps(peer_data, indent=2)}")
+                        logger.error(f"Response data: {_ls.shape(peer_data)}")
                 else:
-                    logger.error(f"Failed to create federation peer: {create_result}")
+                    logger.error(f"Failed to create federation peer: {_ls.outcome(create_result)}")
                     if create_result.get("responseData"):
-                        logger.error(f"Error details: {json.dumps(create_result['responseData'], indent=2)}")
+                        logger.error(f"Error details: {_ls.refusal(create_result['responseData'])}")
 
             # Update the path with the peer ID if we have one
             if DYNAMIC_VALUES.get("peer_id"):
@@ -7090,7 +7093,7 @@ async def test_endpoint(
                 else:
                     logger.error(f"Created policy but no ID in response. Keys: {list(policy_data.keys())}")
             else:
-                logger.error(f"Failed to create TEG policy: {create_result}")
+                logger.error(f"Failed to create TEG policy: {_ls.outcome(create_result)}")
         except Exception as e:
             logger.error(f"Failed to create TEG policy for test: {e}")
     
@@ -7489,7 +7492,7 @@ async def test_endpoint(
                     logger.error("No bootstrap token received")
                     path = "/agents/did:cos:test-agent-logs/logs"
             else:
-                logger.error(f"Failed to get bootstrap token: {token_result}")
+                logger.error(f"Failed to get bootstrap token: {_ls.outcome(token_result)}")
                 path = "/agents/did:cos:test-agent-logs/logs"
         except Exception as e:
             logger.error(f"Failed to create test agent for logs: {e}")
@@ -7682,7 +7685,7 @@ async def test_endpoint(
                         if body is not None:
                             kwargs["content"] = json.dumps(body)
                             headers["Content-Type"] = "application/json"
-                            logger.info(f"Sending body for {original_path}: {json.dumps(body, indent=2)}")
+                            logger.info(f"Sending body for {original_path}: {_ls.shape(body)}")
                         
                         start_time = time.time()
                         response = await client.request(**kwargs)
@@ -8190,7 +8193,7 @@ async def test_endpoint(
                     # Extract email from the request body
                     if body and isinstance(body, dict) and 'email' in body:
                         email = body['email']
-                        logger.info(f"Auto-verifying newly registered account: {email}")
+                        logger.info(f"Auto-verifying newly registered account: {email_for_log(email)}")
                         
                         # Give the database a moment to complete the transaction
                         await asyncio.sleep(0.5)
@@ -8199,10 +8202,10 @@ async def test_endpoint(
                         try:
                             verified = db_verifier.verify_developer_account(email)
                             if verified:
-                                logger.info(f"Successfully verified test account: {email}")
+                                logger.info(f"Successfully verified test account: {email_for_log(email)}")
                                 result['_verified'] = True
                             else:
-                                logger.warning(f"Failed to verify test account: {email}")
+                                logger.warning(f"Failed to verify test account: {email_for_log(email)}")
                         except Exception as e:
                             logger.error(f"Error verifying account: {e}")
                 
@@ -8636,7 +8639,7 @@ async def test_endpoint(
                 if body is not None:
                     kwargs["content"] = json.dumps(body)
                     headers["Content-Type"] = "application/json"
-                    logger.info(f"Sending body for {original_path}: {json.dumps(body, indent=2)}")
+                    logger.info(f"Sending body for {original_path}: {_ls.shape(body)}")
                 
                 start_time = time.time()
                 response = await client.request(**kwargs)
@@ -9354,17 +9357,17 @@ async def test_endpoint(
         if path == "/auth/register" and result.get('statusCode') == 201:
             if body and isinstance(body, dict) and 'email' in body:
                 email = body['email']
-                logger.info(f"Auto-verifying newly registered account: {email}")
+                logger.info(f"Auto-verifying newly registered account: {email_for_log(email)}")
 
                 await asyncio.sleep(0.5)
 
                 try:
                     verified = db_verifier.verify_developer_account(email)
                     if verified:
-                        logger.info(f"Successfully verified test account: {email}")
+                        logger.info(f"Successfully verified test account: {email_for_log(email)}")
                         result['_verified'] = True
                     else:
-                        logger.warning(f"Failed to verify test account: {email}")
+                        logger.warning(f"Failed to verify test account: {email_for_log(email)}")
                 except Exception as e:
                     logger.error(f"Error verifying account: {e}")
 
@@ -9943,7 +9946,7 @@ async def test_flow(
         logger.error(f"Error executing flow {flow_name}: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error executing flow: {str(e)}"
+            detail=internal_detail(e, 'Error executing flow', logger)
         )
 
 @router.post("/api-test/eager-bootstrap", summary="Eager Bootstrap All Session Fixtures",
@@ -10631,7 +10634,7 @@ async def self_reset(request: Request):
         }
     except Exception as e:
         logger.error(f"Self-reset failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Self-reset failed: {str(e)[:500]}")
+        raise HTTPException(status_code=500, detail=internal_detail(e, 'Self-reset failed', logger))
 
 
 # ═══════════════════════════════════════════════════════════════════════

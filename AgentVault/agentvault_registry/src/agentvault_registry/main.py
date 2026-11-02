@@ -3484,98 +3484,10 @@ def create_app() -> FastAPI:
             return Response(content=json.dumps({"error": _refused[1], "service": service, "callable": False}),
                             status_code=_refused[0], media_type="application/json")
 
-        # Build A2A request — preprocess inputs to be fault-tolerant
-        import re as _re
-        raw = str(input_data).strip()
-        parts = [{"text": raw}]
-        data_part = {"task_type": task_type} if task_type else {}
-
-        if service == "weather":
-            # Strip country suffixes — geocoder works better with just city
-            city = _re.sub(r',?\s*(germany|deutschland|usa|us|uk|france|japan|china|india|spain|italy|australia|canada|brazil|mexico|russia|turkey|netherlands|sweden|norway|switzerland|austria|poland|belgium|czech|denmark|finland|greece|hungary|ireland|portugal|romania|thailand|vietnam|indonesia|philippines|malaysia|singapore|korea|south\s*korea|new\s*zealand|south\s*africa|egypt|morocco|argentina|chile|colombia|peru|israel|uae|saudi\s*arabia)\s*$', '', raw, flags=_re.IGNORECASE).strip()
-            city = _re.sub(r',?\s*\w{2}$', '', city).strip() if ',' in city else city  # Strip 2-letter country codes after comma
-            data_part["city"] = city or raw
-
-        elif service == "currency":
-            # Parse natural language: "100 USD to EUR", "100", "USD EUR", "convert 50 euros to dollars"
-            raw_up = raw.upper()
-            # Common currency name mapping
-            _cnames = {"DOLLAR": "USD", "DOLLARS": "USD", "EURO": "EUR", "EUROS": "EUR",
-                       "POUND": "GBP", "POUNDS": "GBP", "YEN": "JPY", "YUAN": "CNY",
-                       "FRANC": "CHF", "FRANCS": "CHF", "RUPEE": "INR", "RUPEES": "INR",
-                       "KRONA": "SEK", "KRONE": "NOK", "WON": "KRW", "REAL": "BRL", "REAIS": "BRL"}
-            for name, code in _cnames.items():
-                raw_up = raw_up.replace(name, code)
-            # Try pattern: amount FROM to TO
-            m = _re.search(r'(\d+(?:[.,]\d+)?)\s*([A-Z]{3})\s+(?:TO|IN|INTO|->|→)\s*([A-Z]{3})', raw_up)
-            if not m:
-                # Try: FROM to TO (no amount)
-                m2 = _re.search(r'([A-Z]{3})\s+(?:TO|IN|INTO|->|→)\s*([A-Z]{3})', raw_up)
-                if m2:
-                    data_part["currency_from"] = m2.group(1)
-                    data_part["currency_to"] = m2.group(2)
-                    data_part["amount"] = 1.0
-                else:
-                    # Try: just amount + currency (assume USD to EUR)
-                    m3 = _re.search(r'(\d+(?:[.,]\d+)?)\s*([A-Z]{3})?', raw_up)
-                    if m3:
-                        amt = float(m3.group(1).replace(',', '.'))
-                        frm = m3.group(2) or "USD"
-                        data_part["currency_from"] = frm
-                        data_part["currency_to"] = "EUR" if frm == "USD" else "USD"
-                        data_part["amount"] = amt
-                    else:
-                        data_part["currency_from"] = "USD"
-                        data_part["currency_to"] = "EUR"
-                        data_part["amount"] = 1.0
-            else:
-                data_part["amount"] = float(m.group(1).replace(',', '.'))
-                data_part["currency_from"] = m.group(2)
-                data_part["currency_to"] = m.group(3)
-            data_part["task_type"] = "currency_convert"
-            data_part["query"] = raw
-
-        elif service == "ip":
-            # Clean IP — strip "ip:", whitespace, etc.
-            ip_clean = _re.sub(r'^(?:ip[:\s]+|address[:\s]+)', '', raw, flags=_re.IGNORECASE).strip()
-            data_part["ip"] = ip_clean or raw
-
-        elif service == "dns":
-            # Clean domain — strip protocols, paths, whitespace
-            domain = _re.sub(r'^(?:https?://)', '', raw, flags=_re.IGNORECASE).split('/')[0].strip().rstrip('.')
-            data_part["domain"] = domain or raw
-
-        elif service == "timezone":
-            # Strip country suffixes same as weather
-            city = _re.sub(r',?\s*(germany|deutschland|usa|us|uk|france|japan|china|india|spain|italy|australia|canada|brazil)\s*$', '', raw, flags=_re.IGNORECASE).strip()
-            data_part["city"] = city or raw
-
-        elif service == "units":
-            data_part["query"] = raw
-
-        elif service == "text":
-            data_part["text"] = raw
-
-        elif service == "cron":
-            # Auto-detect if it's an expression or description
-            if _re.match(r'^[\d*/,\-]+(\s+[\d*/,\-]+){4}$', raw.strip()):
-                data_part["expression"] = raw.strip()
-                data_part["task_type"] = "cron_explain"
-            else:
-                data_part["description"] = raw
-
-        elif service == "password":
-            ptype = raw.lower().strip()
-            data_part["type"] = ptype if ptype in ("password", "passphrase", "api_key", "uuid") else "password"
-            data_part["length"] = 24
-
-        elif service == "converter":
-            data_part["converter"] = task_type
-            data_part["content"] = raw
-
-        if data_part:
-            # Put data part FIRST so agents that iterate parts pick structured data before raw text
-            parts.insert(0, {"data": data_part})
+        # Build A2A request — preprocess inputs to be fault-tolerant (V0653 (am) item 3: the parsers, with a bound on
+        # what they read, in core/showcase_input.py)
+        from agentvault_registry.core.showcase_input import showcase_parts as _showcase_parts
+        parts = _showcase_parts(service, input_data, task_type)
 
         payload = {
             "jsonrpc": "2.0",
@@ -5715,6 +5627,14 @@ def create_app() -> FastAPI:
                 asyncio.create_task(start_phone_session_reaper())
             else:
                 logger.info("Phone Fabric DISABLED (PHONE_FABRIC_ENABLED=false)")
+
+            # V0653: org.session_offline — a session's status line lapsed, its owner hears it once (in the app)
+            if os.getenv("SESSION_OFFLINE_WATCH_ENABLED", "true").lower() != "false":
+                from agentvault_registry.background_tasks.session_offline_watch import (
+                    start_session_offline_watch,
+                )
+                logger.info("Starting worker: session_offline_watch (org.session_offline)")
+                asyncio.create_task(start_session_offline_watch())
 
             # THE GUILD — order reaper (deadline auto-refund / ETA flag). Gated GUILD_ENABLED.
             if os.getenv("GUILD_ENABLED", "false").lower() == "true":

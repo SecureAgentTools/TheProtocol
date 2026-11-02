@@ -140,3 +140,18 @@ export function foldThreads(messages: ThreadMsg[], o: {
   })
   return { list, bars, inThread, rootOf }
 }
+
+/**
+ * V0653 (al) (order gwo_2f0d7d69673b8f9c9392e5dc), his report in the sessions' room (seq 665): a request "showed timestamp
+ * 6:37 but the previous messages says 8:31pm". It was right: a thread is drawn where its latest message is, so its
+ * root sat among later messages wearing its own earlier time (the request at 6:37 pm, its decision and its use at 9 pm).
+ * The root now also says when the thread moved there: its latest reply's time, when that is later than the root.
+ */
+export function lastReplyAt(root: ThreadMsg | null | undefined, bar: ThreadBar | null | undefined): string | null {
+  const at = bar?.last?.created_at
+  if (!root || !bar || !bar.count || !at) return null
+  const a = Date.parse(String(at))
+  const r = Date.parse(String(root.created_at || ''))
+  if (!Number.isFinite(a)) return null
+  return !Number.isFinite(r) || a > r ? String(at) : null
+}

@@ -9,6 +9,7 @@ import asyncio
 import sys
 import os
 import logging
+from agentvault_registry.api_tests.core import log_safe as _ls   # V0653 (am) item 13: shapes in the log, never values
 
 # Add parent directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -62,7 +63,7 @@ async def validate_teg_module():
         logger.info(f"✓ Single endpoint test completed. Healthy: {result['healthy']}")
         if not result['healthy']:
             logger.warning(f"  Error: {result.get('error')}")
-            logger.warning(f"  Response: {result.get('responseData')}")
+            logger.warning(f"  Response: {_ls.refusal(result.get('responseData'))}")
         
         # Test 4: Run diagnostics
         logger.info("\n4. Running TEG diagnostics...")

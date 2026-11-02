@@ -22,6 +22,7 @@ from ..models import (
     Message, Task, TaskState, TextPart, DataPart, FilePart, Artifact,
 )
 from ..agent.base import BaseA2AAgent
+from ..agent.caller_errors import caller_message   # V0653 (am) item 2
 from .base import BaseBridge
 
 logger = logging.getLogger(__name__)
@@ -183,7 +184,7 @@ class GoogleA2ABridge(BaseBridge):
                 task = await agent.handle_task_get(task_id)
                 return tp_task_to_google_task(task)
             except Exception as e:
-                return JSONResponse(status_code=404, content={"error": str(e)})
+                return JSONResponse(status_code=404, content={"error": caller_message(e, "Task request failed", logger)})
 
         @router.post("/tasks/{task_id}:cancel")
         async def cancel_task(task_id: str):
@@ -191,6 +192,6 @@ class GoogleA2ABridge(BaseBridge):
                 ok = await agent.handle_task_cancel(task_id)
                 return {"id": task_id, "status": {"state": "canceled" if ok else "failed"}}
             except Exception as e:
-                return JSONResponse(status_code=404, content={"error": str(e)})
+                return JSONResponse(status_code=404, content={"error": caller_message(e, "Task request failed", logger)})
 
         return router

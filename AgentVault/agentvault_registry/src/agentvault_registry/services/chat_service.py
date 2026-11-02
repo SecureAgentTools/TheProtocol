@@ -42,6 +42,7 @@ from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Set
 from sqlalchemy import DateTime, bindparam, select, text as sa_text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from agentvault_registry.models import (
     ChatBlock,
@@ -246,6 +247,43 @@ async def deliver_card_update(db: AsyncSession, conv: Conversation, message: dic
     spawn(fan_out_card_update(conv.id, conv.kind, message, recipients, updater.display_name or "",
                               sender_owner_dev_id=owner),
           what=f"the update of card {message.get('id')} (rev {message.get('card_rev')}) in {conv.id}")
+
+
+PROGRESS_VERDICT_TAGS = {"passed": "white_check_mark", "failed": "x", "cancelled": "heavy_minus_sign"}
+
+
+async def notify_progress_finished(db: AsyncSession, conv: Conversation, message: dict,
+                                   updater: Actor) -> Optional[List[int]]:
+    """V0653 (session-lead, the sessions' room seq 716; his approval of the missing notices, the gaps file
+    NOTIFICATION_GAPS_2026-10-31.md): a progress card's verdict (passed, failed, cancelled) is news to the thread's
+    people. chat.progress_finished goes, in the app (the catalog's default), to every developer who takes part in the
+    thread and has not muted it, the updater excepted when the updater is a developer. A session's verdict reaches the
+    person who runs it: an agent's owner is not its sender, so a proof a session ran reaches its owner in the room.
+    Called after the closing update committed (a closed card takes no more updates, so a changed update that leaves it
+    closed is the closing one). Returns the developer ids told, or None when the update is not a verdict."""
+    from . import chat_live_cards as lc
+    card = message.get("card") if isinstance(message.get("card"), dict) else {}
+    if card.get("type") != "progress" or not lc.closed_reason(card):
+        return None
+    recipients = await recipients_snapshot(db, conv, updater)
+    devs = {int(r["developer_id"]) for r in recipients
+            if r.get("ptype") == "developer" and r.get("developer_id") and not r.get("muted")}
+    if updater.ptype == "developer" and updater.developer_id:
+        devs.discard(int(updater.developer_id))
+    if not devs:
+        return []
+    data = card.get("data") if isinstance(card.get("data"), dict) else {}
+    state = str(data.get("state") or "")
+    who = updater.display_name or "a member"
+    note = str(data.get("note") or "").strip()
+    from agentvault_registry.background_tasks import push_notify
+    push_notify.spawn_notice(push_notify.notify(
+        "chat.progress_finished", sorted(devs),
+        title=f"{str(data.get('title') or 'Progress')[:96]}: {state}",
+        message=(f"{who}: {note}" if note else f"{who} closed it {state}")[:PREVIEW_LEN],
+        tags=PROGRESS_VERDICT_TAGS.get(state, "white_check_mark"),
+        click=f"/ui#/pocket/ourchat/{conv.id}"))
+    return sorted(devs)
 
 
 # §TWOAGENT #26 (2026-09-23): the refusal used to promise that federation would carry a dm to such an agent, which is not
@@ -1074,12 +1112,16 @@ def result_client_ref(client_ref: str) -> str:
 class Actor:
     """Normalized authenticated principal."""
 
-    __slots__ = ("ptype", "developer_id", "agent_did", "display_name", "system_id", "sent_by")
+    __slots__ = ("ptype", "developer_id", "agent_did", "display_name", "system_id", "sent_by", "sent_with")
 
     def __init__(self, ptype: str, developer_id: Optional[int] = None,
                  agent_did: Optional[str] = None, display_name: str = "",
-                 system_id: Optional[str] = None, sent_by: Optional[int] = None):
+                 system_id: Optional[str] = None, sent_by: Optional[int] = None,
+                 sent_with: Optional[str] = None):
         self.ptype = ptype
+        # V0653 (w): the credential this request came with ("session", "api_key" or "agent", from the auth dependency);
+        # None for a principal the registry builds itself (a rail, a federated delivery, a worker)
+        self.sent_with = sent_with
         # V0652 (aj): for an agent acting through its owner's session token, the owner (the message says "sent by its
         # owner"); None for every other principal
         self.sent_by = sent_by if ptype == "agent" else None
@@ -1113,10 +1155,10 @@ def actor_from_auth(actor_dict: dict) -> Actor:
         agent = actor_dict.get("agent")
         return Actor("agent", agent_did=actor_dict["agent_did"],
                      display_name=getattr(agent, "name", None) or actor_dict["agent_did"],
-                     sent_by=actor_dict.get("owner_session"))
+                     sent_by=actor_dict.get("owner_session"), sent_with=actor_dict.get("credential"))
     dev = actor_dict["developer"]
     return Actor("developer", developer_id=int(dev.id),
-                 display_name=developer_display_name(dev))
+                 display_name=developer_display_name(dev), sent_with=actor_dict.get("credential"))
 
 
 # ---------------------------------------------------------------------------
@@ -1835,6 +1877,7 @@ async def insert_message(db: AsyncSession, conv: Conversation,
         sender_id=sender.sender_id, kind=kind, body=body, card=card,
         reply_to=reply_to, client_ref=client_ref, mentions=mentions,
         sent_by_developer_id=getattr(sender, "sent_by", None),   # V0652 (aj)
+        sent_with=getattr(sender, "sent_with", None),             # V0653 (w): session, api_key or agent; None: no caller
         created_at=message_clock())   # V0650 (g): stamped once it holds its seq, not at its transaction's start
     db.add(msg)
     # Sending implies having read up to your own message — otherwise your own
@@ -1896,6 +1939,8 @@ def serialize_message(m: ChatMessage) -> dict:
             "mentions": list(getattr(m, "mentions", None) or []),   # V0650 (h)
             # V0652 (aj): an agent's message its owner sent through their own session (who typed it, not an id)
             "sent_by_owner": bool(getattr(m, "sent_by_developer_id", None)),
+            # V0653 (w): how the line was sent ("session", "api_key", "agent"); null before V0653 or with no caller
+            "sent_with": getattr(m, "sent_with", None),
             "created_at": m.created_at.isoformat() if m.created_at else None,
             "edited_at": m.edited_at.isoformat() if m.edited_at else None,
             # V0652 (aa): a card updated in place says how often and when (0 and null until its first update)
@@ -2303,8 +2348,18 @@ async def list_messages(db: AsyncSession, conversation_id: str, actor: Actor,
 async def mark_read(db: AsyncSession, conversation_id: str, actor: Actor, seq: int) -> dict:
     conv = await _get_conversation(db, conversation_id)
     my_row = await resolve_membership(db, conv, actor)
-    new_seq = max(int(my_row.last_read_seq or 0), min(int(seq), int(conv.last_seq or 0)))
-    my_row.last_read_seq = new_seq          # monotonic: never decreases
+    # V0654: the floor rises in ONE statement on the reader's own row (GREATEST in SQL), never read in Python and written
+    # back. Two marks in flight at once (a page marks one per message it takes in; a phone and a tab) both read the old
+    # floor, and the lower one committing last stepped it back, turning read messages unread again: check 140 of V0653's
+    # console proof (session-tester's read, the sessions' room seq 944-946; the max() here since §OURSTATE-1). Under
+    # READ COMMITTED the second UPDATE waits for the first and re-reads the row it locked, so the floor only ever rises.
+    # The household rows below were already written this way.
+    await db.flush()   # a row resolve_membership just added must exist before the UPDATE names it
+    res = await db.execute(sa_text(
+        "UPDATE conversation_participants SET last_read_seq = GREATEST(COALESCE(last_read_seq, 0), :s) "
+        "WHERE id = :pid RETURNING last_read_seq"), {"s": min(int(seq), int(conv.last_seq or 0)), "pid": my_row.id})
+    new_seq = int(res.scalar_one())
+    set_committed_value(my_row, "last_read_seq", new_seq)   # the row in this session agrees, with nothing left to flush
     if actor.ptype == "developer":
         # The unread badge sums the developer's rows PLUS their agents' rows
         # (plan §4) — reading the thread as the human clears the whole

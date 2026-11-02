@@ -33,6 +33,7 @@ from sqlalchemy.orm import selectinload
 from agentvault_registry import models, schemas, security
 from agentvault_registry.database import get_db
 from agentvault_registry.event_emitter import get_event_emitter
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -433,7 +434,7 @@ async def suspend_developer(
 
     await db.commit()
     logger.warning(
-        f"[AdminDevelopers] Developer {developer_id} SUSPENDED by admin {admin.id} ({admin.email}): {body.reason}"
+        f"[AdminDevelopers] Developer {developer_id} SUSPENDED by admin {admin.id} ({email_for_log(admin.email)}): {body.reason}"
     )
     await _emit_admin_action(
         event_type="DeveloperSuspended",
@@ -534,7 +535,7 @@ async def reinstate_developer(
 
     await db.commit()
     logger.info(
-        f"[AdminDevelopers] Developer {developer_id} REINSTATED by admin {admin.id} ({admin.email})"
+        f"[AdminDevelopers] Developer {developer_id} REINSTATED by admin {admin.id} ({email_for_log(admin.email)})"
     )
     await _emit_admin_action(
         event_type="DeveloperReinstated",
@@ -610,11 +611,11 @@ async def force_password_reset(
         await send_password_reset_email(dev.email, dev.name or dev.email, token)
         email_sent = True
     except Exception as e:
-        logger.warning(f"[AdminDevelopers] Password-reset email send failed for {dev.email}: {e}")
+        logger.warning(f"[AdminDevelopers] Password-reset email send failed for {email_for_log(dev.email)}: {e}")
         email_sent = False
 
     logger.info(
-        f"[AdminDevelopers] Password reset forced for developer {developer_id} ({dev.email}) by admin {admin.id}"
+        f"[AdminDevelopers] Password reset forced for developer {developer_id} ({email_for_log(dev.email)}) by admin {admin.id}"
     )
     await _emit_admin_action(
         event_type="DeveloperForcePasswordReset",
@@ -666,7 +667,7 @@ async def disable_2fa(
 
     await db.commit()
     logger.warning(
-        f"[AdminDevelopers] 2FA DISABLED for developer {developer_id} ({dev.email}) by admin {admin.id}: {body.reason}"
+        f"[AdminDevelopers] 2FA DISABLED for developer {developer_id} ({email_for_log(dev.email)}) by admin {admin.id}: {body.reason}"
     )
     await _emit_admin_action(
         event_type="DeveloperDisable2FA",
@@ -727,7 +728,7 @@ async def force_email_verify(
     from agentvault_registry.services.card_touch import touch_developer_native_cards
     await touch_developer_native_cards(db, dev.id, reason="admin force-verify")
     logger.info(
-        f"[AdminDevelopers] Email manually verified for developer {developer_id} ({dev.email}) by admin {admin.id}"
+        f"[AdminDevelopers] Email manually verified for developer {developer_id} ({email_for_log(dev.email)}) by admin {admin.id}"
     )
     await _emit_admin_action(
         event_type="DeveloperForceEmailVerify",
@@ -777,7 +778,7 @@ async def revoke_api_keys(
 
     await db.commit()
     logger.warning(
-        f"[AdminDevelopers] Revoked {revoked_count} API keys for developer {developer_id} ({dev.email}) by admin {admin.id}"
+        f"[AdminDevelopers] Revoked {revoked_count} API keys for developer {developer_id} ({email_for_log(dev.email)}) by admin {admin.id}"
     )
     await _emit_admin_action(
         event_type="DeveloperRevokeApiKeys",
@@ -954,7 +955,7 @@ async def delete_developer(
 
     await db.commit()
     logger.warning(
-        f"[AdminDevelopers] Developer {developer_id} ({original_email}) SOFT-DELETED by admin {admin.id}: {body.reason}"
+        f"[AdminDevelopers] Developer {developer_id} ({email_for_log(original_email)}) SOFT-DELETED by admin {admin.id}: {body.reason}"
     )
     await _emit_admin_action(
         event_type="DeveloperDeleted",
@@ -1059,7 +1060,7 @@ async def update_admin_flags(
 
     await db.commit()
     logger.warning(
-        f"[AdminDevelopers] Admin flags for developer {developer_id} ({dev.email}) "
+        f"[AdminDevelopers] Admin flags for developer {developer_id} ({email_for_log(dev.email)}) "
         f"changed by admin {admin.id}: {changes}"
     )
     await _emit_admin_action(

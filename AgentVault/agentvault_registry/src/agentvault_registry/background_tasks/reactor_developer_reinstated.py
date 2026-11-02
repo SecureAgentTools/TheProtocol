@@ -16,6 +16,7 @@ from typing import Optional
 
 from .reactor_base import EventStoreReactor
 from .reactor_helpers import dispatch_webhook_event, dispatch_webhook_for_agents, local_developer_id
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ class DeveloperReinstatedReactor(EventStoreReactor):
 
         logger.info(
             f"[Reactor:{self.name}] Propagating dev reinstatement dev_id={target_dev_id} "
-            f"email={target_email} cascade={cascade_count} agents"
+            f"email={email_for_log(target_email)} cascade={cascade_count} agents"
         )
 
         # §TWOAGENT #34 (2026-09-23): to that developer's OWN webhooks on this registry (was every subscriber

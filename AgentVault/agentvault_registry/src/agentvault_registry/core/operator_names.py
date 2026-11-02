@@ -58,6 +58,31 @@ RESERVED_OPERATOR_WORDS: Dict[str, str] = {
 }
 
 
+# V0653 (am) item 1: ONE pattern for the name an operator's paths, containers and commands are built from: what
+# cloud_provisioner._safe_name makes of its name (lower case, a-z 0-9 and '-', 40 characters), with a letter or digit
+# at both ends. The application refuses a name that gives none (slug_problem); every place that builds a path or a
+# command from a slug checks it again (checked_slug), the frame runner's host work among them.
+OPERATOR_SLUG = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?")
+
+
+def slug_problem(name: Optional[str]) -> Optional[str]:
+    """Why `name` gives no usable operator slug, or None. The reason is a short phrase for the refusal's message."""
+    from ..services.cloud_provisioner import _safe_name
+    safe = _safe_name(name or "")
+    if not safe:
+        return "it keeps no letter or digit for the paths and containers made from it"
+    if not OPERATOR_SLUG.fullmatch(safe):
+        return f"the name made from it for paths and containers ({safe}) would start or end with '-'"
+    return None
+
+
+def checked_slug(slug) -> str:
+    """`slug` when it is an operator slug; ValueError otherwise (a path or a command is never built from one that is not)."""
+    if not isinstance(slug, str) or not OPERATOR_SLUG.fullmatch(slug):
+        raise ValueError(f"not an operator slug: {slug!r}")
+    return slug
+
+
 def reserved_operator_name(name: Optional[str]) -> Optional[str]:
     """Why `name` may not name an operator, or None when it may (SEC-21). The reason is a short phrase for the
     refusal's message."""

@@ -18,6 +18,7 @@ from agentvault_registry.services.developer_population import a_developer_of_thi
 from agentvault_registry import security
 from agentvault_registry.schemas import DeveloperRead
 from agentvault_registry.crud import crud_disputes
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ async def get_admin_dashboard(
         - tokens_used: Number of bootstrap tokens that have been used
         - tokens_expired: Number of expired bootstrap tokens
     """
-    logger.info(f"Admin dashboard accessed by: {current_admin.email}")
+    logger.info(f"Admin dashboard accessed by: {email_for_log(current_admin.email)}")
     
     try:
         # Get developer statistics
@@ -146,7 +147,7 @@ async def get_system_health(
     
     Returns system health metrics and status information.
     """
-    logger.info(f"System health check accessed by: {current_admin.email}")
+    logger.info(f"System health check accessed by: {email_for_log(current_admin.email)}")
     
     try:
         # Check database connectivity
@@ -210,7 +211,7 @@ async def update_dispute_ruling_endpoint(
     Returns:
         The updated dispute information including reputation changes
     """
-    logger.info(f"Admin {current_admin.email} updating ruling for dispute {dispute_id} to {ruling}")
+    logger.info(f"Admin {email_for_log(current_admin.email)} updating ruling for dispute {dispute_id} to {ruling}")
     
     # Validate ruling value
     valid_rulings = ["IN_FAVOR_OF_COMPLAINANT", "IN_FAVOR_OF_DEFENDANT", "DISMISSED"]

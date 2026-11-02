@@ -68,6 +68,7 @@ from agentvault_registry.services import federation_licence as _fedlic
 # §pass66 (2026-05-22) — Mainframe-only gate for admin endpoints.
 from agentvault_registry.core.mainframe_gate import require_mainframe_only
 from pydantic import Field as _Field
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 
@@ -951,7 +952,7 @@ async def create_outbound_frame_invitation(
         async with httpx.AsyncClient(timeout=_CALLBACK_TIMEOUT_SECONDS, verify=_peer_console_verify()) as client:
             r = await client.post(f"{target}/api/v1/federation/frame-invitations", json=payload)
     except Exception as e:  # noqa: BLE001 — the sentence is the point
-        raise HTTPException(status_code=502, detail=f"the peer at {target} could not be reached: {type(e).__name__}: {str(e)[:160]}")
+        raise HTTPException(status_code=502, detail=internal_detail(e, f"the peer at {target} could not be reached", logger))
     if r.status_code not in (200, 201):
         raise HTTPException(status_code=502, detail=f"the peer at {target} refused the invitation: HTTP {r.status_code}: {r.text[:300]}")
     try:

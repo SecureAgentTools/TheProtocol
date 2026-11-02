@@ -27,6 +27,10 @@
       <button type="button" class="os-you" data-testid="os-you-settings"
               :aria-label="t('ourstate.settings.you', 'Your chat settings')" :title="t('ourstate.settings.you', 'Your chat settings')"
               @click="youOpen = true"><Icon name="mdi:cog" /></button>
+      <!-- V0653 (al): beside an open thread on a wide screen the list folds to a rail (the shell keeps the choice) -->
+      <button v-if="canFoldList" type="button" class="os-you os-fold" data-testid="os-list-fold"
+              :aria-label="t('ourstate.list.fold', 'Fold the conversation list')" :title="t('ourstate.list.fold', 'Fold the conversation list')"
+              @click="listFold?.toggle()"><Icon name="mdi:chevron-left" /></button>
     </header>
     <ChatYouPanel v-if="youOpen" :surface="youWide ? 'drawer' : 'sheet'" push-state="unknown"
                   :in-pocket="String(route.path || '').startsWith('/pocket')" @close="youOpen = false" />
@@ -224,7 +228,8 @@
 <script setup lang="ts">
 import { identityKind, identityPid } from '@/services/chat/counterparty'
 import { readAccessToken } from '@/services/accessToken'
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, inject } from 'vue'
+import { OURCHAT_LIST_FOLD } from '@/services/chat/listFold'
 import { useRoute, useRouter } from 'vue-router'
 import { useOurChatBase } from '@/composables/useOurChatBase'
 import Icon from '@/components/Icon.vue'
@@ -320,6 +325,14 @@ const unopenedRooms = computed(() => {
   const open = new Set(rows.value.filter(r => r.kind === 'org').map(r => r.id))
   return orgRooms.value.filter(r => !r.conversation_id || !open.has(r.conversation_id))
 })
+
+/* V0653 (al): inside the shell (OurChatShell) the list may fold beside an open thread, and its rail shows this list's
+   unread count: the threads and the rooms not opened yet, read from the inbox lane (the Requests lane keeps its badge) */
+const listFold = inject(OURCHAT_LIST_FOLD, null)
+const canFoldList = computed(() => !!listFold?.canFold.value)
+const unreadTotal = computed(() => rows.value.reduce((s, r) => s + (Number(r?.unread) || 0), 0)
+  + unopenedRooms.value.reduce((s, r) => s + (Number(r?.unread) || 0), 0))
+watch([unreadTotal, lane], ([n, l]) => { if (l === 'active') listFold?.setUnread(n) }, { immediate: true })
 
 async function load(reset: boolean) {
   loading.value = true
@@ -529,13 +542,19 @@ onMounted(async () => {
 .pk-ptr { display: flex; align-items: flex-end; justify-content: center; overflow: hidden; opacity: .6; }
 .pk-ptr-spin { animation: os-spin 1s linear infinite; }
 @keyframes os-spin { to { transform: rotate(360deg); } }
-.os-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+/* V0653 (ak), his report at seq 665 and his screenshot at seq 673: the header was one row that never wrapped (the
+   title, two lanes, the gear), so in the desktop's narrow list column it ran past the edge and the thread pane covered
+   the gear. The title and the buttons share the first line; the lanes take the line below and wrap inside it, so
+   nothing leaves the column, at any width and in any language. */
+.os-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-bottom: 4px; }
 /* V0652 (ak): the door to your chat settings, a 44 px target */
 .os-you { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid var(--nc-border, #2a2f3e);
   border-radius: 10px; background: none; color: inherit; cursor: pointer; }
 .os-you :deep(svg) { width: 18px; height: 18px; opacity: .85; }
-.os-title { font-size: 1.35rem; font-weight: 800; margin: 0; }
-.os-lanes { display: flex; gap: 6px; }
+/* V0653 (al): the list's fold, beside the gear (open beside a thread on a wide screen only) */
+.os-fold :deep(svg) { width: 20px; height: 20px; }
+.os-title { font-size: 1.35rem; font-weight: 800; margin: 0; flex: 1 1 auto; min-width: 0; }
+.os-lanes { display: flex; flex-wrap: wrap; gap: 6px; order: 3; flex: 1 1 100%; }
 .os-lane { min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border-color, rgba(128,128,128,.3)); background: none; color: inherit; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
 .os-lane.on { background: var(--primary-color, #4fd8c4); color: #06211d; border-color: transparent; }
 .os-lane-badge { background: var(--warning-color, #f59e0b); color: #1a1206; border-radius: 999px; min-width: 20px; padding: 1px 6px; font-size: .72rem; text-align: center; }

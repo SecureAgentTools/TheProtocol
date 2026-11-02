@@ -194,7 +194,9 @@ def test_a_callback_under_a_longer_host_name_is_not_under_the_origin(wires):
     db = _Db()
     evil = "https://asia.example.invalid:8443.evil.example/api/v1/federation/disputes/slash-confirmation"
     r = _request(db, ASIA_ID, origin=ASIA_URL, callback=evil)
-    assert r.status_code == 403, (r.status_code, r.text[:300])
+    # V0653 (am) item 9: refused one step earlier now, at the callback's own check (a '/' boundary under a peer's base
+    # URL, 400), before the origin binding (403); nothing is stored or moved either way
+    assert r.status_code == 400 and "asia.example.invalid:8443.evil.example" in r.text, (r.status_code, r.text[:300])
     assert db.added == [] and wires["teg"] == []
 
 

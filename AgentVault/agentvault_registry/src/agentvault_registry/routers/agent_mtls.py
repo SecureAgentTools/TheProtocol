@@ -37,6 +37,7 @@ from agentvault_registry.services.agent_spire import (
 )
 from agentvault_registry.services.spire_ops_client import SpireOpsUnavailable
 from agentvault_registry.core.federation_auth import require_peer_registry_identity
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 # RP3 (2026-07-24 wiring audit): revoked-SVID reconstruction must use THIS frame's trust
 # domain, not a hardcoded agentvault.com — on Frame-B/C the polling blocklist otherwise
@@ -1107,7 +1108,7 @@ async def admin_delete_spire_entry(
     try:
         deleted = delete_agent_spire_entry(agent_did)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)[:200])
+        raise HTTPException(status_code=500, detail=internal_detail(e, "Request failed", logger))
 
     return {"status": "deleted" if deleted else "not_found", "spiffe_id": spiffe_id}
 
@@ -1204,7 +1205,7 @@ async def _proxy_remote_probe(db: AsyncSession, body: dict) -> dict:
         async with _httpx.AsyncClient(**client_config) as c:
             r = await c.post(url, json=fwd)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"remote probe unreachable ({origin}): {str(e)[:160]}")
+        raise HTTPException(status_code=502, detail=internal_detail(e, f"remote probe unreachable ({origin})", logger))
     try:
         data = r.json()
     except Exception:
@@ -1294,7 +1295,7 @@ async def _fire_probe_core(db: AsyncSession, body: dict) -> dict:
                 r = await c.post(f"{alpha}/probe", json=body)
                 data = r.json()
         except Exception as e:
-            raise HTTPException(status_code=502, detail=f"probe drive failed: {str(e)[:200]}")
+            raise HTTPException(status_code=502, detail=internal_detail(e, 'probe drive failed', logger))
         if not data.get("ok"):
             raise HTTPException(status_code=502, detail=str(data.get("error", "probe failed"))[:300])
         try:
@@ -1468,7 +1469,7 @@ async def _fire_probe_core(db: AsyncSession, body: dict) -> dict:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=502, detail=f"probe fire failed: {str(e)[:200]}")
+            raise HTTPException(status_code=502, detail=internal_detail(e, 'probe fire failed', logger))
 
     # node_path the Theatre animates. Map-node slugs: ops render as "op-x"; the
     # mainframe stays "registry-a"/"frame-b"/"frame-c". DO NOT blanket-strip
@@ -1685,7 +1686,7 @@ async def delete_agent_spire_proxy(
     try:
         deleted = delete_agent_spire_entry(agent_did, trust_domain=effective_td)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)[:200])
+        raise HTTPException(status_code=500, detail=internal_detail(e, "Request failed", logger))
 
     return {"deleted": deleted}
 

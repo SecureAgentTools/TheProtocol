@@ -50,9 +50,9 @@ def test_the_catalog_lists_every_event_of_the_gaps_file():
     assert missing == []
 
 
-# fired by a later card of this release: the live progress cards (aa), the status board (ac) (the choice cards (ab) fire
-# chat.choice_requested)
-NOT_YET = {"chat.progress_finished", "org.session_offline"}
+# V0652 left two to a later card (the choice cards (ab) fire chat.choice_requested). V0653 fires both: a progress
+# card's verdict (chat_service.notify_progress_finished) and a lapsed status line (session_offline_watch)
+NOT_YET: set = set()
 
 
 def test_every_new_event_has_its_emitter_but_the_cards_that_bring_theirs():

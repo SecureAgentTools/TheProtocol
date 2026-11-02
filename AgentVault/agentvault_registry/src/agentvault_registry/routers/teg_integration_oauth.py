@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from agentvault_registry import models, security
 from agentvault_registry.config import settings
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 # from agentvault_registry.secure_config import settings as secure_settings
 
 # Import JWT-SVID provider - STUBBED OUT (doesn't exist)
@@ -118,10 +119,10 @@ async def get_teg_access_token(developer: models.Developer) -> str:
     # Check cache first
     cached_token = _token_cache.get(developer.email)
     if cached_token:
-        logger.debug(f"Using cached TEG token for {developer.email}")
+        logger.debug(f"Using cached TEG token for {email_for_log(developer.email)}")
         return cached_token
     
-    logger.info(f"Acquiring new TEG access token for {developer.email}")
+    logger.info(f"Acquiring new TEG access token for {email_for_log(developer.email)}")
     
     try:
         # Step 1: Acquire JWT-SVID assertion
@@ -167,7 +168,7 @@ async def get_teg_access_token(developer: models.Developer) -> str:
                 # Cache the token
                 _token_cache.set(developer.email, access_token, expires_in)
                 
-                logger.info(f"Successfully acquired TEG access token for {developer.email}")
+                logger.info(f"Successfully acquired TEG access token for {email_for_log(developer.email)}")
                 return access_token
                 
             else:

@@ -24,6 +24,7 @@ from agentvault_registry.services.organization_service import (
     InvitationService
 )
 from agentvault_registry.security import get_current_developer, get_current_developer_optional, get_current_actor_for_read
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 
@@ -1888,7 +1889,7 @@ async def fund_org_agent(
         logger.error("[ORGTREASURY] fund failed org=%s: %r", org_id, exc)
         # §LEDGERGATE (V0598): the gate refuses only the leg INTO the escrow, the first: nothing moved
         from agentvault_registry.services.ledger_unavailable import refusal_from_error
-        raise refusal_from_error(exc) or HTTPException(status_code=502, detail=f"treasury move failed: {exc}")
+        raise refusal_from_error(exc) or HTTPException(status_code=502, detail=internal_detail(exc, 'treasury move failed', logger))
 
     try:
         from agentvault_registry.services.admin_audit import log_admin_action
@@ -1939,7 +1940,7 @@ async def remit_to_org_treasury(
         logger.error("[ORGTREASURY] remit failed org=%s agent=%s: %r", org_id, current_agent.did, exc)
         # §LEDGERGATE (V0598): the gate refuses only the leg INTO the escrow, the first: nothing moved
         from agentvault_registry.services.ledger_unavailable import refusal_from_error
-        raise refusal_from_error(exc) or HTTPException(status_code=502, detail=f"treasury move failed: {exc}")
+        raise refusal_from_error(exc) or HTTPException(status_code=502, detail=internal_detail(exc, 'treasury move failed', logger))
     # §CHATDESK C5 — the room's receipt, post-commit, best-effort; D6-777: under the move's own reference (the caller's)
     from agentvault_registry.services.idempotency.cache import agent_caller
     from agentvault_registry.services.org_room_events import post_org_receipt
@@ -1988,7 +1989,7 @@ async def sweep_org_treasury_route(
         logger.error("[ORGTREASURY] sweep failed org=%s: %r", org_id, exc)
         # §LEDGERGATE (V0598): the gate refuses only the leg INTO the escrow, the first: nothing moved
         from agentvault_registry.services.ledger_unavailable import refusal_from_error
-        raise refusal_from_error(exc) or HTTPException(status_code=502, detail=f"treasury move failed: {exc}")
+        raise refusal_from_error(exc) or HTTPException(status_code=502, detail=internal_detail(exc, 'treasury move failed', logger))
 
     try:
         from agentvault_registry.services.admin_audit import log_admin_action

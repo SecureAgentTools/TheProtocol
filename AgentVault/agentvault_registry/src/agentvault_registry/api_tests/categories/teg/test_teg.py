@@ -9,6 +9,7 @@ This is the highest priority category due to current validation errors.
 
 import asyncio
 import logging
+from agentvault_registry.api_tests.core import log_safe as _ls   # V0653 (am) item 13: shapes in the log, never values
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 
@@ -152,7 +153,7 @@ class TestTEG(APITestBase):
                     f"Transfer test '{test_case['name']}' failed: "
                     f"Status={result.get('statusCode')}, "
                     f"Error={result.get('error')}, "
-                    f"Response={result.get('responseData')}"
+                    f"Response={_ls.refusal(result.get('responseData'))}"
                 )
         
         return {

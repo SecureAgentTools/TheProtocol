@@ -206,7 +206,12 @@ async def _named_sender(db: AsyncSession, sender: cs.Actor) -> cs.Actor:
         key = cs.principal_key("agent", sender.agent_did)
         name = (await cs.display_names(db, [key])).get(key)
         if name and name != sender.agent_did:
-            return cs.Actor("agent", agent_did=sender.agent_did, display_name=name)
+            # V0653's recut (the pair proof of 2026-11-02, session-tester seq 962): the card's name, and NOTHING else of
+            # the sender rebuilt. The new Actor dropped how the line was sent (V0653 (w)'s sent_with: an agent with a
+            # card stored NULL) and who sent it through the agent (V0652 (aj)'s sent_by: "sent by its owner" was never
+            # stored for an agent with a card, production included).
+            return cs.Actor("agent", developer_id=sender.developer_id, agent_did=sender.agent_did, display_name=name,
+                            system_id=sender.system_id, sent_by=sender.sent_by, sent_with=sender.sent_with)
     except Exception as e:  # noqa: BLE001 — a label; the DID still identifies the sender
         logger.debug("[CHAT] sender name lookup skipped for %s: %s", sender.agent_did, e)
     return sender
@@ -314,7 +319,7 @@ async def _relay_resident_send(db: AsyncSession, conv, my_row, actor: cs.Actor, 
 @chat_errors
 async def create_conversation(
     req: ConversationCreate,
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """Create (or dedup-return) a pair conversation. A first message from a
@@ -421,7 +426,7 @@ async def get_messages(
 async def post_message(
     conversation_id: str,
     req: MessagePost,
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """Post one message. Idempotent on client_ref (the offline queue's replay
@@ -447,17 +452,19 @@ async def update_card(
     conversation_id: str,
     message_id: str,
     req: CardUpdate,
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """Update a card in place: the message keeps its place, its card becomes the one sent, and the update is kept
     (who, when, what changed). A `progress` card is updated by whoever posted it; its verdict (passed, failed,
-    cancelled) closes it. Every member of the thread sees the update; nobody is notified.
+    cancelled) closes it. Every member of the thread sees the update; the verdict also tells the thread's people in
+    the app (chat.progress_finished).
 
     \f
     V0652 (aa), order gwo_840aa2b590306f7eba147758 (services.chat_service.update_card). A `guild.order.live` and an
     `approval.decided` card are kept current by their rails only; any other card stays as it was posted. An update that
-    changes nothing answers `changed: false` and writes no revision."""
+    changes nothing answers `changed: false` and writes no revision. V0653: the verdict's notice
+    (services.chat_service.notify_progress_finished)."""
     actor = cs.actor_from_auth(actor_dict)
     gate_key = f"msg:{actor.key}"
     if not await cs._rate_gate(gate_key, cs.RL_MSG_LIMIT, cs.RL_MSG_WINDOW_S):
@@ -466,6 +473,10 @@ async def update_card(
     msg, conv, changed = await cs.update_card(db, conversation_id, message_id, updater, req.card)
     if changed and conv is not None:
         await cs.deliver_card_update(db, conv, msg, updater)
+        try:
+            await cs.notify_progress_finished(db, conv, msg, updater)
+        except Exception:  # noqa: BLE001 — the update is committed and delivered; its notice is a courtesy
+            logger.warning("[CHAT] the verdict notice of card %s was not sent", message_id, exc_info=True)
     return {"message": msg, "changed": changed}
 
 
@@ -500,7 +511,7 @@ async def read_board(
 async def write_board(
     conversation_id: str,
     req: BoardWrite,
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """Write the room's status board: the room's owner, or a member the owner named. Send the whole new text and the
@@ -548,7 +559,7 @@ async def board_editors(
 async def read_mark(
     conversation_id: str,
     req: ReadMark,
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """Monotonic read floor. Never shown to the counterparty (law 6: no read
@@ -561,7 +572,7 @@ async def read_mark(
 @chat_errors
 async def accept_conversation(
     conversation_id: str,
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     actor = cs.actor_from_auth(actor_dict)
@@ -572,7 +583,7 @@ async def accept_conversation(
 @chat_errors
 async def decline_conversation(
     conversation_id: str,
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     actor = cs.actor_from_auth(actor_dict)
@@ -583,7 +594,7 @@ async def decline_conversation(
 @chat_errors
 async def leave_conversation(
     conversation_id: str,
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     actor = cs.actor_from_auth(actor_dict)
@@ -941,7 +952,7 @@ async def get_blocks(
 @chat_errors
 async def create_block(
     req: BlockBody,
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     """Block a principal. Silent by design: shared threads leave your list,
@@ -956,7 +967,7 @@ async def create_block(
 @chat_errors
 async def remove_block(
     req: BlockBody,
-    actor_dict: dict = Depends(get_current_actor_for_read),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
     actor = cs.actor_from_auth(actor_dict)
@@ -2438,6 +2449,12 @@ async def decide_approvals(
     from ..services.admin_audit import log_chat_action
 
     _approvals_switched_on()
+    # V0653 (w) (session-lead's call, the sessions' room seq 847): a person decides, signed in, in the console or
+    # Pocket. An API key never decides, whatever its scopes: an MCP connector's, a bridge's or a script's key reads a
+    # room and writes in it, and an injected line it reads must not become his approval of a production act.
+    if presented_api_key_id() is not None or presented_api_key_scopes() is not None:
+        raise cs.ChatError(403, "an approval is decided in the console or in Pocket, signed in; an API key cannot "
+                                "decide it")
     conv, org = await _approval_room(db, conversation_id)
     dev = current_developer
     role = await ca.decider_role(db, conv.org_id, int(dev.id), org["owner_id"])

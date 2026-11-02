@@ -7,6 +7,7 @@ import { ref, computed, onMounted, onUnmounted, type Ref } from 'vue'
 import { readAccessToken } from '@/services/accessToken'
 import { useAuthStore } from '@/stores/auth'
 import { useUIStore } from '@/stores/ui'
+import { connectedToastWanted } from '@/services/chat/liveToast'
 import { authService } from '@/services/auth'
 import {
   WebSocketManager,
@@ -238,12 +239,15 @@ async function refreshTokenForSocket(): Promise<string | null> {
       isReconnecting.value = false
       reconnectAttempts.value = 0
       lastError.value = null
-      
-      uiStore.showNotification({
-        type: 'success',
-        title: 'Connected',
-        message: 'Real-time connection established'
-      })
+
+      // V0653 (ak): not on a chat route, where the thread's live mark says it and the toast covered a phone's header
+      if (connectedToastWanted(typeof window !== 'undefined' ? window.location.hash : '')) {
+        uiStore.showNotification({
+          type: 'success',
+          title: 'Connected',
+          message: 'Real-time connection established'
+        })
+      }
     })
     
     manager.on('disconnected', () => {

@@ -171,6 +171,11 @@ def resolve_frame_from_spiffe_only(spiffe_id: Optional[str]) -> Optional[str]:
     return _trust_domain_to_frame(td)
 
 
+# The cluster frames' trust domains, whole, and their letters (V0653 (am) item 5); the CONSUL page reads it too.
+CLUSTER_TRUST_DOMAINS = {"agentvault.com": "A", "frame-b.theprotocol.cloud": "B",
+                         "frame-c.theprotocol.cloud": "C"}
+
+
 def _trust_domain_to_frame(trust_domain: Optional[str]) -> Optional[str]:
     """Map a trust_domain string to a frame label.
 
@@ -192,14 +197,9 @@ def _trust_domain_to_frame(trust_domain: Optional[str]) -> Optional[str]:
     """
     if not trust_domain:
         return None
-    td = trust_domain.lower()
-    if "frame-b" in td:
-        return "B"
-    if "frame-c" in td:
-        return "C"
-    if "agentvault.com" in td:
-        return "A"
-    return None
+    # V0653 (am) item 5: the trust domain compared whole (CLUSTER_TRUST_DOMAINS), never by substring: "frame-b" in td let a
+    # look-alike domain resolve as Frame B
+    return CLUSTER_TRUST_DOMAINS.get(trust_domain.strip().lower().rstrip("."))
 
 
 def canonical_equals(a: Optional[str], b: Optional[str]) -> bool:

@@ -680,12 +680,30 @@ def _write_redis_acl(ctx: "FrameTestContext") -> tuple:
     return True, ""
 
 
+def write_private(path: str, text: str) -> None:
+    """V0653 (am) item 10: a file only its owner reads, from the first byte: created 0600, and a file that already exists
+    is narrowed on its open descriptor BEFORE anything is written, so no value is ever readable through an older mode."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w") as f:
+            fd = -1
+            f.write(text)
+    finally:
+        if fd != -1:
+            os.close(fd)
+
+
 def _render_template(tmpl_path: str, out_path: str, values: dict) -> None:
-    """Replace {{KEY}} placeholders in a template file + write to out_path."""
+    """Replace {{KEY}} placeholders in a template file + write to out_path. An env file (.env.*: the frame's values and
+    secrets) is written private (write_private); every other file as before."""
     with open(tmpl_path) as f:
         text = f.read()
     for k, v in values.items():
         text = text.replace("{{" + k + "}}", str(v))
+    if os.path.basename(out_path).startswith(".env"):
+        write_private(out_path, text)
+        return
     with open(out_path, "w") as f:
         f.write(text)
 

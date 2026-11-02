@@ -9,8 +9,20 @@
        Below `--ocs-wide` it renders exactly what it rendered before: the list at
        /pocket/ourchat, the thread at /pocket/ourchat/:id, one at a time. Paths
        and route names are unchanged, so every deep link and battery still lands. -->
-  <div ref="rootEl" class="ocs" :class="{ 'ocs-two': wide, 'ocs-bounded': bounded }" :style="paneStyle" data-testid="ocs-root">
-    <section v-if="wide || !threadOpen" class="ocs-list" data-testid="ocs-list">
+  <div ref="rootEl" class="ocs" :class="{ 'ocs-two': wide, 'ocs-bounded': bounded }" :style="paneStyle"
+       data-testid="ocs-root" :data-list="railOn ? 'folded' : 'open'">
+    <!-- V0653 (al): the list folded beside an open thread leaves a narrow rail: the way back and the unread count. The
+         list stays mounted behind it (v-show), so its count and its live updates go on. -->
+    <nav v-if="railOn" class="ocs-rail" data-testid="ocs-rail" :aria-label="t('ourstate.list.railAria', 'Conversations')">
+      <button type="button" class="ocs-rail-open" data-testid="ocs-rail-open"
+              :aria-label="t('ourstate.list.unfold', 'Show the conversation list')"
+              :title="t('ourstate.list.unfold', 'Show the conversation list')" @click="toggleList">
+        <Icon name="mdi:chevron-right" /></button>
+      <span v-if="unread" class="ocs-rail-unread" data-testid="ocs-rail-unread"
+            :title="tp('ourstate.list.railUnread', '{n} unread', { n: unread })">{{ unread > 99 ? '99+' : unread }}<span
+            class="sr-only">{{ ' ' + t('ourstate.list.railUnreadWord', 'unread') }}</span></span>
+    </nav>
+    <section v-if="wide || !threadOpen" v-show="!railOn" class="ocs-list" data-testid="ocs-list">
       <PocketOurState />
     </section>
 
@@ -33,13 +45,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, provide, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from '@/composables/useI18n'
 import Icon from '@/components/Icon.vue'
 import PocketOurState from '@/views/pocket/PocketOurState.vue'
+import { useAuthStore } from '@/stores/auth'
+import { OURCHAT_LIST_FOLD, listAsRail, listFolded, saveListFolded } from '@/services/chat/listFold'
 
-const { t } = useI18n()
+const { t, tp } = useI18n()
 const route = useRoute()
 
 /** A thread is open when the child route carries an id. */
@@ -51,6 +65,25 @@ const WIDE = '(min-width: 900px)'
 const wide = ref(false)
 let mq: MediaQueryList | null = null
 const sync = () => { wide.value = !!mq?.matches; measure() }
+
+/* V0653 (al), his words in the sessions' room (seq 686): the list folds beside an open thread, the choice kept per
+   person on this device; the list's header, this rail and the thread's arrow are three controls over one state. */
+let auth: any = null
+try { auth = useAuthStore() } catch { auth = null }   // a mount without the app's store keeps the choice per device
+const viewer = computed(() => {
+  const u: any = auth?.user || {}
+  return String(u.developer_id ?? u.id ?? '')
+})
+const folded = ref(listFolded(viewer.value))
+watch(viewer, (v) => { folded.value = listFolded(v) })
+const canFold = computed(() => wide.value && threadOpen.value)
+const railOn = computed(() => listAsRail(wide.value, folded.value, threadOpen.value))
+const unread = ref<number | null>(null)
+function toggleList() {
+  folded.value = !folded.value
+  saveListFolded(viewer.value, folded.value)
+}
+provide(OURCHAT_LIST_FOLD, { twoPane: wide, folded, canFold, toggle: toggleList, setUnread: (n) => { unread.value = n } })
 
 /* §DESKCHROME (2026-08-28): in wide mode the SHELL is the height container, so
    the panes scroll internally and the composer never sinks below the fold. The
@@ -125,6 +158,22 @@ onBeforeUnmount(() => {
 }
 .ocs-two > .ocs-thread { flex: 1 1 auto; overflow: hidden; }
 .ocs-two > .ocs-thread > :deep(.ost) { flex: 1; min-height: 0; }
+
+/* V0653 (al): the folded list's rail (LIST_RAIL_PX): the way back to the list and its unread count, one hairline */
+.ocs-two > .ocs-rail {
+  flex: 0 0 56px; width: 56px; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px 0;
+  border-right: 1px solid var(--border-color, rgba(128, 128, 128, .2));
+}
+.ocs-rail-open {
+  width: 44px; height: 44px; display: grid; place-items: center; cursor: pointer; color: inherit; background: none;
+  border: 1px solid var(--nc-border, #2a2f3e); border-radius: 10px;
+}
+.ocs-rail-open :deep(svg) { width: 20px; height: 20px; }
+.ocs-rail-unread {
+  min-width: 22px; padding: 1px 6px; border-radius: 999px; text-align: center;
+  background: var(--nc-primary, #00d4ff); color: #04121a;
+  font: 600 .72rem/1.5 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums;
+}
 
 .ocs-bounded { height: calc(100vh - var(--ocs-offset, 0px)); height: calc(100dvh - var(--ocs-offset, 0px)); overflow: hidden; }
 .ocs-bounded > .ocs-thread { overflow: hidden; }

@@ -22,12 +22,13 @@ import base64
 import json as _json
 import os as _os
 import secrets
+from agentvault_registry.core.log_identity import api_key_for_log, email_for_log
 import uuid
 import logging
 import time
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
-from urllib.parse import urlencode, urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from fastapi import APIRouter, Request, Form, HTTPException
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
@@ -304,6 +305,16 @@ async def protected_resource_metadata(request: Request):
 # ---------------------------------------------------------------------------
 # Dynamic Client Registration (RFC 7591)
 # ---------------------------------------------------------------------------
+
+def _callback_url(redirect_uri: str, params: dict) -> str:
+    """The client's registered redirect_uri with the code (and the state) in its query.
+
+    V0653 (am), the plan's item 8: appending '?' gave an address that already had a query a second one. RFC 6749 3.1.2:
+    the client's own query component is kept when parameters are added; one of ours replaces one of the same name."""
+    parts = urlparse(redirect_uri)
+    kept = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k not in params]
+    return urlunparse(parts._replace(query=urlencode(kept + list(params.items()))))
+
 
 def _redirect_host(uri: str) -> str:
     """The host the authorization code will be delivered to, for the human.
@@ -680,20 +691,23 @@ async def authorize_post(
             if key_resp.status_code in (200, 201):
                 key_data = key_resp.json()
                 api_key = key_data.get("plain_api_key", "")
-                logger.info(f"[MCP OAuth] Generated API key for {email}: {api_key[:15]}...")
+                # V0653 (am) items 7 and 8: the key by its id and the person by email_for_log, never the key's
+                # characters or the full address
+                logger.info(f"[MCP OAuth] Generated API key ({api_key_for_log(key_data.get('api_key_info'))}) for "
+                            f"{email_for_log(email)}")
             else:
                 # §MCPSCOPE — FAIL CLOSED. The old fallback handed out `dev_token`,
                 # a raw developer JWT with NO scope restriction at all, which
                 # defeats the entire point of scoping this flow: the error path
                 # was strictly more powerful than the success path. If we cannot
                 # mint a correctly-scoped credential we issue nothing.
-                logger.error(f"[MCP OAuth] API key creation FAILED ({key_resp.status_code}) for {email} — refusing to issue an unscoped credential")
+                logger.error(f"[MCP OAuth] API key creation FAILED ({key_resp.status_code}) for {email_for_log(email)} — refusing to issue an unscoped credential")
                 return JSONResponse(status_code=503, content={
                     "error": "temporarily_unavailable",
                     "error_description": "Could not issue a scoped credential. Nothing was granted; please retry.",
                 })
     except Exception as e:
-        logger.error(f"[MCP OAuth] API key creation EXCEPTION ({e}) for {email} — refusing to issue an unscoped credential")
+        logger.error(f"[MCP OAuth] API key creation EXCEPTION ({type(e).__name__}) for {email_for_log(email)} — refusing to issue an unscoped credential")
         return JSONResponse(status_code=503, content={
             "error": "temporarily_unavailable",
             "error_description": "Could not issue a scoped credential. Nothing was granted; please retry.",
@@ -711,13 +725,13 @@ async def authorize_post(
         "dev_token": dev_token,
     })
 
-    logger.info(f"[MCP OAuth] Authorization code issued for {email} → client {client_id}")
+    logger.info(f"[MCP OAuth] Authorization code issued for {email_for_log(email)} → client {client_id}")
 
     # Redirect to client callback
     params = {"code": code}
     if state:
         params["state"] = state
-    callback = f"{redirect_uri}?{urlencode(params)}"
+    callback = _callback_url(redirect_uri, params)
     return RedirectResponse(url=callback, status_code=302, headers={"Cache-Control": "no-store"})
 
 

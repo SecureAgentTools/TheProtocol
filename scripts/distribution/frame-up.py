@@ -223,6 +223,24 @@ def adopt_argv(export_root, name, stack_dir, socket=None):
     return argv
 
 
+def adopt_sentence(name, stdout, runner):
+    """V0653 (ao) item 3: the runner's adoption as a sentence. Its adopt CLI prints the result as one JSON line on stdout
+    (name, stack_dir, recorded, already, adopted, reference); the line used to be that JSON cut at 120 characters."""
+    res = {}
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if line.startswith("{"):
+            try:
+                res = json.loads(line)
+            except ValueError:
+                continue
+            break
+    state = ("it was already recorded" if res.get("already") else "a new record") if res else "recorded"
+    gid = (runner or {}).get("socket_gid")
+    group = f"; its registry reaches the runner through socket group {gid}" if gid is not None else ""
+    return f"frame runner: adopted {name} ({state}){group}"
+
+
 def runner_gid_from_output(text):
     """The installer's last line is `FRAME_RUNNER_SOCKET_GID=<gid> SOCKET=... EDGE=...`; the gid, or None when no line says so."""
     for line in reversed((text or "").splitlines()):
@@ -732,7 +750,8 @@ def main():
                     "whose socket group would be a guess"); return 1
             env["FRAME_RUNNER_SOCKET_GID"] = gid
             runner = {"installed": True, "socket_gid": int(gid), "socket": runner_fact_from_output(ri.stdout, "SOCKET"),
-                      "operator_socket_dir": runner_fact_from_output(ri.stdout, "OPERATOR_SOCKET_DIR")}
+                      "operator_socket_dir": runner_fact_from_output(ri.stdout, "OPERATOR_SOCKET_DIR"),
+                      "instance": a.runner_instance or ""}   # V0653 (ao) item 2: frame-down --with-runner removes this one
             if runner["operator_socket_dir"]:
                 env["FRAME_RUNNER_OPERATOR_SOCKET_DIR"] = runner["operator_socket_dir"]
             log(f"frame runner: installed; the frame joins socket group {gid}" + (f", operator socket dir {runner['operator_socket_dir']}" if runner["operator_socket_dir"] else ""))
@@ -790,7 +809,7 @@ def main():
             log(f"the frame runner did not adopt {a.name} (exit {ad.returncode}: {(ad.stderr or ad.stdout)[-300:].strip()}); the frame is up, "
                 f"but Frame Management cannot provision operators for it until `frame_runner.py adopt --name {a.name} --stack-dir {stack_dir}` succeeds")
             return 1
-        log(f"frame runner: adopted {a.name} ({(ad.stdout or '').strip()[:120]})")
+        log(adopt_sentence(a.name, ad.stdout, runner))
         runner["adopted"] = True
     meta = json.load(open(os.path.join(stack_dir, "hetzner-demo-run.json")))
     ports = meta.get("ports") or {}

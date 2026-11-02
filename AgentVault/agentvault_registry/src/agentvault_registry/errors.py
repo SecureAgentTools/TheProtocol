@@ -182,6 +182,9 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         detail=detail_str,
         status_code=exc.status_code,
         error_type=error_type,
+        # V0653's recut: a database error a route answered through core/caller_errors (DatabaseAnswer) keeps the code
+        # the SQLAlchemy handler gives the same error (PARAM_OUT_OF_RANGE, NUL_IN_TEXT, DATABASE_BUSY); none otherwise
+        error_code=getattr(exc, "error_code", None),
         context=context if context else None,
         request=request,
     )
@@ -201,7 +204,10 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     """Handle Pydantic validation errors with unified error schema."""
     logger.warning(
-        f"Validation error on {request.method} {request.url.path}: {exc.errors()}"
+        f"Validation error on {request.method} {request.url.path}: "
+        # V0653 (am) item 7: where and why, never the value pydantic refused (its "input": a password one character
+        # short, a key); the answer to the caller never carried it
+        f"{[{k: e.get(k) for k in ('loc', 'type', 'msg')} for e in exc.errors()]}"
     )
     
     # Format validation errors
@@ -283,6 +289,16 @@ except Exception:  # pragma: no cover
     DB_WORDS_WITHHELD_TOTAL = None
 
 
+def count_db_words_withheld(status_code: int) -> None:
+    """One database error answered without its words, by the status answered (the 5xx guard, and since V0653's recut
+    core/caller_errors.database_answer, which classifies the exception before its words are withheld)."""
+    if DB_WORDS_WITHHELD_TOTAL is not None:
+        try:
+            DB_WORDS_WITHHELD_TOTAL.labels(str(status_code)).inc()
+        except Exception:
+            pass
+
+
 # §MCPTEST30 (V0529, 2026-10-01): the database could not take the call at all: its connection ceiling ("too many clients
 # already", measured on sbx-alpha twice on 2026-10-01: 100 of 100 connections idle in the registry's pools), a refused or
 # dropped connection, a pool checkout that timed out, a server starting or stopping. The registry's trouble, and it
@@ -347,11 +363,7 @@ def withheld_db_words(request: Request, status_code: int, detail: str, keep_pref
     ans = db_error_answer(detail)
     busy = ans is None and db_capacity_error(detail)   # §MCPTEST30 V0529: answered 503 below
     st = ans["status_code"] if ans else (status.HTTP_503_SERVICE_UNAVAILABLE if busy else status_code)
-    if DB_WORDS_WITHHELD_TOTAL is not None:
-        try:
-            DB_WORDS_WITHHELD_TOTAL.labels(str(st)).inc()
-        except Exception:
-            pass
+    count_db_words_withheld(st)
     if ans:
         return create_error_response(**ans, request=request)
     prefix = detail[:m.start()].rstrip(" :;,-(") if keep_prefix else ""

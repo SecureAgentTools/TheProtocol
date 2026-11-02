@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { foldThreads, orderIdOf, type ThreadMsg } from './threads'
+import { foldThreads, lastReplyAt, orderIdOf, type ThreadBar, type ThreadMsg } from './threads'
 
 /**
  * V0652 (ac) (order gwo_2ae43c7789db1e808ea1417f): threads in a room. A reply folds under the message it answers; the
@@ -103,5 +103,31 @@ describe('folding', () => {
     n = 0
     const ms = [msg({ id: 'a' }), msg({ id: 'b' })]
     expect(foldThreads(ms, opts()).list).toEqual(ms)
+  })
+})
+
+/**
+ * V0653 (al) (order gwo_2f0d7d69673b8f9c9392e5dc), his report (the sessions' room, seq 665): a request drawn among 9 pm
+ * messages wore its own 6:37. A thread's root drawn at its latest reply says when that reply came. BASE (V0652): only the
+ * root's own time.
+ */
+describe("the time a thread's root moved to", () => {
+  const bar = (last: Partial<ThreadMsg> | null, count = 1): ThreadBar => ({ key: 'r:x', kind: 'reply', orderId: null, count,
+    unread: 0, forMe: 0, forMeNew: 0, last: last ? msg(last) : null, expanded: false })
+  const root = msg({ id: 'root', created_at: '2026-11-01T17:37:00Z' })
+
+  it("is the latest reply's time when that is later than the root", () => {
+    expect(lastReplyAt(root, bar({ created_at: '2026-11-01T20:00:07Z' }))).toBe('2026-11-01T20:00:07Z')
+  })
+
+  it('is nothing for a root without replies, a reply as old as the root, or a time nobody can read', () => {
+    expect(lastReplyAt(root, null)).toBeNull()
+    expect(lastReplyAt(root, bar(null, 0))).toBeNull()
+    expect(lastReplyAt(root, bar({ created_at: '2026-11-01T17:37:00Z' }))).toBeNull()
+    expect(lastReplyAt(root, bar({ created_at: 'not a time' }))).toBeNull()
+  })
+
+  it("a root whose own time is unknown still says when its latest reply came", () => {
+    expect(lastReplyAt(msg({ id: 'r2' }), bar({ created_at: '2026-11-01T20:00:07Z' }))).toBe('2026-11-01T20:00:07Z')
   })
 })

@@ -299,7 +299,7 @@
     v-if="selectedAgentForCredentials"
     :show="showAddCredentials"
     :agent="selectedAgentForCredentials"
-    @close="showAddCredentials = false"
+    @close="showAddCredentials = false; selectedAgentForCredentials = null"
     @saved="handleCredentialsSaved"
   />
 
@@ -562,9 +562,8 @@ function formatBalance(balance: string | number): string {
   return num.toFixed(0)
 }
 
+// V0653 (am) item 6: a save refreshes the agents and leaves the dialog open on its saved step; its own close closes it
 function handleCredentialsSaved() {
-  showAddCredentials.value = false
-  selectedAgentForCredentials.value = null
   authStore.fetchAvailableAgents({ force: true })
 }
 

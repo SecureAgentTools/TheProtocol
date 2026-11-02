@@ -259,8 +259,9 @@ CHAT_APPROVAL_DEVELOPER_TOOL_SCHEMAS: List[Dict[str, Any]] = [
                         "every request pending there now. Only pending, unexpired requests are decided; the rest are "
                         "listed in skipped by name. The org's owner or a named approver only; agents never decide. "
                         "Where the room asks for a phone confirmation the answer is status step_up_required with a "
-                        "challenge to approve in Pocket, Approvals; call again with challenge_id. Developer key or "
-                        "JWT."),
+                        "challenge to approve in Pocket, Approvals; call again with challenge_id. A signed-in "
+                        "session (a developer JWT) only: an API key, a connector's included, cannot decide (V0653 "
+                        "(w)); open the request in the console or Pocket instead."),
         "inputSchema": {"type": "object", "properties": {
             "conversation_id": _CONV,
             "decision": {"type": "string", "enum": ["approve", "deny", "choose"],

@@ -45,6 +45,7 @@ from agentvault_registry.security import get_current_developer
 from agentvault_registry.event_emitter import get_event_emitter
 from agentvault_registry.services.cloud_provisioner import _safe_name
 from agentvault_registry.core.mainframe_gate import require_mainframe_only
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -242,7 +243,14 @@ async def submit_operator_application(
         )
     # SEC-21 (2026-10-17): a name the network reserves never becomes an operator's (core/operator_names), refused before
     # anything is stored
-    from ..core.operator_names import reserved_operator_name
+    from ..core.operator_names import reserved_operator_name, slug_problem
+    # V0653 (am) item 1: nor a name that gives no operator slug (its paths and containers are built from that)
+    _no_slug = slug_problem(application.name)
+    if _no_slug:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"The operator name '{application.name}' cannot be used: {_no_slug}. Choose another name.",
+        )
     _reserved = reserved_operator_name(application.name)
     if _reserved:
         raise HTTPException(
@@ -311,7 +319,7 @@ async def submit_operator_application(
     await db.commit()
     await db.refresh(app_record)
 
-    logger.info(f"Operator application received: {application.name} ({application.email})")
+    logger.info(f"Operator application received: {application.name} ({email_for_log(application.email)})")
     # V0652 (af): the registry's admins hear it (the mail to the operators' address below stays); once: one per submit
     _tell_application("operator.application_received", None,
                       "Operator application received",
@@ -462,7 +470,7 @@ async def approve_operator_application(
     await db.commit()
     await db.refresh(app_record)
 
-    logger.info(f"Operator application approved: {app_record.name} ({app_record.email}) by admin {admin.id}")
+    logger.info(f"Operator application approved: {app_record.name} ({email_for_log(app_record.email)}) by admin {admin.id}")
     # V0652 (af): the applicant's account, when the application is linked to one, hears the decision (the mail with the
     # activation code below stays the way to act on it); once: the status guard above lets one approve through
     _tell_application("operator.application_decided", app_record.developer_id, "Your operator application was approved",
@@ -541,7 +549,7 @@ async def reject_operator_application(
     await db.commit()
     await db.refresh(app_record)
 
-    logger.info(f"Operator application rejected: {app_record.name} ({app_record.email}) by admin {admin.id}")
+    logger.info(f"Operator application rejected: {app_record.name} ({email_for_log(app_record.email)}) by admin {admin.id}")
     # V0652 (af): a rejection was said to nobody (no mail is sent for it): the applicant's account hears it
     _tell_application("operator.application_decided", app_record.developer_id, "Your operator application was declined",
                       "Your application to run an operator was declined"
@@ -847,7 +855,7 @@ async def revoke_operator_access(
     await _sync_operator_licence_status(revoked_licence, "revoked")
 
     logger.info(
-        f"Operator application revoked: {app_record.name} ({app_record.email}) "
+        f"Operator application revoked: {app_record.name} ({email_for_log(app_record.email)}) "
         f"by admin {admin.id} -- reason: {request_body.reason}"
     )
 
@@ -1023,7 +1031,7 @@ async def suspend_operator(
             )
 
     logger.info(
-        f"Operator suspended: {app_record.name} ({app_record.email}) "
+        f"Operator suspended: {app_record.name} ({email_for_log(app_record.email)}) "
         f"by admin {admin.id} -- reason: {request_body.reason}"
     )
 
@@ -1151,7 +1159,7 @@ async def reinstate_operator(
             )
 
     logger.info(
-        f"Operator reinstated: {app_record.name} ({app_record.email}) by admin {admin.id}"
+        f"Operator reinstated: {app_record.name} ({email_for_log(app_record.email)}) by admin {admin.id}"
     )
 
     # Send reinstatement email to the operator
@@ -1523,8 +1531,8 @@ async def activate_operator(
     await db.refresh(app_record)
 
     logger.info(
-        f"Operator activated: {app_record.name} ({app_record.email}) "
-        f"by developer {developer.id} ({developer.email})"
+        f"Operator activated: {app_record.name} ({email_for_log(app_record.email)}) "
+        f"by developer {developer.id} ({email_for_log(developer.email)})"
     )
 
     # Send activation confirmation email (themed; pull token shown ONCE)
@@ -1627,7 +1635,7 @@ async def request_self_revocation(
 
     logger.info(
         f"Operator self-revocation requested by developer {developer.id} "
-        f"({developer.email}) -- reason: {request_body.reason}"
+        f"({email_for_log(developer.email)}) -- reason: {request_body.reason}"
     )
 
     # Send notification to admin channel

@@ -54,7 +54,11 @@ def _walk(routes, prefix=""):
 def _write_routes():
     from teg_core_service.main import app
     from teg_core_service.api.cross_teg_router import router as cross_teg_router  # included in the lifespan
-    rows = set(_walk(app.routes)) | set(_walk(cross_teg_router.routes))
+    # V0653 (an) item 1: the retired onboarding faucet is mounted only when TEG_ONBOARDING_MINT_ENABLED is on (default
+    # off now); the census counts its routes either way, so a TEG that turns it on serves no write route the gate missed
+    from teg_core_service.api.v1 import endpoints_onboarding
+    rows = (set(_walk(app.routes)) | set(_walk(cross_teg_router.routes))
+            | set(_walk(endpoints_onboarding.router.routes, "/api/v1/onboarding")))
     return {(m, lg._norm(p)) for (m, p) in rows if m in lg.WRITE_METHODS}
 
 

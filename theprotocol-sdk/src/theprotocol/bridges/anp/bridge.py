@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional
 from ..base import BaseBridge
 from ...models import Message, Task, AgentCard
 from ...agent.base import BaseA2AAgent
+from ...agent.caller_errors import caller_message   # V0653 (am) item 2
 from .did_wba import DIDDocument, KeyPair, create_did_wba, did_wba_from_cos
 from .translation import (
     agent_card_to_anp_description,
@@ -183,6 +184,6 @@ class ANPBridge(BaseBridge):
 
             except Exception as e:
                 logger.exception(f"ANP RPC error: {e}")
-                return JSONResponse({"jsonrpc": "2.0", "id": rid, "error": {"code": -32000, "message": str(e)}})
+                return JSONResponse({"jsonrpc": "2.0", "id": rid, "error": {"code": -32000, "message": caller_message(e, "Agent error", logger)}})
 
         return router

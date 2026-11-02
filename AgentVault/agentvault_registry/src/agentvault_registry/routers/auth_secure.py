@@ -50,6 +50,7 @@ from agentvault_registry.crud.invite_codes import (
     consume_invite_code,
     resolve_admin_flags,
 )
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -266,14 +267,14 @@ async def initialize_teg_account(developer_email: str, developer_id: int):
             )
             
             if response.status_code in [200, 409]:  # 409 means already exists, which is fine
-                logger.info(f"TEG account initialized for developer {developer_email} (DID: {agent_id})")
+                logger.info(f"TEG account initialized for developer {email_for_log(developer_email)} (DID: {agent_id})")
                 return True
             else:
                 logger.error(f"Failed to initialize TEG account: {response.status_code} - {response.text}")
                 return False
                 
     except Exception as e:
-        logger.error(f"Error initializing TEG account for {developer_email}: {e}")
+        logger.error(f"Error initializing TEG account for {email_for_log(developer_email)}: {e}")
         return False
 
 
@@ -322,13 +323,13 @@ async def register_developer(
     Handles new developer registration with enhanced security.
     Creates account, generates keys, sends verification email.
     """
-    logger.info(f"Registration attempt for email: {developer_in.email}")
+    logger.info(f"Registration attempt for email: {email_for_log(developer_in.email)}")
     
     # Validate password strength - FIX: Extract secret value first
     password_value = developer_in.password.get_secret_value() if hasattr(developer_in.password, 'get_secret_value') else developer_in.password
     is_valid, error_msg = validate_password_strength(password_value)
     if not is_valid:
-        logger.warning(f"Registration failed: Weak password for {developer_in.email} - {error_msg}")
+        logger.warning(f"Registration failed: Weak password for {email_for_log(developer_in.email)} - {error_msg}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Password validation failed: {error_msg}"
@@ -368,7 +369,7 @@ async def register_developer(
     # The register form gates on a checkbox, but that is client-side only — a scripted client could
     # register with no acceptance signal. Enforce it server-side + stamp an authoritative record.
     if settings.TOS_CONSENT_REQUIRED and not getattr(developer_in, "tos_accepted", False):
-        logger.warning(f"Registration failed: Terms not accepted for {developer_in.email}")
+        logger.warning(f"Registration failed: Terms not accepted for {email_for_log(developer_in.email)}")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="You must accept the Terms of Service and Privacy Policy to register.",
@@ -378,7 +379,7 @@ async def register_developer(
     # Check for existing developer (email)
     existing_developer = await developer_crud.get_developer_by_email(db, email=developer_in.email)
     if existing_developer:
-        logger.warning(f"Registration failed: Email '{developer_in.email}' already registered.")
+        logger.warning(f"Registration failed: Email '{email_for_log(developer_in.email)}' already registered.")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered.",
@@ -413,7 +414,7 @@ async def register_developer(
             created_developer.email_verification_token = None
             created_developer.verification_token_expires = None
             await db.commit()
-            logger.info(f"Auto-verified {created_developer.email} (REQUIRE_EMAIL_VERIFICATION=false)")
+            logger.info(f"Auto-verified {email_for_log(created_developer.email)} (REQUIRE_EMAIL_VERIFICATION=false)")
 
         # §OPGUIDE-3: when verification is disabled the account was just auto-verified
         # above, so there is nothing to verify and no mail to send. Without this guard
@@ -433,14 +434,14 @@ async def register_developer(
                     token=created_developer.email_verification_token
                 )
                 if email_sent:
-                    logger.info(f"Verification email sent for {created_developer.email}")
+                    logger.info(f"Verification email sent for {email_for_log(created_developer.email)}")
                     # §EXTTEST (V0649): registration's mail opens the resend window too; without it the first login a
                     # minute later found no window and mailed the same link again (EU, 2026-10-30 18:37:40Z, 18:38:40Z)
                     await _verification_resend_allowed(created_developer.id)
                 else:
-                    logger.error(f"Verification email delivery failed for {created_developer.email} (SMTP error — check MAIL_FROM/MAIL_USERNAME config)")
+                    logger.error(f"Verification email delivery failed for {email_for_log(created_developer.email)} (SMTP error — check MAIL_FROM/MAIL_USERNAME config)")
             except Exception as email_exc:
-                logger.exception(f"Unexpected error sending verification email to {created_developer.email}")
+                logger.exception(f"Unexpected error sending verification email to {email_for_log(created_developer.email)}")
 
         if not settings.REQUIRE_EMAIL_VERIFICATION:
             # `message` was already set above. Guarded here too: without this branch the
@@ -478,7 +479,7 @@ async def register_developer(
                 await db.commit()
                 logger.warning(
                     f"[Register] ADMIN account minted from invite code for "
-                    f"developer_id={created_developer.id} ({created_developer.email}) — "
+                    f"developer_id={created_developer.id} ({email_for_log(created_developer.email)}) — "
                     f"granted {invite_admin_flags} (is_admin NOT set)."
                 )
         # --- End consume ---
@@ -497,7 +498,7 @@ async def register_developer(
         )
     except Exception as e:
         await db.rollback()
-        logger.exception(f"Unexpected error during registration for email {developer_in.email}")
+        logger.exception(f"Unexpected error during registration for email {email_for_log(developer_in.email)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An internal error occurred during registration.",
@@ -882,11 +883,11 @@ async def verify_email(token: str = Query(...), db: AsyncSession = Depends(get_d
         return RedirectResponse(url=spa_url("email-verification?status=failed&reason=not_found"), status_code=status.HTTP_303_SEE_OTHER)
 
     if developer.is_verified:
-        logger.info(f"Email '{developer.email}' already verified.")
+        logger.info(f"Email '{email_for_log(developer.email)}' already verified.")
         return RedirectResponse(url=spa_url("email-verification?status=success&already=true"), status_code=status.HTTP_303_SEE_OTHER)
 
     if developer.verification_token_expires is None or developer.verification_token_expires < datetime.now(timezone.utc):
-        logger.warning(f"Verification failed: Token expired for email {developer.email}.")
+        logger.warning(f"Verification failed: Token expired for email {email_for_log(developer.email)}.")
         return RedirectResponse(url=spa_url("email-verification?status=failed&reason=expired"), status_code=status.HTTP_303_SEE_OTHER)
 
     # Token is valid, mark as verified.
@@ -903,17 +904,17 @@ async def verify_email(token: str = Query(...), db: AsyncSession = Depends(get_d
         # §R55: the flag lives in a ROW; the peers only re-pull the CARDS. Touch them.
         from agentvault_registry.services.card_touch import touch_developer_native_cards
         await touch_developer_native_cards(db, developer.id, reason="email verified")
-        logger.info(f"Email verified for developer: {developer.email} (ID: {developer.id})")
+        logger.info(f"Email verified for developer: {email_for_log(developer.email)} (ID: {developer.id})")
 
         # Initialize TEG account for the newly verified developer
         teg_initialized = await initialize_teg_account(developer.email, developer.id)
         if not teg_initialized:
-            logger.warning(f"TEG account initialization failed for {developer.email}, but email verification succeeded")
+            logger.warning(f"TEG account initialization failed for {email_for_log(developer.email)}, but email verification succeeded")
 
         return RedirectResponse(url=spa_url("email-verification?status=success"), status_code=status.HTTP_303_SEE_OTHER)
     except Exception as e:
         await db.rollback()
-        logger.exception(f"Database error during email verification for {developer.email}")
+        logger.exception(f"Database error during email verification for {email_for_log(developer.email)}")
         return RedirectResponse(url=spa_url("email-verification?status=failed&reason=error"), status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -927,7 +928,7 @@ async def resend_verification_email(
     Always returns 200 to avoid leaking whether an email exists.
     Rate-limiting on this endpoint should be enforced at the nginx/SlowAPI layer.
     """
-    logger.info(f"Resend verification request for: {email}")
+    logger.info(f"Resend verification request for: {email_for_log(email)}")
 
     developer = await developer_crud.get_developer_by_email(db, email=email)
 
@@ -979,7 +980,7 @@ async def forgot_password(
     to prevent user enumeration.
     Token TTL: 1 hour.
     """
-    logger.info(f"Password reset requested for: {email}")
+    logger.info(f"Password reset requested for: {email_for_log(email)}")
     ALWAYS_OK = {"message": "If that email is registered, a password reset link has been sent."}
 
     developer = await developer_crud.get_developer_by_email(db, email=email)
@@ -1002,9 +1003,9 @@ async def forgot_password(
             token=token
         )
         if sent:
-            logger.info(f"Password reset email sent to {developer.email}")
+            logger.info(f"Password reset email sent to {email_for_log(developer.email)}")
         else:
-            logger.error(f"Password reset email delivery failed for {developer.email}")
+            logger.error(f"Password reset email delivery failed for {email_for_log(developer.email)}")
     else:
         logger.warning(f"Email not configured — reset token generated for developer {developer.id} but not sent.")
 
@@ -1099,7 +1100,7 @@ async def recover_account_with_key(
     Verifies email and recovery key, returns a short-lived token for setting a new password.
     Enhanced with rate limiting and audit logging.
     """
-    logger.info(f"Account recovery attempt for email: {recover_in.email}")
+    logger.info(f"Account recovery attempt for email: {email_for_log(recover_in.email)}")
     
     developer = await developer_crud.get_developer_by_email(db, email=recover_in.email)
 
@@ -1109,7 +1110,7 @@ async def recover_account_with_key(
     )
 
     if not developer or not developer.is_verified:
-        logger.warning(f"Recovery failed: Developer not found or not verified for email {recover_in.email}.")
+        logger.warning(f"Recovery failed: Developer not found or not verified for email {email_for_log(recover_in.email)}.")
         raise error_exception
 
     if not developer.hashed_recovery_key:

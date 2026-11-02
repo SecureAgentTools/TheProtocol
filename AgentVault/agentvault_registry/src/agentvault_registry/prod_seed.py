@@ -30,7 +30,9 @@ logger = logging.getLogger("prod_seed")
 # First-admin identity is ENV-DRIVEN — no hardcoded credentials in source.
 #   FIRST_ADMIN_EMAIL    — defaults to the canonical mainframe admin (Frame A unchanged).
 #   FIRST_ADMIN_NAME     — display name.
-#   FIRST_ADMIN_PASSWORD — if unset, a random password is generated and printed ONCE to the logs.
+#   FIRST_ADMIN_PASSWORD — if unset, a random password is generated and written to FIRST_ADMIN_PASSWORD_FILE
+#                          (mode 600, before the account exists); the log names the file, never the password.
+#                          V0653 (am) item 4: it used to be printed to stdout, which is the container's log.
 # §EXCISION — FIRST_ADMIN_EMAIL no longer defaults to the Commander's address.
 # A fresh operator deploy that forgot the env var would otherwise seed its first
 # admin under a personal identity on someone else's machine. The frame-c and
@@ -41,6 +43,23 @@ COMMANDER = {
     "is_admin": True,
     "is_verified": True,
 }
+
+
+FIRST_PASSWORD_FILE_DEFAULT = "/app/data/first-boot-admin-password"
+
+
+def write_first_password(path: str, password: str) -> str:
+    """The generated first-boot password in a file only its owner reads: created 0600 (never wider for a moment),
+    written whole, its directory made if missing. Raises when it cannot be written: the caller then creates no
+    account (persist first, like a rotation), so a password nobody holds never exists."""
+    from pathlib import Path
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(target), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(password + "\n")
+    os.chmod(str(target), 0o600)
+    return str(target)
 
 
 async def seed():
@@ -71,6 +90,11 @@ async def seed():
         # ── Resolve the first-admin password (env or random — never hardcoded) ──
         env_password = os.environ.get("FIRST_ADMIN_PASSWORD")
         password = env_password or secrets.token_urlsafe(20)
+        password_file = None
+        if not env_password:
+            # V0653 (am) item 4: persisted BEFORE the account exists; a write that fails leaves no account behind
+            password_file = write_first_password(
+                os.environ.get("FIRST_ADMIN_PASSWORD_FILE") or FIRST_PASSWORD_FILE_DEFAULT, password)
 
         # ── Insert ──
         commander = Developer(
@@ -84,12 +108,13 @@ async def seed():
         db.add(commander)
         await db.commit()
         await db.refresh(commander)
-        logger.info(f"prod_seed: ✓ admin account created (id={commander.id}, email={commander.email})")
-        if not env_password:
+        from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: not the address
+        logger.info(f"prod_seed: ✓ admin account created (id={commander.id}, {email_for_log(commander.email)})")
+        if password_file:
             print("\n" + "=" * 60)
-            print(f"  FIRST-BOOT ADMIN PASSWORD: {password}")
+            print(f"  FIRST-BOOT ADMIN PASSWORD: in {password_file} (mode 600), inside the registry's container")
             print(f"  Email: {COMMANDER['email']}")
-            print("  CHANGE THIS PASSWORD BEFORE EXPOSING THE REGISTRY")
+            print("  Read it once, CHANGE IT BEFORE EXPOSING THE REGISTRY, then delete the file")
             print("=" * 60 + "\n")
 
     await engine.dispose()

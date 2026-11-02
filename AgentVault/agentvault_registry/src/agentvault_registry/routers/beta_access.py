@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db_context
 from ..config import settings
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +151,7 @@ async def request_beta_access(req: BetaAccessRequest):
         )
         await db.commit()
 
-    logger.info(f"[Beta] Access request from {email}")
+    logger.info(f"[Beta] Access request from {email_for_log(email)}")
 
     return BetaAccessResponse(
         status="pending",
@@ -225,10 +226,10 @@ async def _process_pending_requests(force: bool = False) -> int:
 
                 await db.commit()
                 processed += 1
-                logger.info(f"[Beta] Invite sent to {email}: {code}")
+                logger.info(f"[Beta] Invite sent to {email_for_log(email)}: {code}")
 
             except Exception as e:
-                logger.error(f"[Beta] Failed to process request for {email}: {e}")
+                logger.error(f"[Beta] Failed to process request for {email_for_log(email)}: {e}")
                 await db.rollback()
 
     return processed
@@ -245,7 +246,7 @@ async def _send_invite_email(email: str, code: str, invite_url: str):
         theme="neural",
     )
     if not sent:
-        logger.error(f"[Beta] Invite email send failed for {email}")
+        logger.error(f"[Beta] Invite email send failed for {email_for_log(email)}")
         # Don't raise — invite code is still created, user can request resend
 
 

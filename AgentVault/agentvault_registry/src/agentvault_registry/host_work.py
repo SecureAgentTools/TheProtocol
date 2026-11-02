@@ -43,6 +43,10 @@ import re
 import subprocess
 import time
 import sys
+
+# V0653 (am) item 1: the slug the registry sends is checked where the paths and containers are built from it (a leaf:
+# operator_names imports the standard library only, so this keeps the empty-environment import this file needs)
+from agentvault_registry.core.operator_names import checked_slug
 from typing import Any, Dict, List, Optional
 
 # A spec carrying either of these is refused: they are the credentials this seam exists to keep on the other side.
@@ -813,7 +817,7 @@ def _write_operator_env(spec: Dict[str, Any], stack_dir: str, safe: str, notes: 
 
 def _stack_steps(spec: Dict[str, Any], bundle_path: str, notes: List[str]) -> Dict[str, Any]:
     """Steps 2 to 6: the stack dir, the env, the markers, the compose edits, and up."""
-    safe = spec["safe_name"]
+    safe = checked_slug(spec["safe_name"])
     stack_dir = spec.get("stack_dir") or os.path.join(spec["stack_root"], f"cloud-op-{safe}")
 
     # 2. the stack dir and the bundle in it. Read the status: an extract that fails silently leaves everything after
@@ -1223,7 +1227,7 @@ def _update_spire_svid_sans(spec: Dict[str, Any], notes: List[str]) -> Dict[str,
     if not (fingerprint and container and trust_domain):
         notes.append("SPIRE DNS SANs: not asked for (the spec carries no fingerprint, container or trust domain)")
         return {}
-    safe = spec["safe_name"]
+    safe = checked_slug(spec["safe_name"])
     svid_spiffe = f"spiffe://{trust_domain}/operator/{safe}/svid-writer"
     show = subprocess.run(["docker", "exec", container, "/opt/spire/bin/spire-server", "entry", "show",
                            "-spiffeID", svid_spiffe], capture_output=True, text=True, timeout=120)

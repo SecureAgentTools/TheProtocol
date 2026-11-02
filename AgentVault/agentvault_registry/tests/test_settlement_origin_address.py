@@ -185,7 +185,8 @@ async def test_the_first_delivery_reads_the_homes_claim_the_same_way(monkeypatch
 
 
 async def test_the_homes_refusal_names_the_hosts_it_compared():
-    """(4) hosts only: the callback's host and the active peers' hosts, so the next mismatch names itself."""
+    """(4) addresses only (host and port, never a path): the callback's and the active peers', so the next mismatch
+    names itself (V0653 (am) item 9: the port too, since the '/' boundary refuses a matching host on another port)."""
     from fastapi import HTTPException
     from agentvault_registry.routers import federation_disputes as fd
     req = fd.SlashRequest(settlement_id="s-1", dispute_id=50, ruling="IN_FAVOR_OF_COMPLAINANT", amount=3,
@@ -200,5 +201,5 @@ async def test_the_homes_refusal_names_the_hosts_it_compared():
         await fd.receive_slash_request(req, "spiffe://sandbox-b.theprotocol.cloud/service/sbx-beta-registry", _Db400())
     d = str(e.value.detail)
     assert e.value.status_code == 400 and d.startswith("Callback URL must belong to a registered peer registry")
-    assert "its host sbx-beta-nginx-federation" in d
-    assert "sandbox-a.theprotocol.cloud, sbxbetaop.op.theprotocol.cloud" in d and "/api/" not in d
+    assert "its address sbx-beta-nginx-federation:8443" in d
+    assert "sandbox-a.theprotocol.cloud:8443, sbxbetaop.op.theprotocol.cloud:8443" in d and "/api/" not in d

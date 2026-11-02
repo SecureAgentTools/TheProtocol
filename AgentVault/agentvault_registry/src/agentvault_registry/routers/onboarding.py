@@ -29,6 +29,7 @@ from ..core.network_profile import money_knob  # §MONEY-M2: the profile owns th
 from ..event_emitter import get_event_emitter
 from ..services import stepup
 from fastapi.responses import JSONResponse
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 # OWL20-PREP: Event Store integration for onboarding audit trail
 event_emitter = get_event_emitter()
@@ -962,7 +963,7 @@ async def create_agent(
         logger.error(f"Failed to create Agent Card: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create agent card: {str(e)}"
+            detail=internal_detail(e, 'Failed to create agent card', logger)
         )
     
     # --- OWL22 OPTION B: Link the card to the agent via agent_did ---

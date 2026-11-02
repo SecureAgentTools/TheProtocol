@@ -79,16 +79,36 @@ def finished_frame(stack_root, name):
     return bool(dirs) and os.path.isfile(os.path.join(stack_root or "/opt/theprotocol/stack", dirs[-1], "frame-up.json"))
 
 
-def default_images_prefix(version, inspect=None):
-    """The images prefix when none is named: IMAGE_REGISTRY, else build.sh's local names when all six are on this host,
-    else the release channel's public namespace (frame-up pulls from it with retries)."""
+def images_prefix_choice(version, inspect=None):
+    """(prefix, why) when none is named: IMAGE_REGISTRY, else build.sh's local names when all six are on this host, else
+    the release channel's public namespace (frame-up pulls from it with retries)."""
     env = os.getenv("IMAGE_REGISTRY")
     if env:
-        return env
+        return env, "IMAGE_REGISTRY names it"
     inspect = inspect or (lambda ref: run(["docker", "image", "inspect", ref])[0] == 0)
     if all(inspect(f"{LOCAL_IMAGES_PREFIX}/{n}:{version}") for n in IMAGES):
-        return LOCAL_IMAGES_PREFIX
-    return PUBLIC_IMAGES_PREFIX
+        return LOCAL_IMAGES_PREFIX, "build.sh's six images are on this host"
+    return PUBLIC_IMAGES_PREFIX, "the release channel's public namespace (build.sh's six are not all here)"
+
+
+def default_images_prefix(version, inspect=None):
+    """The images prefix when none is named (frame-up's rule; images_prefix_choice says why)."""
+    return images_prefix_choice(version, inspect)[0]
+
+
+def image_plan(prefix, version, why, inspect=None):
+    """V0653 (ao) item 3: which prefix and images frame-up will use, and which of them this host already has."""
+    inspect = inspect or (lambda ref: run(["docker", "image", "inspect", ref])[0] == 0)
+    refs = [f"{prefix}/{n}:{version}" for n in IMAGES]
+    present = [r for r in refs if inspect(r)]
+    return {"prefix": prefix, "version": version, "why": why, "refs": refs, "present": present,
+            "to_pull": [r for r in refs if r not in present]}
+
+
+def image_plan_line(plan):
+    pull = f"; frame-up pulls {len(plan['to_pull'])}" if plan["to_pull"] else ""
+    return (f"images: frame-up will use {plan['prefix']}/<name>:{plan['version']} ({plan['why']}): "
+            f"{len(plan['present'])} of {len(plan['refs'])} on this host{pull}")
 
 
 def run(argv, timeout=60):
@@ -310,11 +330,17 @@ def main():
     ap.add_argument("--min-disk-gb", type=int, default=20)
     ap.add_argument("--json", action="store_true", help="machine-readable result")
     a = ap.parse_args()
-    a.images_prefix = a.images_prefix or default_images_prefix(a.version)
-    problems, notes = checks(a)
-    if a.json:
-        print(json.dumps({"ready": not problems, "problems": problems, "notes": notes, "export_root": EXPORT_ROOT}, indent=1))
+    if a.images_prefix:
+        why = "named with --images-prefix"
     else:
+        a.images_prefix, why = images_prefix_choice(a.version)
+    problems, notes = checks(a)
+    plan = image_plan(a.images_prefix, a.version, why)
+    if a.json:
+        print(json.dumps({"ready": not problems, "problems": problems, "notes": notes, "export_root": EXPORT_ROOT,
+                          "images": plan}, indent=1))
+    else:
+        print(image_plan_line(plan))
         for p in problems:
             print(f"NOT READY: {p}")
         for n in notes:

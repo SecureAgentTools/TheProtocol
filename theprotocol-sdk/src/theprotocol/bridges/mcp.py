@@ -21,6 +21,7 @@ from ..models import (
     Message, Task, TaskState, TextPart, DataPart, Artifact,
 )
 from ..agent.base import BaseA2AAgent
+from ..agent.caller_errors import caller_message   # V0653 (am) item 2
 from .base import BaseBridge
 
 logger = logging.getLogger(__name__)
@@ -213,7 +214,7 @@ class MCPBridge(BaseBridge):
                     task = await agent.handle_task_get(task_id)
                     result = await bridge.a2a_to_external(task)
                 except Exception as e:
-                    result = {"content": [{"type": "text", "text": f"Task {task_id} created. Error getting result: {e}"}], "isError": False}
+                    result = {"content": [{"type": "text", "text": f"Task {task_id} created. Error getting result: {caller_message(e, 'Result read failed', logger)}"}], "isError": False}
 
                 return JSONResponse({"jsonrpc": "2.0", "id": rid, "result": result})
 

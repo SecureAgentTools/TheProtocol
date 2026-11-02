@@ -5,8 +5,10 @@
   <div ref="rootEl" class="ost" :class="{ 'ost--desk': surface === 'desk', 'ost--narrow': narrowPane(paneWidth) }"
        data-testid="ost-root">
     <header class="ost-head">
-      <button class="ost-back" :aria-label="t('common.back', 'Back')" @click="router.push(base)">
-        <Icon name="mdi:chevron-left" /></button>
+      <!-- V0653 (al): beside the list (two panes) the arrow folds and opens the list and never leaves the thread; on a
+           phone it leaves the thread for the list, as before -->
+      <button class="ost-back" data-testid="ost-back" :data-act="arrowAct" :aria-label="arrowLabel" :title="arrowLabel"
+              @click="onArrow"><Icon :name="arrowAct === 'open-list' ? 'mdi:chevron-right' : 'mdi:chevron-left'" /></button>
       <OurStateIdentity v-if="counterparty" class="ost-who" data-testid="ost-counterparty"
                         :ptype="identityKind(counterparty.ptype)"
                         :pid="identityPid(counterparty)"
@@ -193,9 +195,12 @@
     <div class="ost-col">
     <!-- V0650 (l) — approvals pinned ABOVE the history: outside the scroll, so the messages move underneath and the
          requests stay put (his words: "it should stay locked above the chat window"). Org rooms only; decisions go
-         with the developer token, never the speaking agent's. While the side panel shows they live there instead. -->
-    <OurChatApprovals v-if="kind === 'org' && !sideOn" ref="approvalsPanel" :conversation-id="convId" :token="token"
-                      :focus-id="focusApprovalId" @late="onApprovalsLate" />
+         with the developer token, never the speaking agent's.
+         V0653 (al), his seq 686 ("the pinned version was way more clear to spot"): pinned at every width again, the
+         side panel beside or not, and compact: one card with "n more", the one-line strip on a phone-width pane. -->
+    <OurChatApprovals v-if="kind === 'org'" ref="approvalsPanel" compact :narrow="narrowPane(paneWidth)"
+                      :conversation-id="convId" :token="token" :focus-id="focusApprovalId"
+                      @count="approvalsCount = $event" @late="onApprovalsLate" />
     <!-- V0652 (ac): the room's status board, pinned beside the approvals (in the side panel when it shows) -->
     <ChatBoard v-if="kind === 'org' && room && !sideOn && (room.board?.text || room.board?.can_edit)" strip
                :board="room.board || null" :token="token" :conversation-id="convId" :org-id="String(room.org_id || '')"
@@ -275,6 +280,14 @@
                 :title="timeTitle(m.created_at, appLocale())" :data-testid="`ost-time-${m.seq}`"
                 @click="toggleFullTime(m.id)">{{ fullTimeId === m.id ? timeTitle(m.created_at, appLocale())
                   : timeLabel(m.created_at, Date.now(), appLocale()) }}</time>
+          <!-- V0653 (al), his seq 665 (a 6:37 among 9 pm): a thread drawn at its latest reply says when that reply came -->
+          <span v-if="m.created_at && m.kind !== 'system' && lastReplyAt(m, bars[m.id])" class="ost-time ost-time-last"
+                :data-testid="`ost-time-last-${m.seq}`"><span class="sr-only">, </span>{{ tp('ourstate.thread.lastReplyAt',
+                  'last reply {time}', { time: timeLabel(String(lastReplyAt(m, bars[m.id])), Date.now(), appLocale()) }) }}</span>
+          <!-- V0653 (w): a line sent with an API key (an MCP connector, the bridge, a script) says so: it is not a hand -->
+          <span v-if="m.sent_with === 'api_key' && !m.deleted" class="ost-by-key" :data-testid="`ost-by-key-${m.seq}`"
+                :title="t('ourstate.thread.sentWithKeyTitle', 'Sent with an API key (a connector, a bridge or a script), not typed in a signed-in console or Pocket')">
+            {{ t('ourstate.thread.sentWithKey', 'sent with a key') }}</span>
           <!-- V0652 (ac): answer this message; the reply folds under it -->
           <button v-if="canReplyTo(m)" type="button" class="ost-reply-btn" :data-testid="`ost-reply-${m.seq}`"
                   :aria-label="t('ourstate.thread.replyTo', 'Reply to this message')" @click="startReply(m)">
@@ -284,12 +297,14 @@
         <button v-if="bars[m.id]" type="button" class="ost-thread-bar" :class="{ open: bars[m.id].expanded, mine: isMine(m) }"
                 :aria-expanded="bars[m.id].expanded ? 'true' : 'false'" :data-testid="`ost-thread-${m.seq}`"
                 @click="toggleThread(bars[m.id])">
+          <!-- V0653: the parts are apart in the text run too (session-lead, seq 685: a screen reader heard "1 newlast:"),
+               each after the first led by a comma the eye does not need (the gap draws them apart) -->
           <span class="ost-thread-count">{{ threadWord(bars[m.id]) }}</span>
-          <span v-if="bars[m.id].unread" class="ost-thread-new">{{ tp('ourstate.thread.threadNew', '{n} new', { n: bars[m.id].unread }) }}</span>
-          <span v-if="bars[m.id].forMe" class="ost-thread-forme">{{ tp('ourstate.thread.threadForMe', '{n} for you', { n: bars[m.id].forMe }) }}</span>
-          <span v-if="bars[m.id].last" class="ost-thread-last">{{ tp('ourstate.thread.threadLast', 'last: {who}, {when}', {
+          <span v-if="bars[m.id].unread" class="ost-thread-new"><span class="sr-only">, </span>{{ tp('ourstate.thread.threadNew', '{n} new', { n: bars[m.id].unread }) }}</span>
+          <span v-if="bars[m.id].forMe" class="ost-thread-forme"><span class="sr-only">, </span>{{ tp('ourstate.thread.threadForMe', '{n} for you', { n: bars[m.id].forMe }) }}</span>
+          <span v-if="bars[m.id].last" class="ost-thread-last"><span class="sr-only">, </span>{{ tp('ourstate.thread.threadLast', 'last: {who}, {when}', {
             who: speakerName(bars[m.id].last), when: bars[m.id].last?.created_at ? timeLabel(String(bars[m.id].last?.created_at), Date.now(), appLocale()) : '' }) }}</span>
-          <span class="ost-thread-act">{{ bars[m.id].expanded ? t('ourstate.thread.threadHide', 'Hide') : t('ourstate.thread.threadShow', 'Show') }}</span>
+          <span class="ost-thread-act"><span class="sr-only">, </span>{{ bars[m.id].expanded ? t('ourstate.thread.threadHide', 'Hide') : t('ourstate.thread.threadShow', 'Show') }}</span>
         </button>
       </template>
       <div v-if="serviceBusy || serviceInflight" class="ost-calling" data-testid="ost-calling">
@@ -379,9 +394,17 @@
     </div><!-- .ost-col -->
     <ChatSidePanel v-if="sideOn" :org-id="String(room?.org_id || '')" :viewer-key="myKey || 'me'"
                    :approvals-count="approvalsCount" :focus-approvals="!!focusApprovalId">
+      <!-- V0653 (al): WAITING ON YOU keeps its count; the requests themselves are pinned above the history, and this
+           section opens their whole list there -->
       <template #approvals>
-        <OurChatApprovals ref="approvalsPanel" placement="side" :conversation-id="convId" :token="token"
-                          :focus-id="focusApprovalId" @count="approvalsCount = $event" @late="onApprovalsLate" />
+        <p v-if="approvalsCount === 0" class="ost-side-note" data-testid="oca-none">
+          {{ t('ourstate.approvals.none', 'Nothing waits for a decision in this room.') }}</p>
+        <template v-else-if="approvalsCount">
+          <p class="ost-side-note" data-testid="ost-side-approvals-pinned">
+            {{ tp('ourstate.side.approvalsPinned', '{n} pinned above the chat', { n: approvalsCount }) }}</p>
+          <button type="button" class="ost-side-link" data-testid="ost-side-approvals-open" @click="approvalsPanel?.openList()">
+            {{ t('ourstate.side.approvalsOpen', 'Show them all there') }}</button>
+        </template>
       </template>
       <template #board>
         <ChatBoard :board="room?.board || null" :token="token" :conversation-id="convId" :org-id="String(room?.org_id || '')"
@@ -840,9 +863,10 @@
 <script setup lang="ts">
 import { blockTargetFor, householdJoinPrompt, identityKind, identityPid } from '@/services/chat/counterparty'
 import { readAccessToken } from '@/services/accessToken'
-import { ref, computed, watch, onMounted, onUnmounted, nextTick, defineAsyncComponent } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, defineAsyncComponent, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useOurChatBase } from '@/composables/useOurChatBase'
+import { OURCHAT_LIST_FOLD, headerArrow } from '@/services/chat/listFold'
 import Icon from '@/components/Icon.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import OurStateIdentity from '@/components/ourstate/OurStateIdentity.vue'
@@ -858,7 +882,7 @@ import ChatYouPanel from '@/components/ourstate/ChatYouPanel.vue'
 import ChatSidePanel from '@/components/ourstate/ChatSidePanel.vue'
 import ChatCardHistory from '@/components/ourstate/ChatCardHistory.vue'
 import ChatBoard from '@/components/ourstate/ChatBoard.vue'
-import { foldThreads, type ThreadBar } from '@/services/chat/threads'
+import { foldThreads, lastReplyAt, type ThreadBar } from '@/services/chat/threads'
 import { applyCardUpdate, applyCardUpdates, type CardUpdate } from '@/services/chat/liveCards'
 import { chatSurfaceFor, narrowPane, showSidePanel } from '@/services/chat/sidePanel'
 import { muteInEffect } from '@/services/chat/notifyLevel'
@@ -893,6 +917,7 @@ import { useActingContext } from '@/composables/useActingContext'
 import { useChatStream } from '@/composables/useChatStream'
 import { useThreadCatchUp } from '@/composables/useThreadCatchUp'
 import { mergeBySeq, firstUnreadIndex } from '@/services/chat/catchUp'
+import { ANCHOR_MS, keepAnchored, type Anchor } from '@/services/chat/unreadAnchor'
 import { useFocusTrap } from '@/composables/useFocusTrap'
 import { devicePushApi } from '@/services/api/devicePush'
 import apiClient from '@/services/api/client'
@@ -936,7 +961,7 @@ const menuOpen = ref(false)
 const muted = ref(false)
 const scrollEl = ref<HTMLElement | null>(null)
 // V0650 (l): the pinned approvals panel, told when an approval card arrives in the thread
-const approvalsPanel = ref<{ refresh: () => Promise<void> } | null>(null)
+const approvalsPanel = ref<{ refresh: () => Promise<void>; openList: () => void } | null>(null)
 // V0652 (ad): the console's chat measures its OWN pane (the sidebar and the conversation list take their share of the
 // window) to decide whether an organization room's side panel shows beside the column; Pocket keeps its own layout
 const rootEl = ref<HTMLElement | null>(null)
@@ -944,6 +969,18 @@ const paneWidth = ref(0)
 const surface = computed(() => chatSurfaceFor(base.value))
 const sideOn = computed(() => showSidePanel(paneWidth.value, kind.value, room.value?.org_id, surface.value))
 const approvalsCount = ref<number | null>(null)
+/* V0653 (al), his words in the sessions' room (seq 686): the arrow over the chat "just leave[s] the chat and says pick
+   a conversation". Inside the shell's two panes it folds and opens the list instead (OurChatShell keeps the choice);
+   on one pane, or outside the shell, it leaves the thread for the list as before. */
+const listFold = inject(OURCHAT_LIST_FOLD, null)
+const arrowAct = computed(() => headerArrow(!!listFold?.twoPane.value, !!listFold?.folded.value))
+const arrowLabel = computed(() => arrowAct.value === 'fold-list'
+  ? t('ourstate.list.fold', 'Fold the conversation list')
+  : arrowAct.value === 'open-list' ? t('ourstate.list.unfold', 'Show the conversation list') : t('common.back', 'Back'))
+function onArrow() {
+  if (arrowAct.value === 'leave' || !listFold) void router.push(base.value)
+  else listFold.toggle()
+}
 let paneRo: ResizeObserver | null = null
 function measurePane() { paneWidth.value = rootEl.value?.clientWidth || 0 }
 const inputEl = ref<HTMLTextAreaElement | null>(null)
@@ -962,6 +999,7 @@ const counterpartyDid = computed(() =>
 // later thread's device cache, and the later thread marked read up to the earlier one's last message.
 async function load() {
   const id = convId.value
+  endAnchor()   // V0654: a reload (a switch, the socket back) starts from its own scroll
   // §OURSTATE-5d — the cache is a HEAD START, never the truth: paint what this
   // device already holds (only ever present when the sealed vault could
   // encrypt it), then let the server's answer replace it.
@@ -1002,7 +1040,8 @@ async function load() {
     unreadFromSeq.value = unreadAt >= 0 ? Number(messages.value[unreadAt].seq) : null
     unreadCount.value = unreadAt >= 0 ? messages.value.length - unreadAt : 0
     await nextTick()
-    if (unreadFromSeq.value != null) scrollToUnread(); else scrollBottom()
+    if (id !== convId.value) return
+    if (unreadFromSeq.value != null) { scrollToUnread(); holdAnchor() } else scrollBottom()
     // No key, no cache — putThread writes nothing rather than falling back to
     // plaintext, and says so by returning false.
     if (id !== convId.value) return
@@ -1089,7 +1128,7 @@ async function catchUpThread() {
   // V0652 (y): any approval card in what came back, not only the newest message (a decided card under later messages)
   if (r.messages.some((m: any) => touchesApprovals(m))) void approvalsPanel.value?.refresh()
   if (lastSeq.value > 0) void chatApi.markRead(token.value, id, lastSeq.value).catch(() => {})
-  if (atEnd) { await nextTick(); scrollBottom() }
+  if (atEnd && !anchor?.active()) { await nextTick(); scrollBottom() }   // V0654: below a held NEW line it waits
 }
 async function longPollOnce() {
   const id = convId.value
@@ -1125,6 +1164,17 @@ function scrollToUnread() {
   if (!sc || !el) { scrollBottom(); return }
   sc.scrollTop += el.getBoundingClientRect().top - sc.getBoundingClientRect().top - 8
 }
+/* V0654 (session-lead, the sessions' room seq 937-949; check 140 of V0653's console proof): the open's one scroll to the
+   NEW line is held for ANCHOR_MS while the thread settles (the pane's width as the list beside it folds or unfolds,
+   fonts, cards, the approvals pinned above), and the reader's own first move anywhere in the thread ends it (see
+   services/chat/unreadAnchor.ts). While it holds, a message coming in stays below the line: the reader has not reached
+   the end. A send is a move (a press or a key in the thread), so the reader's own message still takes them there. */
+let anchor: Anchor | null = null
+function endAnchor() { anchor?.stop(); anchor = null }
+function holdAnchor() {
+  endAnchor()
+  if (scrollEl.value) anchor = keepAnchored(scrollEl.value, scrollToUnread, ANCHOR_MS, rootEl.value || scrollEl.value)
+}
 
 function ingest(m: any) {
   if (!m || messages.value.some(x => x.id === m.id)) return
@@ -1132,7 +1182,7 @@ function ingest(m: any) {
   messages.value = [...messages.value, m].sort((a, b) => a.seq - b.seq)
   lastSeq.value = Math.max(lastSeq.value, Number(m.seq || 0))
   void chatApi.markRead(token.value, convId.value, lastSeq.value).catch(() => {})
-  void nextTick().then(scrollBottom)
+  if (!anchor?.active()) void nextTick().then(scrollBottom)   // V0654: below a held NEW line it waits
 }
 
 function scrollBottom() { const el = scrollEl.value; if (el) el.scrollTop = el.scrollHeight }
@@ -3019,9 +3069,10 @@ onUnmounted(() => {
   wideMq?.removeEventListener?.('change', onWide)
   paneRo?.disconnect()
   window.removeEventListener('resize', measurePane)
+  endAnchor()
 })
 
-watch(convId, () => { messages.value = []; openThreads.value = new Set(); closedThreads.value = new Map(); replyTo.value = null; void load() })
+watch(convId, () => { endAnchor(); messages.value = []; openThreads.value = new Set(); closedThreads.value = new Map(); replyTo.value = null; void load() })
 </script>
 
 <style scoped>
@@ -3143,6 +3194,10 @@ watch(convId, () => { messages.value = []; openThreads.value = new Set(); closed
 .ost-thread-last { color: #8b96a5; }
 .ost-thread-act { color: var(--nc-primary, #00d2d2); }
 @media (pointer: coarse) { .ost-thread-bar { min-height: 44px; } }
+/* V0653 (al): the side panel's WAITING ON YOU, a count and a door to the list pinned above the history */
+.ost-side-note { margin: 0; font-size: .8rem; color: #8b96a5; }
+.ost-side-link { margin-top: 6px; min-height: 36px; padding: 0 10px; border-radius: 8px; cursor: pointer; font: inherit; font-size: .8rem;
+  background: none; color: var(--nc-primary, #00d2d2); border: 1px solid var(--nc-border, rgba(255, 255, 255, 0.3)); }
 .ost-reply-btn { align-self: flex-end; margin-left: 6px; min-height: 24px; padding: 0 6px; border: 0; border-radius: 6px; background: none;
   color: #8b96a5; font-size: .68rem; cursor: pointer; opacity: 0; transition: opacity .12s; }
 .ost-msg:hover .ost-reply-btn, .ost-reply-btn:focus-visible { opacity: 1; }
@@ -3170,6 +3225,12 @@ watch(convId, () => { messages.value = []; openThreads.value = new Set(); closed
   letter-spacing: .04em; color: #8b96a5; cursor: pointer;   /* 4.5:1 on the dark surface at this size */
 }
 .ost-msg.mine .ost-time { text-align: right; }
+/* V0653 (al): under a thread's root drawn at its latest reply, the line that says when that reply came */
+.ost-time-last { margin-top: 0; cursor: default; }
+.ost-by-key {   /* V0653 (w): the time's type and colour (4.5:1 on the dark surface at this size) */
+  flex-basis: 100%; margin: 0 6px; font-size: .68rem; font-style: italic; color: #8b96a5;
+}
+.ost-msg.mine .ost-by-key { text-align: right; }
 .ost-msg.for-me .ost-bubble, .ost-msg.ask { box-shadow: inset 3px 0 0 var(--primary-color, #4fd8c4); }
 .ost-msg.for-me .ost-bubble { background: rgba(79, 216, 196, .1); }
 .ost-forme-toggle {

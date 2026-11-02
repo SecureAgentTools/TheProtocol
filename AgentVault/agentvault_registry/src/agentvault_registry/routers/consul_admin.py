@@ -66,6 +66,7 @@ from agentvault_registry.services.federation_policy_validator import (
     FederationPolicyValidator,
 )
 from agentvault_registry.es_ssl_helper import get_httpx_verify
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -531,6 +532,9 @@ _frame_cache: Dict[str, str] = {}
 _frame_cache_lock = _asyncio.Lock()
 
 
+from agentvault_registry.services.spiffe_canonical import CLUSTER_TRUST_DOMAINS as _TD_FRAME   # one table
+
+
 def _infer_frame_from_trust_domain(trust_domain: Optional[str]) -> str:
     """Map a SPIRE trust domain to its frame letter.
 
@@ -543,14 +547,10 @@ def _infer_frame_from_trust_domain(trust_domain: Optional[str]) -> str:
     Frame checks come FIRST because a future frame domain could also contain a substring of
     the Frame A domain.
     """
-    td = (trust_domain or "").lower()
-    if "frame-b" in td:
-        return "B"
-    if "frame-c" in td:
-        return "C"
-    if "agentvault.com" in td:
-        return "A"
-    return "?"
+    # V0653 (am) item 5: the trust domain itself, compared whole. A substring let a look-alike domain
+    # (evil-frame-b.example) wear a frame's letter; the label is a display, but a display that names the wrong frame
+    # is a claim nobody re-asks.
+    return _TD_FRAME.get((trust_domain or "").strip().lower().rstrip("."), "?")
 
 
 async def _probe_operator_frame(container_name: str) -> str:
@@ -777,7 +777,7 @@ async def set_mode(
     if previous == request.mode:
         logger.info(
             f"[CONSUL] enforcement-mode unchanged (already '{request.mode}') — "
-            f"requested by {admin.email}"
+            f"requested by {email_for_log(admin.email)}"
         )
     else:
         state.compliance_enforcement_mode = request.mode
@@ -813,7 +813,7 @@ async def set_mode(
 
         logger.warning(
             f"[CONSUL] enforcement-mode changed: {previous} → {request.mode} "
-            f"by {admin.email}: {request.reason}"
+            f"by {email_for_log(admin.email)}: {request.reason}"
         )
 
     return EnforcementModeRead(
@@ -1388,7 +1388,7 @@ async def poll_peer_now(
     result = await poller.force_single_peer_poll(peer_id, dry_run_only=dry_run_only)
     logger.info(
         f"[CONSUL] force_single_peer_poll(peer_id={peer_id}, "
-        f"dry_run_only={dry_run_only}) by {admin.email} → {result}"
+        f"dry_run_only={dry_run_only}) by {email_for_log(admin.email)} → {result}"
     )
     # §MCPTEST30 (V0550): a peer that does not exist is a 404, not a 200 whose body says "error" (agentvault2-45 found
     # it pinning pollPeerComplianceNow: the sweep's nonexistent peer read as a success). A skip stays a 200: the peer is
@@ -1525,7 +1525,7 @@ async def accept_peer_baseline(
         ledger_recorded = False
         logger.error("[CONSUL] ComplianceBaselineAccepted not emitted (the baseline IS stored): %s", exc)
     logger.warning(
-        f"[CONSUL] baseline accepted for peer {peer_id} ({peer.name}) by {admin.email}: "
+        f"[CONSUL] baseline accepted for peer {peer_id} ({peer.name}) by {email_for_log(admin.email)}: "
         f"{(payload['previous_hash'] or '')[:16]}… -> {live[:16]}… ({request.reason})"
     )
     # the answer says whether the ledger holds the record: a stored baseline with no event is a change nobody can audit

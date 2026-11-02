@@ -27,6 +27,7 @@ from ..security import admin_credential, get_current_developer
 from ..event_emitter import get_event_emitter
 from ..crud import attestation as crud_attestation
 import uuid
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 
@@ -574,7 +575,7 @@ async def submit_attestation(
         logger.error(f"Error processing attestation: {exc}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Internal error during verification: {exc}",
+            detail=internal_detail(exc, 'Internal error during verification', logger),
         )
 
 
@@ -1254,7 +1255,7 @@ async def reverify_attestation_endpoint(
             engine_verified = reverify.verified
         except Exception as exc:
             logger.error(f"[reverify] bb verify error for {row.id}: {exc}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Re-verify failed: {exc}")
+            raise HTTPException(status_code=500, detail=internal_detail(exc, 'Re-verify failed', logger))
         engine_failure = None if engine_verified else reverify.reason
 
     # Final verified bit: cryptographic OK AND not revoked AND not expired.

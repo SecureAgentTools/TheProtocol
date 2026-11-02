@@ -28,6 +28,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from .agent import BaseA2AAgent
 from .state import BaseTaskStore, InMemoryTaskStore, TaskContext
 from agentvault_server_sdk.exceptions import AgentServerError, TaskNotFoundError
+from .caller_errors import caller_message   # V0653 (am) item 2: the caller gets no exception text
 
 
 # --- RE-ADDED: Import block with fallback for models needed HERE ---
@@ -117,13 +118,13 @@ async def task_not_found_handler(request: Request, exc: TaskNotFoundError) -> JS
 async def validation_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.warning(f"Validation error (ValueError/TypeError/Pydantic): {exc}", exc_info=False)
     req_id = getattr(request.state, 'json_rpc_request_id', None)
-    error_resp = create_jsonrpc_error_response(req_id, JSONRPC_INVALID_PARAMS, f"Invalid parameters: {exc}")
+    error_resp = create_jsonrpc_error_response(req_id, JSONRPC_INVALID_PARAMS, caller_message(exc, "Invalid parameters", logger))
     return JSONResponse(status_code=status.HTTP_200_OK, content=error_resp)
 
 async def agent_server_error_handler(request: Request, exc: AgentServerError) -> JSONResponse:
     logger.error(f"Agent server error: {exc}", exc_info=True)
     req_id = getattr(request.state, 'json_rpc_request_id', None)
-    error_resp = create_jsonrpc_error_response(req_id, JSONRPC_APP_ERROR, f"Agent error: {exc}")
+    error_resp = create_jsonrpc_error_response(req_id, JSONRPC_APP_ERROR, caller_message(exc, "Agent error", logger))
     return JSONResponse(status_code=status.HTTP_200_OK, content=error_resp)
 
 async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -188,7 +189,7 @@ async def _sse_stream_wrapper(
         yield f"event: error\ndata: {error_data}\n\n".encode('utf-8')
     except Exception as e:
         logger.exception(f"Error during SSE event generation for task {task_id}: {e}")
-        error_data = json.dumps({"error": "stream_error", "message": f"Error generating events: {type(e).__name__}: {str(e)}"})
+        error_data = json.dumps({"error": "stream_error", "message": caller_message(e, "Error generating events", logger)})
         yield f"event: error\ndata: {error_data}\n\n".encode('utf-8')
     finally:
         logger.debug(f"SSE stream wrapper finished for task {task_id}")

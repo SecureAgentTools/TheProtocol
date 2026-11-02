@@ -42,13 +42,35 @@ def validate_did(did: str) -> str:
 # HTML / XSS SANITIZATION
 # ---------------------------------------------------------------------------
 
-# Characters that enable HTML injection
-_HTML_TAG_RE = re.compile(r"<[^>]*>")
+# V0653 (am) item 3: a tag is found by a scan, not a regex. "<[^>]*>" retried every '<' to the end of a text holding no
+# '>' (quadratic: 200,000 '<' took about 20 s), and "<[^<>]*>", the linear form, would strip only the inner "<b>" of
+# "<a <b>onclick=x>" and leave a live "<a onclick=x>". The scan keeps the regex's own matches: from a '<' to the first
+# '>' after it, left to right, none overlapping.
+def _strip_tags(text: str) -> str:
+    out = []
+    i = 0
+    while True:
+        lt = text.find("<", i)
+        gt = text.find(">", lt + 1) if lt != -1 else -1
+        if gt == -1:
+            break
+        out.append(text[i:lt])
+        i = gt + 1
+    out.append(text[i:])
+    return "".join(out)
+
+
+def _has_tag(text: str) -> bool:
+    lt = text.find("<")
+    return lt != -1 and text.find(">", lt + 1) != -1
+
 
 # Dangerous patterns beyond simple tags
 _DANGEROUS_PATTERNS = [
     re.compile(r"javascript\s*:", re.IGNORECASE),
-    re.compile(r"on\w+\s*=", re.IGNORECASE),  # onerror=, onload=, etc.
+    # onerror=, onload=, etc.: a name that STARTS with "on" (V0653 (am) item 3: without the \b every "on" inside a long
+    # word rescanned it to its end, quadratic on "onon..."; an HTML attribute named xonload is no event handler)
+    re.compile(r"\bon\w+\s*=", re.IGNORECASE),
     re.compile(r"data\s*:\s*text/html", re.IGNORECASE),
 ]
 
@@ -67,7 +89,7 @@ def sanitize_text(text: str) -> str:
     # Strip control characters
     text = _CONTROL_CHAR_RE.sub("", text)
     # Strip HTML tags
-    text = _HTML_TAG_RE.sub("", text)
+    text = _strip_tags(text)
     return text
 
 
@@ -75,7 +97,7 @@ def contains_dangerous_content(text: str) -> bool:
     """Check if text contains XSS-dangerous patterns."""
     if not text:
         return False
-    if _HTML_TAG_RE.search(text):
+    if _has_tag(text):
         return True
     for pattern in _DANGEROUS_PATTERNS:
         if pattern.search(text):

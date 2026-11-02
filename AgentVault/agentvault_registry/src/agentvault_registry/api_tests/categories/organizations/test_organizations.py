@@ -5,6 +5,7 @@ Tests for organization and team management endpoints with complete flow testing.
 """
 
 import logging
+from agentvault_registry.api_tests.core import log_safe as _ls   # V0653 (am) item 13: shapes in the log, never values
 from typing import List, Optional, Dict, Any
 import time
 from datetime import datetime, timezone
@@ -286,14 +287,14 @@ class TestOrganizations(APITestBase):
             
             if invite_result.get("healthy"):
                 invite_data = invite_result.get("responseData")
-                logger.info(f"Invitation response data: {invite_data}")
+                logger.info(f"Invitation response data: {_ls.shape(invite_data)}")
                 
                 if invite_data:
                     # Check if API returns the actual token (backend fix)
                     if "token" in invite_data:
                         # Backend has been fixed to return token!
                         self.flow_values["invitation_token"] = invite_data.get("token")
-                        logger.info(f"✅ Sent invitation with token: {self.flow_values.get('invitation_token', 'N/A')[:20]}...")
+                        logger.info(f"✅ Sent invitation with token: {_ls.secret(self.flow_values.get('invitation_token'))}")
                     elif "invitation_id" in invite_data:
                         # Old API only returns invitation_id (UUID), not the actual token
                         # The accept endpoint needs the token, not the ID

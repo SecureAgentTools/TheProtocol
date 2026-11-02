@@ -31,6 +31,7 @@ from .. import security
 from ..event_emitter import get_event_emitter
 from ..config import settings
 from ..email_utils import send_themed_email
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ async def _send_funding_approval_email(
             },
             theme="neural",
         )
-        logger.info(f"[Funding] Approval email sent to {recipient_email} for request #{request_id}")
+        logger.info(f"[Funding] Approval email sent to {email_for_log(recipient_email)} for request #{request_id}")
     except Exception as e:
         logger.warning(f"[Funding] Failed to send approval email for request #{request_id}: {e}")
 
@@ -121,7 +122,7 @@ async def _send_funding_rejection_email(
             },
             theme="neural",
         )
-        logger.info(f"[Funding] Rejection email sent to {recipient_email} for request #{request_id}")
+        logger.info(f"[Funding] Rejection email sent to {email_for_log(recipient_email)} for request #{request_id}")
     except Exception as e:
         logger.warning(f"[Funding] Failed to send rejection email for request #{request_id}: {e}")
 
@@ -507,7 +508,7 @@ async def reject_funding_request(
     await db.commit()
     await db.refresh(funding_req)
 
-    logger.info(f"[Funding] Request #{request_id} rejected by {admin_email}: {body.reason}")
+    logger.info(f"[Funding] Request #{request_id} rejected by {email_for_log(admin_email)}: {body.reason}")
     # §NOTIFV2 — funding.decided (rejected). Post-commit, best-effort.
     try:
         from agentvault_registry.background_tasks.push_notify import notify_agent_owners

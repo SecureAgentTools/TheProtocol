@@ -103,6 +103,7 @@ from ..services.fiat_providers.metrics import (
 from ..es_ssl_helper import get_httpx_verify  # noqa: E402
 # §FLARESHOP (2026-08-16) — THE flare grant writer + tier tables live here now.
 from ..services import flare_grants as _flare_grants  # noqa: E402
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/fiat")
@@ -3068,7 +3069,7 @@ async def _resolve_or_create_anonymous(
         await db.refresh(dev)
         logger.info(
             "[fiat] anonymous flow created Developer %s (email=%s, name=%r, requested=%r)",
-            dev.id, email, chosen, requested_developer_name,
+            dev.id, email_for_log(email), chosen, requested_developer_name,
         )
 
     # Find an existing active agent or create one.
@@ -6278,7 +6279,7 @@ async def admin_resend_magic_link(
 
     logger.info(
         "[fiat] magic-link resent by dev=%s purchase=%s recipient=%s",
-        admin.id, p.id, dev.email,
+        admin.id, p.id, email_for_log(dev.email),
     )
 
     return AdminPurchaseActionResponse(

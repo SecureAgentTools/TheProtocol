@@ -354,7 +354,7 @@ def _kept_answer(name: str, token: str, rc: int, out: str) -> tuple[int, str]:
     rc2, out2 = _exec_retrying(name, ["sh", "-c", f"cat {_KEPT_DIR}/{token}"])
     if rc2 == 0 and _HTTP_MARKER in (out2 or ""):
         KEPT_RECOVERIES["recovered"] += 1
-        logger.info("[exec] an answer the exec stream dropped was read back from the container (%s)", token)
+        logger.info("[exec] an answer the exec stream dropped was read back from the container (%s)", token)  # log-safe: the kept answer's file key, not a credential
         return 0, out2
     KEPT_RECOVERIES["still_lost"] += 1
     return rc, out

@@ -39,6 +39,7 @@ from agentvault_registry.services.force_unstake import (
     TegUnlockError,
 )
 from agentvault_registry.crud import crud_enforcement
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,7 @@ async def slash_stake_execute(
     db: AsyncSession = Depends(get_db),
     admin: Developer = Security(security.require_admin_flag("admin_enforcement")),
 ):
-    logger.info(f"[EnforcementAdmin] Slash by {admin.email}: {agent_did}, amt={request.amount}")
+    logger.info(f"[EnforcementAdmin] Slash by {email_for_log(admin.email)}: {agent_did}, amt={request.amount}")
     service = get_force_unstake_service()
     try:
         result = await service.force_unstake_for_slash(
@@ -546,7 +547,7 @@ async def _apply_policy_update(db: AsyncSession, admin: Developer, policy_json: 
         )
     except ValueError as ve:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"policy refused: {ve}")
-    logger.info(f"[EnforcementAdmin] Policy updated to v{new_policy.version} by {admin.email}")
+    logger.info(f"[EnforcementAdmin] Policy updated to v{new_policy.version} by {email_for_log(admin.email)}")
     after_wf = (new_policy.policy_json or {}).get("slash_waterfall")
     waterfall_changed = before_wf != after_wf
     if waterfall_changed:

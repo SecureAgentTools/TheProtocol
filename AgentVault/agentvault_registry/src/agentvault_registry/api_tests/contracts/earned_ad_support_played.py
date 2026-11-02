@@ -8,8 +8,9 @@ a throwaway developer files a ticket (submitSupportTicket) and the run's own adm
   - the desk is told durably: a support.desk entry in the desk's notification feed names the ticket and opens the chat
     desk (#/admin/chatdesk?ticket=N); before, a ticket filed at night waited for an open console
   - one notice to the requester per desk act (the desk's reply, then the resolve), in words: never two or three, never a
-    raw support.* key, the reply's carrying its first words; before, a reply was three notices, one of them the raw
-    "support.in_progress"
+    raw support.* key, each carrying its message's first words; before, a reply was three notices, one of them the raw
+    "support.in_progress" (V0653's tester: the resolve's too, the desk's closing message riding the status change in one
+    call since V0652, so the one notice left is the only place the requester is told it)
   - the requester's reply reopens the resolved ticket: the ticket reads open and its thread holds a support.open row
     authored by the requester; before, the reopen left no row
   - the desk is told of the reopen
@@ -220,13 +221,14 @@ async def _play(rpc: Any, parse: Any, bag: Any, t: Throwaways, tag: str, outcome
     verdicts.append(one_notice_verdict("desk's reply", new, words))
     thread = next((thread_of(e.get("click")) for e in new if thread_of(e.get("click"))), None)
     r0 = max([r0] + [_id(e) for e in new])
+    close_words = f"MCP tester {tag} desk close"
     ok_c, ans_c, code_c = await _call(bag.rpc_admin, parse, "theprotocol_supportCloseTicket",
                                       {"ticket_id": tid, "status": "resolved",
-                                       "message": f"MCP tester {tag}: resolved by the desk"}, desk)
+                                       "message": f"{close_words}: resolved on our side."}, desk)
     if not ok_c:
         return _row(outcomes, ONE_PER_ACT, False, t1, f"the desk's resolve was refused (HTTP {code_c}: {said(ans_c)})", {})
     new = await _arrivals(bag, parse, rjwt, r0, lambda e: e.get("type_key") == "support.reply")
-    verdicts.append(one_notice_verdict("desk's resolve", new))
+    verdicts.append(one_notice_verdict("desk's resolve", new, close_words))
     r0 = max([r0] + [_id(e) for e in new])
     bad = [v for v in verdicts if v]
     _row(outcomes, ONE_PER_ACT, not bad, t1, ("BUG-FIND: support: " + "; ".join(bad)) if bad else None,

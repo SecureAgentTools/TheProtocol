@@ -244,7 +244,13 @@ To federate, `frame-federate.py --stack-dir <stack dir> --with <a peer's console
  sends the invitation and applies the licence the peer
 delivers once its admin approves. It waits up to 20 minutes (`--timeout-min`) and exits with code 4 while the
 invitation is pending; run it again later and it resumes. *Federating a Frame* (chapter 15) walks every call.
-`frame-down.py --name myframe` removes the frame.
+`frame-down.py --name myframe` removes the frame. Add `--with-runner` and, once the frame is gone, it also takes off
+the frame runner `frame-up.py --with-runner` installed for it: its systemd unit, its policy
+(`/etc/theprotocol/frame-runner.json` and the installer's backups of it), the protected-frames list and the socket group
+the installer created (a group your host had before stays). `frame-runner-install.py --remove --export-root <export>
+--stack-root <stack root>` does the same on its own, `--dry-run` says what it would remove, and `--purge-state` also
+removes the runner's jobs and audit (`/var/lib/theprotocol/frame-runner`, otherwise kept). Both refuse while the runner
+still holds a frame that runs.
 
 ---
 

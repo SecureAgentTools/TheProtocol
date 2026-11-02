@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from agentvault_registry.api_tests.core import log_safe as _ls   # V0653 (am) item 13: shapes in the log, never values
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -239,7 +240,7 @@ class TestMultiframeTxstorm(APITestBase):
                 successful_transfers += 1
             else:
                 failed_transfers.append({"i": i, "sender": sender["name"], "receiver": receiver["name"], "code": code, "body": str(body)[:120]})
-                logger.warning(f"Transfer {i+1}/{transfer_count} failed: {code} {str(body)[:80]}")
+                logger.warning(f"Transfer {i+1}/{transfer_count} failed: {code} {_ls.refusal(body)}")
 
         results.append({
             "step": 5, "name": f"Round-robin transfer storm ({transfer_count} transfers)",

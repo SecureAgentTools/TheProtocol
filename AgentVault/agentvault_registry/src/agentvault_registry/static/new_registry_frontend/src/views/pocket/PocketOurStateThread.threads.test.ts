@@ -173,3 +173,50 @@ describe('threads and the status board, in the open room', () => {
     w.unmount()
   })
 })
+
+/**
+ * V0653 (al) (order gwo_2f0d7d69673b8f9c9392e5dc): his report (the sessions' room, seq 665: a request "showed timestamp
+ * 6:37 but the previous messages says 8:31pm"), and session-lead's review (seq 685: the thread bar's parts joined in the
+ * text run, "1 newlast:"). A root drawn at its latest reply also says when that reply came; the bar's parts are apart in
+ * the text a screen reader reads. BASE (V0652): only the root's own time, and the parts ran together.
+ */
+describe("a thread's root and bar, read in order", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    h.chat = {}
+    h.stream = null
+    try { localStorage.clear() } catch { /* no storage */ }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404, json: async () => ({}) }))
+    h.chat.listApprovals = vi.fn().mockResolvedValue({ items: [], can_decide: true, presence: 'off' })
+  })
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  const thread = () => [
+    text('r1', 1, 'Roll the faucet off?', { created_at: '2026-11-01T17:37:00Z' }),
+    text('x1', 2, 'meanwhile', { created_at: '2026-11-01T19:31:00Z' }),
+    text('r2', 3, 'approved', { reply_to: 'r1', sender_id: '8', sender_name: 'Theo', created_at: '2026-11-01T20:00:07Z' }),
+  ]
+
+  it('the root, drawn at its latest reply, says when that reply came; its own time stays', async () => {
+    h.chat.getMessages = vi.fn().mockResolvedValue(page(thread()))
+    const w = mount(PocketOurStateThread, opts)
+    await flushPromises()
+    expect(shownIds(w)).toEqual(['ost-msg-2', 'ost-msg-1'])          // the root sits after the 19:31 message
+    expect(w.find('[data-testid="ost-time-1"]').attributes('datetime')).toBe('2026-11-01T17:37:00Z')
+    const last = w.find('[data-testid="ost-time-last-1"]')
+    expect(last.exists()).toBe(true)
+    expect(last.text()).toMatch(/^, last reply \S/)
+    expect(w.find('[data-testid="ost-time-last-2"]').exists()).toBe(false)   // a message outside a thread: its own time only
+    w.unmount()
+  })
+
+  it("the bar's parts are apart in the text run: count, new, last, the action", async () => {
+    h.chat.getMessages = vi.fn().mockResolvedValue({ ...page(thread()), my_last_read_seq: 1 })
+    const w = mount(PocketOurStateThread, opts)
+    await flushPromises()
+    const run = w.find('[data-testid="ost-thread-1"]').text()
+    expect(run).toMatch(/^1 reply, 1 new, last: Theo, .+, Show$/)
+    expect(run).not.toMatch(/new(last|Show)/)
+    w.unmount()
+  })
+})

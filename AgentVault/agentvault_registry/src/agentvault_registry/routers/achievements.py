@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agentvault_registry import models
 from agentvault_registry.database import get_db
 from agentvault_registry.security import get_current_developer
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +168,7 @@ async def record_achievement(
                     "payout_avt": existing_ach.payout_avt,
                 }
             }
-        raise HTTPException(status_code=500, detail=f"Failed to record achievement: {e}")
+        raise HTTPException(status_code=500, detail=internal_detail(e, 'Failed to record achievement', logger))
 
     logger.info(
         f"[Achievement] Awarded: {request.achievement_type} ({reward.achievement_name}) "

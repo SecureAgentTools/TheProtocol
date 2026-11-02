@@ -17,6 +17,7 @@ import { useI18n } from '@/composables/useI18n'
 import { isWalletAgent } from '@/services/walletAgent'
 import { useCurrency } from '@/composables/useCurrency'
 import { agentCredentialsStore } from '@/services/agentCredentialsStore'
+import AgentSecretWhere from '@/components/common/AgentSecretWhere.vue'   // V0653 (am) item 6: where the secret sits
 import PaymentTokensPanel from '@/components/myagents/PaymentTokensPanel.vue'
 import StatementPanel from '@/components/myagents/StatementPanel.vue'
 import FlareBadge from '@/components/common/FlareBadge.vue'
@@ -520,9 +521,9 @@ function openAddCredentials(agent: any) {
   showAddCredentials.value = true
 }
 
+// V0653 (am) item 6: a save refreshes what the cards read and leaves the dialog open: while the secret sits unencrypted
+// here, its saved step says so and offers the lock; the dialog's own close (Done, or at once over a sealed vault) closes it
 function handleAddCredsSaved() {
-  showAddCredentials.value = false
-  agentForAddCreds.value = null
   credsRefreshTick.value += 1
   authStore.fetchAvailableAgents({ force: true })
 }
@@ -1935,6 +1936,7 @@ onMounted(async () => {
                  v-html="t('myAgentsView.credsModal.storeWarning', 'Store these credentials securely. They will <strong>NOT</strong> be shown again.')"
               ></p>
             </div>
+            <AgentSecretWhere />
           </div>
           <div class="modal-card-footer" style="display: flex; justify-content: flex-end;">
             <button class="card-btn card-btn--primary" style="flex: 0; padding: 8px 24px;" @click="closeCredentialsDialog">{{ t('myAgentsView.credsModal.done', 'DONE') }}</button>

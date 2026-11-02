@@ -28,6 +28,7 @@ from agentvault_registry.security import get_current_agent, get_current_develope
 from agentvault_registry.services import exchange_service as svc
 from agentvault_registry.services.idempotency import idempotency_lookup, idempotency_store
 from agentvault_registry.services.idempotency.cache import agent_caller, developer_caller  # D6-777
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 # §RATEFIX: THE shared, Redis-backed limiter — the same object main.py puts on
@@ -2254,7 +2255,7 @@ async def passport_place_order(
                 timeout=60.0,
             )
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"funding send failed: {e}")
+        raise HTTPException(status_code=502, detail=internal_detail(e, 'funding send failed', logger))
     if sr.status_code not in (200, 201, 202):
         # Insufficient balance (the calling agent can't cover the funding leg) is a
         # client/business condition → surface a clean 402, NOT an alarming 502. The

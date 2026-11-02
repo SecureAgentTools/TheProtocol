@@ -70,10 +70,12 @@ api_router.include_router(endpoints_auditor.router, prefix="/auditor", tags=["Au
 api_router.include_router(endpoints_dispute.router, prefix="/disputes", tags=["Disputes"])
 api_router.include_router(endpoints_reputation.router, prefix="/reputation", tags=["Reputation"])
 api_router.include_router(endpoints_avtp.router, prefix="/avtp", tags=["AVTP Integration"])
-# D8 (2026-09-05): the TEG's own onboarding faucet is a retired money surface behind a flag —
-# default ON (every running TEG byte-identical); the fresh frame's template sets it off.
+# D8 (2026-09-05): the TEG's own onboarding faucet is a retired money surface behind a flag.
+# V0653 (an), the V0653 plan's item 1: default OFF. Its default was ON (every TEG running then stayed byte-identical),
+# so a compose that never named the key ran the faucet: the four production operators until V0652's roll, Frame A's
+# TEG until 2026-11-01 22:02Z. Only an explicit TEG_ONBOARDING_MINT_ENABLED=true (1, yes, on) mounts it now.
 import os as _os_d8
-if (_os_d8.getenv("TEG_ONBOARDING_MINT_ENABLED", "true") or "true").strip().lower() not in ("0", "false", "no", "off"):
+if (_os_d8.getenv("TEG_ONBOARDING_MINT_ENABLED", "false") or "false").strip().lower() in ("1", "true", "yes", "on"):
     api_router.include_router(endpoints_onboarding.router, prefix="/onboarding", tags=["Onboarding Protocol"])
 api_router.include_router(endpoints_internal.router, prefix="/internal", tags=["Internal Service Communication"])
 

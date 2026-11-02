@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import AsyncSessionLocal
 from ..models import Developer
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -34,18 +35,18 @@ async def _grant_admin_role(email: str) -> None:
         developer = result.scalar_one_or_none()
         
         if not developer:
-            logger.error(f"Developer not found with email: {email}")
+            logger.error(f"Developer not found with email: {email_for_log(email)}")
             raise typer.Exit(code=1)
         
         if developer.is_admin:
-            logger.info(f"Developer {email} is already an admin")
+            logger.info(f"Developer {email_for_log(email)} is already an admin")
             return
         
         # Grant admin role
         developer.is_admin = True
         await session.commit()
         
-        logger.info(f"Successfully granted admin role to developer: {email} (ID: {developer.id})")
+        logger.info(f"Successfully granted admin role to developer: {email_for_log(email)} (ID: {developer.id})")
 
 
 async def _revoke_admin_role(email: str) -> None:
@@ -59,18 +60,18 @@ async def _revoke_admin_role(email: str) -> None:
         developer = result.scalar_one_or_none()
         
         if not developer:
-            logger.error(f"Developer not found with email: {email}")
+            logger.error(f"Developer not found with email: {email_for_log(email)}")
             raise typer.Exit(code=1)
         
         if not developer.is_admin:
-            logger.info(f"Developer {email} is not an admin")
+            logger.info(f"Developer {email_for_log(email)} is not an admin")
             return
         
         # Revoke admin role
         developer.is_admin = False
         await session.commit()
         
-        logger.info(f"Successfully revoked admin role from developer: {email} (ID: {developer.id})")
+        logger.info(f"Successfully revoked admin role from developer: {email_for_log(email)} (ID: {developer.id})")
 
 
 async def _list_admins() -> None:
@@ -89,7 +90,7 @@ async def _list_admins() -> None:
         
         logger.info(f"Found {len(admins)} admin developer(s):")
         for admin in admins:
-            logger.info(f"  - {admin.email} (ID: {admin.id}, Name: {admin.name})")
+            logger.info(f"  - {email_for_log(admin.email)} (ID: {admin.id}, Name: {admin.name})")
 
 
 @app.command()

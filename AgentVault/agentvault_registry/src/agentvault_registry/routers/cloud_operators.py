@@ -39,6 +39,8 @@ from agentvault_registry.services.cloud_provisioner import (
     _safe_name,
     _cloud_operator_did,
 )
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +137,7 @@ async def provision_cloud(
 
     # Provision
     logger.info(f"[CLOUD-ADMIN] Provisioning cloud operator: {safe_name} "
-                f"(app={application_id}, admin={current_admin.email})")
+                f"(app={application_id}, admin={email_for_log(current_admin.email)})")
 
     # §pass66 (2026-05-22) — Path B / location stacking fix. Same auto-pick
     # logic as the self-service path: when lat/lng are None, deterministically
@@ -213,7 +215,7 @@ async def provision_cloud(
         logger.error(f"[CLOUD-ADMIN] Provisioning failed: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Provisioning failed: {str(e)[:300]}"
+            detail=internal_detail(e, 'Provisioning failed', logger)
         )
 
     # Update application record
@@ -474,7 +476,7 @@ async def teardown_cloud(
         td_result = await teardown_cloud_operator(app_record, body.reason, db, purge=body.purge)
     except Exception as e:
         logger.error(f"[CLOUD-ADMIN] Teardown failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Teardown failed: {str(e)[:300]}")
+        raise HTTPException(status_code=500, detail=internal_detail(e, 'Teardown failed', logger))
 
     # ⚠ THE STAMP IS A CLAIM ABOUT THE HOST, so it waits for the host. This wrote unconditionally, and on a frame
     # whose registry holds no docker socket the SDK path returns False and only logs — so the row would read "torn
@@ -617,7 +619,7 @@ async def reconcile_operator_identity(
 
     logger.info(
         f"[CLOUD-ADMIN] reconcile-identity {old_slug} → {new_slug} dry_run={body.dry_run} "
-        f"local={local} fanout_emitted={fanout_emitted} admin={admin_email}")
+        f"local={local} fanout_emitted={fanout_emitted} admin={email_for_log(admin_email)}")
     return {
         "status": "previewed" if body.dry_run else "applied",
         "old_slug": old_slug, "new_slug": new_slug,
@@ -686,7 +688,7 @@ async def rename_cloud(
             detail=f"rename already in progress for {old_slug} (state={existing.get('state')})")
 
     logger.info(f"[CLOUD-ADMIN] Rename requested: {old_slug} → {new_slug} "
-                f"(dry_run={body.dry_run}, admin={current_admin.email})")
+                f"(dry_run={body.dry_run}, admin={email_for_log(current_admin.email)})")
 
     # Seed status synchronously so an immediate poll has something to read (the bg
     # task runs after the 202 is sent).
@@ -800,7 +802,7 @@ async def restart_cloud(
 
     logger.info(
         f"[CLOUD-ADMIN] Restart request: op={app_record.name} "
-        f"service={body.service} by={current_admin.email}"
+        f"service={body.service} by={email_for_log(current_admin.email)}"
     )
 
     try:
@@ -1048,7 +1050,7 @@ async def cloud_operator_logs(
 
     logger.info(
         f"[CLOUD-ADMIN] Logs request: op={app_record.name} "
-        f"service={service} tail={tail} by={current_admin.email}"
+        f"service={service} tail={tail} by={email_for_log(current_admin.email)}"
     )
     try:
         logs_result = await fetch_cloud_logs(app_record, service, tail)

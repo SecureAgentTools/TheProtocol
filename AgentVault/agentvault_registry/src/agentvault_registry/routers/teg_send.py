@@ -35,6 +35,7 @@ from ..models import Agent
 from .utils import get_current_agent
 from ..services.smart_transfer import derive_route
 from ..services.idempotency.cache import REPLAYED_HEADER
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 
@@ -254,7 +255,8 @@ async def smart_send(
         # (a read timeout, a dropped answer) may have reached the inner endpoint, which may be moving the money now.
         from ..services.payout_outcome import NO_FUNDS_MOVED, never_sent
         _none = f" {NO_FUNDS_MOVED}" if never_sent(e) else ""
-        raise HTTPException(status_code=502, detail=f"smart-send dispatch failed ({dec.method}): {str(e)[:200]}{_none}")
+        # the error id before the marker: "(no funds moved)" ends the sentence (services/payout_outcome reads it)
+        raise HTTPException(status_code=502, detail=internal_detail(e, f"smart-send dispatch failed ({dec.method})", logger) + _none)
     latency_ms = int((time.time() - t0) * 1000)
 
     try:

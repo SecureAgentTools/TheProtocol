@@ -56,6 +56,7 @@ from ..core.registry_identity import (
     FLARE_ENCIRCLEMENT_OVERLAYS,
     FLARE_ENCIRCLEMENT_VARIANTS,
 )
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -372,7 +373,7 @@ async def purchase_flare(
 
     logger.info(
         "[flareshop] %s bought %s for %s %s (buyer=%s target=%s tx=%s granted=%s)",
-        current_dev.email, tier, price, currency, buyer.did, target_did, tx_id, grant.get("granted"),
+        email_for_log(current_dev.email), tier, price, currency, buyer.did, target_did, tx_id, grant.get("granted"),
     )
     return {
         "purchase_id": row.id,

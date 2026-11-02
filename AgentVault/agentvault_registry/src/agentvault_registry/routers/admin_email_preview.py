@@ -417,7 +417,15 @@ from pydantic import BaseModel, Field
 from agentvault_registry.config import settings as _settings
 from agentvault_registry.email_utils import send_themed_email as _send_themed_email
 
-_EMAIL_RE = _re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# V0653 (am) item 3: the parts are bounded (64 before the @, 253 after, RFC 5321) and the dot rule is a test on the
+# domain, not a regex: "[^@\s]+\.[^@\s]+$" retried every split of a long dotted domain (quadratic). The rule is the
+# same: one @, no space, a dot inside the domain with something on both sides of it.
+_EMAIL_RE = _re.compile(r"[^@\s]{1,64}@([^@\s]{1,253})")
+
+
+def _is_email(addr) -> bool:
+    m = _EMAIL_RE.fullmatch(addr or "")
+    return bool(m) and "." in m.group(1)[1:-1]
 
 
 @router.get("/senders", response_class=JSONResponse)
@@ -482,7 +490,7 @@ async def send_email_from_studio(
     if req.template not in _list_templates():
         raise HTTPException(status_code=404, detail=f"Unknown template '{req.template}'.")
     for addr in (req.recipients + (req.cc or []) + (req.bcc or [])):
-        if not _EMAIL_RE.match(addr or ""):
+        if not _is_email(addr):
             raise HTTPException(status_code=422, detail=f"'{addr}' is not a valid email address.")
 
     merged = {**_sample_context(req.template), **req.context}

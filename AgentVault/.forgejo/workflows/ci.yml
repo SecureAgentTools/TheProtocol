@@ -512,6 +512,7 @@ jobs:
               tests/test_licence_gate.py tests/test_sync_engine_url.py tests/test_sqla21_session_contract.py \
               tests/test_ledger_gate.py tests/test_attestation_reward_fail_closed.py tests/test_cross_teg_partner_rule.py \
               tests/test_inbound_reconciler.py tests/test_ledger_names_teg.py \
+              tests/test_home_frame_async_check_v0653.py tests/test_validation_log_no_input_v0653.py tests/test_d8_onboarding_mint_flag.py \
               -q -p no:cacheprovider -o asyncio_mode=auto -rs > /tmp/teg-pytest.log 2>&1 || RC2=$?
           : "${RC2:=0}"
           cat /tmp/teg-pytest.log
@@ -523,12 +524,15 @@ jobs:
           # W4 phase 1 (2026-10-25, agentvault2-aa): + test_inbound_reconciler (6: a credit verified against the source's
           # record under its old or its new name, UnitsTransferred) and test_ledger_names_teg (4: the map is the registry's,
           # a TEG never emits a new name without a row, every comparison against an old name asks the map) = 162.
+          # V0653: + test_home_frame_async_check_v0653 (22: the async home check compares whole trust domains),
+          # test_validation_log_no_input_v0653 (2: a 422 line keeps where and why, never the refused value) and
+          # test_d8_onboarding_mint_flag (13: the retired faucet is off unless a TEG names it) = 199.
           # adding a test raises the floor.
           P2=$(command grep -oE '[0-9]+ passed' /tmp/teg-pytest.log | tail -1 | cut -d' ' -f1)
           S2=$(command grep -oE '[0-9]+ skipped' /tmp/teg-pytest.log | tail -1 | cut -d' ' -f1)
           : "${P2:=0}"; : "${S2:=0}"
-          echo "TEG pytest-style tests passed=${P2} skipped=${S2} (floor 162, skip ceiling 0)"
-          if [ "$P2" -lt 162 ] || [ "$S2" -gt 0 ]; then
+          echo "TEG pytest-style tests passed=${P2} skipped=${S2} (floor 199, skip ceiling 0)"
+          if [ "$P2" -lt 199 ] || [ "$S2" -gt 0 ]; then
             echo "FATAL: TEG pytest-style suites collapsed (passed=${P2} skipped=${S2})"
             exit 1
           fi

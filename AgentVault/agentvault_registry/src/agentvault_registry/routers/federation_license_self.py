@@ -39,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agentvault_registry import models
 from agentvault_registry.database import get_db
 from agentvault_registry.core.federation_auth import get_federation_identity
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 
@@ -304,7 +305,7 @@ async def rotate_self(
         logger.error(f"[License Rotate-Self] Atomic commit failed: {exc}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal commit failure — rotation aborted. Old license still active. Detail: {str(exc)[:200]}",
+            detail=internal_detail(exc, 'Internal commit failure — rotation aborted. Old license still active. Detail', logger),
         )
 
     await db.refresh(caller_lic)

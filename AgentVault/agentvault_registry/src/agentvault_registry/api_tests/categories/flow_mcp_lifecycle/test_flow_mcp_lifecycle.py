@@ -34,6 +34,7 @@ import base64
 import functools
 import json
 import logging
+from agentvault_registry.api_tests.core import log_safe as _ls   # V0653 (am) item 13: shapes in the log, never values
 import os
 import random
 import re
@@ -61,6 +62,7 @@ from agentvault_registry.api_tests.contracts import critical_words as _words   #
 from agentvault_registry.api_tests.contracts import mcp_switches as _switches   # §MCPTEST30 (V0550)
 from agentvault_registry.api_tests.contracts import refusal_reasons as _refusal_reasons   # §MCPTEST30 (V0643)
 from agentvault_registry.api_tests.contracts.mcp_tier_consistency import run_tier_consistency_check
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 __all__ = ["TestFlowMcpLifecycle", "_evaluate_contract", "_parse_rpc_result"]
 
 
@@ -2493,7 +2495,7 @@ async def _bootstrap_fixtures(target, dev_jwt: str) -> Optional[McpFixtureBag]:
     )
     body, code = _split_http_body_code(out)
     if rc != 0 or not code.startswith("2"):
-        logger.error(f"reset-sandbox failed: rc={rc} code={code} body={body[:200]}")
+        logger.error(f"reset-sandbox failed: rc={rc} code={code} answer: {_ls.refusal(body)}")
         return None
     try:
         creds = json.loads(body)
@@ -2527,7 +2529,7 @@ async def _bootstrap_fixtures(target, dev_jwt: str) -> Optional[McpFixtureBag]:
         except Exception:
             pass
     if not sentinel_jwt:
-        logger.warning(f"sentinel JWT mint failed: rc={rc} code={code} body={body[:200]}")
+        logger.warning(f"sentinel JWT mint failed: rc={rc} code={code} answer: {_ls.refusal(body)}")
 
     # Flow values
     rc, out = await asyncio.to_thread(
@@ -2650,10 +2652,10 @@ async def _bootstrap_fixtures(target, dev_jwt: str) -> Optional[McpFixtureBag]:
             nonadmin_principal = _p
             nonadmin_source = f"throwaway {_p['email']} (registered for this run; the seeded fixture is unusable)"
             logger.info("non-admin fixture unusable (rc=%s code=%s); using this run's throwaway %s", rc, code,
-                        _p["email"])
+                        email_for_log(_p["email"]))
         else:
             logger.warning(
-                f"non-admin developer JWT mint failed: rc={rc} code={code} body={body[:200]} "
+                f"non-admin developer JWT mint failed: rc={rc} code={code} answer: {_ls.refusal(body)} "
                 "(rc=3: SANDBOX_NON_ADMIN_PASSWORD is not set on the target, so non_admin_dev@test.sandbox holds a "
                 f"password nobody is told), and no throwaway could be made either ({_p.get('why')}). F.1 admin-tier "
                 "rejection probe will degrade to an empty bearer."
@@ -6756,7 +6758,7 @@ class TestFlowMcpLifecycle(APITestBase):
             return {
                 "flow_name": f"flow_mcp_lifecycle_cloudop_{op.label}_complete",
                 "success": False, "total_steps": 0, "successful_steps": 0,
-                "error": f"cloud-op admin login failed: code={code} body={body[:200]}",
+                "error": f"cloud-op admin login failed: code={code} answer: {_ls.refusal(body)}",
                 "results": [], "flow_values": {"operator": op.label},
             }
         try:

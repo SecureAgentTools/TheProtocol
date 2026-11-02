@@ -22,6 +22,7 @@ from agentvault_registry.models import (
     OrganizationInvitation,
     Developer
 )
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 # §pass71.8 (2026-05-25) — switched from the legacy `send_email` shim to the
 # canonical `send_themed_email` infrastructure (Jinja templates + premailer +
@@ -80,7 +81,7 @@ async def send_invitation_email(
     logger = logging.getLogger(__name__)
     if not EMAIL_AVAILABLE:
         logger.warning(
-            f"[OrgInvite] EMAIL_AVAILABLE=False — invitation for {email} not sent. Token: {token}"
+            f"[OrgInvite] EMAIL_AVAILABLE=False — invitation for {email_for_log(email)} not sent. Token: {token}"
         )
         return False
 
@@ -110,11 +111,11 @@ async def send_invitation_email(
             theme="neural",
         )
         if not ok:
-            logger.warning(f"[OrgInvite] send_themed_email returned False for {email} (org={organization_name})")
+            logger.warning(f"[OrgInvite] send_themed_email returned False for {email_for_log(email)} (org={organization_name})")
         return ok
     except Exception as e:  # noqa: BLE001
         logger.warning(
-            f"[OrgInvite] send_themed_email raised for {email} (org={organization_name}): {e}"
+            f"[OrgInvite] send_themed_email raised for {email_for_log(email)} (org={organization_name}): {e}"
         )
         return False
 

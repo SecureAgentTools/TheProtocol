@@ -9,6 +9,7 @@ import os
 import logging
 import json
 from typing import Optional, Dict, Any
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -86,17 +87,17 @@ class DatabaseVerifier:
 
     def verify_developer_account(self, email: str) -> bool:
         """Verify a developer account by email"""
-        logger.info(f"Verifying developer account: {email}")
+        logger.info(f"Verifying developer account: {email_for_log(email)}")
 
         safe_email = self._escape_sql_param(email)
         query = f"UPDATE developers SET is_verified = true WHERE email = '{safe_email}' RETURNING id;"
         result = self.execute_sql(query)
 
         if result:
-            logger.info(f"Successfully verified account {email}")
+            logger.info(f"Successfully verified account {email_for_log(email)}")
             return True
         else:
-            logger.warning(f"Failed to verify account {email}")
+            logger.warning(f"Failed to verify account {email_for_log(email)}")
             return False
 
     def check_developer_exists(self, email: str) -> bool:

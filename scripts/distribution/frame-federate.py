@@ -40,6 +40,9 @@ Exit codes: 0 done · 2 refused before touching anything · 3 a step failed · 4
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
+import hashlib
 import json
 import os
 import re
@@ -363,6 +366,82 @@ def root_counts(exec_in: Callable[[str, List[str]], Tuple[int, str]], containers
     return out
 
 
+# V0653 (ao) item 1 (the dev machine's beta.30 test): step 4 asks whether THE PEER'S ROOT is in each terminator's bundle, by
+# its fingerprint, not whether the count rose. A re-run inside one cert-writer cycle of a refusal found the root already
+# copied, the count unchanged, and waited 630 s to blame the cert-writer for a root that was there.
+_PEM_CERT = re.compile(r"-----BEGIN CERTIFICATE-----\s*([A-Za-z0-9+/=\s]*?)\s*-----END CERTIFICATE-----")
+
+
+def pem_fingerprints(pem_text: str) -> List[str]:
+    """The SHA-256 of each certificate's DER in a PEM text (what a terminator's bundle.0.pem holds)."""
+    out = []
+    for m in _PEM_CERT.finditer(pem_text or ""):
+        try:
+            der = base64.b64decode("".join(m.group(1).split()), validate=True)
+        except (ValueError, binascii.Error):
+            continue
+        out.append(hashlib.sha256(der).hexdigest())
+    return out
+
+
+def bundle_root_fingerprints(body: str, fmt: str) -> List[str]:
+    """The roots a peer's bundle carries, by fingerprint: PEM blocks, or a SPIFFE bundle's x509 authorities (x5c)."""
+    if fmt == "pem":
+        return pem_fingerprints(body)
+    try:
+        keys = json.loads(body).get("keys") or []
+    except (ValueError, AttributeError):
+        return []
+    out = []
+    for k in keys:
+        if isinstance(k, dict) and k.get("x5c") and k.get("use", "x509-svid") == "x509-svid":
+            try:
+                out.append(hashlib.sha256(base64.b64decode(k["x5c"][0], validate=True)).hexdigest())
+            except (ValueError, binascii.Error, TypeError, IndexError):
+                continue
+    return out
+
+
+def roots_held(exec_in: Callable[[str, List[str]], Tuple[int, str]], containers: List[str], cert_dir: str,
+               fps: List[str]) -> Dict[str, Optional[bool]]:
+    """Whether each container's bundle carries every root in `fps`; None when the container cannot answer."""
+    out: Dict[str, Optional[bool]] = {}
+    for c in containers:
+        rc, text = exec_in(c, ["cat", f"{cert_dir}/{BUNDLE_FILE}"])
+        have = set(pem_fingerprints(text))
+        out[c] = None if (rc != 0 and not have) else all(fp in have for fp in fps)
+    return out
+
+
+def wait_for_peer_roots(exec_in, containers: List[str], cert_dir: str, fps: List[str], refresh_sec: int, *,
+                        clock=time.monotonic, sleep=time.sleep, log=print) -> float:
+    """Wait until every container's bundle carries the peer's roots; returns the seconds it took (0.0 when they were
+    already there). Raises TimedOut naming the root and the cert-writer's clock only when the root is really missing."""
+    start = clock()
+    deadline = start + 2 * refresh_sec + ROOT_WAIT_MARGIN_SEC
+    said, said_at = None, None
+    first = True
+    while True:
+        held = roots_held(exec_in, containers, cert_dir, fps)
+        pending = [c for c in containers if not held.get(c)]
+        if not pending:
+            return 0.0 if first else max(clock() - start, 0.001)
+        first = False
+        if clock() >= deadline:
+            raise TimedOut(
+                f"{', '.join(pending)} {'does' if len(pending) == 1 else 'do'} not carry the peer's root "
+                f"(sha256 {', '.join(fp[:16] for fp in fps)}) after {2 * refresh_sec + ROOT_WAIT_MARGIN_SEC} s; "
+                f"the cert-writer copies the bundle every FT_CW_REFRESH_SEC={refresh_sec} s "
+                f"(docker logs {containers[0].rsplit('-', 2)[0]}-cert-writer), check it runs, then re-run this "
+                f"command (every step is idempotent).")
+        line = "    waiting for the peer's root: " + ", ".join(
+            f"{c}={'held' if held.get(c) else ('no answer' if held.get(c) is None else 'not yet')}" for c in containers)
+        if line != said or clock() - said_at >= 30:
+            log(line)
+            said, said_at = line, clock()
+        sleep(POLL_SEC)
+
+
 def wait_for_roots(exec_in, containers: List[str], cert_dir: str, before: Dict[str, Optional[int]],
                    refresh_sec: int, *, clock=time.monotonic, sleep=time.sleep, log=print) -> Dict[str, Optional[int]]:
     """Wait until every container's bundle carries MORE roots than `before` (a rotation refreshes the file every
@@ -606,10 +685,22 @@ def step3_import(facts: Facts, peer_td: str, endpoint: str, *, exec_in=docker_ex
         + (f", FAILED {len(entries['failed'])}: {'; '.join(entries['failed'])[:300]}" if entries["failed"] else ""))
     if entries["failed"]:
         raise StepFailed(f"{len(entries['failed'])} workload entry update(s) failed; see the line above.")
-    return {"format": fmt, "already_held": already_held, "relationship": decision, "entries": entries}
+    return {"format": fmt, "already_held": already_held, "relationship": decision, "entries": entries,
+            "roots": bundle_root_fingerprints(body, fmt)}
 
 
-def step4_roots(facts: Facts, before: Dict[str, Optional[int]], already_held: bool, *, exec_in=docker_exec, log=print) -> None:
+def step4_roots(facts: Facts, before: Dict[str, Optional[int]], already_held: bool, *, roots: Optional[List[str]] = None,
+                exec_in=docker_exec, log=print, clock=time.monotonic, sleep=time.sleep) -> None:
+    if roots:                                               # V0653 (ao) item 1: the peer's root itself, by fingerprint
+        took = wait_for_peer_roots(exec_in, facts.terminators, facts.cert_dir, roots, facts.refresh_sec,
+                                   clock=clock, sleep=sleep, log=log)
+        fp = ", ".join(r[:16] for r in roots)
+        if took <= 0:
+            log(f"[4/7] roots: the peer's root (sha256 {fp}) is already in every terminator's bundle "
+                f"({', '.join(facts.terminators)}); nothing to wait for")
+        else:
+            log(f"[4/7] roots: the peer's root (sha256 {fp}) reached every terminator's bundle after {int(took)} s")
+        return
     if already_held:
         now = root_counts(exec_in, facts.terminators, facts.cert_dir)
         log(f"[4/7] roots: the peer root was already held, the terminators carry "
@@ -828,7 +919,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         email, password = read_admin_secret(a.admin_secret_file)
         before = root_counts(docker_exec, facts.terminators, facts.cert_dir)
         imported = step3_import(facts, peer_td, endpoint)
-        step4_roots(facts, before, imported["already_held"])
+        step4_roots(facts, before, imported["already_held"], roots=imported.get("roots"))
         target = a.with_url.strip().rstrip("/")
         token = admin_login(facts, email, password)
         prior = None if a.fresh else existing_outbound(facts, target, token)

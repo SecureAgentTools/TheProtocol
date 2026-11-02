@@ -247,7 +247,7 @@
     v-if="selectedAgentForCredentials"
     :show="showAddCredentials"
     :agent="selectedAgentForCredentials"
-    @close="showAddCredentials = false"
+    @close="showAddCredentials = false; selectedAgentForCredentials = null"
     @saved="handleCredentialsSaved"
   />
 </template>
@@ -440,10 +440,8 @@ function openAddCredentialsModal(agent: any) {
   showAddCredentials.value = true
 }
 
+// V0653 (am) item 6: a save refreshes the agents list and leaves the dialog open on its saved step; its own close closes it
 function handleCredentialsSaved() {
-  showAddCredentials.value = false
-  selectedAgentForCredentials.value = null
-  // Refresh the agents list to show updated credentials
   authStore.fetchAvailableAgents()
 }
 </script>

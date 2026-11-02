@@ -574,7 +574,10 @@ onMounted(() => { vLoad(); bLoad() })
 }
 .np-rows .np-mrow:nth-child(odd) { background: rgba(var(--nc-primary-rgb), 0.03); }
 .np-mrow:hover { background: rgba(var(--nc-primary-rgb), 0.06); }
-.np-mrow.is-soon .np-mname-line { color: #66778a; }
+/* V0653 (V0652's console proof, the sessions' room seq 641-645): #66778a read 3.94 on #0d1626 and 3.75 on #0d1c2b, under
+   4.5; (af)'s emitter-less types were the first to reach it. #7d8ea3 reads 5.41 and 5.15, still muted; the soon badge
+   carries the state. */
+.np-mrow.is-soon .np-mname-line { color: #7d8ea3; }
 .np-mname { display: flex; flex-direction: column; gap: 0.28rem; min-width: 0; }
 .np-mname-line { color: #b6c6d6; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; line-height: 1.35; }
 .np-mcell { display: inline-flex; align-items: center; justify-content: center; gap: 0.28rem; }

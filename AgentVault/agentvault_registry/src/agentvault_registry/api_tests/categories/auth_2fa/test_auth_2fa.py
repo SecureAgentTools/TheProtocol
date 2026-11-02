@@ -6,6 +6,7 @@ IMPORTANT: Always uses auditor@theprotocol.cloud account for 2FA testing!
 """
 
 import logging
+from agentvault_registry.api_tests.core import log_safe as _ls   # V0653 (am) item 13: shapes in the log, never values
 from typing import List, Optional, Dict, Any
 import time
 import base64
@@ -206,7 +207,7 @@ class TestAuth2fa(APITestBase):
                         # Store for later use
                         self.flow_values["original_backup_codes"] = setup_data["backup_codes"]
                 else:
-                    logger.info(f"✅ 2FA setup initiated, secret received: {self.flow_values.get('secret', 'N/A')[:10]}...")
+                    logger.info(f"✅ 2FA setup initiated, secret received: {_ls.secret(self.flow_values.get('secret'))}")
                 self.flow_values["2fa_enabled"] = True
             else:
                 logger.error("❌ Failed to setup 2FA")
@@ -220,7 +221,7 @@ class TestAuth2fa(APITestBase):
                     try:
                         # Strip spaces from the formatted secret (backend returns with spaces for display)
                         secret_clean = self.flow_values["secret"].replace(" ", "")
-                        logger.info(f"Cleaned secret from '{self.flow_values['secret'][:10]}...' to '{secret_clean[:10]}...'")
+                        logger.info(f"Cleaned the secret: {_ls.secret(self.flow_values['secret'])} -> {_ls.secret(secret_clean)}")
                         totp = pyotp.TOTP(secret_clean)
                         self.flow_values["totp_code"] = totp.now()
                         # Store clean secret for future TOTP generations

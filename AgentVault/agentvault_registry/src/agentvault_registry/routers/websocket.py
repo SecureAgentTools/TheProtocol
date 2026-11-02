@@ -19,6 +19,7 @@ from agentvault_registry.security import SECRET_KEY, ALGORITHM
 from agentvault_registry.models import Developer
 import jwt  # PyJWT (§DEPS: python-jose is gone)
 from jwt import PyJWTError as JWTError
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 # §RELEASEHARDEN D2 (2026-09-14) — THE JWT RIDES THE SUBPROTOCOL LIST, NEVER THE QUERY STRING.
 # A browser cannot set a header on a WebSocket, so the console used to put the developer JWT into
@@ -451,7 +452,7 @@ class ConnectionManager:
         self.connection_users[user_id] = user_data
         self.subscriptions[user_id] = set()
 
-        logger.info(f"WebSocket connected: {user_id} ({user_data.get('email', 'unknown')})")
+        logger.info(f"WebSocket connected: {user_id} ({email_for_log(user_data.get('email', 'unknown'))})")
 
         # §PRESENCE — fleet-visible, so a sibling worker can tell that this
         # person is live and skip a notification they already received.

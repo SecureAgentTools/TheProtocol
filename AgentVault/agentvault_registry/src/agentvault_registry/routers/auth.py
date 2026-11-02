@@ -27,6 +27,7 @@ from agentvault_registry.email_utils import send_verification_email, send_passwo
 # --- END MODIFIED ---
 # --- ADDED: Import settings ---
 from agentvault_registry.config import settings
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 # --- END ADDED ---
 
 
@@ -67,14 +68,14 @@ async def initialize_teg_account(developer_email: str, developer_id: int):
             )
             
             if response.status_code in [200, 409]:  # 409 means already exists, which is fine
-                logger.info(f"TEG account initialized for developer {developer_email} (DID: {agent_id})")
+                logger.info(f"TEG account initialized for developer {email_for_log(developer_email)} (DID: {agent_id})")
                 return True
             else:
                 logger.error(f"Failed to initialize TEG account: {response.status_code} - {response.text}")
                 return False
                 
     except Exception as e:
-        logger.error(f"Error initializing TEG account for {developer_email}: {e}")
+        logger.error(f"Error initializing TEG account for {email_for_log(developer_email)}: {e}")
         return False
 
 # --- Profile Endpoint ---
@@ -130,10 +131,10 @@ async def register_developer(
     # --- END REMOVED ---
 
     # --- Reinstated Original Logic ---
-    logger.info(f"Registration attempt for email: {developer_in.email}")
+    logger.info(f"Registration attempt for email: {email_for_log(developer_in.email)}")
     existing_developer = await developer_crud.get_developer_by_email(db, email=developer_in.email)
     if existing_developer:
-        logger.warning(f"Registration failed: Email '{developer_in.email}' already registered.")
+        logger.warning(f"Registration failed: Email '{email_for_log(developer_in.email)}' already registered.")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered.",
@@ -174,7 +175,7 @@ async def register_developer(
         )
     except Exception as e:
         await db.rollback() # Ensure rollback on any other error during creation
-        logger.exception(f"Unexpected error during registration for email {developer_in.email}")
+        logger.exception(f"Unexpected error during registration for email {email_for_log(developer_in.email)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An internal error occurred during registration.",
@@ -277,7 +278,7 @@ async def verify_email(token: str = Query(...), db: AsyncSession = Depends(get_d
         # --- END MODIFIED ---
 
     if developer.is_verified:
-        logger.info(f"Email '{developer.email}' already verified.")
+        logger.info(f"Email '{email_for_log(developer.email)}' already verified.")
         # --- MODIFIED: Redirect on success (already verified) ---
         # return JSONResponse(content={"status": "already_verified"})
         return RedirectResponse(url="/ui/verify-success?status=already_verified", status_code=status.HTTP_303_SEE_OTHER)
@@ -285,7 +286,7 @@ async def verify_email(token: str = Query(...), db: AsyncSession = Depends(get_d
 
 
     if developer.verification_token_expires is None or developer.verification_token_expires < datetime.now(timezone.utc):
-        logger.warning(f"Verification failed: Token expired for email {developer.email}.")
+        logger.warning(f"Verification failed: Token expired for email {email_for_log(developer.email)}.")
         # Optionally allow resending verification?
         # --- MODIFIED: Redirect on failure ---
         # raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg)
@@ -303,12 +304,12 @@ async def verify_email(token: str = Query(...), db: AsyncSession = Depends(get_d
         from agentvault_registry.services.card_touch import touch_developer_native_cards
         await touch_developer_native_cards(db, developer.id, reason="email verified (legacy route)")
         await db.commit()
-        logger.info(f"Email successfully verified for developer: {developer.email} (ID: {developer.id})")
+        logger.info(f"Email successfully verified for developer: {email_for_log(developer.email)} (ID: {developer.id})")
         
         # Initialize TEG account for the newly verified developer
         teg_initialized = await initialize_teg_account(developer.email, developer.id)
         if not teg_initialized:
-            logger.warning(f"TEG account initialization failed for {developer.email}, but email verification succeeded")
+            logger.warning(f"TEG account initialization failed for {email_for_log(developer.email)}, but email verification succeeded")
         
         # --- MODIFIED: Redirect on success ---
         # return JSONResponse(content={"status": "verified"})
@@ -316,7 +317,7 @@ async def verify_email(token: str = Query(...), db: AsyncSession = Depends(get_d
         # --- END MODIFIED ---
     except Exception as e:
         await db.rollback()
-        logger.exception(f"Database error during email verification for {developer.email}")
+        logger.exception(f"Database error during email verification for {email_for_log(developer.email)}")
         # --- MODIFIED: Redirect on failure ---
         # raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update verification status.")
         return RedirectResponse(url="/ui/verify-failed?reason=dberror", status_code=status.HTTP_303_SEE_OTHER)
@@ -331,7 +332,7 @@ async def recover_account_with_key(
     """
     Verifies email and recovery key, returns a short-lived token for setting a new password.
     """
-    logger.info(f"Account recovery attempt for email: {recover_in.email}")
+    logger.info(f"Account recovery attempt for email: {email_for_log(recover_in.email)}")
     developer = await developer_crud.get_developer_by_email(db, email=recover_in.email)
 
     error_exception = HTTPException(
@@ -340,7 +341,7 @@ async def recover_account_with_key(
     )
 
     if not developer or not developer.is_verified:
-        logger.warning(f"Recovery failed: Developer not found or not verified for email {recover_in.email}.")
+        logger.warning(f"Recovery failed: Developer not found or not verified for email {email_for_log(recover_in.email)}.")
         raise error_exception # Don't reveal which part failed
 
     if not developer.hashed_recovery_key:

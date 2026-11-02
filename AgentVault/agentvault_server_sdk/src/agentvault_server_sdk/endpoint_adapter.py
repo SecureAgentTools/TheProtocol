@@ -8,6 +8,7 @@ from fastapi import APIRouter, Request, Response, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse
 
 from agentvault_server_sdk.agent import BaseA2AAgent
+from .caller_errors import caller_message   # V0653 (am) item 2: the caller gets no exception text
 
 # Create the logger
 logger = logging.getLogger(__name__)
@@ -91,7 +92,7 @@ def create_injection_router(agent_instance: BaseA2AAgent, prefix: str = "") -> A
             logger.exception(f"Error in injection endpoint: {e}")
             error_response = {
                 "jsonrpc": "2.0",
-                "error": {"code": -32000, "message": f"Server error: {str(e)}"},
+                "error": {"code": -32000, "message": caller_message(e, "Server error", logger)},
                 "id": payload.get("id") if "payload" in locals() else None
             }
             return JSONResponse(content=error_response)

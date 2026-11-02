@@ -68,15 +68,19 @@ def write_summary(run_dir: Path, summary: Dict[str, Any]) -> Path:
     return out
 
 
+# V0653 (am) item 11: the run's settings are recorded by NAME. The prefixes reach secrets too (API_TEST_FED_*_PASSWORD,
+# API_TEST_PROXY_INTERNAL_KEY, SANDBOX_RESET_SECRET, API_TEST_EVENT_STORE*_API_KEY), and metadata.json sits on the
+# registry's data volume and in every backup of it: the values were written there on each archived run (a name filter
+# cannot see a secret, CLAUDE.md PART 1).
+_ENV_PREFIXES = ("API_TEST_", "OPA_", "SANDBOX_", "ES_EVENT_", "FIAT_")
+
+
 def write_metadata(run_dir: Path, extra: Optional[Dict[str, Any]] = None) -> Path:
-    """Capture environmental metadata: hostname, env vars, sandbox state."""
+    """Capture environmental metadata: hostname, the NAMES of the run's settings (never their values), sandbox state."""
     meta: Dict[str, Any] = {
         "captured_at": datetime.now(timezone.utc).isoformat(),
         "hostname": socket.gethostname(),
-        "env": {
-            k: v for k, v in os.environ.items()
-            if k.startswith(("API_TEST_", "OPA_", "SANDBOX_", "ES_EVENT_", "FIAT_"))
-        },
+        "env_names": sorted(k for k in os.environ if k.startswith(_ENV_PREFIXES)),
     }
     if extra:
         meta["extra"] = extra
@@ -224,8 +228,11 @@ def latest_run(run_kind: Optional[str] = None) -> Optional[Dict[str, Any]]:
 
 
 def list_runs(run_kind: Optional[str] = None, limit: int = 20) -> List[Dict[str, Any]]:
-    """List recent runs (newest first)."""
+    """List recent runs (newest first). V0653 (am) item 12: run_kind arrives from a query parameter, so it is a name,
+    checked as _safe_run_dir checks one; anything else lists nothing."""
     if run_kind:
+        if not _SAFE_NAME_RE.match(run_kind):
+            return []
         base = ARCHIVE_ROOT / run_kind
         if not base.exists():
             return []

@@ -30,7 +30,7 @@ def test_disable_mtls_no_longer_promises_four_hours():
 
 def test_the_registration_mail_opens_the_resend_window():
     src = pathlib.Path(auth_secure.__file__).read_text(encoding="utf-8")
-    at = src.index('logger.info(f"Verification email sent for {created_developer.email}")')
+    at = src.index('logger.info(f"Verification email sent for {email_for_log(created_developer.email)}")')   # V0653 (am) item 7
     assert "await _verification_resend_allowed(created_developer.id)" in src[at:at + 600]
 
 

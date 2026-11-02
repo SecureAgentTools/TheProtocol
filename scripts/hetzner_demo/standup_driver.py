@@ -75,6 +75,20 @@ def frame_tls_cert(public_url):
     host = urllib.parse.urlparse(public_url or "").hostname or ""
     return os.getenv("FRAME_TLS_CERT") or f"/etc/letsencrypt/live/{host}/fullchain.pem"
 
+def image_rewrites(comp, image_map):
+    """The rendered compose with each template image replaced by the effective one, and one line per image naming the
+    service's role and the image it runs (V0653 (ao) item 3: never the template's internal build name)."""
+    lines = []
+    for old, new in image_map.items():
+        if old in comp:
+            comp = comp.replace(old, new)
+            role = old.split(":", 1)[0].split("/")[-1]
+            role = role[len("agentvault2-"):] if role.startswith("agentvault2-") else role
+            role = role[:-len("-test")] if role.endswith("-test") else role
+            lines.append(f"image: {role} runs {new}")
+    return comp, lines
+
+
 IMAGE_MAP = {
     # rendered-template image -> prod image (sed on the RENDERED compose only;
     # sandbox keeps its -test images, the FE session's builds are untouched)
@@ -946,11 +960,9 @@ def mutate_rendered(ctx, args):
     log("env mutations applied")
     kit_write_auditor_frames(ctx, env, args)
 
-    comp = open(compose_path).read()
-    for old, new in IMAGE_MAP.items():
-        if old in comp:
-            comp = comp.replace(old, new)
-            log(f"image: {old} -> {new}")
+    comp, _lines = image_rewrites(open(compose_path).read(), IMAGE_MAP)
+    for _ln in _lines:
+        log(_ln)
     reg_anchor = svc_anchor(f"{args.name}-registry")
     es_anchor = svc_anchor(f"{args.name}-event-store")
     comp = ensure_host_port(comp, reg_anchor, f"127.0.0.1:{PORTS['registry']}:8000")

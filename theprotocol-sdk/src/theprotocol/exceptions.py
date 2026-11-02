@@ -54,12 +54,18 @@ class KeyManagementError(ProtocolError):
 
 
 class AgentServerError(ProtocolError):
-    """Error in agent server implementation."""
-    pass
+    """Error in agent server implementation.
+
+    caller_safe: the message is meant for the agent's caller and goes to it whole (V0653 (am) item 2,
+    agent/caller_errors.caller_message); anything else reaches the caller as a generic message with an error id, and
+    the agent's log gets the whole exception. Set it on a subclass, or on an instance, to pass a message through.
+    """
+    caller_safe = False
 
 
 class TaskNotFoundError(AgentServerError):
     """Task ID does not exist."""
+    caller_safe = True
 
     def __init__(self, task_id: str, message: str = "Task not found"):
         self.task_id = task_id
@@ -68,6 +74,7 @@ class TaskNotFoundError(AgentServerError):
 
 class InvalidStateTransitionError(AgentServerError):
     """Invalid task state transition attempted."""
+    caller_safe = True
 
     def __init__(self, task_id: str, from_state: str, to_state: str):
         self.task_id = task_id

@@ -23,6 +23,7 @@ import re
 
 import httpx
 from fastapi import APIRouter, Request, Response, HTTPException
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 
@@ -195,7 +196,7 @@ async def _proxy_to_sandbox(
         logger.error(f"[SANDBOX-PROXY] Upstream error: {e}")
         raise HTTPException(
             status_code=502,
-            detail=f"Sandbox proxy error: {str(e)[:200]}",
+            detail=internal_detail(e, 'Sandbox proxy error', logger),
         )
 
     # Build response headers
@@ -268,7 +269,7 @@ async def proxy_sandbox_es(path: str, request: Request):
         raise HTTPException(status_code=502, detail="Cannot reach sandbox EventStore")
     except Exception as e:
         logger.error(f"[SANDBOX-PROXY] ES error: {e}")
-        raise HTTPException(status_code=502, detail=f"EventStore proxy error: {str(e)[:200]}")
+        raise HTTPException(status_code=502, detail=internal_detail(e, 'EventStore proxy error', logger))
 
     resp_headers = {}
     for key, value in resp.headers.items():

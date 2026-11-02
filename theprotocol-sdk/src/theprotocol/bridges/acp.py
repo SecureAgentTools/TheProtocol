@@ -18,6 +18,7 @@ from ..models import (
     Message, Task, TaskState, TextPart, DataPart, Artifact, AgentCard,
 )
 from ..agent.base import BaseA2AAgent
+from ..agent.caller_errors import caller_message   # V0653 (am) item 2
 from .base import BaseBridge
 
 logger = logging.getLogger(__name__)
@@ -226,7 +227,7 @@ class ACPBridge(BaseBridge):
                 task = await agent.handle_task_get(task_id)
                 return await bridge.a2a_to_external(task)
             except Exception as e:
-                return JSONResponse(status_code=404, content={"error": {"code": "not_found", "message": str(e)}})
+                return JSONResponse(status_code=404, content={"error": {"code": "not_found", "message": caller_message(e, "Run request failed", logger)}})
 
         @router.post("/runs/{run_id}/cancel")
         async def cancel_run(run_id: str):
@@ -235,6 +236,6 @@ class ACPBridge(BaseBridge):
                 await agent.handle_task_cancel(task_id)
                 return {"run_id": run_id, "status": "cancelling"}
             except Exception as e:
-                return JSONResponse(status_code=404, content={"error": {"code": "not_found", "message": str(e)}})
+                return JSONResponse(status_code=404, content={"error": {"code": "not_found", "message": caller_message(e, "Run request failed", logger)}})
 
         return router

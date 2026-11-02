@@ -32,6 +32,7 @@ Standard library only: this runs on a host that has nothing of ours installed ye
 """
 import argparse
 import datetime
+import glob
 import grp
 import importlib.util
 import json
@@ -58,7 +59,7 @@ EXPORT_FILES = ("tools/frame-runner/frame_runner.py", "tools/frame-runner/frame_
                 "scripts/hetzner_demo/teardown_hetzner_frame.sh",
                 "templates/frame-test/docker-compose.frame-test.yml.tmpl")
 MANAGED_KEYS = ("_written_by", "_instance", "images", "posture", "wire_prod", "socket_group", "allowed_uids", "edge",
-                "domain", "max_load", "min_mem_gib", "min_free_gb", "sandboxes")
+                "domain", "max_load", "min_mem_gib", "min_free_gb", "sandboxes", "socket_group_created")
 EXIT_OK, EXIT_USAGE, EXIT_HOST, EXIT_RUNNER = 0, 2, 3, 4
 
 
@@ -123,6 +124,10 @@ def build_policy(a, existing=None):
     pol["posture"] = a.posture
     pol["wire_prod"] = False                 # a stranger's host has none of the network's sidecars to wire into
     pol["socket_group"] = a.socket_group
+    # V0653 (ao) item 2: whether THIS installer created the group (it does only when the host lacks it), so --remove
+    # takes away a group it made and never one the host had before; a re-install with the same group keeps the record
+    pol["socket_group_created"] = bool(getattr(a, "group_missing", False)) or bool(
+        (existing or {}).get("socket_group_created") and (existing or {}).get("socket_group") == a.socket_group)
     pol["allowed_uids"] = parse_uids(a.allowed_uids)
     pol["edge"] = a.edge
     pol["domain"] = a.domain
@@ -216,6 +221,14 @@ def ensure_group(name, dry):
         raise Refused(EXIT_HOST, f"groupadd {name} failed: {(r.stderr or r.stdout).strip()[-300:]}")
     say(f"created the system group {name}")
     return grp.getgrnam(name).gr_gid
+
+
+def group_exists(name):
+    try:
+        grp.getgrnam(name)
+        return True
+    except KeyError:
+        return False
 
 
 def write_file(path, text, mode, dry, *, label):
@@ -335,6 +348,9 @@ def build_parser():
                     help="do not let the frame's console stand sandboxes up through this runner (on by default: §TESTBED)")
     ap.add_argument("--dry-run", action="store_true", help="print the policy, the unit and the last line; touch nothing")
     ap.add_argument("--no-start", action="store_true", help="write everything, skip systemd and the ping")
+    ap.add_argument("--remove", action="store_true", help="take the runner off this host (V0653): its unit, its policy, the "
+                    "protected list and the group it created; refused while it holds a frame that runs")
+    ap.add_argument("--purge-state", action="store_true", help="with --remove: also remove the runner's state (jobs, audit)")
     return ap
 
 
@@ -347,6 +363,7 @@ def run(a):
     if not a.dry_run and os.geteuid() != 0:
         raise Refused(EXIT_USAGE, "run this as root: it writes /etc and talks to systemd")
     paths = runner_paths(a.export_root, a.instance.strip())
+    a.group_missing = not group_exists(a.socket_group)
     existing = {}
     if os.path.exists(paths["config"]):
         try:
@@ -424,10 +441,86 @@ def run(a):
     return EXIT_OK
 
 
+def container_exists(name):
+    return subprocess.run(["docker", "inspect", "--type", "container", name], capture_output=True).returncode == 0
+
+
+def remove(a, *, sh=None, exists=container_exists, unit_dir=UNIT_DIR, protected=PROTECTED):
+    """V0653 (ao) item 2 (the dev machine's beta.30 test): take the frame runner off this host, everything this script
+    put there and nothing else: the unit (disabled and stopped), its policy and the backups this script made of it,
+    the protected-frames list once no other runner instance remains (every instance shares it), and the socket group
+    when this script created it and no other runner remains. Refused while the runner still holds a frame whose
+    registry container exists (take it down first: frame-down.py --name <name>). The runner's state (its jobs, its
+    frame records, its audit) stays, named in the output, unless --purge-state. --dry-run says what it would do."""
+    sh = sh or (lambda argv: subprocess.run(argv, capture_output=True, text=True))
+    if not a.dry_run and os.geteuid() != 0:
+        raise Refused(EXIT_USAGE, "run this as root: it removes files under /etc and talks to systemd")
+    paths = runner_paths(os.path.realpath(a.export_root), a.instance.strip())
+    paths["unit_path"] = os.path.join(unit_dir, f"{paths['unit']}.service")
+    held = sorted(os.path.basename(f)[:-len(".json")] for f in glob.glob(os.path.join(paths["state"], "frames", "*.json")))
+    live = [n for n in held if exists(f"{n}-registry")]
+    if live:
+        raise Refused(EXIT_USAGE, f"the runner still holds {', '.join(live)}, whose registry container exists: take "
+                                  f"{'it' if len(live) == 1 else 'them'} down first (frame-down.py --name <name>), then remove "
+                                  f"the runner; nothing was removed")
+    policy = {}
+    try:
+        with open(paths["config"]) as f:
+            policy = json.load(f) or {}
+    except (OSError, ValueError):
+        pass
+    group = policy.get("socket_group") or a.socket_group
+    others = sorted(u for u in glob.glob(os.path.join(unit_dir, "theprotocol-frame-runner*.service")) if u != paths["unit_path"])
+    did = lambda what: say(("would remove " if a.dry_run else "removed ") + what)
+
+    def run_or_say(argv, what):
+        if a.dry_run:
+            say(f"would run {' '.join(argv)}")
+            return
+        r = sh(argv)
+        if r.returncode != 0:
+            raise Refused(EXIT_HOST, f"{' '.join(argv)} failed: {((r.stderr or r.stdout) or '').strip()[-300:]}")
+        say(what)
+
+    if os.path.exists(paths["unit_path"]):
+        run_or_say(["systemctl", "disable", "--now", paths["unit"]], f"stopped and disabled {paths['unit']}")
+        if not a.dry_run:
+            os.remove(paths["unit_path"])
+        did(paths["unit_path"])
+        run_or_say(["systemctl", "daemon-reload"], "systemd reloaded")
+    else:
+        say(f"no unit at {paths['unit_path']}")
+    for f in [paths["config"]] + sorted(glob.glob(paths["config"] + ".bak-pre-install-*")):
+        if os.path.exists(f):
+            if not a.dry_run:
+                os.remove(f)
+            did(f)
+    if others:
+        say(f"kept {protected} and the group {group}: another runner instance remains ({', '.join(os.path.basename(u) for u in others)})")
+    else:
+        if os.path.exists(protected):
+            if not a.dry_run:
+                os.remove(protected)
+            did(protected)
+        if not policy.get("socket_group_created"):
+            say(f"kept the group {group}: this installer did not create it (it was on the host before, or the policy predates "
+                f"the record); `groupdel {group}` removes it by hand")
+        elif group_exists(group):
+            run_or_say(["groupdel", group], f"removed the group {group}")
+    if os.path.isdir(paths["state"]):
+        if a.purge_state:
+            if not a.dry_run:
+                shutil.rmtree(paths["state"])
+            did(f"the runner's state {paths['state']}")
+        else:
+            say(f"kept the runner's state {paths['state']} (its jobs, frame records and audit); --purge-state removes it")
+    return EXIT_OK
+
+
 def main(argv=None):
     a = build_parser().parse_args(argv)
     try:
-        return run(a)
+        return remove(a) if a.remove else run(a)
     except Refused as exc:
         say(f"REFUSED ({exc.code}): {exc.why}")
         return exc.code

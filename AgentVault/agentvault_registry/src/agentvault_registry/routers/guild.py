@@ -38,6 +38,7 @@ from agentvault_registry.core.federation_auth import get_federation_identity, re
 from agentvault_registry.identity import svid_client
 from agentvault_registry.services import reputation_bond as _rb
 from agentvault_registry.services import enforcement_propagation as _ep  # §ENFPROP
+from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
 
@@ -1457,7 +1458,7 @@ async def admin_resolve(oid: str, body: DisputeResolveIn, dev: models.Developer 
             await db.commit()
             logger.warning("[GUILD] remote dispute park failed for %s (order back to disputed): %s", oid, e)
             raise HTTPException(status.HTTP_502_BAD_GATEWAY,
-                                detail=f"Dispute payout park failed ({e}); order stays disputed — retry resolve")
+                                detail=internal_detail(e, 'Dispute payout park failed; order stays disputed — retry resolve', logger))
         if poster_amt > 0:
             await guild_escrow.escrow_payout(db, o["poster_did"], poster_amt, oid, "split_poster")
         await db.execute(text(

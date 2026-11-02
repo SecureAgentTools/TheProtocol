@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 # OWL32 FIX: Was '../enhanced_base' (categories level) but file is at api_tests level
 from ...enhanced_base import EnhancedAPITestBase
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +185,7 @@ class TestAuth(EnhancedAPITestBase):
         
         # Log registration attempt
         if result['healthy']:
-            logger.info(f"Successfully registered user: {test_email}")
+            logger.info(f"Successfully registered user: {email_for_log(test_email)}")
         else:
             # Check if it's a duplicate user error (which is OK)
             if result.get('statusCode') == 400:
@@ -381,7 +382,7 @@ async def run_auth_tests(
         
         # Log summary
         logger.info("\nAuth Test Summary:")
-        logger.info(f"- Tokens obtained: {results.get('obtained_tokens', {})}")
+        logger.info(f"- Tokens obtained: {list((results.get('obtained_tokens') or {}).keys())}")
         
         if 'summary' in results:
             summary = results['summary']

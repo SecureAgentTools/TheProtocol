@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from collections import OrderedDict
 from typing import List, Optional, Tuple
+from agentvault_registry.core.operator_names import checked_slug   # V0653 (am) item 1
 from ..core.network_profile import money_knob  # §MONEY-M2: the profile owns this amount
 
 from sqlalchemy import func, select
@@ -37,6 +38,7 @@ from agentvault_registry.core.operator_compose import (adapt_federation_conf, ad
                                                         sni_map_entry, svid_dns_sans)
 from agentvault_registry.services import operator_provisioner
 from agentvault_registry.event_emitter import get_event_emitter
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -165,11 +167,14 @@ class CloudTeardownResult:
     revoked_licence: Optional[dict] = None
 
 
-def _run(cmd: str, timeout: int = 60) -> subprocess.CompletedProcess:
-    """Run a shell command, log errors."""
-    r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+def _run(cmd: List[str], timeout: int = 60, cwd: Optional[str] = None) -> subprocess.CompletedProcess:
+    """Run a command, log errors. V0653 (am) item 1: an argument vector, never a shell string (no value it carries
+    is ever read by a shell); where a step needs a shell, its script is a constant and the values are its arguments."""
+    if not isinstance(cmd, (list, tuple)) or not all(isinstance(a, str) for a in cmd):
+        raise TypeError("cloud_provisioner._run takes an argument vector (a list of strings), never a shell string")
+    r = subprocess.run(list(cmd), capture_output=True, text=True, timeout=timeout, cwd=cwd)
     if r.returncode != 0:
-        logger.warning(f"[CLOUD-PROV] Command failed: {cmd}\n  stderr: {r.stderr[:300]}")
+        logger.warning(f"[CLOUD-PROV] Command failed: {' '.join(cmd)}\n  stderr: {r.stderr[:300]}")
     return r
 
 
@@ -697,7 +702,7 @@ async def provision_cloud_operator(
     running from within the registry container with host filesystem access
     via volume mounts.
     """
-    safe = _safe_name(operator_name)
+    safe = checked_slug(_safe_name(operator_name))   # V0653 (am) item 1: never a path from a slug that is not one
     domain = f"{safe}.{CLOUD_DOMAIN_SUFFIX}"
     dir_name = f"cloud-op-{safe}"
     stack_dir_host = f"{STACK_ROOT_HOST}/{dir_name}"
@@ -834,7 +839,7 @@ async def provision_cloud_operator(
         # silently. This is the one that everything after it assumes: a failed extract leaves an empty stack dir and
         # the provision continues against nothing. Read the status here rather than discovering it as a missing file
         # four steps later.
-        _extract = _run(f"tar xzf {bundle_path} -C {stack_dir_container}")
+        _extract = _run(["tar", "xzf", bundle_path, "-C", stack_dir_container])
         if _extract.returncode != 0:
             raise RuntimeError(
                 f"the operator bundle did not extract into {stack_dir_container} "
@@ -848,7 +853,7 @@ async def provision_cloud_operator(
         env_script = f"{stack_dir_container}/generate-operator-env.sh"
         if os.path.exists(env_script):
             # _run OK: local shell invocation of `bash` (no docker CLI needed).
-            _run(f"cd {stack_dir_container} && bash generate-operator-env.sh cloud-op-{safe}")
+            _run(["bash", "generate-operator-env.sh", f"cloud-op-{safe}"], cwd=stack_dir_container)
 
         if not os.path.exists(env_path):
             # Generate minimal env if script didn't produce one
@@ -1800,8 +1805,8 @@ async def provision_cloud_operator(
         # nginx reload). Do NOT convert to docker-py SDK — the nsenter
         # privileged + host-PID combo is the whole point.
         _run(
-            'docker run --rm --network=host --pid=host --privileged '
-            'alpine nsenter -t 1 -m -u -n -i sh -c "nginx -t && nginx -s reload"',
+            ["docker", "run", "--rm", "--network=host", "--pid=host", "--privileged",
+             "alpine", "nsenter", "-t", "1", "-m", "-u", "-n", "-i", "sh", "-c", "nginx -t && nginx -s reload"],
             timeout=15
         )
         logger.info(f"[CLOUD-PROV] nginx HTTPS vhost created: {domain} → localhost:{reg_port}")
@@ -1819,10 +1824,9 @@ async def provision_cloud_operator(
         # at /host-stack/Agentvault2/scripts/extend_stream_sni_map.sh (idempotent).
         try:
             _run(
-                'docker run --rm --network=host --pid=host --privileged '
-                'alpine nsenter -t 1 -m -u -n -i '
-                f'/opt/theprotocol/stack/Agentvault2/scripts/extend_stream_sni_map.sh '
-                f'{domain} {fed_port}',
+                ["docker", "run", "--rm", "--network=host", "--pid=host", "--privileged",
+                 "alpine", "nsenter", "-t", "1", "-m", "-u", "-n", "-i",
+                 "/opt/theprotocol/stack/Agentvault2/scripts/extend_stream_sni_map.sh", domain, str(fed_port)],
                 timeout=15
             )
             logger.info(
@@ -1927,12 +1931,11 @@ async def provision_cloud_operator(
             # `docker compose` from the host's working directory.
             # §pass65 — fallback also gets DOCKER_CONFIG so it doesn't 401.
             _run(
-                "docker run --rm --pid=host --privileged "
-                "-v /var/run/docker.sock:/var/run/docker.sock "
-                f"-v {stack_dir_host}:{stack_dir_host} "
-                "alpine nsenter -t 1 -m -u -n -i sh -c "
-                f"'cd {stack_dir_host} && DOCKER_CONFIG={stack_dir_host}/.docker docker compose -f docker-compose.operator.yml "
-                f"--env-file .env.operator up -d'",
+                ["docker", "run", "--rm", "--pid=host", "--privileged",
+                 "-v", "/var/run/docker.sock:/var/run/docker.sock", "-v", f"{stack_dir_host}:{stack_dir_host}",
+                 "alpine", "nsenter", "-t", "1", "-m", "-u", "-n", "-i", "sh", "-c",
+                 'cd "$1" && DOCKER_CONFIG="$1/.docker" docker compose -f docker-compose.operator.yml '
+                 '--env-file .env.operator up -d', "sh", stack_dir_host],
                 timeout=120
             )
 
@@ -2060,7 +2063,7 @@ async def provision_cloud_operator(
         match = re.search(r'FIRST-BOOT ADMIN PASSWORD:\s*(\S+)', _logs)
         if match:
             admin_password = match.group(1)
-            logger.info(f"[CLOUD-PROV] Admin credentials captured: {admin_email}")
+            logger.info(f"[CLOUD-PROV] Admin credentials captured: {email_for_log(admin_email)}")
         else:
             logger.warning("[CLOUD-PROV] Could not parse first-boot password from logs")
     except Exception as e:
@@ -2526,7 +2529,7 @@ async def teardown_cloud_operator(
       frames (cross-frame propagation), and DELETE (not archive) the stack dir.
       Result = zero traces fleet-wide, Δ=0.
     """
-    safe = _safe_name(application.name or "unknown")
+    safe = checked_slug(_safe_name(application.name or "unknown"))   # V0653 (am) item 1
     stack_dir = application.cloud_stack_dir or f"{STACK_ROOT_HOST}/cloud-op-{safe}"
     domain = (application.cloud_url or "").replace("http://", "").replace("https://", "")
 
@@ -2637,15 +2640,14 @@ async def teardown_cloud_operator(
                 os.remove(vhost_path)
                 if domain:
                     _run(
-                        'docker run --rm --network=host --pid=host --privileged '
-                        'alpine nsenter -t 1 -m -u -n -i '
-                        f'/opt/theprotocol/stack/Agentvault2/scripts/extend_stream_sni_map.sh '
-                        f'--remove {domain}',
+                        ["docker", "run", "--rm", "--network=host", "--pid=host", "--privileged",
+                         "alpine", "nsenter", "-t", "1", "-m", "-u", "-n", "-i",
+                         "/opt/theprotocol/stack/Agentvault2/scripts/extend_stream_sni_map.sh", "--remove", domain],
                         timeout=15
                     )
                 _run(
-                    'docker run --rm --network=host --pid=host --privileged '
-                    'alpine nsenter -t 1 -m -u -n -i sh -c "nginx -t && nginx -s reload"',
+                    ["docker", "run", "--rm", "--network=host", "--pid=host", "--privileged",
+                     "alpine", "nsenter", "-t", "1", "-m", "-u", "-n", "-i", "sh", "-c", "nginx -t && nginx -s reload"],
                     timeout=15
                 )
                 return True
@@ -2865,7 +2867,7 @@ async def fetch_cloud_logs(
     if not (10 <= tail <= 2000):
         raise ValueError(f"tail must be 10-2000, got {tail}")
 
-    safe = _safe_name(application.name or "")
+    safe = checked_slug(_safe_name(application.name or ""))   # V0653 (am) item 1
     if operator_lifecycle_via() == "runner":
         t0 = _time.time()
         res = await _operator_lifecycle_through_runner("operator_logs", _RUNNER_LOGS_TIMEOUT_S,
@@ -2961,7 +2963,7 @@ async def restart_cloud_service(
         raise ValueError(
             f"service {service!r} not in allowlist {sorted(CLOUD_OP_RESTARTABLE_SERVICES)}"
         )
-    safe = _safe_name(application.name or "")
+    safe = checked_slug(_safe_name(application.name or ""))   # V0653 (am) item 1
     if operator_lifecycle_via() == "runner":
         t0 = _time.time()
         res = await _operator_lifecycle_through_runner("operator_restart", _RUNNER_RESTART_TIMEOUT_S,
@@ -3144,8 +3146,13 @@ PARENT_POSTURE_KEYS = (
     # were born with execution on, no target (a run targets the operator itself) and the shared key at its
     # source literal. An operator now starts with the tester off unless someone turns it on deliberately.
     "TREASURY_MM_ENABLED", "LEGACY_CONTRACTS_ENABLED",   # TOKEN_BRIDGE_ENABLED: retired in V0651, not written
-    "ARENA_BETTING_ENABLED", "REGISTRY_STAKING_CLAIM_REWARDS_ENABLED", "TEG_ONBOARDING_MINT_ENABLED",
-    "TEG_STAKING_REWARD_CYCLE_ENABLED", "AGENT_RBAC_DEFAULT_ROLES", "LIABILITY_MODE",
+    "ARENA_BETTING_ENABLED", "REGISTRY_STAKING_CLAIM_REWARDS_ENABLED",
+    # V0653 (an), item 2 (session-lead's choice, the sessions' room seq 769): TEG_ONBOARDING_MINT_ENABLED and
+    # TEG_STAKING_REWARD_CYCLE_ENABLED left this list. They are the TEG's keys, read by the TEG alone, so a parent
+    # REGISTRY never holds them and this list never passed them on; both default off in the TEG, so a child's TEG takes
+    # the safe default, and a retired money surface never passes on by inheritance (an operator that wants one sets it).
+    # tests/test_provisioner_posture_sources_v0653.py names every key here and the side that reads it.
+    "AGENT_RBAC_DEFAULT_ROLES", "LIABILITY_MODE",
     # §BATCH5 — the sync cadence is posture too: the source default is 600 s and the fleet runs 120
     # (§FEDTUNE); a fresh operator without the key waited ten minutes per cycle (JUICE pair, 2026-09-05).
     "FEDERATION_SYNC_INTERVAL_SECONDS",
@@ -3213,9 +3220,12 @@ def _write_env_choices(f, choices) -> list:
 
 
 def _generate_env_file(path: str, safe_name: str):
-    """Generate a minimal .env.operator if the bundle script didn't produce one."""
+    """Generate a minimal .env.operator if the bundle script didn't produce one. V0653 (am) item 10: created 0600 (it
+    holds the operator's database and signing secrets), never readable through the process's umask for a moment."""
     import secrets as _s
-    with open(path, 'w') as f:
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, 'w') as f:
         f.write(f"REGISTRY_NAME=cloud-op-{safe_name}\n")
         f.write(f"PG_PASS_REGISTRY={_s.token_hex(16)}\n")
         f.write(f"PG_PASS_TEG={_s.token_hex(16)}\n")

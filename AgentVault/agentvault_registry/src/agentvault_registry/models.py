@@ -6553,6 +6553,10 @@ class ChatMessage(Base):
     # owner session token, verified by owner_token_refusal), so the thread can say "sent by its owner"; NULL when the
     # agent posted with its own credential, where the registry cannot tell who typed it
     sent_by_developer_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # V0653 (w) (mig 0208): the credential the message was sent with: "session" (a signed-in developer), "api_key" (a
+    # developer key: an MCP connector, the bridge, a script) or "agent" (an agent JWT); NULL before V0653, or for a line
+    # the registry wrote with no caller (a federated delivery, a worker's card). A key's line is not his own hand.
+    sent_with: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False)
     edited_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

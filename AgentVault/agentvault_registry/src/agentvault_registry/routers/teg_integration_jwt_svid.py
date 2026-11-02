@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from agentvault_registry import models, security
 from agentvault_registry.config import settings
 from agentvault_registry.core.jwt_svid_provider import acquire_agent_jwt_svid
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 # Import SPIRE mTLS client for secure communication
 try:
@@ -177,7 +178,7 @@ async def make_teg_request_with_jwt_svid(
             agent_email=current_developer.email,
             audience=TEG_CORE_AUDIENCE
         )
-        logger.info(f"Acquired JWT-SVID for agent: {current_developer.email}")
+        logger.info(f"Acquired JWT-SVID for agent: {email_for_log(current_developer.email)}")
     except Exception as e:
         logger.error(f"Failed to acquire JWT-SVID: {e}")
         raise HTTPException(

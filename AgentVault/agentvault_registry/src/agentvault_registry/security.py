@@ -44,6 +44,7 @@ from agentvault_registry.crud import agent as agent_crud # For agent authenticat
 # --- END MODIFIED ---
 # --- ADDED: Import settings ---
 from agentvault_registry.config import settings
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 # --- END ADDED ---
 
 
@@ -1172,7 +1173,7 @@ async def get_current_admin_developer(
     """
     # Check if current developer has admin privileges via is_admin field
     if not current_developer.is_admin:
-        logger.warning(f"Admin access denied for developer: {current_developer.email} (ID: {current_developer.id})")
+        logger.warning(f"Admin access denied for developer: {email_for_log(current_developer.email)} (ID: {current_developer.id})")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
@@ -1194,7 +1195,7 @@ async def get_current_admin_developer(
         logger.warning(f"Admin access denied: developer {current_developer.id} has no 2FA (REQUIRE_ADMIN_2FA)")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ADMIN_2FA_REQUIRED)
 
-    logger.debug(f"Admin access granted to developer: {current_developer.email} (ID: {current_developer.id})")
+    logger.debug(f"Admin access granted to developer: {email_for_log(current_developer.email)} (ID: {current_developer.id})")
     return current_developer
 
 
@@ -1312,7 +1313,7 @@ def require_admin_flag(flag_name: str):
         if deny_reason == "missing_flag":
             logger.warning(
                 f"Admin flag '{flag_name}' denied for developer: "
-                f"{current_developer.email} (ID: {current_developer.id})"
+                f"{email_for_log(current_developer.email)} (ID: {current_developer.id})"
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -1321,7 +1322,7 @@ def require_admin_flag(flag_name: str):
         # OPA-induced deny in enforce mode (Python allowed, OPA tightened).
         logger.warning(
             f"Admin flag '{flag_name}' denied by OPA enforce for developer: "
-            f"{current_developer.email} (ID: {current_developer.id})"
+            f"{email_for_log(current_developer.email)} (ID: {current_developer.id})"
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -1940,7 +1941,9 @@ async def get_current_actor_for_read(
                 owner_session = int(payload.get("owner"))
             except (TypeError, ValueError):
                 owner_session = None
-        return {"kind": "agent", "agent_did": agent_did, "agent": agent, "owner_session": owner_session}
+        # V0653 (w): the credential a chat message records (chat_messages.sent_with)
+        return {"kind": "agent", "agent_did": agent_did, "agent": agent, "owner_session": owner_session,
+                "credential": "agent"}
 
     # Developer JWT path — the SAME refusals every other developer route applies, through the same two helpers
     # the optional twin below already uses. §TWOAGENT #18 (2026-09-23): this branch used to check only "the
@@ -1957,7 +1960,7 @@ async def get_current_actor_for_read(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Developer account is inactive",
         )
-    return {"kind": "developer", "developer": developer}
+    return {"kind": "developer", "developer": developer, "credential": "session"}   # V0653 (w): signed in
 
 
 async def get_current_actor_for_read_or_key(
@@ -1971,15 +1974,20 @@ async def get_current_actor_for_read_or_key(
     sessions' tools present, answered 401 there. A key now resolves exactly as on every other developer route
     (verify_access_token_required, then get_current_developer): the key acts as its developer, a revoked or expired key
     is refused 401, an MCP-scoped key is held to the routes it may reach and its scopes are published for the gates. A
-    JWT, developer or agent, goes through get_current_actor_for_read unchanged. Read routes only: no write route takes
-    this.
+    JWT, developer or agent, goes through get_current_actor_for_read unchanged.
+
+    V0653 (w): and the chat write routes the MCP chat tools call (send and start, a card's update, the board, mark read,
+    accept, decline and leave, block and unblock), because the credential of an MCP connector (its OAuth flow mints a
+    key, mcp/oauth.py) and of the personal bridge is a key: through MCP such a key read a room and was refused 401 on
+    every write. No other write route takes this, and an approval is never decided with a key (routers/chat.py
+    decide_approvals refuses one; requesting and consuming take an agent JWT).
     """
     if token.startswith("avreg_"):
         developer_id = await verify_access_token_required(request=request, token=token, db=db)
         developer = await get_current_developer(db=db, developer_id=developer_id)
         if hasattr(developer, "is_active") and not developer.is_active:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Developer account is inactive")
-        return {"kind": "developer", "developer": developer}
+        return {"kind": "developer", "developer": developer, "credential": "api_key"}   # V0653 (w): a key, not a hand
     return await get_current_actor_for_read(db=db, token=token)
 
 

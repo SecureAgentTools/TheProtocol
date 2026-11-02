@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from agentvault_registry import models, schemas, security
 # --- ADDED: Import timedelta from datetime ---
 from datetime import timedelta, timezone
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 # --- END ADDED ---
 
 
@@ -82,7 +83,7 @@ async def get_developer_by_email(db: AsyncSession, email: str) -> Optional[model
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
     except Exception as e:
-        logger.error(f"Error fetching developer by email '{email}': {e}", exc_info=True)
+        logger.error(f"Error fetching developer by email '{email_for_log(email)}': {e}", exc_info=True)
         return None
 
 async def get_developer_by_name(db: AsyncSession, name: str) -> Optional[models.Developer]:
@@ -106,7 +107,7 @@ async def create_developer_with_hashed_details(
         db.add(developer_data)
         await db.commit()
         await db.refresh(developer_data)
-        logger.info(f"Created new developer: {developer_data.email}")
+        logger.info(f"Created new developer: {email_for_log(developer_data.email)}")
         return developer_data
     except IntegrityError as e:
         await db.rollback()
@@ -185,7 +186,7 @@ async def verify_developer_email(db: AsyncSession, developer: models.Developer) 
         db.add(developer)
         await db.commit()
         await db.refresh(developer)
-        logger.info(f"Developer email verified: {developer.email}")
+        logger.info(f"Developer email verified: {email_for_log(developer.email)}")
         return True
     except Exception as e:
         await db.rollback()

@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from agentvault_registry import security
 from agentvault_registry.core import release_channel as rc
 from agentvault_registry.models import Developer
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin/release-channel", tags=["Admin — Release channel"])
@@ -61,7 +62,7 @@ async def release_channel_check_now(
     admin: Developer = Security(security.require_admin_flag("admin_platform")),
 ) -> Dict[str, Any]:
     from agentvault_registry.background_tasks.release_channel_checker import check_once
-    logger.info("[release-channel] check requested by admin %s", admin.email)
+    logger.info("[release-channel] check requested by admin %s", email_for_log(admin.email))
     await check_once(notify=True)
     return _status_doc()
 
@@ -93,7 +94,7 @@ async def release_channel_schedule(
                          "note": (body.note or "").strip() or None, "set_by": admin.email, "set_at": rc.now_iso(),
                          "reminded_at": None}
     rc.save_state(state)
-    logger.info("[release-channel] rollout to %s scheduled for %s by %s", body.version, state["schedule"]["at"], admin.email)
+    logger.info("[release-channel] rollout to %s scheduled for %s by %s", body.version, state["schedule"]["at"], email_for_log(admin.email))
     return _status_doc()
 
 
@@ -103,7 +104,7 @@ async def release_channel_unschedule(
 ) -> Dict[str, Any]:
     state = rc.load_state()
     if state.get("schedule"):
-        logger.info("[release-channel] schedule for %s cleared by %s", state["schedule"].get("version"), admin.email)
+        logger.info("[release-channel] schedule for %s cleared by %s", state["schedule"].get("version"), email_for_log(admin.email))
     state["schedule"] = None
     rc.save_state(state)
     return _status_doc()

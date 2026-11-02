@@ -4,7 +4,8 @@ Order gwo_a19052e2e099921b01aad9a5. The chat read routes resolved their caller w
 decodes JWTs only, so a developer API key (`avreg_`, what the MCP bridges, the CLI and the sessions' tools present)
 answered 401 on every one of them. They now take get_current_actor_for_read_or_key: a key resolves exactly as on every
 other developer route (verify_access_token_required, then get_current_developer), and a JWT, developer or agent, goes
-through get_current_actor_for_read unchanged. No write route changes.
+through get_current_actor_for_read unchanged. No write route changes (V0653 (w) later gave the write routes the MCP
+chat tools call the same reader: test_chat_write_keys_v0653.py).
 
 Through FastAPI on the real chat router and the real resolution chain; only the key and developer lookups, the agent
 lookup and the chat service's reads are replaced. Cases marked BASE fail on 6c1f036b (V0649).
@@ -133,7 +134,7 @@ def test_a_garbage_token_is_still_refused(client):
     assert _get(client, "/api/v1/chat/conversations", "not-a-token").status_code == 401
 
 
-def test_only_the_read_routes_moved():
+def test_the_read_routes_moved_and_of_the_writes_only_the_mcp_tools():
     # BASE: no route uses the new reader
     src = Path(chat.__file__).read_text(encoding="utf-8")
     tree = ast.parse(src)
@@ -152,4 +153,7 @@ def test_only_the_read_routes_moved():
         elif "get" in methods and "Depends(get_current_actor_for_read)" in sig:
             raise AssertionError(f"{n.name} is a read route still on the JWT-only reader")
     assert len(got) >= 19 and {"list_conversations", "get_messages", "sync", "download_attachment"} <= got
-    assert not writes_with_new, f"a write route took the new reader: {writes_with_new}"
+    # V0653 (w): of the write routes, exactly the ones the MCP chat tools call take it too (test_chat_write_keys_v0653.py)
+    mcp_tool_writes = {"create_conversation", "post_message", "update_card", "write_board", "read_mark",
+                       "accept_conversation", "decline_conversation", "leave_conversation", "create_block", "remove_block"}
+    assert writes_with_new == mcp_tool_writes, f"a write route took the new reader: {writes_with_new - mcp_tool_writes}"

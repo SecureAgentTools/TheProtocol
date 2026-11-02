@@ -27,6 +27,7 @@ from ..database import get_db
 from ..models import FederatedRegistryCompliance, PeerRegistry
 from .. import security
 from ..services.federation_policy_validator import FederationPolicyValidator, ValidationResult
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -320,7 +321,7 @@ async def complete_admission(
 
     logger.info(
         f"[FederationAdmission] Federation ACTIVE — peer={peer.name} "
-        f"(id={peer.id}), admitted_by={admin.email}"
+        f"(id={peer.id}), admitted_by={email_for_log(admin.email)}"
     )
 
     return {

@@ -47,8 +47,9 @@ GUARD_ENABLED: bool = os.environ.get("TEG_HOME_FRAME_GUARD_ENABLED", "false").lo
 # compares an agent's home trust_domain to this; if they differ → raise.
 LOCAL_TRUST_DOMAIN: str = os.environ.get("SPIRE_TRUST_DOMAIN", "agentvault.com").lower()
 
-# Compatibility alias for older callers using "A"/"B" labels. Derived once.
-LOCAL_FRAME: str = "B" if "frame-b" in LOCAL_TRUST_DOMAIN else "A"
+# Compatibility alias for older callers using "A"/"B" labels. Derived once, from the WHOLE trust domain (V0653 (am)
+# item 5: "frame-b" in td gave a look-alike domain Frame B's letter). No check compares with it any more.
+LOCAL_FRAME: str = "B" if LOCAL_TRUST_DOMAIN == "frame-b.theprotocol.cloud" else "A"
 
 # Local registry URL — the resolver queries this registry's agent_cards table.
 _REGISTRY_URL: str = os.environ.get("REGISTRY_URL", "http://registry-a:8000").rstrip("/")
@@ -159,18 +160,16 @@ _cache = _LRUCache(_INPROC_CACHE_MAX)
 def _spiffe_to_frame(spiffe_id: Optional[str]) -> Optional[str]:
     """Map a SPIFFE source identity to its frame label ("A" or "B").
 
-    Returns None if we can't classify (caller falls back to LOCAL_FRAME).
+    Returns None if we can't classify (caller falls back to LOCAL_FRAME). V0653 (am) item 5: the trust domain is read
+    out of the id and compared whole; a substring let spiffe://frame-b.theprotocol.cloud.evil.test/... read Frame B.
     """
     if not spiffe_id:
         return None
-    s = spiffe_id.lower()
-    # frame-b.theprotocol.cloud → Frame B
-    if "frame-b.theprotocol.cloud" in s or "frame-b" in s:
-        return "B"
-    # agentvault.com → Frame A (default — most operators)
-    if "agentvault.com" in s:
-        return "A"
-    return None
+    s = spiffe_id.strip().lower()
+    if not s.startswith("spiffe://"):
+        return None
+    td = s[len("spiffe://"):].split("/", 1)[0].rstrip(".")
+    return {"frame-b.theprotocol.cloud": "B", "agentvault.com": "A"}.get(td)
 
 
 # ---------------------------------------------------------------------------
@@ -181,8 +180,8 @@ def _spiffe_to_frame(spiffe_id: Optional[str]) -> Optional[str]:
 async def resolve_home_frame(agent_id: str) -> Optional[str]:
     """Resolve a single agent's home frame.
 
-    Returns "A", "B", or None (unknown). When the guard is disabled, always
-    returns None.
+    Returns the agent's home trust domain (this TEG's own for a native agent), or None (unknown). When the guard is
+    disabled, always returns None.
 
     Caching: in-process LRU + RPC fallback.
     """
@@ -196,10 +195,10 @@ async def resolve_home_frame(agent_id: str) -> Optional[str]:
 
 
 async def resolve_home_frames(agent_ids: List[str]) -> Dict[str, Optional[str]]:
-    """Bulk resolver — returns a mapping from agent_id → "A"|"B"|None.
+    """Bulk resolver — returns a mapping from agent_id → home trust domain | None.
 
     Semantics:
-      - "A" / "B": authoritative home frame from federation_metadata
+      - a trust domain: the authoritative home from federation_metadata (LOCAL_TRUST_DOMAIN for a native agent)
       - None: agent_id has no card in the local registry (race window, defunct,
               or this DID has never been seen). Caller falls back to local.
 
@@ -389,9 +388,12 @@ async def async_check_home_or_raise(agent_id: str) -> None:
             f"[HomeFrameGuard:async] {agent_id} home unknown — allowing local create"
         )
         return
-    if home != LOCAL_FRAME:
+    # V0653 (am) item 5: the resolver answers a trust domain (_bulk_rpc), so the check compares with this TEG's trust
+    # domain, as the sync and bulk checks do. It compared with LOCAL_FRAME ("A"/"B"), which no trust domain equals, so
+    # every agent whose home was known, this frame's own included, was refused a first profile here.
+    if home != LOCAL_TRUST_DOMAIN:
         raise AgentNotHomeError(
-            agent_id=agent_id, home_frame=home, this_frame=LOCAL_FRAME
+            agent_id=agent_id, home_frame=home, this_frame=LOCAL_TRUST_DOMAIN
         )
 
 

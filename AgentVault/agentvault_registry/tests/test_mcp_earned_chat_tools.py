@@ -105,7 +105,12 @@ class _World:
             self.approvals[aid] = "pending"
             return True, _body({"approval": {"id": aid, "status": "pending"}, "duplicate": False}), "201"
         if tool == C.LISTA:
-            items = [{"id": a, "status": s} for a, s in self.approvals.items() if s == "pending"]
+            # the route's vocabulary: pending (the default), decided (anything not pending), all
+            st = args.get("status") or ("all" if self.d.get("default_all") else "pending")
+            if self.d.get("status_dropped"):
+                st = "all"
+            items = [{"id": a, "status": s} for a, s in self.approvals.items()
+                     if st == "all" or (s == "pending") == (st == "pending")]
             can = me == DEV or (me == MEMBER and bool(self.d.get("member_decides")))
             return True, _body({"conversation_id": ROOM, "items": items, "can_decide": can}), "200"
         if tool == C.WAITING:
@@ -191,9 +196,12 @@ class _Throwaways:
         type(self).closed += 1
 
 
-def _run(w: _World, monkeypatch, *, transport: bool = True) -> Dict[str, dict]:
+def _run(w: _World, monkeypatch, *, transport: bool = True, vocabulary: Optional[List[str]] = None) -> Dict[str, dict]:
     from agentvault_registry.api_tests.contracts.mcp_contracts import McpFixtureBag
     monkeypatch.setattr(C, "Throwaways", _Throwaways)
+    if vocabulary is None:
+        vocabulary = list(C.STATUS_WANT)
+    monkeypatch.setattr(C, "_status_vocabulary", lambda: list(vocabulary))
     _Throwaways.made = []
     bag = McpFixtureBag(sentinel_did="did:theprotocol:offline-sentinel", sentinel_jwt="sentinel-jwt",
                         developer_jwt="runner-dev-jwt", developer_id="1")
@@ -242,7 +250,9 @@ def test_a_pair_earns_all_ten_holds_every_rule_and_leaves_nothing(monkeypatch):
         assert out.get(name) and out[name]["healthy"], (name, out.get(name))
     assert w.opened == [DEV, AGENT, MEMBER] and w.member_joined
     assert w.board["rev"] == 1 and w.board["text"].startswith("MCP tester board ")
-    assert w.card["state"] == "passed" and list(w.approvals.values()) == ["denied"]
+    assert w.card["state"] == "passed" and list(w.approvals.values()) == ["denied", "denied"]
+    enum = out.get(C.ENUM_ROW)
+    assert _ok(enum) and enum["measured_in"] and enum["result_excerpt"]["decided"] == ["apr_2"], enum
     assert w.org_deleted and _Throwaways.closed == 1
     assert _Throwaways.made == ["chat-tools-owner", "chat-tools-member", "chat-tools-stranger"]
 
@@ -260,12 +270,35 @@ def test_a_pair_earns_all_ten_holds_every_rule_and_leaves_nothing(monkeypatch):
     ("anyone_updates", "refusal: updateChatProgress a card someone else posted", "expected 4xx, got 200"),
     ("closed_updates", "refusal: updateChatProgress a closed card", "expected 4xx, got 200"),
     ("file_leaks", "refusal: getChatAttachment a file in a room the caller is not in", "expected 4xx, got 200"),
+    ("status_dropped", C.ENUM_ROW, "decided: ['apr_1', 'apr_2'] (want ['apr_2'])"),
+    ("default_all", C.ENUM_ROW, "(none): ['apr_1', 'apr_2'] (want ['apr_1'])"),
 ])
 def test_each_defect_is_red_on_its_own_row(monkeypatch, defect, row, needle):
     monkeypatch.setenv(C.EPHEMERAL_ENV, "true")
     out = _run(_World(**{defect: True}), monkeypatch)
     r = out[row]
     assert not r["healthy"] and needle in str(r.get("fail_reason")), (defect, r)
+
+
+def test_a_status_the_check_does_not_know_is_red(monkeypatch):
+    monkeypatch.setenv(C.EPHEMERAL_ENV, "true")
+    r = _run(_World(), monkeypatch, vocabulary=["pending", "decided", "expired", "all"])[C.ENUM_ROW]
+    assert not r["healthy"] and "advertises expired, which this check does not know" in r["fail_reason"], r
+
+
+def test_the_enum_row_is_left_to_the_sweep_where_the_room_has_no_request(monkeypatch):
+    # no request of the run's own (the list rows say why): the sweep's own enum row is not overwritten
+    monkeypatch.setenv(C.EPHEMERAL_ENV, "true")
+    w = _World()
+    real = w.public
+
+    async def no_request(tool, args, jwt="", timeout=20):
+        if tool == "theprotocol_requestChatApproval":
+            return False, _body({"error": "requestChatApproval returned HTTP 503: try again"}), "503"
+        return await real(tool, args, jwt=jwt, timeout=timeout)
+    w.public = no_request                                              # type: ignore[assignment]
+    out = _run(w, monkeypatch)
+    assert C.ENUM_ROW not in out and out[C.LISTA]["skip_reason"], out.get(C.LISTA)
 
 
 def test_an_agent_reading_the_waiting_list_is_red(monkeypatch):

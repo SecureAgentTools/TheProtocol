@@ -58,6 +58,7 @@ from ..security import create_access_token
 from .auth_bridge import MCPAuthContext, MCPAuthError, format_tool_exception
 from .refusal import http_refusal, refusal_reason  # §MCPTEST30: a refusal carries its reason
 from ..core.path_segment import seg  # §MCPTEST30 V0523: a caller's value is one path segment, encoded
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +160,7 @@ async def get_developer_token(
           "developer_id": <int>, "note": <str> }
     """
     url = f"{REGISTRY_SELF_URL}/api/v1/auth/login"
-    logger.info(f"[AdminMCP] getDeveloperToken: email={email}")
+    logger.info(f"[AdminMCP] getDeveloperToken: email={email_for_log(email)}")
 
     try:
         async with httpx.AsyncClient(timeout=HTTPX_TIMEOUT, verify=get_httpx_verify()) as client:

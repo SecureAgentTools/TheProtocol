@@ -37,6 +37,7 @@ from typing import List, Mapping, Optional, Tuple
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, text
+from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("operator_seed")
@@ -134,7 +135,7 @@ async def seed():
             select(Developer).where(Developer.email == admin_email)
         )
         if existing.scalar_one_or_none():
-            logger.info(f"operator_seed: Operator admin ({admin_email}) already exists — skipping.")
+            logger.info(f"operator_seed: Operator admin ({email_for_log(admin_email)}) already exists — skipping.")
             await engine.dispose()
             return
 
@@ -183,7 +184,7 @@ async def seed():
             ])
             # Use print() so the banner is visible even if logging is filtered
             print(banner)
-        logger.info(f"operator_seed: Operator admin created (id={admin.id}, email={admin_email})")
+        logger.info(f"operator_seed: Operator admin created (id={admin.id}, email={email_for_log(admin_email)})")
 
     await engine.dispose()
 

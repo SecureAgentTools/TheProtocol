@@ -13,7 +13,8 @@
      tab) or live (the decided card); a press on one decided before it says when and by whom ("Already approved at
      04:35 (another device)"), never a fresh "approved". -->
 <template>
-  <section v-if="enabled && (side || shown.length || readFailed || focusGone || late)" ref="rootEl" class="oca" :class="{ 'oca--side': side }"
+  <section v-if="enabled && (side || shown.length || readFailed || focusGone || late)" ref="rootEl" class="oca"
+           :class="{ 'oca--side': side, 'oca--strip': stripView && shown.length }" :data-view="compact ? view : 'list'"
            data-testid="ost-approvals" aria-live="polite">
     <ReadFailedNotice v-if="readFailed" dense :retry="refresh" data-testid="oca-read-failed"
                       :text="t('ourstate.approvals.readFailed', 'Approval requests could not be read just now.')" />
@@ -22,11 +23,26 @@
       <p v-if="side && !loaded" class="oca-none" data-testid="oca-reading">{{ t('common.loading', 'Loading…') }}</p>
       <p v-else-if="side && !shown.length && !focusGone" class="oca-none" data-testid="oca-none">
         {{ t('ourstate.approvals.none', 'Nothing waits for a decision in this room.') }}</p>
-      <header v-if="!side || shown.length" class="oca-head">
+      <!-- V0653 (al): on a phone-width pane the pinned requests start as one line under the header; a tap opens the card -->
+      <button v-if="stripView && shown.length" type="button" class="oca-strip" data-testid="oca-strip" aria-expanded="false"
+              @click="view = 'card'">
         <Icon name="mdi:shield-check" />
         <span class="oca-count" data-testid="oca-count">
           {{ tp('ourstate.approvals.waiting', '{n} waiting for a decision', { n: shown.length }) }}</span>
-        <button v-if="canDecide && allIds.length >= 2" type="button" class="oca-btn oca-all" data-testid="oca-approve-all"
+        <span class="oca-strip-open">{{ t('ourstate.approvals.open', 'Open') }}</span>
+      </button>
+      <header v-else-if="!side || shown.length" class="oca-head">
+        <Icon name="mdi:shield-check" />
+        <span class="oca-count" data-testid="oca-count">
+          {{ tp('ourstate.approvals.waiting', '{n} waiting for a decision', { n: shown.length }) }}</span>
+        <!-- V0653 (al): the card shows one request; "n more" opens the whole list, and the list folds back to one -->
+        <button v-if="cardView && more > 0" type="button" class="oca-btn oca-link" data-testid="oca-more" aria-expanded="false"
+                @click="view = 'list'">{{ tp('ourstate.approvals.more', '{n} more', { n: more }) }}</button>
+        <button v-if="compact && view === 'list'" type="button" class="oca-btn oca-link" data-testid="oca-less" aria-expanded="true"
+                @click="view = 'card'">{{ t('ourstate.approvals.showOne', 'Show one') }}</button>
+        <button v-if="cardView && narrow" type="button" class="oca-btn oca-link" data-testid="oca-hide" aria-expanded="true"
+                @click="view = 'strip'">{{ t('ourstate.approvals.hide', 'Hide') }}</button>
+        <button v-if="listView && canDecide && allIds.length >= 2" type="button" class="oca-btn oca-all" data-testid="oca-approve-all"
                 :disabled="busyIds.size > 0" @click="approveAll">
           <Icon name="mdi:check" /> {{ tp('ourstate.approvals.approveAll', 'Approve all ({n})', { n: allIds.length }) }}</button>
       </header>
@@ -36,20 +52,28 @@
         {{ t('ourstate.approvals.notWaiting', 'This request no longer waits for a decision: its decision, or its expiry, is in the thread.') }}</p>
       <p v-if="!canDecide && shown.length" class="oca-who" data-testid="oca-not-decider">
         {{ t('ourstate.approvals.whoDecides', "The organization's owner or a named approver decides these.") }}</p>
-      <ul class="oca-list">
-        <li v-for="a in shown" :key="a.id" class="oca-item" :class="{ 'oca-focus': a.id === focusId }"
+      <ul v-if="listed.length" class="oca-list">
+        <li v-for="a in listed" :key="a.id" class="oca-item" :class="{ 'oca-focus': a.id === focusId, 'oca-item--card': cardView }"
             :data-testid="`oca-item-${a.id}`" :data-oca-id="a.id" :data-expired="isExpired(a, now) ? '1' : '0'">
           <div class="oca-title">{{ a.title }}</div>
           <div v-if="a.unlocks" class="oca-unlocks">
             {{ tp('ourstate.approvals.unlocks', 'Unlocks: {what}', { what: a.unlocks }) }}</div>
-          <details v-if="a.reason" class="oca-why">
+          <!-- V0653 (al): on the compact card, who asks and the artifact's hash wait under Why with the reason -->
+          <details v-if="a.reason || cardView" class="oca-why" :data-testid="`oca-why-${a.id}`">
             <summary>{{ t('ourstate.approvals.why', 'Why') }}</summary>
-            <p>{{ a.reason }}</p>
+            <p v-if="a.reason">{{ a.reason }}</p>
+            <div v-if="cardView" class="oca-meta">
+              <span class="oca-from">{{ a.requester?.name || '' }} <code>{{ didTail(a.requester?.agent_did) }}</code></span>
+              <code v-if="a.artifact_sha256" class="oca-sha" :title="a.artifact_sha256" data-testid="oca-sha">
+                {{ a.artifact_label ? `${a.artifact_label} · ` : '' }}{{ shortSha(a.artifact_sha256) }}</code>
+            </div>
           </details>
           <div class="oca-meta">
-            <span class="oca-from">{{ a.requester?.name || '' }} <code>{{ didTail(a.requester?.agent_did) }}</code></span>
-            <code v-if="a.artifact_sha256" class="oca-sha" :title="a.artifact_sha256" data-testid="oca-sha">
-              {{ a.artifact_label ? `${a.artifact_label} · ` : '' }}{{ shortSha(a.artifact_sha256) }}</code>
+            <template v-if="!cardView">
+              <span class="oca-from">{{ a.requester?.name || '' }} <code>{{ didTail(a.requester?.agent_did) }}</code></span>
+              <code v-if="a.artifact_sha256" class="oca-sha" :title="a.artifact_sha256" data-testid="oca-sha">
+                {{ a.artifact_label ? `${a.artifact_label} · ` : '' }}{{ shortSha(a.artifact_sha256) }}</code>
+            </template>
             <span v-if="a.production_impact" class="oca-prod" data-testid="oca-prod">
               {{ t('ourstate.approvals.production', 'Affects production') }}</span>
             <span class="oca-left" :data-testid="`oca-left-${a.id}`">
@@ -96,6 +120,7 @@ import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import StepUpConfirm from '@/components/membership/StepUpConfirm.vue'
 import { useChatApprovals } from '@/composables/useChatApprovals'
 import { didTail, isChoice, isExpired, leftParts, secondsLeft, shortSha, type ApprovalItem } from '@/services/chat/approvals'
+import { pinMore, pinStart, pinnedFirst, type PinView } from '@/services/chat/approvalsPin'
 import { timeLabel } from '@/services/chat/messageText'
 import { appLocale } from '@/services/appLocale'
 import { useI18n } from '@/composables/useI18n'
@@ -111,7 +136,11 @@ const props = withDefaults(defineProps<{
   focusId?: string
   /** V0652 (ad): pinned above the history (the default), or a section of the console's side panel. */
   placement?: 'pinned' | 'side'
-}>(), { enabled: true, focusId: '', placement: 'pinned' })
+  /** V0653 (al): pinned and compact: one card ("n more" opens the whole list), the strip first on a phone. */
+  compact?: boolean
+  /** V0653 (al): the thread's pane is phone-width (sidePanel.narrowPane): the compact view starts as the strip. */
+  narrow?: boolean
+}>(), { enabled: true, focusId: '', placement: 'pinned', compact: false, narrow: false })
 const emit = defineEmits<{ (e: 'count', n: number | null): void; (e: 'late'): void }>()
 
 const { t, tp } = useI18n()
@@ -140,6 +169,26 @@ const lateText = computed(() => {
     : tp('ourstate.approvals.alreadyDeniedBy', 'Already denied at {time} by {who}', { time, who })
 })
 const side = computed(() => props.placement === 'side')
+/* V0653 (al): compact, the pinned requests are a strip (a phone), one card, or the whole list ("n more"); the card shows
+   the request a link opened, else the newest that can still be decided (approvalsPin.pinnedFirst). Approve all stays
+   in the list: it sends exactly the requests on screen. A resize across phone width moves strip and card, never an
+   open list. */
+const view = ref<PinView>(props.compact ? pinStart(props.narrow) : 'list')
+watch(() => [props.compact, props.narrow] as const, ([c, n]) => {
+  if (!c) view.value = 'list'
+  else if (view.value !== 'list') view.value = pinStart(n)
+})
+const cardView = computed(() => props.compact && view.value === 'card')
+const stripView = computed(() => props.compact && view.value === 'strip')
+const listView = computed(() => !props.compact || view.value === 'list')
+const first = computed(() => pinnedFirst(shown.value, now.value, props.focusId))
+const more = computed(() => pinMore(shown.value.length))
+const listed = computed<ApprovalItem[]>(() => (stripView.value ? []
+  : cardView.value ? (first.value ? [first.value] : []) : shown.value))
+/** The side panel's door: the whole list, pinned above the history. */
+function openList() { view.value = 'list' }
+// a link that names a request opens it from the strip
+watch(() => props.focusId, (v) => { if (v && stripView.value) view.value = 'card' }, { immediate: true })
 /* V0652 (ad): the side panel's section head carries the count (null until read, and when the read failed) */
 watch([() => shown.value.length, loaded, readFailed], () => {
   emit('count', loaded.value && !readFailed.value ? shown.value.length : null)
@@ -171,8 +220,9 @@ function leftText(a: ApprovalItem): string {
 
 function onStepUpShow(v: boolean) { if (!v) stepUp.value = null }
 
-/** The thread calls this when an approval card arrives (a request posted, or one decided elsewhere). */
-defineExpose({ refresh })
+/** The thread calls refresh when an approval card arrives (a request posted, or one decided elsewhere), and openList
+ *  from the side panel's WAITING ON YOU. */
+defineExpose({ refresh, openList })
 </script>
 
 <style scoped>
@@ -221,4 +271,14 @@ defineExpose({ refresh })
 .oca-approve, .oca-all { background: var(--nc-success, #1f8f4e); color: #fff; }
 .oca-deny { background: transparent; border-color: var(--nc-border, rgba(255, 255, 255, 0.3)); color: inherit; }
 .oca-error { margin: 6px 0 0; color: var(--nc-danger, #e5484d); font-size: 0.9em; }
+/* V0653 (al): the phone's one line under the header, and the compact card's quiet doors ("n more", "Show one", "Hide") */
+.oca--strip { padding: 0 6px; }
+.oca-strip {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 0 4px;
+  border: 0; background: none; color: inherit; font: inherit; font-weight: 600; text-align: left; cursor: pointer;
+}
+.oca-strip-open { font-size: .85em; font-weight: 500; color: var(--nc-primary, #00d4ff); }
+.oca-link { min-height: 36px; padding: 0 10px; background: none; color: inherit; font-weight: 500;
+  border-color: var(--nc-border, rgba(255, 255, 255, 0.3)); }
+.oca-item--card .oca-why .oca-meta { margin-top: 6px; }
 </style>

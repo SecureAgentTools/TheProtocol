@@ -109,3 +109,37 @@ def test_an_honest_route_passes_and_a_dropped_filter_is_named():
     assert _run(_Registry(drops=False))["healthy"] is True
     row = _run(_Registry(drops=True))
     assert row["healthy"] is False and row["fail_reason"].startswith("BUG-FIND: enum")
+
+
+def test_a_row_measured_on_a_subject_of_the_runs_own_is_kept():
+    # V0653: earned_ad_chat_tools measures listChatApprovals in a room of the run's own; this probe, which has no room of
+    # the caller's, keeps that row and asks nothing, whichever ran first
+    name = EF.PREFIX + "getInviteCodes"
+    kept = {"healthy": True, "measured_in": "a room of the run's own"}
+    out = {name: dict(kept)}
+    asked = []
+
+    async def raw(body, path="/mcp/rpc", jwt="", timeout=30):
+        asked.append(body)
+        return "200", _env({"invite_codes": []}), None
+
+    def make_outcome(name, tier, ok, code, ms, fail, inner, expect_status="success", skip_reason=None):
+        return {"healthy": ok, "fail_reason": fail, "skip_reason": skip_reason}
+
+    bag = type("Bag", (), {"developer_jwt": "dev.jwt"})()
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(EF.run_enums(raw, bag, out, make_outcome,
+                                             todo=[("theprotocol_getInviteCodes", "admin", {}, "status_filter", ["active"])]))
+    finally:
+        loop.close()
+    assert out[name] == kept and asked == []
+    # a row nobody measured is still probed and replaced
+    out = {name: {"healthy": False, "skip_reason": "NOT MEASURED: earlier"}}
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(EF.run_enums(raw, bag, out, make_outcome,
+                                             todo=[("theprotocol_getInviteCodes", "admin", {}, "status_filter", ["active"])]))
+    finally:
+        loop.close()
+    assert asked and "measured_in" not in out[name]
