@@ -610,6 +610,28 @@ async def claim_once(once_key: str, ttl_s: int) -> bool:
         return False
 
 
+async def record_held_back(type_key: str, developer_id: int, reason: str, *, title: str, message: str) -> None:
+    """V0655 (az): a notice its caller held back before notify() (the developer was in the app: reason "present") leaves
+    one history row, outcome suppressed, channel "all" (no channel was tried), so the history can say why nothing came.
+    The rules of notify()'s own rows: none while NOTIFY_V2_MODE is off (the legacy path keeps no history), best effort,
+    never raises."""
+    try:
+        from agentvault_registry.services.notification_catalog import get_type
+        entry = get_type(type_key)
+        mode = str(getattr(settings, "NOTIFY_V2_MODE", "off") or "off").lower()
+        if entry is None or mode == "off" or developer_id is None:
+            return
+        _cnt(NOTIFICATION_SUPPRESSED_TOTAL, type=entry.key, channel="all", reason=reason)
+        await _write_notification_log([{
+            "developer_id": int(developer_id), "type_key": entry.key, "category": entry.category,
+            "severity": entry.severity, "channel": "all", "outcome": "suppressed", "reason": reason[:32], "mode": mode,
+            "device_id": None, "title": (title or "")[:500], "message": (message or "")[:2000],
+        }])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[NOTIFY-LOG] the held-back row (%s, %s) for developer %s was not written: %s",
+                       type_key, reason, developer_id, exc)
+
+
 async def notify_once(once_key: str, type_key: str, developer_ids: Iterable[int], *, ttl_s: int = 45 * 86400,
                       **kw) -> int:
     """V0652 (af): a notice said once per occasion, whatever runs its check again (a worker's next cycle, a restart,

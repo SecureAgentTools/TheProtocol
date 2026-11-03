@@ -66,7 +66,7 @@ const wide = ref(false)
 let mq: MediaQueryList | null = null
 const sync = () => { wide.value = !!mq?.matches; measure() }
 
-/* V0653 (al), his words in the sessions' room (seq 686): the list folds beside an open thread, the choice kept per
+/* V0653 (al), the sessions' room (seq 686): the list folds beside an open thread, the choice kept per
    person on this device; the list's header, this rail and the thread's arrow are three controls over one state. */
 let auth: any = null
 try { auth = useAuthStore() } catch { auth = null }   // a mount without the app's store keeps the choice per device

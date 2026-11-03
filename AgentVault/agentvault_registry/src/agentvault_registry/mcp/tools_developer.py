@@ -1910,7 +1910,7 @@ async def resolve_teg_dispute(
     §MCPTEST30 (V0545): the TEG accepts the REGISTRY's mTLS identity as its admin, so this route's own gate was the only
     one, and it was `disputes.file`, which every agent holds from its `client` birth role. Only a transport slip stood in
     between (the route sent `resolution` in a JSON body, the TEG reads it from the query: every call met the TEG's 422).
-    The route now refuses before it forwards; who may resolve a TEG dispute through the registry is his decision.
+    The route now refuses before it forwards; who may resolve a TEG dispute through the registry is a separate decision.
 
     §MCPTEST30 (V0538): POST /teg/disputes/{id}/resolve authenticates an AGENT (require_agent_permission) and this tool
     sent the developer's token, so every call answered 401 "Could not validate agent credentials", the answer its

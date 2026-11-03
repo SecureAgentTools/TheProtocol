@@ -14,7 +14,7 @@ services:
       #   legacy  = registry-a / frame-b / frame-c, retiring, operators off, still attested
       #   sandbox = sbx-alpha / sbx-beta
       # ── LEGACY frames (mode='legacy'; the env var names are unchanged) ──
-      # §LEGACYSTOP 2026-09-25 (his word): frame-b/frame-c are stopped, so their slots and networks are gone, and
+      # §LEGACYSTOP 2026-09-25: frame-b/frame-c are stopped, so their slots and networks are gone, and
       # VENUE_REG_DSNS_JSON with them (its 13 venues were the operators stopped on 09-09). Frame A stays: registry-a stays up.
       FRAME_A_EVENT_STORE_URL: http://agentvault_event_store:8200
       EVENT_STORE_INTERNAL_KEY: ${EVENT_STORE_INTERNAL_KEY}  # §KEYROT 2026-09-05: the code default was a live literal; env-only now

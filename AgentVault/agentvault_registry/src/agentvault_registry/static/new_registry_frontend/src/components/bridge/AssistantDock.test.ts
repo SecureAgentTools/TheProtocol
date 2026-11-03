@@ -1,5 +1,5 @@
 /**
- * §COOKIES (2026-10-02, his words "voice replies default off, add the switch to desktop too"): the desktop assistant
+ * §COOKIES (2026-10-02: voice replies off by default, the switch on the desktop too): the desktop assistant
  * dock carries the same voice-replies switch as Pocket. It starts off and reads nothing aloud; one press turns it on,
  * stores the one choice Pocket reads too, and only then does an answer reach the speech engine (the control).
  */

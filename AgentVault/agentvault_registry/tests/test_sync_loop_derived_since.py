@@ -1,7 +1,7 @@
 """§SYNCLOOP (2026-09-26): a relayed card whose only change is a DERIVED clock is not a change.
 
-Measured on the sandbox tier while deciding whether the card sync could run more often (his words: "you can increase
-agent card synch intervall too if the synch now doesnt synch uselessly all cards"): no native card had changed in ten
+Measured on the sandbox tier while deciding whether the card sync could run more often (so that the sync no longer
+reads every card uselessly): no native card had changed in ten
 minutes, yet every node rewrote 12 to 35 COPIES of other frames' cards on every cycle, all within one second. Across a
 cycle the copies differed in exactly two places: `federation_metadata.last_sync_timestamp` (which the §2026-06-16 gate
 already ignores) and `params.since` of the listing (or enforcement) extension, which a relaying registry derives from

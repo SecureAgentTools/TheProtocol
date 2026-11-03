@@ -492,7 +492,7 @@ def _lifecycle_tables():
 
 
 def test_the_section_pins_all_86():
-    # 87 until V0651, when getBridgeStatus left with the token bridge (his word "retire.")
+    # 87 until V0651, when getBridgeStatus left with the retired token bridge
     assert len(RECORDED) == 86
     assert all(tool in MCP_CONTRACTS for tool in RECORDED)
 

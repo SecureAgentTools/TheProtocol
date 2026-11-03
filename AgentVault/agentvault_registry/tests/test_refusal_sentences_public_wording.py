@@ -1,6 +1,6 @@
 """W1/API (agentvault2-69, 2026-10-25): the sentences the registry hands a caller keep the public wording.
 
-His words that day: "i want the illegal wording completly gone before opening". The route texts are held by
+The critical wording is gone before the opening. The route texts are held by
 test_route_texts_public_wording.py (lifecycle 51's rules over the served OpenAPI document); this test holds what a route
 answers: every HTTPException detail, every error/message/reason/note/hint a route or a tool returns in a dict (since the
 second pass also every title/description/label/summary/headline/body/text/explanation, since the third every

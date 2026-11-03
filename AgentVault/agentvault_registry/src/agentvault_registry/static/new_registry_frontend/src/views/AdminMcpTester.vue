@@ -54,7 +54,7 @@
               {{ modeLabel }}
             </span>
           </span>
-          <!-- §MCPTEST30 (V0555): the console suite's runs have their own page and history (his word 2026-10-03) -->
+          <!-- §MCPTEST30 (V0555): the console suite's runs have their own page and history (2026-10-03) -->
           <router-link to="/admin/console-suite" class="mcp-meta mcp-meta-link" data-testid="mcp-to-console-suite">
             <Icon name="mdi:monitor-cellphone" class="mcp-meta-link-icon" aria-hidden="true" />{{ tr('mcpTester.head.toConsoleSuite', 'Console suite runs') }}
           </router-link>
@@ -2949,9 +2949,9 @@ function flowShortLabel(flowName?: string | null): string {
 function historyDelta(run: McpTesterRunMeta): { delta: number; prevId: string } | null {
   return suiteDelta(runHistory.value as unknown as TrendRun[], run as unknown as TrendRun)
 }
-// §SUITES1018 (2026-10-19, his report on EU's History): an operator run read a green 87.34% with nothing failed and no word
-// of the 97 rows it did not run. The bar and the words under the figure say what it is made of; a failed row (his word on
-// V0627: "1 failed as red is fine", a row red by design included) or a bug-find turns the row red.
+// §SUITES1018 (2026-10-19, EU's History): an operator run read a green 87.34% with nothing failed and no word
+// of the 97 rows it did not run. The bar and the words under the figure say what it is made of; a failed row (V0627: a
+// failed row is simply red, a row red by design included) or a bug-find turns the row red.
 function historyPassClass(c: HistoryCell | null, d: { delta: number } | null): string {
   if (c && c.bad) return 'mcp-passrate--bad'
   if (d && d.delta < 0) return 'mcp-passrate--warn'

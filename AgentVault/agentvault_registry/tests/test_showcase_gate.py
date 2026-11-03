@@ -1,8 +1,7 @@
 """§SHOWCASEGATE (2026-09-09) — the showcase-availability answer lives in ONE place.
 
-His word: "just deactivate our chat showcase on eu-asia frame on landingpage … can stay for
-frame-a b c network", and "it should work in future with other frames automatically so maybe
-make it scalable".
+The chat showcase is off on the EU/ASIA landing page and kept for the frame A, B, C network, and
+it follows other frames automatically, so it scales.
 
 The scalable shape is a runtime, server-derived flag: the console asks
 `/public/registry-config.showcase_chat_enabled`, and that field is computed by the SAME

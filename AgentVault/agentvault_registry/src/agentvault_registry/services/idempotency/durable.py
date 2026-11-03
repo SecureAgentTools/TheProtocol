@@ -1,6 +1,6 @@
 """§REPATLANE-8 (V0610, 2026-10-13): the durable copy of an Idempotency-Key's record (idempotency_kept, migration 0191).
 
-His decision, left to agentvault2-45 ("do your decision for the database copy"): cache.py keeps every answer a money
+Decided by agentvault2-45 (the database copy): cache.py keeps every answer a money
 endpoint may have paid under its key (V0606's kept attempts) and every success of the older keyed endpoints, in Redis
 alone, and Redis runs allkeys-lru: a record the cache evicted inside its 24 h window made the same key run the payment
 again, because nothing else remembers it (the TEG does not dedup transfers by the client's key). This module keeps the

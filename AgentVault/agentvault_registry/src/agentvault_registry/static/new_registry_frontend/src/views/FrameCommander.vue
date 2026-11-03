@@ -462,9 +462,9 @@
 
 <script setup lang="ts">
 /**
- * FrameCommander: the public request for a frame (§FRAMEFORM rebuild, his word 2026-09-13: "the frame-commander form
- * is not correct anymore needs complete rework and design upgrade ... in form still old legacy frames to choose to
- * federate with etc no advanced settings").
+ * FrameCommander: the public request for a frame (§FRAMEFORM rebuild, 2026-09-13: the old
+ * frame-commander form, reworked and redesigned, with no legacy frames to federate with and no advanced
+ * settings).
  *
  * The page says what a frame is and how a request becomes one, then walks six steps with a live preview of the
  * registry card. Every rule, derived address, partner list and the payload live in services/frameRequestForm.ts
@@ -730,7 +730,7 @@ const intentOptions = computed(() => [
   },
 ])
 
-// Who runs the frame decides the network licence it is issued when it federates (his words 2026-09-28): the same
+// Who runs the frame decides the network licence it is issued when it federates (2026-09-28): the same
 // category list as the server's NETWORK_PLANS, each option naming its term.
 const firstYear = (c: string): boolean => (FIRST_YEAR_CATEGORIES as readonly string[]).includes(c)
 const licenceOptions = computed(() => {

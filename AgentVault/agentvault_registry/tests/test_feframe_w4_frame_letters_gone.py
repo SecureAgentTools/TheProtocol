@@ -1,4 +1,4 @@
-"""§FEFRAME W4 residue (V0521, his words 2026-10-01 "improvements also approved"): the retired frames' letters are
+"""§FEFRAME W4 residue (V0521, 2026-10-01): the retired frames' letters are
 gone from the admin ledger reads and the diagnostics targets.
 
 - routers/admin_health.py: `frame` means this registry ("local", empty, or its own name). A letter used to resolve as

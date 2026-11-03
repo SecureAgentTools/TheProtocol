@@ -1,4 +1,4 @@
-"""§FEDLICENCE (2026-09-28, his word "cross-teg cut off also approved on revoke"): the TEG refuses a federated frame whose
+"""§FEDLICENCE (2026-09-28; the cross-TEG cut-off on a revoke): the TEG refuses a federated frame whose
 network licence its own registry refuses.
 
 A cross-registry transfer runs registry -> its own TEG -> the peer's TEG (/api/v1/cross-teg/*, through the peer's

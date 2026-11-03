@@ -50,7 +50,7 @@ MEMBER_FEDERATION_VOTE = Switch("governance_weight_mode", "member", ("federation
 # §MEMBERSHIP phase B (V0551): every commons route refuses where COMMONS_ENABLED is off (the read routes in the router,
 # every write in its service function: services/commons.require_enabled); registry-config reports commons_enabled
 COMMONS_OFF = Switch("commons_enabled", False, ("commons_disabled",), 403, "inline: commons.require_enabled")
-# V0651 (p, his word "retire."): the token bridge is retired: its five tools left the catalogs and every /api/v1/bridge/*
+# V0651 (p): the token bridge is retired: its five tools left the catalogs and every /api/v1/bridge/*
 # route answers 410 whatever TOKEN_BRIDGE_ENABLED says, so the switch row that read its 404 went with it
 
 SWITCHED_TOOLS: Dict[str, Switch] = {

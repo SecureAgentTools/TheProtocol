@@ -14,7 +14,7 @@
 # (agentvault2-registry-a:v0292-20260909), so this index verifies signatures and parses DIDs
 # with exactly their code. That is what tier parity has to mean.
 #
-# ── §LEGACYINDEX-MTLS (2026-09-09, his word: "mtls why is this not fixed") ──────────────────
+# ── §LEGACYINDEX-MTLS (2026-09-09: mTLS was missing here) ──────────────────
 # The first cut of this file had no identity at all and registry-a read it over plain http on a
 # private docker network. That was the §MTLSGAP finding repeated on a new tier one day after it
 # was closed on the live one: a hop with no gateway raises nothing, logs nothing and passes every

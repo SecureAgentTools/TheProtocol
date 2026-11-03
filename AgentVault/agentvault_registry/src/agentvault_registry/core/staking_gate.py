@@ -1,6 +1,6 @@
 """§BAFIN (2026-10-01): staking can be switched off per registry, and so can its rewards.
 
-His words: "gate stacking behind a flag" and "remove all staking yelds figures from frontpage". The public
+Staking is gated behind a flag, and no staking yield figure is on the front page. The public
 frames run as a test network whose units have no monetary value; a published annual rate (13.2 % to
 18.4 %, served without login) and a daily distributor that would pay it were the most investment-like facts
 on the platform, and the regulator inquiry describes the platform as it actually runs.
@@ -96,8 +96,8 @@ def disabled_tiers_payload(shape: str = "engine") -> dict | list:
     }
 
 
-# W3 (agentvault2-d6, 2026-10-25; his words through agentvault2-69: "i want the illegal wording completly gone before
-# opening"): the OpenAPI schema leaves out the routes these switches refuse, so a frame that runs neither locking nor
+# W3 (agentvault2-d6, 2026-10-25; the critical wording gone before
+# the opening): the OpenAPI schema leaves out the routes these switches refuse, so a frame that runs neither locking nor
 # payouts on locked units documents neither. A left-out route still answers (with the switch's sentence) when called.
 # A route says which switch it obeys by its dependency (require_staking_enabled, require_staking_rewards_enabled); the
 # payout reads that answer "no tiers" or zeros instead of refusing carry no dependency, so their paths are named here.

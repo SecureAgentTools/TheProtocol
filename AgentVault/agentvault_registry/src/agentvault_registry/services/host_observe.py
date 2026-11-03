@@ -1,4 +1,4 @@
-"""§F6 WP6.2 slice 2 (2026-09-26, his words "continue with wp6.2 slice 2 on the sandbox pair"): the registry's reads of
+"""§F6 WP6.2 slice 2 (2026-09-26, on the sandbox pair): the registry's reads of
 its own containers, and of its cloud operators', through the frame runner's read-only ops (`containers_census`,
 `container_stats`, tools/frame-runner/frame_runner.py OBSERVATION_OPS) instead of the host Docker socket.
 

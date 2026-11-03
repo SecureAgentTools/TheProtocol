@@ -1,4 +1,4 @@
-"""§FESUITE V0595 (2026-10-11, his word "also correct the avt prose in the docs"): the Herald template's public description
+"""§FESUITE V0595 (2026-10-11): the Herald template's public description
 names the registry's own unit, not AVT.
 
 0076 seeded the official "Sovereign Pattern - Herald (Bounty Board)" template with "Periodic bounty evaluator, AVT payout

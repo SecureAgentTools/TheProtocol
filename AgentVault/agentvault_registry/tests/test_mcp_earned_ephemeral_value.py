@@ -1,7 +1,7 @@
 """§MCPTEST30 (V0650, tester batch 1 item 1a, agentvault2-d3, Guild order gwo_2015b757c94ce69138500df6):
 earn_ephemeral_value, units returned and paid out by hand to an agent of the run's own (funded first through fund-agent),
 only where the target is torn down after its run (MCP_TESTER_EPHEMERAL_TARGET), each step read back on the registry AND on
-the ledger's projection. tegTreasuryIssue is never run: minting is never automated (his decision D9).
+the ledger's projection. tegTreasuryIssue is never run: minting is never automated (decision D9).
 
 Also the defect the lifecycle found in the code before it ever ran: distributeFromFeeCollector's MCP tool never sent
 `target_agent_did`, which its route has always required (400 "Missing target_agent_did"), so no call through MCP could

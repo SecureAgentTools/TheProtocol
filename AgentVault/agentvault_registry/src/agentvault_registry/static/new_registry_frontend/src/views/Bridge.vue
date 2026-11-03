@@ -477,9 +477,8 @@
               {{ sandboxTotal }} {{ t('bridge.vitals.sandboxOff', 'sandbox probes excluded (off by design)') }}
             </p>
 
-            <!-- §BRIDGE R8 — QUICK ACTIONS. His words: "make the most important
-                 actions quick actionable from this view. so it displays a modal or
-                 something. modals already exist. could be reused from the views."
+            <!-- §BRIDGE R8 — QUICK ACTIONS: the most important actions, quick from
+                 this view, through the modals the views already have.
                  They act on the agent you are FOLLOWING, so the thing you are
                  watching and the thing you are about to move money to are the same
                  thing. Existing modals, existing rails, nothing new. -->

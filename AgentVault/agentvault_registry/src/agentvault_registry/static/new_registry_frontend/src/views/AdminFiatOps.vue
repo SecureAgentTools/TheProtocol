@@ -19,8 +19,8 @@
       </div>
     </section>
 
-    <!-- D6-836 (agentvault2-d6, 2026-10-25, his word through agentvault2-69: "make fiat operations inaccessible if
-         deactivated. or best just greyed out so you cant use it"): the sidebar greys this page out while the on-ramp
+    <!-- D6-836 (agentvault2-d6, 2026-10-25: Fiat Operations greyed out while it is
+         switched off): the sidebar greys this page out while the on-ramp
          is off (requiresFiat). Reached by its address it says so; its tools stay, because each serves a purchase paid
          while the switch was on (a refund, a replay; fiat_credit_retry pays an owed credit while it is off too), the
          flares, or a price list prepared before the switch goes on. Every buyer's route refuses while it is off. -->

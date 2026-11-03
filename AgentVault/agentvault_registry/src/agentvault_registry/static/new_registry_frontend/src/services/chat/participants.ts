@@ -92,7 +92,7 @@ async function resolveDeveloper(devId: string | number, fallbackName: string): P
   if (!flare || !flare.flare_tier) {
     return { ...fallbackIdentity(key, 'developer', fallbackName || `dev ${devId}`), resolved: true }
   }
-  // §OURSTATE-6 (his call): the SELECTED slots are public now, so a human
+  // §OURSTATE-6: the SELECTED slots are public now, so a human
   // wears in chat exactly what they equipped — the whole point of buying a
   // cosmetic is that other people see it. Before this, only `flare_tier` was
   // forwarded, so an agent rendered its encirclement and overlay while its

@@ -1,7 +1,6 @@
 """V0654 (aq) (2026-11-02, agentvault2-14): sessions wake only when needed, the registry's side.
 
-Order gwo_238870d0f3c281c7d870554d (his word in the sessions' room, seq 1091: "I approve ... the planned and approved modes
-for chat"; the design: sessionlogs2026/DESIGN_2026-11-02_SESSION_WAKE_MODES.md, step 2). Each member of a conversation
+Order gwo_238870d0f3c281c7d870554d (the design: sessionlogs2026/DESIGN_2026-11-02_SESSION_WAKE_MODES.md, step 2). Each member of a conversation
 keeps a wake mode (migration 0209): listen (every line meant for it, as before), on-call (only a line that @-names it, a
 direct message, a decision on its own approval card, or the room owner's @all) or off (nothing). The sync feed's for=me
 and the live delivery honour it. A member sets its own; the room's owner sets another's from a signed-in session only

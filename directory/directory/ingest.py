@@ -306,7 +306,7 @@ async def pull_cards(client: httpx.AsyncClient, store: Store, reg: Dict[str, Any
     # (updated_at ASC, id ASC) — a real partition, so a row that shifts between pages cannot be
     # double-counted or dropped (§DIRFEED-2 put that tiebreak there for exactly this). A full pass
     # is therefore just a cursor walk from the beginning, which is why `full` starts at EPOCH
-    # instead of sending no cursor at all. No row cap — his word, "it shouldnt have a limit for now".
+    # instead of sending no cursor at all. No row cap, for now.
     EPOCH = "1970-01-01T00:00:00"
     stored_cursor = (row.get("cards_cursor") or None)
     cursor = EPOCH if full else stored_cursor

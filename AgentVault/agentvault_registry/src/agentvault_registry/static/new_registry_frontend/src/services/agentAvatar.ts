@@ -1,7 +1,6 @@
 /**
- * What UserAvatar needs to draw an agent as its owner dressed it (agentvault2-56, 2026-10-23; his word, of the agent page
- * that drew SYBIL as a letter: "i am really missing its avatar/vanity its custom for sybil. others have custom ones
- * too"). One rule for every view that shows an agent's face: Discovery's agent view and the agent page.
+ * What UserAvatar needs to draw an agent as its owner dressed it (agentvault2-56, 2026-10-23: the agent page
+ * drew SYBIL as a letter, missing the custom avatar SYBIL and others have). One rule for every view that shows an agent's face: Discovery's agent view and the agent page.
  *
  * The flare arrives in two shapes (§FLARESHOP): nested in the card (`card_data.flare`, which Discovery's enrichment keeps
  * as `rawCardData.flare`) and hoisted to the top level of a discover row. Either may be the one present, so the nested

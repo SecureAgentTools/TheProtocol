@@ -7,8 +7,8 @@ for the audit trail. Each acts on THIS frame's own operators only.
   - nginx-reload  — validate, then re-read the config in an operator's nginx-federation sidecar
   - teg-restart   — restart an operator's TEG through the operator lifecycle's one rule (~20s downtime)
 
-§F6 group 4 (2026-09-27, his decision "retire frame a actions", and his words "i approve to finish f6 implementation
-on sandbox"): two Frame-A-era actions are RETIRED, not ported, because each reached into Frame A or Frame B from
+§F6 group 4 (2026-09-27, the Frame A actions retired, F6 finished
+on the sandbox): two Frame-A-era actions are RETIRED, not ported, because each reached into Frame A or Frame B from
 whichever frame ran it. `spire-bundle-refresh` ran `bundle set` on agentvault-spire-server and frame-b-spire-server by
 constant and restarted agentvault-cert-writer-a; `identity-network-reconnect` joined the target's TEG and sidecar to
 agentvault_identity_network, Frame A's network (and teg-restart did the same join after every restart). A frame's

@@ -152,8 +152,8 @@ export function passFraction(r: PassReading): { num: number; den: number; over: 
 // not 100; a console run read 99.82% in red when its one failed step was red as documented (expected_red 1,
 // hard_failures 0: the flows list a row red by design apart from the new reds since §NIGHTLYTRUTH). The figure stays
 // each suite's own (a row not measured still counts against an MCP-family rate); the row now draws what the figure is
-// made of, says what is missing, and turns red for a failed row or a bug-find. (His word on V0627's History, the same
-// day: "i dont like the 1 as documented stuff. just leave this out of the view. 1 failed as red is fine." A row red by
+// made of, says what is missing, and turns red for a failed row or a bug-find. (V0627's History, the same
+// day: no "1 as documented" in the view; a failed row is simply red. A row red by
 // design is a failed row like any other here: named "failed", drawn red, and the History row turns red.)
 
 /** The parts of a History figure's denominator, in percent of it: the green part is the figure. */
@@ -470,7 +470,7 @@ export function awaitsRun(tab: string, run: LoadedRun): boolean {
 }
 
 // ── a pass that was only a refusal ───────────────────────────────────────────────────────────────────────────────
-// §MCPTEST30 (V0636; his question of 2026-10-19 and his word of 2026-10-24 to close the gaps): a tool whose only pass in
+// §MCPTEST30 (V0636; 2026-10-19, and 2026-10-24: close the gaps): a tool whose only pass in
 // a run was a refusal counts as not measured (routers/mcp_tester._apply_refusal_only): the row is a skip and says which
 // kind, and the run says how many rows it moved and what the target itself counted. A run before V0636 says neither,
 // and then nothing is shown.

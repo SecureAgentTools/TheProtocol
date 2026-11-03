@@ -5,9 +5,8 @@
  * ledger). §FANOUTFIX: two panels that answer the same question with two
  * different implementations will disagree, and the disagreement will be silent.
  *
- * The Commander's ask, in his words: *"it has no history. if you could implement
- * history without hitting the performance too much ... for both live ledger and
- * fleet log"* and *"'fleet log' also pausable please"*.
+ * The ask: history for the live ledger and the fleet log, without hitting the
+ * performance too much, and the fleet log pausable too.
  *
  * Two hard constraints, both learned the expensive way:
  *

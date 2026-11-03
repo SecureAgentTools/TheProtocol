@@ -1,5 +1,5 @@
-"""§MCPTEST30 (V0651, order (p), agentvault2-d3, 2026-10-31): the token bridge is retired (his word, typed in d3's session
-~11:43Z: "retire."), so the tester names none of its five tools. Session-release's (p) removes theprotocol_bridgeTransfer,
+"""§MCPTEST30 (V0651, order (p), agentvault2-d3, 2026-10-31): the token bridge is retired (decided in d3's session
+~11:43Z), so the tester names none of its five tools. Session-release's (p) removes theprotocol_bridgeTransfer,
 bridgeIssueWrapped, bridgeRedeem, bridgeUnlock and getBridgeStatus from the catalogs and answers every /api/v1/bridge/*
 route 410 whatever TOKEN_BRIDGE_ENABLED says; getBridgeAggregate stays, an admin read of the history.
 

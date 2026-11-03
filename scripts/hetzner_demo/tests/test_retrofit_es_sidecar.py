@@ -1,4 +1,4 @@
-"""§SOVKIT K2 (2026-09-14, his word "4 sidecars only") — the store-sidecar retrofit renders from the TEMPLATE and derives
+"""§SOVKIT K2 (2026-09-14, the four sidecars only) — the store-sidecar retrofit renders from the TEMPLATE and derives
 everything else from the frame's own stack: the certs volume and the two networks from the nginx-teg block, the stack dir
 from its conf mount, the proxy marker from the env; the SPIRE entry update re-passes everything and appends the one SAN.
 Pure parts only here (no docker): derive, the block, the conf, the env lines, the entry parser and its argv.

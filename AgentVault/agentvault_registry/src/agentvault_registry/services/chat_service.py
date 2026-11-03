@@ -2588,7 +2588,7 @@ def _mentions_list(value: Any) -> List[dict]:
     return [x for x in value if isinstance(x, dict)] if isinstance(value, list) else []
 
 
-# V0654 (aq), order gwo_238870d0f3c281c7d870554d (his word in the sessions' room, seq 1091; the design:
+# V0654 (aq), order gwo_238870d0f3c281c7d870554d (the design:
 # sessionlogs2026/DESIGN_2026-11-02_SESSION_WAKE_MODES.md): what of a room wakes a member. listen: every line meant for it
 # (reaches_me, as before). on-call: only a line that @-names it, a direct message, a decision on its own approval card, or
 # the room owner's @all. off: nothing. Kept per member of a conversation (conversation_participants.wake_mode); set by the
@@ -3150,6 +3150,10 @@ async def fan_out_message(conv_id: str, conv_kind: str, message: dict,
     # the notice is that ask; _notify_absent checks who may decide)
     card_type = (message.get("card") or {}).get("type") if isinstance(message.get("card"), dict) else None
     asks_only: List[int] = []
+    # V0655 (az): a line your agent wrote itself (not you writing as it) tells you what is addressed to you, a request
+    # you may decide or a line that names you; its other traffic stays quiet for you (owner_only: _notify_absent checks)
+    own_agent_line = message.get("sender_ptype") == "agent" and not message.get("sent_by_owner")
+    owner_only: List[int] = []
     for dev_id, muted in dev_targets.items():
         if manager is not None:
             try:
@@ -3157,7 +3161,14 @@ async def fan_out_message(conv_id: str, conv_kind: str, message: dict,
             except Exception as e:  # noqa: BLE001
                 logger.debug("[CHAT] WS fan-out to dev %s failed: %s", dev_id, e)
         if sender_owner_dev_id is not None and dev_id == int(sender_owner_dev_id):
-            continue   # you are never notified about your own household's send
+            # your own send is never a notice to you; your agent's own line may be (owner_only), never a ping
+            if own_agent_line and not is_ping:
+                if not muted:
+                    owner_only.append(dev_id)
+                elif card_type in ASK_CARD_TYPES:
+                    owner_only.append(dev_id)
+                    asks_only.append(dev_id)   # muted here: only an ask that waits on you
+            continue
         if muted:
             if card_type in ASK_CARD_TYPES and not is_ping:
                 asks_only.append(dev_id)
@@ -3165,11 +3176,14 @@ async def fan_out_message(conv_id: str, conv_kind: str, message: dict,
         notices.append(dev_id)
     # V0652 (ai): a rail that tells its people itself (the support desk) delivers live only (notify_absent=False);
     # V0652 (ak): a muted thread still brings the asks that wait on you (asks_only)
-    if (notices or asks_only) and notify_absent:
-        spawn(_notify_absent(conv_id, message, notices + asks_only, sender_name, is_ping, manager, conv_kind=conv_kind,
-                             asks_only=set(asks_only)),
+    told = notices + asks_only + [d for d in owner_only if d not in asks_only]
+    if told and notify_absent:
+        # owner_only travels only when it names someone: every other call keeps the shape it has always had
+        extra = {"owner_only": set(owner_only)} if owner_only else {}
+        spawn(_notify_absent(conv_id, message, told, sender_name, is_ping, manager, conv_kind=conv_kind,
+                             asks_only=set(asks_only), **extra),
               what=f"the offline notices of message {message.get('id')} (seq {message.get('seq')}) in {conv_id} "
-                   f"({len(notices)} developer(s))")
+                   f"({len(told)} developer(s))")
 
 
 async def _tell_agent_owners(conv_id: str, conv_kind: str, message: dict, agent_dids: List[str]) -> int:
@@ -3244,10 +3258,29 @@ ASK_CARD_TYPES = ("approval.request", "choice.request")
 ASK_NOTICE_TYPES = ("chat.approval_requested", "chat.choice_requested")
 
 
+async def _held_back_row(ntype: str, dev_id: int, title: str, preview: str) -> None:
+    """V0655 (az): the history row of a notice held back because its developer was in the app. Best effort: a row that
+    cannot be written never stops the next developer's notice."""
+    try:
+        from agentvault_registry.background_tasks.push_notify import record_held_back
+        await record_held_back(ntype, dev_id, "present", title=title, message=preview)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[CHAT] the held-back row of %s for developer %s was not written: %s", ntype, dev_id, e)
+
+
+def names_developer(dev_id: int, message: dict) -> bool:
+    """V0655 (az): the message names this developer itself (its stored mention key); @all/@everyone does not count"""
+    key = principal_key("developer", int(dev_id))
+    return any(m.get("key") == key for m in _mentions_list(message.get("mentions")))
+
+
 async def _notify_absent(conv_id: str, message: dict, notices: List[int], sender_name: str, is_ping: bool,
-                         manager: Any, conv_kind: str = "", asks_only: Optional[set] = None) -> None:
+                         manager: Any, conv_kind: str = "", asks_only: Optional[set] = None,
+                         owner_only: Optional[set] = None) -> None:
     """The offline notices, one developer after another, each given NOTIFY_BOUND_S: a notice that takes longer is
-    given up and logged, and the next developer is still told."""
+    given up and logged, and the next developer is still told. V0655 (az): owner_only holds the owner of the agent that
+    wrote the line, told only of a request he may decide or a line that names him; a notice held back because its
+    developer is in the app leaves one history row saying so."""
     from agentvault_registry.background_tasks.push_notify import notify
     preview = message.get("body") or (
         f"[{(message.get('card') or {}).get('type', 'card')}]" if message.get("card") else "…")
@@ -3267,6 +3300,11 @@ async def _notify_absent(conv_id: str, message: dict, notices: List[int], sender
             logger.warning("[CHAT] the deciders of approval %s in %s could not be read: the plain notice goes: %s: %s",
                            approval.get("approval_id"), conv_id, type(e).__name__, e)
     for dev_id in notices:
+        ntype = notice_type_for(dev_id, message, conv_kind, deciders, is_ping)
+        if asks_only and dev_id in asks_only and ntype not in ASK_NOTICE_TYPES:
+            continue   # V0652 (ak): muted here; only an ask that waits on them reaches them
+        if owner_only and dev_id in owner_only and ntype not in ASK_NOTICE_TYPES and not names_developer(dev_id, message):
+            continue   # V0655 (az): his agent's other traffic (a plain line, its @all) stays quiet for him
         # §PRESENCE — this used to read `manager.active_connections`, a PER-WORKER
         # dict, so it only ever suppressed the duplicate when the recipient's
         # socket happened to live on the worker handling this send: ~1 time in 39
@@ -3281,10 +3319,10 @@ async def _notify_absent(conv_id: str, message: dict, notices: List[int], sender
             except Exception:  # noqa: BLE001
                 has_live_session = False
         if has_live_session:
-            continue   # they already received it live — don't double-notify
-        ntype = notice_type_for(dev_id, message, conv_kind, deciders, is_ping)
-        if asks_only and dev_id in asks_only and ntype not in ASK_NOTICE_TYPES:
-            continue   # V0652 (ak): muted here; only an ask that waits on them reaches them
+            # they already received it live: no second notice, but one history row (V0655 (az)), so the history can
+            # say why nothing came instead of showing nothing
+            await _held_back_row(ntype, dev_id, title, "pinged you" if is_ping else str(preview)[:PREVIEW_LEN])
+            continue
         try:
             await asyncio.wait_for(notify(
                 ntype, [dev_id],

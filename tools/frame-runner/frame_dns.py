@@ -1,6 +1,6 @@
 """§FRAMEPROV P5 (2026-09-13): the frame runner's DNS, the four names a frame's vhosts and certificate need.
 
-His words 2026-09-13: "automation would be cool" (decision 4), then "push both, then go for p5". Before a standup the
+Automated since 2026-09-13 (decision 4, then P5). Before a standup the
 runner creates an A record for each of the four hosts `standup_extras.issue_cert` puts on the certificate, marks each one
 with a comment naming the frame and the job, and waits until the resolver answers them all. A teardown deletes only the
 records whose ids the runner wrote down AND whose comment still carries its mark. A host that already has a record, or
@@ -62,8 +62,8 @@ class Cloudflare:
         self.timeout = timeout
 
     def _token(self):
-        """A bare token file, or certbot's credential file read in place (`dns_cloudflare_api_token = ...`). His word
-        2026-09-13: the runner uses the token that already issues the operators' certificates, so there is one carrier
+        """A bare token file, or certbot's credential file read in place (`dns_cloudflare_api_token = ...`). Since
+        2026-09-13 the runner uses the token that already issues the operators' certificates, so there is one carrier
         and a rotation reaches both."""
         try:
             with open(self.token_file) as f:

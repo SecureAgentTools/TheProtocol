@@ -1,5 +1,4 @@
-# §PUSH (2026-10-06, agentvault2-09; his words "afterwards we do the same with push", "provisioner should also provision
-# them", "fix the things you find on the way make it secure"): the operator's own push relay. Every operator ran with push
+# §PUSH (2026-10-06, agentvault2-09; push after OPA, provisioned like it, secure): the operator's own push relay. Every operator ran with push
 # switched off (no PUSH_NOTIFY_ENABLED), so neither Web Push nor Pocket's phone pairing reached an operator's users. The
 # registry publishes to this relay on the operator's own network (PUSH_NTFY_URL=http://<REGISTRY_NAME>-ntfy); the public
 # side is a SUBSCRIBE-ONLY vhost the runner writes from core/operator_compose.operator_push_vhost, named

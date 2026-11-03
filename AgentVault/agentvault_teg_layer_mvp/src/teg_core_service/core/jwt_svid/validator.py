@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, Security, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-# §DEPS (2026-09-27, his words "the no jwt fallback path trap needs deletion. shouldnt be possible"): there is NO
+# §DEPS (2026-09-27: the JWT fallback path, a trap, deleted; it must not be possible): there is NO
 # fallback. Until then, a missing pyspiffe sent every token to an HS256 check against JWT_SVID_SIGNING_KEY, whose
 # default was "" — and PyJWT accepts an empty HMAC key, so anyone could sign a JWT-SVID for any agent. The images ship
 # the `spiffe` package, never `pyspiffe`, so that branch was the ONLY one any TEG could take with USE_JWT_SVID_AUTH=true

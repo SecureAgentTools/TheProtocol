@@ -255,8 +255,8 @@ async function guildAward(bidId: number): Promise<void> {
   } catch (e: any) { actErr.value = msg(e) } finally { actBusy.value = false }
 }
 
-/* §POCKETBRIDGE5 A' — DISPUTES grow up inside the EXISTING modal (his word:
- * no new surface, no new bottom button; the quick-access door is enough).
+/* §POCKETBRIDGE5 A' — DISPUTES grow up inside the EXISTING modal (no new
+ * surface, no new bottom button; the quick-access door is enough).
  * Detail + evidence timeline + submit evidence + file-a-dispute, all on the
  * rails DisputesView already uses. Filing moves NO money — compensation
  * happens only at an admin ruling, and the form says so. */

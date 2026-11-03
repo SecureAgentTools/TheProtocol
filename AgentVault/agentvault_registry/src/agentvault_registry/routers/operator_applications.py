@@ -1305,7 +1305,7 @@ async def backfill_pull_tokens(
 async def _bundle_through_runner(*, operator_name: str, safe_name: str, operator_did: str, application_id) -> dict:
     """The bundle, built by the frame runner, for a frame whose registry has no docker socket.
 
-    §OPDIST, his decision 2026-09-16: the privileged work moves to the privileged component. Everything the far side
+    §OPDIST (2026-09-16): the privileged work moves to the privileged component. Everything the far side
     needs is resolved HERE and passed in a spec; every row is written HERE from the facts that come back. The one
     thing that cannot simply be carried across is the bundle's PATH: the one-shot writes the file into the frame's
     `operator-bundles` directory on the host, and this registry sees that same directory at OPERATOR_BUNDLES_DIR.

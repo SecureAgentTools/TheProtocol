@@ -131,8 +131,8 @@ async def execute_all(candidates, rig, concurrency: int) -> List[TestOutcome]:
     moderate concurrency overlaps eventual-consistency polls + cross-registry
     latency. =1 reverts to sequential. Re-verify the pass count after changing.
 
-    §SENDEARLY (2026-09-26, his words "fix the test so the transfer goes out at the beginning of the test run and
-    success is measured later in the test run"): a `start_first` test starts before every other one and outside the
+    §SENDEARLY (2026-09-26: the transfer goes out at the beginning of the test run and
+    its success is measured later in the test run): a `start_first` test starts before every other one and outside the
     concurrency bound (its act is a few calls and a wait, and a bound of 1 must not put it behind the whole suite).
     If it returns a DeferredCheck, that check runs after EVERY other test has finished and decides the row.
     """

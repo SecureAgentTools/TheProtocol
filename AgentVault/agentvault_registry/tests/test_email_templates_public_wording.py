@@ -1,6 +1,6 @@
 """W1/API (agentvault2-69, 2026-10-25): the mail the registry sends keeps the public wording too.
 
-His words that day: "i want the illegal wording completly gone before opening". The refusal sentences are held by
+The critical wording is gone before the opening. The refusal sentences are held by
 test_refusal_sentences_public_wording.py; this test reads every email template (templates/email/*.j2) with the same rules,
 plus the phrases in which a mail called units tokens ("token balances", "issued tokens", "a utility token"), outside the
 Jinja expressions (a variable name is an identifier). A credential stays a token ("THIS TOKEN IS SHOWN ONCE").

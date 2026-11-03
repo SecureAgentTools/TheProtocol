@@ -192,7 +192,7 @@ def licence_allows(spiffe_id: str) -> bool:
 
 
 def licence_verdicts_snapshot() -> dict:
-    """§FEDLICENCE (2026-09-28, his word "cross-teg cut off also approved on revoke"): what this registry decided about its
+    """§FEDLICENCE (2026-09-28; the cross-TEG cut-off on a revoke): what this registry decided about its
     peers, for its own TEG. The TEG never evaluates a certificate: it copies this and refuses the `refused` trust domains
     while `mode` is enforce, so the one list of refusing states (REFUSED_STATES) stays here. Read the verdicts as last
     refreshed; the route refreshes first (at most once per PEER_TRUST_TTL_SECONDS)."""

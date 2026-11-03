@@ -300,7 +300,7 @@ async def test_unlisting_propagates(rig: FederationTestRig) -> AssertionResult:
 async def test_peer_trust_both_sides(rig: FederationTestRig) -> AssertionResult:
     """§TRUSTPOLICY promises every crossing is reported on both frames. Measured 2026-09-13 with the
     §FEDPROOF battery: on the sandbox pair a cross-currency settlement moved ONE side's
-    `total_interactions`; on EU/ASIA it moved NEITHER (dust run, his word). The money assertion beside it
+    `total_interactions`; on EU/ASIA it moved NEITHER (a dust run). The money assertion beside it
     keeps the row honest about whether the crossing itself happened.
 
     §SUITES1018 (2026-10-18): the row asks whether THIS settlement was counted on each side
@@ -593,8 +593,8 @@ async def test_policy_change_and_peer_read(rig: FederationTestRig) -> AssertionR
 
 # ─── 5. the cross-frame half: an elevated proposal decided by registry ballots ────────
 #
-# §MCPTEST30 (V0555, 2026-10-03; his word: "check if you can fix cross frame governance now that we already worked on
-# the voting. it was broken"). §FEDPROOF F7 measured the gap: an elevated proposal lived in the HOME's store, the peer
+# §MCPTEST30 (V0555, 2026-10-03: cross-frame governance, broken until then, fixed after
+# the voting work). §FEDPROOF F7 measured the gap: an elevated proposal lived in the HOME's store, the peer
 # tallied its own store (400 "Federation proposal not found"), so the two-registry floor was unreachable by
 # construction. §MEMBERSHIP D2 (agentvault2-33) closes it: where FEDERATION_BALLOT_MODE=on a federation proposal is
 # decided by REGISTRIES, one signed ballot each, delivered over the federation mTLS lane to the host, which alone writes

@@ -1,4 +1,4 @@
-"""§F6 WP6.2 slice 2 (2026-09-26, his words "continue with wp6.2 slice 2 on the sandbox pair"): the registry's side.
+"""§F6 WP6.2 slice 2 (2026-09-26, on the sandbox pair): the registry's side.
 
   - CONTAINER_OBSERVE_VIA (local default | runner): the docker-stats collector and the operator health census read
     through the frame runner's containers_census / container_stats, fail closed, and keep today's answer unset.

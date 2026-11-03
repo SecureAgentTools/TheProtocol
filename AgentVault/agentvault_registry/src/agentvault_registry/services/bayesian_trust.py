@@ -15,8 +15,7 @@ multiplier applied when incorporating cross-registry trust scores into local
 EigenTrust computation, and the frame's event store weights the peer's
 federation votes by it (SF-5B trust sync).
 
-SEC-20 (2026-10-17, his word: "no, not set. it has to be dervied in a meaningful way. setting it manually doesnt make
-sense to me."): the value is DERIVED, never set. derived_trust() below is the one formula; every writer of the column
+SEC-20 (2026-10-17): the value is DERIVED, never set. derived_trust() below is the one formula; every writer of the column
 (record_interaction, run_decay_pass, the federation sync's per-cycle refresh) and every sender of a trust value to the
 event store (the trust sync, the frame invitation's store registration) computes it from the peer's recorded outcomes
 and the clock, and nothing takes a trust value from a person or a caller.

@@ -1,7 +1,7 @@
 """§SENDEARLY (2026-09-26): a federation row can act at the start of the run and be judged at its end.
 
-His words: "fix the test so the transfer goes out at the beginning of the test run and success is measured later in the
-test run", then "1. yes 2. yes 3. yes" (send as soon as the converting frame knows the receiver, a five-minute
+The transfer goes out at the beginning of the test run and its success is measured later in the
+test run, with three choices (send as soon as the converting frame knows the receiver, a five-minute
 re-delivery on the sandbox pair, both directions). Pinned here:
   - the runner: a `start_first` row acts before every other row (even at a concurrency of 1) and, when it returns a
     DeferredCheck, is judged after all of them; one row, in its place; a DeferredCheck from any other row is an error;

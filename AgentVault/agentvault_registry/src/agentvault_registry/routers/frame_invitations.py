@@ -1143,7 +1143,7 @@ async def _issue_frame_license(
 ) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """§FRAMELIC — mint the joining frame's federation licence AS PART of the approve handshake.
 
-    His word: *"frames get a license from new eu frame when stood up"*. A licence handed out by a
+    A frame gets its licence from the EU frame when it is stood up. A licence handed out by a
     second manual step is a licence somebody forgets, so the frame is licensed at birth: the approver
     (the anchor) issues it here and the plain key rides back on the /finalize callback, once.
 

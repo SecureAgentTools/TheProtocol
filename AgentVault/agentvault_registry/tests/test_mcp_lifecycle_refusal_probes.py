@@ -18,7 +18,7 @@ SRC = (pathlib.Path(__file__).resolve().parents[1] / "src" / "agentvault_registr
 # the TEG's own list (agentvault_teg_layer_mvp .../api/v1/endpoints_governance.py); the TEG tree is not in this image
 TEG_POLICY_TYPES = {"attestation", "governance", "compliance", "economic"}
 HEX_NONCE = re.compile(r"^[a-fA-F0-9]{16,64}$")   # schemas.py `_HEX_NONCE_RE`, the frame-invitation schema
-# V0651: bridgeTransfer left with the token bridge (his word "retire."): its probe and its own test went with it
+# V0651: bridgeTransfer left with the retired token bridge: its probe and its own test went with it
 REFUSALS = ["crossTegBalanceSync", "applyReputationSignal", "submitDispute", "createTegPolicy",
             "createFrameInvitation", "federationSlashConfirmation"]
 

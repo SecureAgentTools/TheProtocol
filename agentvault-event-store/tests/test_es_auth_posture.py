@@ -1,6 +1,6 @@
 """§SOVKIT T2 (2026-09-14): the event store's authentication posture.
 
-His word: "make this required on because its a big trap not enabling it". What these tests pin:
+Required on, because leaving it off is a big trap. What these tests pin:
 - certificate headers count only with the proxy marker only this frame's TLS terminators set (anything on the frame's
   networks could otherwise write them itself),
 - only SUCCESS counts,

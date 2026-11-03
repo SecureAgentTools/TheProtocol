@@ -79,7 +79,7 @@ def test_the_standup_mints_the_router_before_it_turns_the_flag_on():
     window = DRIVER[i:i + 1600]
     assert "FT_REG_FX_ROUTER_DID" in window and "FT_REG_FX_ROUTE_ENABLED" in window, \
         "the DID and the flag must be written together"
-    # the issuance must come from a SERVICE account, never the frame admin (HIS decision 2026-09-07)
+    # the issuance must come from a SERVICE account, never the frame admin (decided 2026-09-07)
     assert "svc-provisioning" in DRIVER[i - 1200:i]
 
 

@@ -379,8 +379,7 @@ def sni_map_entry(*, domain: str, fed_port: int) -> str:
     return f"{domain}  127.0.0.1:{fed_port};"
 
 
-# §PUSH (2026-10-06, agentvault2-09; his words "afterwards we do the same with push", "provisioner should also provision
-# them", "fix the things you find on the way make it secure"): an operator's own push relay (ntfy), so Pocket can pair a
+# §PUSH (2026-10-06, agentvault2-09; push after OPA, provisioned like it): an operator's own push relay (ntfy), so Pocket can pair a
 # phone to an operator's console as it can to a frame's. Every operator had push switched off. The relay's loopback port
 # sits at a FIXED offset in the operator's port block (base, +43, +80 are taken; allocate_port_block reserves +99 too),
 # so the allocator, the env, the vhost and the runner's check derive it from this one rule and cannot disagree.

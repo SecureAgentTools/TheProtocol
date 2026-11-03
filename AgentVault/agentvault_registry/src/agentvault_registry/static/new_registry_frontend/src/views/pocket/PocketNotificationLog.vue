@@ -51,7 +51,7 @@
           @click="open = open === e.id ? null : e.id">
         <span class="nl-ico" :class="e.outcome"><Icon :name="iconFor(e.outcome)" /></span>
         <div class="nl-body">
-          <div class="nl-label">{{ prettyType(e.type_key) }}</div>
+          <div class="nl-label" :data-testid="`nl-label-${e.id}`">{{ typeLabel(e.type_key) }}</div>
           <div class="nl-sub">
             {{ when(e.created_at) }} · {{ channelLabel(e.channel) }}
             <template v-if="e.reason"> · <span class="nl-reason">{{ reasonLabel(e.reason) }}</span></template>
@@ -127,16 +127,21 @@ const limit = 50
 const allSuppressed = computed(() =>
   summary.value.length > 0 && !summary.value.some(s => s.outcome === 'delivered' && s.count > 0))
 
-/** "money.received" → "Money received" — the catalog's label_key i18n pass is still open, so the
- *  key itself is the honest fallback rather than an invented English string. */
+/** "money.received" → "Money received": the fallback for a type no bundle names yet. */
 function prettyType(k: string): string {
   const tail = (k || '').split('.').slice(-1)[0] || k
   const s = tail.replace(/_/g, ' ')
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
+/** V0655 (az): a type's name is the one its settings row shows (the catalog's label key, notifCatalog.<key with
+ *  underscores>.label, as NotificationsPanel reads it), so "A session went quiet" is not "Session offline" here. */
+function typeLabel(k: string): string {
+  return t(`notifCatalog.${String(k || '').replace(/\./g, '_')}.label`, prettyType(k))
+}
 function channelLabel(c: string): string {
   return c === 'push_mobile' ? t('pocket.notifLog.chanMobile', 'mobile')
-       : c === 'push_desktop' ? t('pocket.notifLog.chanDesktop', 'desktop') : c
+       : c === 'push_desktop' ? t('pocket.notifLog.chanDesktop', 'desktop')
+       : c === 'all' ? t('pocket.notifLog.chanAll', 'every channel') : c   // V0655 (az): held back before any channel
 }
 /* The English string is the FALLBACK; the key is what resolves. An outcome or
    reason the server invents later renders as its raw value — a machine fact we
@@ -152,6 +157,8 @@ const REASONS: Record<string, [string, string]> = {
   mandatory: ['pocket.notifLog.reasonMandatory', 'mandatory'],
   legacy_enable: ['pocket.notifLog.reasonLegacyEnable', 'legacy enabler'],
   rail_error: ['pocket.notifLog.reasonRailError', 'delivery failed'],
+  // V0655 (az): the notice was held back because a page of yours was open and in view
+  present: ['pocket.notifLog.reasonPresent', 'you were in the app'],
 }
 function reasonLabel(r: string): string { const e = REASONS[r]; return e ? t(e[0], e[1]) : r }
 const OUTCOMES: Record<string, [string, string]> = {

@@ -1,7 +1,7 @@
 """§SECFIX D6-823 (agentvault2-13, 2026-10-30; the Maintainer's approval that day): the public /metrics carries no
 system balance.
 
-/metrics stays public (D6-254, his word: kept for development, a switch per registry), but EU's and ASIA's consoles
+/metrics stays public (D6-254: kept for development, a switch per registry), but EU's and ASIA's consoles
 proxied it with agora_escrow_balance (the exchange's escrow holdings) and fx_reserve_keeper_reserve (the FX reserve),
 balances of the treasury's class, which D6-254 had already taken out for the treasury itself. A request that reached
 the registry through a proxy (it carries X-Forwarded-For, X-Real-IP or Forwarded, which every console vhost and the

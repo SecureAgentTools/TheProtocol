@@ -1,7 +1,7 @@
 import type { Blueprint } from './types'
 import { liveRatioOf } from './types'
 
-// AEGIS: weather risk readings and verified events (reworded 2026-10-26 on his word, like MOIRA: it reads signed
+// AEGIS: weather risk readings and verified events (reworded 2026-10-26, like MOIRA: it reads signed
 // sources and gives rates and chances; it sells no cover and pays no claims).
 
 const primitives = [

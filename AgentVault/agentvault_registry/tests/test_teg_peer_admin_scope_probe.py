@@ -62,7 +62,7 @@ def test_the_probe_output_is_read_line_by_line():
 
 
 def test_the_row_is_a_regression_guard_now_and_reads_only():
-    """§TEGSCOPE (his word 2026-10-07 "2. yes fix"): every frame's TEG is scoped (adminscope1), so the row is no longer an
+    """§TEGSCOPE (2026-10-07): every frame's TEG is scoped (adminscope1), so the row is no longer an
     expected red; a TEG without the scope fails it as a bug find."""
     spec = [s for s in REGISTRY if s.name == "teg_admin_is_scoped_for_a_peer_frame"]
     assert len(spec) == 1 and not spec[0].expected_red

@@ -160,7 +160,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
       KAFKA_CONSUMER_GROUP: eventstore-consumer
       KAFKA_CONSUMER_BATCH_SIZE: 50
-      # §SOVKIT K1 (2026-09-14, his word "Kafka private to the store"): the store is the broker's ONLY client. SCRAM
+      # §SOVKIT K1 (2026-09-14: Kafka private to the store): the store is the broker's ONLY client. SCRAM
       # (the password from .env.operator) on the ledger-only network; no TLS in the standalone stack (no identity
       # fabric; the network has two members); every record signed with ES_KAFKA_RECORD_KEY and the consumer drops
       # what this store did not sign (enforce).
@@ -304,8 +304,8 @@ services:
       - operator-net
 
   # ────────────────────────────────────────────────────────────
-  # Redpanda — the ledger bus (§SOVKIT K1 2026-09-14, his word "Kafka private to the store"; "fix kafka scalable and
-  # secure"). The broker sits on ledger-net with the event store as its ONLY client: SASL/SCRAM-SHA-256 (the superuser
+  # Redpanda — the ledger bus (§SOVKIT K1 2026-09-14: Kafka private to the store, scalable and
+  # secure). The broker sits on ledger-net with the event store as its ONLY client: SASL/SCRAM-SHA-256 (the superuser
   # created at bootstrap from KAFKA_ES_PASSWORD in .env.operator), the admin API and both HTTP proxies on the container's
   # loopback, developer_mode off (fsync on: a ledger bus that acks what it has not written is the wrong bus; it needs
   # --memory 1G), auto-create off (redpanda-init creates the three topics with explicit partitions before the store

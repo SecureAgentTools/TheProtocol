@@ -1,7 +1,7 @@
 """W4 phase 1 (agentvault2-aa, 2026-10-25): the ledger's event names, old and new, read as one, in the TEG.
 
-His words that day to agentvault2-69: "i want the illegal wording completly gone before opening" and, on the ledger, "just
-use the new wording and make it accept both or something" (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md, W4). The
+The critical wording is gone before the opening; the ledger writes the new words and reads
+both (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md, W4). The
 TEG cannot import the registry, so this is the registry's map (agentvault_registry/core/ledger_names.py) held here, data
 for data, as the event store holds it (agentvault-event-store/src/ledger_names.py); tests/test_ledger_names_teg.py pins it.
 

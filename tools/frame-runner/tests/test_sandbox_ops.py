@@ -1,7 +1,7 @@
 """§TESTBED (2026-09-19): the frame runner's sandbox ops, unadopt, and the calling frame named by its container.
 
-His words: "the sandbox provisioning should be also in the frontend mcp-tester view ... all provisioned thru the proper
-lanes". A kit frame's console asks the runner (on the operator socket it already mounts) to stand ITS sandbox up; the
+The sandbox provisioning lives in the MCP tester view, all provisioned through the proper
+lanes. A kit frame's console asks the runner (on the operator socket it already mounts) to stand ITS sandbox up; the
 runner launches the export's frame-sandbox.py as a job, lets that job's children (the sandboxes' own operator provisions)
 past the one-job slot, and acts for the calling frame only. A FAKE engine and fake docker answers; nothing here touches
 the host's stacks, docker or /etc.

@@ -1,6 +1,6 @@
 """§MCPTEST30 (V0555, 2026-10-03): the cross-frame governance row drives §MEMBERSHIP D2's federal ballots, two-phase.
 
-His word: "check if you can fix cross frame governance now that we already worked on the voting. it was broken". The
+Cross-frame governance, broken until then, fixed after the voting work. The
 row was red by design as §FEDPROOF F7 (an elevated proposal lived in the home's store; the peer tallied its own).
 With FEDERATION_BALLOT_MODE=on a federation proposal is decided by registries, one signed ballot each, and a
 member-mode registry's ballot is its members' result from an hour-long vote, so the row FINISHES the oldest cycle the

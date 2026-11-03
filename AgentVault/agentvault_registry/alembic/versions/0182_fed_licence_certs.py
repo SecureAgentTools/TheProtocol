@@ -3,7 +3,7 @@
 Revision ID: 0182_fed_licence_certs
 Revises: 0181_legal_acceptances
 
-His word 2026-09-28: the software is free to run, membership in the network is licensed. The genesis registry
+Since 2026-09-28: the software is free to run, membership in the network is licensed. The genesis registry
 signs each frame's network licence and every frame signs its own operators' licences, so a licence hash shown on a
 registry card can be checked by anyone against the issuer's signature instead of being taken on the showing frame's
 word (sessionlogs2026/DESIGN_2026-09-28_FEDERATION_LICENCE.md).

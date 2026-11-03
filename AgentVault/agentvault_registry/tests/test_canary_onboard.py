@@ -1,5 +1,5 @@
-"""§CANARYONBOARD (2026-09-22, his words "onboard canaries but dark for discovery ... for eu-asia cluster and sandbox
-cluster. intervall should be half an hour"): what the registry needed before canaries could run on the new clusters.
+"""§CANARYONBOARD (2026-09-22: canaries onboarded, dark for discovery, on the EU/ASIA cluster and the sandbox
+cluster, every half an hour): what the registry needed before canaries could run on the new clusters.
 
 1. The rebalancer classified senders only by the LEGACY registries' names (registry-a, :8100, frame-c, the OP_CREDS
    ports), so on any other network a master's own senders read "unknown" and were skipped forever. A sender whose
@@ -8,7 +8,7 @@ cluster. intervall should be half an hour"): what the registry needed before can
    one top-up was the whole supply. They now read the network profile after the env.
 3. The API tester's contracts fired path 1 (a real canary wherever canaries run) and switched off EVERY path (the
    maintenance body used the wrong key, so the endpoint read scope "all", enable false).
-4. His words the same afternoon: "since we dont mint so much on eu-asia frame we have to rebalance them properly". The
+4. The same afternoon: EU and ASIA mint little, so their canaries are rebalanced properly. The
    rebalancer only ever PAID canaries; what a canary received stayed there. A ceiling now closes the band: above it the
    excess beyond floor + top-up goes back to the node's own treasury (the escrow rail, one sweep per sender per day).
 """

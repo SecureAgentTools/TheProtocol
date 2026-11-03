@@ -1,5 +1,5 @@
-"""§RELEASECHANNEL (his words 2026-09-21: "we need a channel that we provide updated images to pull ... so the
-operator/admins get a notification about a hot fix or new stable version they can schedule the rollout themselfs").
+"""§RELEASECHANNEL (2026-09-21): a channel of updated images to pull, so the operators and admins get a
+notification about a hotfix or a new stable version and schedule the rollout themselves.
 
 The release channel is ONE signed JSON document at a public URL (`latest.json`), written by scripts/frame_kit/publish.py
 on the author's host and read by three readers that all carry the same public key and the same rules: this module

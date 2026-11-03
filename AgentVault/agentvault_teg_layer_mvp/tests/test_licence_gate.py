@@ -1,4 +1,4 @@
-"""§FEDLICENCE (2026-09-28, his word "cross-teg cut off also approved on revoke") — the TEG refuses a federated frame whose
+"""§FEDLICENCE (2026-09-28; the cross-TEG cut-off on a revoke) — the TEG refuses a federated frame whose
 network licence its own registry refuses.
 
 Before this, a TEG accepted any certificate of a domain in TRUSTED_SPIFFE_DOMAINS: after a licence revoke the registry

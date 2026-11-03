@@ -1,6 +1,6 @@
 """§MEMBERSHIP (2026-10-02): membership from the reputation bond, one vote per member.
 
-His word 2026-10-02 ("approved. this sounds better", "do it fully autonomously") on the design in
+2026-10-02, the design in
 sessionlogs2026/DESIGN_2026-10-02_STAKING_REPLACEMENT.md § 12 (S1): staking stops being the source of
 governance weight. Influence comes from membership, not from Units:
 

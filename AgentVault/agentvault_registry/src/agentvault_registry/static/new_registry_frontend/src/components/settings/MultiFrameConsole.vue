@@ -84,7 +84,7 @@ function form(k: string): FormState {
 }
 
 /*
- * §BRIDGE R10 — the vault import lives here (his word). It writes to the session hub, so one import connects every
+ * §BRIDGE R10 — the vault import lives here. It writes to the session hub, so one import connects every
  * surface at once: this console, the command centre, and Mission Control's idea of which agents are yours.
  */
 const dir = ref<RegistryDirectory | null>(null)

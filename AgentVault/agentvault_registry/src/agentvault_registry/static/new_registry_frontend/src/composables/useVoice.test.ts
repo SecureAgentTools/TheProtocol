@@ -1,5 +1,5 @@
 /**
- * §COOKIES (2026-10-02, his word "voice replies default off"): an answer is read aloud only after the person switches
+ * §COOKIES (2026-10-02: voice replies off by default): an answer is read aloud only after the person switches
  * voice replies on. A browser that never stored a choice starts silent (it used to start speaking), an explicit choice
  * survives the next visit, and storage that refuses to answer reads as off. The second test is the control: the same
  * speak() call does reach the speech engine once replies are on, so the silence in the first is the default at work.

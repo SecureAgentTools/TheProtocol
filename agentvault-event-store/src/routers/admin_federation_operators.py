@@ -204,6 +204,5 @@ async def activate_federation_operator(
     return {"status": "active", "id": operator_id, "spiffe_id": row.spiffe_id}
 
 
-# SEC-20 (2026-10-17, his word: the trust value "has to be dervied in a meaningful way. setting it manually doesnt make
-# sense to me"): there is no manual override of bayesian_discount. This frame's registry derives it from what it
+# SEC-20 (2026-10-17: the trust value is derived in a meaningful way, never set by hand): there is no manual override of bayesian_discount. This frame's registry derives it from what it
 # measured of each peer and writes it with the upsert above and its trust sync (/api/v1/events/operators/sync).

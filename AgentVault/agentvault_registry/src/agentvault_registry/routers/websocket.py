@@ -4,7 +4,7 @@ Handles real-time WebSocket connections for the registry
 """
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, WebSocketException, Depends, Query, HTTPException
-from typing import Callable, Dict, List, Set, Optional
+from typing import Any, Callable, Dict, List, Set, Optional
 import json
 import asyncio
 import os
@@ -215,6 +215,8 @@ class ConnectionManager:
     def __init__(self):
         # Store connections by user_id
         self.active_connections: Dict[str, WebSocket] = {}
+        # V0655 (az): the users whose socket on this worker last said its page is hidden (see mark_shown)
+        self._hidden: set = set()
         # Store user details for each connection
         self.connection_users: Dict[str, dict] = {}
         # Track subscriptions (e.g., which agents a user is watching)
@@ -326,10 +328,18 @@ class ConnectionManager:
         except Exception as e:  # noqa: BLE001
             logger.debug("[WS] presence clear failed for %s: %s", user_id, e)
 
+    def mark_shown(self, user_id: str, visible: bool) -> None:
+        """V0655 (az): what the socket's last heartbeat said of its page. Only a page the person can see counts as
+        present: a hidden tab or a phone in a pocket holds a socket and reads nothing."""
+        if visible:
+            self._hidden.discard(str(user_id))
+        else:
+            self._hidden.add(str(user_id))
+
     async def is_present(self, user_id: str) -> bool:
         """True ONLY on a positive answer from Redis. Unknown ⇒ False ⇒ notify."""
-        if str(user_id) in self.active_connections:
-            return True          # this worker holds the socket: certain
+        if str(user_id) in self.active_connections and str(user_id) not in self._hidden:
+            return True          # this worker holds the socket, its page in view: certain
         try:
             r = await self._get_redis()
             if r is None:
@@ -472,6 +482,7 @@ class ConnectionManager:
 
     def disconnect(self, user_id: str):
         """Remove a WebSocket connection"""
+        self._hidden.discard(str(user_id))
         if user_id in self.active_connections:
             del self.active_connections[user_id]
             del self.connection_users[user_id]
@@ -743,6 +754,16 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+async def heartbeat_presence(user_id: str, message_data: Any) -> None:
+    """V0655 (az): what one heartbeat of the developer socket does to presence. Only a page the person can see counts:
+    a heartbeat that says visible: false refreshes nothing (the key lapses within PRESENCE_TTL) and this worker's socket
+    stops counting; a visible one refreshes it; a client that does not say keeps the behaviour it always had."""
+    visible = message_data.get("visible") if isinstance(message_data, dict) else None
+    manager.mark_shown(user_id, visible is not False)
+    if visible is not False:
+        await manager.mark_present(user_id)
+
+
 async def get_current_user_ws(
     websocket: WebSocket,
     token: Optional[str] = Query(None),
@@ -914,7 +935,8 @@ async def websocket_endpoint(
                 # §PRESENCE — the heartbeat is what keeps the key alive. Presence
                 # is therefore always something a live socket ASSERTED recently,
                 # never something inferred from an absence.
-                await manager.mark_present(user_id)
+                # V0655 (az): and only of a page the person can see (heartbeat_presence)
+                await heartbeat_presence(user_id, message_data)
                 # Heartbeat response
                 await manager.send_personal_message({
                     "type": "pong",

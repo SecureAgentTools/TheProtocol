@@ -11,7 +11,7 @@ Now, where CHAT_FEDERATION_ENABLED is on:
     from the participant's own home), which tells the knocker's owner (`chat.request.accepted`); a decline stays local;
   * a resident agent's reply is relayed like a developer's; its echo comes home as ITS OWN message and wakes nobody;
   * caps per thread and per peer on relay, deliver and create, and a tighter one for an agent sender (the loop guard).
-The household seat (item 7) is unchanged: his decision.
+The household seat (item 7) is unchanged, by decision.
 
 RED on V0433's base (twoagent/a-next a5b52905): every test but the controls.
 """

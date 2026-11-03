@@ -4364,7 +4364,7 @@ async def resolve_dispute_proxy(
     A resolution moves money (the TEG debits the defendant's balance to SYSTEM_PENALTIES for `penalty_amount`, with no
     registry event). Only a transport slip stood between any agent and any dispute: the body below carries the TEG's
     query parameters, so every call met the TEG's 422 (sbxalphaop's TEG, 2026-10-02 04:34:19Z). The route now refuses
-    before it reaches the TEG. Who may resolve a TEG dispute through the registry is his decision (a manual admin rail,
+    before it reaches the TEG. Who may resolve a TEG dispute through the registry is a separate decision (a manual admin rail,
     like PUT /admin/disputes/{id}/ruling, is the shape the doctrine names); the forwarding below stays unreachable.
     """
     raise HTTPException(
@@ -7963,7 +7963,7 @@ async def _fee_collector_distribute(idem: str, target_did: str, amount: Decimal,
 
 
 async def _fx_route_fee_back(route_id: str, payer_did: str, fees: Decimal) -> Optional[str]:
-    """§REPATLANE-4 (V0606, his word 2026-10-12: "fee back after refund"): the fees a returned route cost its payer go back
+    """§REPATLANE-4 (V0606, 2026-10-12: the fee back after a refund): the fees a returned route cost its payer go back
     to the payer from this frame's fee collector (_fee_collector_distribute) under the route's own Idempotency-Key
     fxroute:<route>:fee-back. Returns the TEG transaction id, or None (logged; the payment itself came back either
     way)."""
@@ -8365,7 +8365,7 @@ async def _fx_route_origin(db: AsyncSession, current_agent: "models.Agent",
         _why = str((onward or {}).get("detail") or "gateway unreachable")[:300]
         # NOT_DELIVERED is relayed only when the gateway said it beside its refund: the payment reached nobody
         _undelivered = bool((onward or {}).get("not_delivered"))
-        # §REPATLANE-4 (V0606, his word: "fee back after refund"): a payment the gateway returned, having reached nobody,
+        # §REPATLANE-4 (V0606, the fee back after a refund): a payment the gateway returned, having reached nobody,
         # costs its payer nothing: the round trip's fees go back from this frame's fee collector
         _fee_back_hops = []
         if _compensated and _undelivered:

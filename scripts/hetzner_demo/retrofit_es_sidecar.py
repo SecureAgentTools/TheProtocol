@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""§SOVKIT K2 (2026-09-14, his word "4 sidecars only"): give an EXISTING frame the event store's mTLS sidecar the template
+"""§SOVKIT K2 (2026-09-14, the four sidecars only): give an EXISTING frame the event store's mTLS sidecar the template
 ships, and nothing else of the kit.
 
 The sandbox pair (sbx-alpha, sbx-beta) was born 2026-09-03, before §MTLSGAP put `nginx-event-store` into the template: both

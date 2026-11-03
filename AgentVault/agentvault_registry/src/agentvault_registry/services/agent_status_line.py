@@ -94,6 +94,13 @@ async def read_line(db: AsyncSession, agent_did: str) -> Optional[Dict[str, Any]
     return live_line(await db.get(AgentStatusLine, agent_did))
 
 
+def _card_icon(card_data: Any) -> Optional[str]:
+    """V0655 (ay): the picture the agent's card carries (card_data.iconUrl), for the room's side panel; the console
+    decides whether it draws it"""
+    url = card_data.get("iconUrl") if isinstance(card_data, dict) else None
+    return url.strip() if isinstance(url, str) and url.strip() and len(url) <= 2048 else None
+
+
 async def org_presence(db: AsyncSession, org_id: str) -> Dict[str, Any]:
     """Every agent assigned to the organization (a revoked agent is no longer present), oldest first."""
     now = _now()
@@ -105,17 +112,21 @@ async def org_presence(db: AsyncSession, org_id: str) -> Dict[str, Any]:
     )).all()
     dids = [a.did for a, _ in rows]
     names: Dict[str, str] = {}
+    icons: Dict[str, Optional[str]] = {}
     if dids:
-        for did, name in (await db.execute(
-                select(AgentCard.agent_did, AgentCard.name).where(AgentCard.agent_did.in_(dids))
+        for did, name, card in (await db.execute(
+                select(AgentCard.agent_did, AgentCard.name, AgentCard.card_data).where(AgentCard.agent_did.in_(dids))
                 .order_by(AgentCard.is_active.desc(), AgentCard.created_at))).all():
-            names.setdefault(did, name)
+            if did not in names:
+                names[did] = name
+                icons[did] = _card_icon(card)
     agents: List[Dict[str, Any]] = []
     for a, line in rows:
         last = _utc(a.last_active_at)
         agents.append({
             "did": a.did,
             "name": names.get(a.did),
+            "icon_url": icons.get(a.did),
             "owner_developer_id": a.creator_developer_id,
             "last_active_at": last.isoformat() if last else None,
             "account_status": a.status,

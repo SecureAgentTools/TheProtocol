@@ -3,7 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 /**
- * §FESUITE V0595 (a console gap, his word 2026-10-11 "also close console gaps"): the Invitations tab existed only where
+ * §FESUITE V0595 (a console gap, closed 2026-10-11): the Invitations tab existed only where
  * registration needs a code, so on an open registry (both sandbox frames, EU, ASIA) an admin could mint no code from the
  * console. The tab shows to every admin now; where registration is open the panel says what a code is worth there
  * (asked for nowhere, granting nothing until invite-only is on) instead of the invite-only registry's sentence.

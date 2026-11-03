@@ -5,8 +5,8 @@
  * the live ledger) a person has opened. Per browser, in ONE localStorage key, so a
  * strip that was opened once stays open on this machine and nowhere else.
  *
- * The default is FOLDED for every strip (his word: "collapsed from the start so it
- * doesn't lock up the user when the network is really active"). A folded strip mounts
+ * The default is FOLDED for every strip (collapsed from the start, so it does not
+ * lock up the page when the network is really active). A folded strip mounts
  * nothing, so a person who never opens the ledger never opens its sockets.
  */
 export const MC_SECTIONS_KEY = 'mc.sections'

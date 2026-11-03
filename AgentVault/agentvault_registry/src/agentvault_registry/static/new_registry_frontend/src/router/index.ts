@@ -36,7 +36,7 @@ const routes: RouteRecordRaw[] = [
   // (EnterpriseLanding.vue, EnterpriseOGCardView.vue, landing/EnterpriseOGCard.vue).
   // The ONE landing page is LandingPage.vue at '/', which the apex root now
   // redirects to. Recoverable from git history if it is ever wanted back.
-  // §DISCPUBLIC (2026-09-06, his word) — Agent Discovery WITHOUT a session, for the showcase a new frame
+  // §DISCPUBLIC (2026-09-06) — Agent Discovery WITHOUT a session, for the showcase a new frame
   // shows when it goes to production. The same view: every rail it reads is public already, and it holds no
   // session state; a visitor simply cannot act. The agent card opens in the same modal.
   {
@@ -218,7 +218,7 @@ const routes: RouteRecordRaw[] = [
     path: '/units-and-fees',
     name: 'token-economy',
     component: () => import('@/views/TokenEconomyDocs.vue'),
-    // the page reads "Units & Fees", and so do its tab title and, since his word 2026-10-25, its address; the route NAME stays
+    // the page reads "Units & Fees", and so do its tab title and, since 2026-10-25, its address; the route NAME stays
     meta: { requiresAuth: false, title: 'Units & Fees' }
   },
   // the old address, in links already sent, redirects with its query and hash
@@ -300,7 +300,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'pay', name: 'pocket-pay', component: () => import('@/views/pocket/PocketHome.vue'), meta: { requiresAuth: true, title: 'Pocket · Pay' } },
       { path: 'agents', name: 'pocket-agents', component: () => import('@/views/pocket/PocketAgents.vue'), meta: { requiresAuth: true, title: 'Pocket · Agents' } },
       { path: 'payments', name: 'pocket-earn', component: () => import('@/views/pocket/PocketEarn.vue'), meta: { requiresAuth: true, title: 'Pocket · Payments' } },
-      // the address follows the tab's name (his word 2026-10-25); /pocket/earn, in notifications and links already sent, redirects
+      // the address follows the tab's name (since 2026-10-25); /pocket/earn, in notifications and links already sent, redirects
       { path: 'earn', redirect: (to: any) => ({ name: 'pocket-earn', query: to.query, hash: to.hash }) },
       { path: 'approvals', name: 'pocket-approvals-tab', component: () => import('@/views/PocketApprovals.vue'), meta: { requiresAuth: true, title: 'Pocket · Approvals' } },
       { path: 'activity', name: 'pocket-activity', component: () => import('@/views/pocket/PocketActivity.vue'), meta: { requiresAuth: true, title: 'Pocket · Activity' } },
@@ -481,7 +481,7 @@ const routes: RouteRecordRaw[] = [
         redirect: '/admin/fiat-ops',
       },
       {
-        // §DASHRESTORE (2026-09-02, his call) — /mission-control is the
+        // §DASHRESTORE (2026-09-02) — /mission-control is the
         // NEURAL COMMAND DASHBOARD again: the pre-§BRIDGE view, recovered from
         // the 2026-08-18 blueprint snapshot (the last of five days it sat
         // unchanged at 137,078 bytes before §BRIDGE P1 rewrote it overnight).
@@ -489,7 +489,7 @@ const routes: RouteRecordRaw[] = [
         // mounts NO WebGL — verified: zero Cesium/three/canvas references, so
         // it cannot repeat the 22s globe fetch that made the old landing paint
         // at ~25s. The 3D bridge is not retired; it moved to /bridge with its
-        // own sidebar entry, on his word ("bridge gets bridge menu item").
+        // own sidebar entry (a Bridge menu item).
         path: 'mission-control',
         name: 'mission-control',
         component: () => import('@/views/MissionControl.vue'),
@@ -521,8 +521,8 @@ const routes: RouteRecordRaw[] = [
       },
       {
         // §MEMBERSHIP phase C (design § 12 S5): every registry with its members and its commons; no price, by design.
-        // Open only where this registry runs governance by membership or a commons; anywhere else (production, until
-        // his word) a typed URL lands where the console starts, like any page switched off on this registry.
+        // Open only where this registry runs governance by membership or a commons; anywhere else (production, for
+        // now) a typed URL lands where the console starts, like any page switched off on this registry.
         path: 'registries',
         name: 'registries',
         component: () => import('@/views/RegistryBoard.vue'),
@@ -706,7 +706,7 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, title: 'Approvals & Control' }
       },
       {
-        // Quick onboarding (2026-10-09, his word): /onboarding issues an agent identity from a name (a DID, a standard
+        // Quick onboarding (2026-10-09): /onboarding issues an agent identity from a name (a DID, a standard
         // A2A card, the credentials, shown once), lists the developer's agents with their balances hidden until asked,
         // and resets an agent's credentials. It rendered AgentForge until now, the same page as /agent-builder and
         // /agent-forge below (two sidebar rows, one page); the builder keeps those two routes, unchanged.
@@ -949,7 +949,7 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, requiresRole: 'admin', requiresAdminFlag: 'platform', title: 'Ledger Forensics', viewAmbientTone: 'admin'  }
       },
       {
-        // W3 (agentvault2-d6's read, agentvault2-69's page, 2026-10-25; his word "i really need it visualized"): the
+        // W3 (agentvault2-d6's read, agentvault2-69's page, 2026-10-25; the configuration visualized): the
         // effective emission-policy configuration, one row per event type; admin_treasury, as the read behind it.
         path: 'admin/emission-policy',
         name: 'admin-emission-policy',
@@ -1231,7 +1231,7 @@ const routes: RouteRecordRaw[] = [
           viewAmbientTone: 'default'
         }
       },
-      // the lock desk's address (his word 2026-10-25); /staking redirects with its query and hash, the route NAME stays
+      // the lock desk's address (since 2026-10-25); /staking redirects with its query and hash, the route NAME stays
       { path: 'staking', redirect: (to: any) => ({ name: 'staking', query: to.query, hash: to.hash }) },
       {
         path: 'forex',

@@ -4,8 +4,8 @@ import path from 'node:path'
 import ts from 'typescript'
 
 /**
- * The console's value words (agentvault2-56, 2026-10-23; his words "crop the staked and token words out of the
- * screenshots. better correct it in code" and "go. all nine languages"). The console says LOCKED for what the ledger
+ * The console's value words (agentvault2-56, 2026-10-23: the staked and token words corrected in the
+ * code, in all nine languages). The console says LOCKED for what the ledger
  * calls staked (the bonds and locks: the backend's own bond states are locked and matured), UNITS for value, a
  * capability PERMIT for IronKey's L4 credential and a PAYMENT AUTHORIZATION for the A2A payment credential.
  *
@@ -39,8 +39,8 @@ const WORDS: Record<Loc, RegExp> = {
 
 /** Key prefixes whose strings keep the words, each for its reason. */
 const KEPT: string[] = [
-  // (agentvault2-69, 2026-10-25, his words "staking doesnt exist anymore in the way it did" and "staking wroding fully
-  // gone": the staking feature's own screens, doors and switches say lock, locked units, unlock and payout on locked
+  // (agentvault2-69, 2026-10-25: staking no longer exists in the way it did, and its wording is fully
+  // gone: the staking feature's own screens, doors and switches say lock, locked units, unlock and payout on locked
   // units now, so none of them keeps a word any more)
   // sign-in terms: bootstrap, OAuth, pull and session tokens are credentials, not value
   'agentBuilderView.nav.acquiringToken', 'agentBuilderView.nav.reacquireToken', 'agentBuilderView.token.',
@@ -276,8 +276,8 @@ describe('the console says locked and units, not staked and tokens', () => {
 })
 
 // ── the critical words (§VOCAB widened, agentvault2-aa, 2026-10-25, for V0643) ──────────────────────────────────────────
-// His words that day to agentvault2-69: "i dont want the critical wording. only compliant ones" and "i want the illegal
-// wording completly gone before opening" (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md lists the words and what
+// Only compliant wording, the critical words gone before the opening
+// (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md lists the words and what
 // replaces them: journal 52's guard, plus insurance, APY/APR and tokenomics). English and German are held; the other
 // seven bundles fall back to English where they lack a key (the translation backlog). Not critical, as the plan keeps
 // them: earning trust, non-profit, the cryptographic words, investigating, a game that someone wins (German "gewinnt"),

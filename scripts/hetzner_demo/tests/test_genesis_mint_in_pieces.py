@@ -1,4 +1,4 @@
-"""§FRAMESHOWCASE (his word 2026-09-14, "your recommendation. but not cap at 1m"): a genesis issuance larger than the
+"""§FRAMESHOWCASE (2026-09-14, no cap at 1m): a genesis issuance larger than the
 registry's per-call mint ceiling is minted in pieces, and the ceiling is the running registry's own answer.
 
 hansa asked for 5,000,000. The registry's validator refused the single call (TEG_MINT_MAX_AVT is 1,000,000 in a

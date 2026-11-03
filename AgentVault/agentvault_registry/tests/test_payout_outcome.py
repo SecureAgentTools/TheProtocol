@@ -1,7 +1,7 @@
 """§REPATLANE (V0603): what one AGORA gateway payout's answer proves about the money (services/payout_outcome.py).
 
-His words 2026-10-12: "fix the two payout lane flaws too. but look into it properly so there is no confusion or fail
-implementation" and "also fix this found flaw". Measured on the sandbox 2026-09-22 to 10-12: 28 FX routes from the two
+2026-10-12: the two payout lane flaws fixed, properly, so nothing is left confused or half
+implemented, and the flaw found with them too. Measured on the sandbox 2026-09-22 to 10-12: 28 FX routes from the two
 operator gateways stranded after the payer's leg moved, the lane sent each again about 90 s later, and the FX keeper's
 recovery delivered 14 of the stranded routes as well: 14 traders paid twice (146.1084 SBXA, 27.8151 SBXB). And a 200
 whose body said "failed" was marked paid.

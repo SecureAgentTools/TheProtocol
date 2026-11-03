@@ -1,6 +1,6 @@
 /**
- * The configuration catalog (§FESUITE V0595, his word 2026-10-11: "we need env setup in the application forms ... the
- * env flips that are frame exclusive should be still displayed for operators but greyed out and not chooseable").
+ * The configuration catalog (§FESUITE V0595, 2026-10-11: configuration in the application forms; a
+ * switch only a frame may flip shows to operators, greyed out and not choosable).
  *
  * GET /public/env-catalog answers every setting a registry can choose to run (the server's services/env_catalog.py):
  * its options, its scope (`frame`: an operator sees it greyed with the frame's value and cannot choose it; `operator`:

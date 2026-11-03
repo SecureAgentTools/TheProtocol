@@ -1,6 +1,6 @@
 """§OPDIST — the HOST half of provisioning a cloud operator, run as a one-shot container the runner creates.
 
-His decision 2026-09-16 (relayed by agentvault2-85): the privileged work moves to the privileged component. The
+Decided 2026-09-16 (agentvault2-85): the privileged work moves to the privileged component. The
 long-lived, internet-facing registry never holds the docker socket; the frame runner launches THIS module in a
 one-shot container from the registry image with the socket mounted, and destroys it when it returns. The privilege
 exists for the seconds it is used, under the runner's uid gate, its policy file and its audit log.
@@ -457,8 +457,8 @@ def _db_tls_steps(spec: Dict[str, Any], stack_dir: str, safe: str, notes: List[s
     return {"db_tls": True, "db_tls_files": copied}
 
 
-# §OPA (2026-10-06, agentvault2-09; his words "please roll out and enable opa for the whole production cluster", then
-# "we need this whole ... provisioner fix"): the operator's own OPA, which its registry asks in SHADOW. The frames have
+# §OPA (2026-10-06, agentvault2-09; OPA on the whole production cluster, then the provisioner
+# fix): the operator's own OPA, which its registry asks in SHADOW. The frames have
 # carried one since §SOVKIT; no operator did, so every operator registry's OPA code stayed dark. An OVERRIDE for the
 # db-TLS override's reason: a frame whose image registers no opa entry must never meet an opa-cert-writer in the base.
 # The policies are the stack's identity-fabric set, carried in the templates under opa/policies (the stack's hygiene
@@ -549,8 +549,7 @@ def render_opa_policies(tmpl: str, stack_dir: str, trust_domain: str, safe: str)
     return written
 
 
-# §PUSH (2026-10-06, agentvault2-09; his words "afterwards we do the same with push", "provisioner should also provision
-# them"): the operator's own push relay, an OVERRIDE for the same reason as OPA's and the database's TLS (a frame whose
+# §PUSH (2026-10-06, agentvault2-09; push after OPA, provisioned like it): the operator's own push relay, an OVERRIDE for the same reason as OPA's and the database's TLS (a frame whose
 # image does not know it must never meet it in the base). Every operator had push switched off: PUSH_NOTIFY_ENABLED was
 # unset, so Web Push and Pocket's phone pairing both stayed dark. The relay is ntfy on the operator's own network
 # (the registry publishes to it there), its loopback port at the block's fixed push offset, behind a SUBSCRIBE-ONLY

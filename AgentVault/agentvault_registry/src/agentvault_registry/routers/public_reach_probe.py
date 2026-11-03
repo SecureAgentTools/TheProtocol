@@ -1,4 +1,4 @@
-"""§EXTREACH design A (agentvault2-5b, 2026-10-14; his word "build A"): can the internet reach a new frame?
+"""§EXTREACH design A (agentvault2-5b, 2026-10-14): can the internet reach a new frame?
 
 A self-hosted frame needs four public lanes before a peer will federate with it: the console (443), the federation
 gateway (8443), the SPIRE bundle endpoint (8444) and the ledger gateway (8445). From its own host a frame cannot tell

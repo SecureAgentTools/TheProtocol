@@ -48,8 +48,8 @@ const RECONNECT_BASE_MS = 300
 const NEVER_OPENED_GIVEUP = 40
 
 /**
- * §AGORASIM-2 (2026-09-22, his words: "add the sandbox live event ledgers as collapsed thing like the live ledger has
- * on the frontpage. so if a sim or mcp tester is running. people can watch it live") — WHICH folded strip a frame
+ * §AGORASIM-2 (2026-09-22: the sandbox's live event ledgers folded, like the live ledger on the front page,
+ * so people can watch a running sim or MCP tester live) — WHICH folded strip a frame
  * belongs to. `main` is every frame the app always streamed; `sandbox` is a frame the serving registry marks
  * `"strip": "sandbox"` in FRESH_NETWORK_JSON (the test frames, where the sim and the MCP tester run). A strip's
  * sockets open only while something that shows that strip is mounted, so a folded sandbox strip costs nothing and

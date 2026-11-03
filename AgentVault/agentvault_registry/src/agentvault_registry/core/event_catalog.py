@@ -1,5 +1,5 @@
-"""The ledger event types this code emits, by emitter (W3, agentvault2-d6, 2026-10-25; his word: "the event emission
-policy which needs hardening and a fe page to check the exact configuration from the fe").
+"""The ledger event types this code emits, by emitter (W3, agentvault2-d6, 2026-10-25: the event emission
+policy hardened, with a console page that shows the exact configuration).
 
 REGISTRY_EMITS and TEG_EMITS are what an AST walk of the registry's and the TEG's source finds: every emit call whose type
 is a literal, through the helpers that pass a type on (tests/test_emission_policy_catalog.py pins both sets against the

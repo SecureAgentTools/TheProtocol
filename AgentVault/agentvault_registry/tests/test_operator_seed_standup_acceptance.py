@@ -1,5 +1,5 @@
 """The frame kit's standup records what its person accepted with the account it issues (agentvault2-56, 2026-10-22;
-his word: "make sure terms are accepted also on framekit standup. because there an account is issued").
+the terms are accepted on a frame-kit standup too, because an account is issued there).
 
 Every other rail that issues an account records the documents its person accepted. A frame stood up with the kit's
 frame-up.py was issued its first admin by operator_seed with none. frame-up.py now asks for the Federation Operator Terms

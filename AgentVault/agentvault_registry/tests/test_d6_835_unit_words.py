@@ -1,4 +1,4 @@
-"""D6-835 (agentvault2-d6, 2026-10-25; his words through agentvault2-69: "sweep for avt again"): the registry's own
+"""D6-835 (agentvault2-d6, 2026-10-25; a sweep for AVT again): the registry's own
 display texts named AVT on every frame. The org policy's presence threshold read "(AVT)" on EU's organisation settings
 page, the reactors' worker card "Fires real synthetic AVT transfers", and the stuck-funds board's and the forensic
 scanner's fiat findings "the AVT credit". EU's unit is ECU, ASIA's ACU; a fiat credit is the fiat genesis registry's

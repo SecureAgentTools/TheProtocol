@@ -1,4 +1,4 @@
-"""§MONEY-R52 (2026-09-04, his word "r52 approved too") — the SPIRE federation relationship the approve
+"""§MONEY-R52 (2026-09-04) — the SPIRE federation relationship the approve
 rail now creates right after the bundle import. RED control: `R52_SRC=<pre-fix frame_trust_manager.py>`
 and `R52_INV_SRC=<pre-fix frame_invitations.py>`.
 """

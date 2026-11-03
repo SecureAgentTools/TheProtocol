@@ -1,6 +1,6 @@
 """§SOVKIT K1 (2026-09-14) — the TEG holds no Kafka producer.
 
-His word "2 yes": Kafka is PRIVATE to the event store. The TEG's fire-and-forget producer was one of the two producers
+Kafka is PRIVATE to the event store. The TEG's fire-and-forget producer was one of the two producers
 writing to the store's broker with none of the HTTP route's checks. The emitter keeps `shutdown_kafka` as a no-op for
 main.py's shutdown hook and nothing else of it. Read from the source file (the module imports aiohttp), in the tree or
 in the image.

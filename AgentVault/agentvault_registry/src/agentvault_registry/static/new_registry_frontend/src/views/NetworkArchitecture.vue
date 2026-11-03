@@ -368,7 +368,7 @@ const peerTitle = computed(() => (peerState.value === 'unread' ? 'Not read' : un
 // §BAFIN (2026-10-01): no payout rate where this registry pays none (core/staking_gate.py).
 const { config: archRegCfg, readOk: archReadOk } = useRegistryConfig()
 // §LANDINGTRUTH (17/18): the governance row and the layer's tech line follow the governance this registry runs
-// (governance_weight_mode); membership is the production model since V0564 (his word 2026-10-03)
+// (governance_weight_mode); membership is the production model since V0564 (2026-10-03)
 // §LANDINGTRUTH (30): no mode until the registry has answered (an unread config reads as lock)
 const archMode = computed(() => (archReadOk.value ? governanceMode(archRegCfg.value) : 'unknown'))
 const archMember = computed(() => archMode.value === 'member')

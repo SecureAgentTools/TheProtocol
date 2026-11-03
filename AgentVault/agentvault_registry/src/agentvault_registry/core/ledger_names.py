@@ -1,7 +1,7 @@
 """W4 phase 1 (agentvault2-aa, 2026-10-25): the ledger's event names, old and new, read as one.
 
-His words that day to agentvault2-69: "i want the illegal wording completly gone before opening" and, on the ledger, "just
-use the new wording and make it accept both or something" (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md, W4). The
+The critical wording is gone before the opening; the ledger writes the new words and reads
+both (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md, W4). The
 names a reader meets in the ledger carry the critical words (TokensTransferred, TokensStaked, RewardsDistributed); their
 new names say units, locks and lock payouts, as agentvault2-d6's W3 named the MCP tools (lockUnits, claimLockPayouts,
 getMyPayoutRelock).

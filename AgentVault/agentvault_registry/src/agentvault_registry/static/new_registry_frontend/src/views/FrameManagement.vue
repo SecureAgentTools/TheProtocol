@@ -235,9 +235,9 @@ function sf4WatermarkFor(peer: FramePeer): string | null {
 // ─── Fetch ──────────────────────────────────────────────────────────
 
 // ── §FRAMELIC (2026-09-07) — FRAME FEDERATION LICENCES ──────────────────────────────────────
-// His word: "frames get a license from new eu frame when stood up … build it enterprise grade in
-// frame management already existing also frontend. operator management is the operator version
-// which also has the licenses."
+// A frame gets its licence from the EU frame when it is stood up, built enterprise-grade into the existing
+// frame management, its console too; operator management is the operator version, which also has the
+// licences.
 //
 // One table backs both classes (`federation_licenses.licensee_type`), so this panel and
 // OperatorManagement's must each ask for THEIR class — an unfiltered list would show a frame
@@ -780,7 +780,7 @@ const FEDERATION_WORDS: Record<string, string> = {
   A: 'federate later', B: 'standalone', C: 'standalone + test operator',
 }
 
-// who runs the frame decides its network licence (his words 2026-09-28); the form asks only when the frame federates
+// who runs the frame decides its network licence (2026-09-28); the form asks only when the frame federates
 const FIRST_YEAR_LICENCES = new Set(['enterprise', 'government'])
 
 function federationWords(r: FrameRequestAdminRead): string {

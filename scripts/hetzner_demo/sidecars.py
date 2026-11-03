@@ -741,7 +741,7 @@ def wire(m: Dict[str, Any], f: Dict[str, Any], *, only: Optional[set] = None, lo
             done["metrics_store"] = ensure_on_network(ms["container"], own_net, list(ms.get("aliases") or []), log=log)
     a = m.get("auditor") or {}
     if want("auditor"):
-        # §MTLSHOPS (a) (2026-09-15, his decision; agentvault2-85's calls). A frame whose databases take TLS clients with a
+        # §MTLSHOPS (a) (2026-09-15; agentvault2-85's calls). A frame whose databases take TLS clients with a
         # frame certificate only (T3) gets a public_only slot: the host auditor holds no frame certificate, so it reads the
         # frame's public supply audit and nothing else, and the frame's own solo auditor does the exact check. A frame whose
         # store listens on a unix socket only (T2 S4) gets a public_read slot: its live read goes to the public supply audit

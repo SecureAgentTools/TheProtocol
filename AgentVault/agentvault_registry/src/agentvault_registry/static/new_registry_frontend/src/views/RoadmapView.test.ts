@@ -25,7 +25,7 @@ describe('roadmap page', () => {
     expect(roadmap).not.toContain('mdi:')
   })
   it('puts code the network decides on the horizon as an idea, not as a plan', () => {
-    // His word 2026-10-19: code changes do not run through the protocol yet, only its policy; the idea is
+    // Since 2026-10-19: code changes do not run through the protocol yet, only its policy; the idea is
     // neither designed nor scheduled, so the page says Idea and nothing stronger.
     expect(roadmap).toContain("{ key: 'idea', label: 'Idea' }")
     expect(roadmap).toMatch(/title: 'The network decides its own code',\s*status: 'idea',/)

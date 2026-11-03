@@ -11,8 +11,8 @@ The must_change_password flag is ONLY set on initial creation.
 Runs automatically as part of the registry startup command:
   alembic upgrade heads && python -m agentvault_registry.operator_seed && uvicorn ...
 
-The frame kit's standup (agentvault2-56, 2026-10-22; his word: "make sure terms are accepted also on framekit standup.
-because there an account is issued"): every other rail that issues an account records the documents its person
+The frame kit's standup (agentvault2-56, 2026-10-22; the terms are accepted on a frame-kit standup too,
+because an account is issued there): every other rail that issues an account records the documents its person
 accepted (registration, an operator application, a frame request, a self-provision, a checkout); a frame stood up with
 the kit's frame-up.py was issued its first admin here with none. frame-up.py now asks the person running it to accept the
 Federation Operator Terms first (the prompt, or --accept-terms) and passes the acceptance in the env; this seed records it

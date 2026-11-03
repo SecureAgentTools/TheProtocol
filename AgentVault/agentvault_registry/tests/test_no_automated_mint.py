@@ -262,7 +262,7 @@ def test_r22_claim_rewards_refuses_before_reaching_the_teg():
 # ══ §MONEY-R21 — the slash reports honestly; the ARITHMETIC is untouched ═════
 
 def test_r21_slash_still_only_touches_the_cache_and_says_so():
-    """This residue's money half is HIS decision (HARD STOP 4: making slashes real
+    """This residue's money half is a separate decision (HARD STOP 4: making slashes real
     moves money on the live fleet the moment enforcement fires). So this asserts
     TWO things, and the second matters as much as the first:
 

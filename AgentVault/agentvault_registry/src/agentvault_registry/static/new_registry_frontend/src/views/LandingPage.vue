@@ -40,7 +40,7 @@
           </div>
           <RouterLink to="/roadmap" class="lp-link lp-link-gold" data-testid="lp-nav-roadmap" @click="lpNavOpen = false">{{ t('landingPage.nav.roadmap') }}</RouterLink>
           <RouterLink v-if="journalEnabled" to="/blog" class="lp-link lp-link-cyan" @click="lpNavOpen = false">{{ t('landingPage.nav.journal') }}</RouterLink>
-          <!-- his words 2026-10-03: no Whitepaper in the nav bar, and no Discord anywhere on the landing -->
+          <!-- since 2026-10-03: no Whitepaper in the nav bar, and no Discord anywhere on the landing -->
           <RouterLink to="/operator-docs" class="lp-link lp-link-blue" @click="lpNavOpen = false">{{ t('landingPage.nav.operatorDocs') }}</RouterLink>
           <RouterLink to="/docs" class="lp-link lp-link-purple" @click="lpNavOpen = false">{{ t('landingPage.nav.docs') }}</RouterLink>
           <RouterLink v-if="authStore.isFederationOperator" to="/operator-portal" class="lp-link lp-link-green" @click="lpNavOpen = false">{{ t('landingPage.nav.myRegistry') }}</RouterLink>
@@ -113,8 +113,8 @@
     <!-- Moved up from under the agent roster. The globe shows the network exists;    -->
     <!-- this is where a reader finds out it WORKS, before being asked to read        -->
     <!-- anything. Money actually moves here, in their session, with no account.      -->
-    <!-- §SHOWCASEGATE (2026-09-09, his word: "just deactivate our chat showcase on eu-asia frame on
-         landingpage … can stay for frame-a b c network"). The gate is the SERVER's answer, not a frame
+    <!-- §SHOWCASEGATE (2026-09-09: the chat showcase off on the EU/ASIA landing page, kept for the
+         frame A, B, C network). The gate is the SERVER's answer, not a frame
          list: `/public/registry-config.showcase_chat_enabled` is the same predicate
          `/public/showcase/onboard` refuses on, so a frame that has no showcase identity never mounts a
          panel whose first call is a 503 — and a frame that GAINS one starts showing it with no rebuild.
@@ -138,7 +138,7 @@
       </div>
     </section>
 
-    <!-- ═══ LIVE STRIPS (§LPSTRIPS 2026-09-02) — LISTINGS → LIVE TICKER → LIVE LEDGER, his order;
+    <!-- ═══ LIVE STRIPS (§LPSTRIPS 2026-09-02) — LISTINGS → LIVE TICKER → LIVE LEDGER, in that order;
          folded by default and independent; the SAME shared ticker feed and ledger stream Mission
          Control mounts (the page used to open three raw EventStore sockets of its own here). ═══ -->
     <section class="lp-strips" data-testid="lp-strips">
@@ -153,8 +153,8 @@
         <McSection id="lp-ledger" :title="t('mc.section.ledger', 'LIVE LEDGER')" icon="mdi:swap-horizontal">
           <McLedger public />
         </McSection>
-        <!-- §AGORASIM-2 (2026-09-22, his words: "add the sandbox live event ledgers as collapsed thing like the live
-             ledger has on the frontpage. so if a sim or mcp tester is running. people can watch it live"): the test
+        <!-- §AGORASIM-2 (2026-09-22: the sandbox's live event ledgers folded, like the live ledger on
+             the front page, so people can watch a running sim or MCP tester live): the test
              frames' ledger, folded by default. It exists only where the serving registry files a frame under the
              sandbox strip, and it opens those sockets only while it is unfolded (McSection mounts its body with v-if). -->
         <McSection v-if="lpSandboxStrip" id="lp-sandbox-ledger" :title="t('mc.section.sandboxLedger', 'SANDBOX · LIVE LEDGER')" icon="mdi:test-tube">
@@ -164,9 +164,9 @@
       </div>
     </section>
 
-    <!-- ═══ AGENT DISCOVERY (§LANDINGDISC, 2026-09-06, his word: "replace the 'sandbox networks' on
-         discovery with an embedded version of the agent discovery /explore and a button or something to
-         the whole version"). What replaced the sandbox-frames grid is the network's actual population,
+    <!-- ═══ AGENT DISCOVERY (§LANDINGDISC, 2026-09-06: the 'sandbox networks' on
+         discovery replaced with an embedded version of the agent discovery (/explore) and a door to
+         the whole of it). What replaced the sandbox-frames grid is the network's actual population,
          live from the same public rail Discovery ranks, with one door to /#/explore — which since
          §DISCPUBLIC needs no session either. The component hides itself when there is nothing to sample,
          so a registry with no discoverable agents shows no empty promise. ═══ -->
@@ -249,7 +249,7 @@
           <div class="ag-eyebrow">{{ t('landingPage.sections.sovereignAgentsEyebrow') }}</div>
           <h2 class="ag-h2">{{ t('landingPage.sections.sovereignAgentsH2Line1', { count: SOVEREIGN_COUNT }) }}<br><span class="lp-accent">{{ t('landingPage.sections.sovereignAgentsH2Line2') }}</span></h2>
           <p class="ag-lead">{{ t('landingPage.agentLead') }}</p>
-          <!-- his word 2026-09-28: the showcase agents still run configured for the legacy frame -->
+          <!-- 2026-09-28: the showcase agents still run configured for the legacy frame -->
           <p class="ag-lead ag-lead--note" data-testid="lp-agents-legacy-note">{{ t('landingPage.sections.sovereignAgentsLegacyNote') }}</p>
         </div>
 
@@ -1042,7 +1042,7 @@ msgr = <span class="sdk-cls">MessengerClient</span>(<span class="sdk-str">"{{ sd
           <div class="sdk-identity-title">{{ t('landingPage.sdk.identity.title') }}</div>
           <div class="sdk-identity-flow">
             <span class="sdk-did sdk-did-cos">did:theprotocol:{{ didIssuer }}:3f1c2a9e…</span>
-            <!-- his word 2026-10-03: the two DIDs stack at every length (a DID that names its frame is long),
+            <!-- since 2026-10-03: the two DIDs stack at every length (a DID that names its frame is long),
                  so the arrow points down between them, never sideways beside the top one -->
             <span class="sdk-identity-arrow" aria-hidden="true">&#8597;</span>
             <span class="sdk-did sdk-did-wba">did:wba:{{ didIssuer }}:3f1c2a9e…</span>
@@ -1105,7 +1105,7 @@ msgr = <span class="sdk-cls">MessengerClient</span>(<span class="sdk-str">"{{ sd
 
 
     <!-- Open Beta Live Announcement -->
-    <!-- his word 2026-10-03: no Discord on the landing; the community section was a Discord invite and went with it -->
+    <!-- since 2026-10-03: no Discord on the landing; the community section was a Discord invite and went with it -->
 
     <section class="beta-section">
       <div class="ob-announce">
@@ -1447,7 +1447,7 @@ msgr = <span class="sdk-cls">MessengerClient</span>(<span class="sdk-str">"{{ sd
         <h2 class="lp-h2">{{ t('landingPage.sectionB.h2a') }}<span class="lp-accent">{{ t('landingPage.sectionB.h2Accent') }}</span></h2>
         <p class="lp-body">{{ t('landingPage.sectionB.leadA') }}<router-link to="/units-and-fees" class="lp-inline-link">{{ t('landingPage.sectionB.leadDynFeeLink') }}</router-link>{{ t('landingPage.sectionB.leadB') }}<router-link to="/governance-docs" class="lp-inline-link">{{ t('landingPage.sectionB.leadGovLink') }}</router-link>{{ t('landingPage.sectionB.leadC') }}</p>
 
-        <!-- ─── Membership and the commons (§MEMBERSHIP; replaces the veToken block, his word 2026-10-02) ───
+        <!-- ─── Membership and the commons (§MEMBERSHIP; replaces the veToken block, 2026-10-02) ───
              What runs is read from this registry (registry-config governance_weight_mode, governance_presence_mode,
              commons_enabled; GET /membership/stats). A switch that is off reads "not switched on for this registry
              yet", never as live: production governs by locks until BaFin answers and he says otherwise. -->
@@ -1553,7 +1553,7 @@ msgr = <span class="sdk-cls">MessengerClient</span>(<span class="sdk-str">"{{ sd
       </div>
     </section>
 
-    <!-- ═══ EVERY RULE IS A SETTING (§LANDINGTRUTH, his word 2026-10-02 "approved, go with b") ═══
+    <!-- ═══ EVERY RULE IS A SETTING (§LANDINGTRUTH, 2026-10-02, option b) ═══
          The values this page shows are this network's settings; each registry publishes the ones it runs (signed card:
          fees, bond, voting thresholds; public settings: membership, the commons, the grant). "Held by the network" is
          read from the card (fees.*.locked_by_network), never assumed: a standalone frame running this page says no such
@@ -1828,7 +1828,7 @@ const { localCurrency: efLocalCurrency, frames: efFrames, localRegistryName: efR
 // §SHOWCASEGATE — the showcase band mounts only where the server says the visitor rail works.
 const { showcaseChatEnabled, trustDomain: cfgTrustDomain, journalEnabled, config: regCfg, localCurrency: cfgCurrency, readOk: cfgReadOk, readFailed: cfgReadFailed, reload: cfgReload } = useRegistryConfig()
 
-// §LANDINGTRUTH (2026-10-02, his word): the units, the starting grant, membership and the commons are read from what
+// §LANDINGTRUTH (2026-10-02): the units, the starting grant, membership and the commons are read from what
 // this registry says (registry-config, the frame manifest, GET /membership/stats), never from a literal; a switch
 // that is off reads "not switched on for this registry yet", never as live.
 const unit = computed(() => efLocalCurrency.value || cfgCurrency.value || t('landingPage.unitsFallback'))
@@ -1855,7 +1855,7 @@ const memberMode = computed(() => (cfgReadOk.value ? governanceMode(regCfg.value
 const presenceOn = computed(() => memberMode.value === 'member' && presenceMode(regCfg.value) !== 'off')
 const commonsOn = computed(() => commonsEnabled(regCfg.value))
 // §MEMBERSHIP D2 (FEDERATION_BALLOT_MODE): federation-wide proposals decided by one ballot per registry; the governance
-// step says so where it runs instead of calling it planned (V0563, his word 2026-10-03: ballots on the production frames)
+// step says so where it runs instead of calling it planned (V0563, 2026-10-03: ballots on the production frames)
 const ballotsOn = computed(() => regCfg.value.federation_ballot_mode === true)
 const memberStats = ref<MembershipStats | null>(null)
 const memberMinDays = computed(() => memberStats.value?.min_bond_age_days ?? 0)
@@ -1888,7 +1888,7 @@ const lpOrigin = typeof window !== 'undefined' ? window.location.origin : ''
 const lpRegistryBase = registryBase(lpOrigin)
 const mcp = mcpEndpoints(lpRegistryBase)
 const sdk = computed(() => sdkSnippetHost(lpRegistryBase, cfgTrustDomain.value))
-// §LANDINGTRUTH (his words 2026-10-02 "it always has the identifier"): every DID on this page names the frame that
+// §LANDINGTRUTH (2026-10-02: a DID always carries its issuer): every DID on this page names the frame that
 // minted it, did:theprotocol:<issuer>:<uuid4>, and the issuer is the registry's SPIFFE trust domain (EU's host is
 // theprotocol.cloud, its DIDs say eu.theprotocol.cloud), so it is read from the registry, never from the page's host;
 // "<frame>" stands in until the registry has answered.
@@ -1992,7 +1992,7 @@ import Icon from '@/components/Icon.vue'
 // gallery. Bumped each time a new sovereign ships. Drives the headline
 // "{count, plural, one {# autonomous agent} other {# autonomous agents}}"
 // at agents-section title. Wave-1 (6) + Wave-2 (5) + Hagrid (§pass42b) = 12, less Greedy Gregory, off the public pages
-// until he is reworked (his word 2026-10-25, "yes all approved.": a lock-yield optimizer the network does not offer) = 11.
+// until he is reworked (2026-10-25: a lock-yield optimizer the network does not offer) = 11.
 const SOVEREIGN_COUNT = 11
 import { flagEmoji } from '@/utils/countries'
 
@@ -2272,7 +2272,7 @@ interface LedgerStats {
 /* §LPSTRIPS — the embedded globe draws its arcs from this list (`:external-events`). It used to be filled by
  * three raw EventStore sockets this page opened itself; now the ONE shared stream (`useLedgerStream`,
  * refcounted, coalesced, capped) feeds it, and the folded LIVE LEDGER strip joins the same sockets when
- * a visitor opens it. The globe itself is untouched (his word). */
+ * a visitor opens it. The globe itself is untouched. */
 interface FeedEvent { id: string; rawTimestamp: string; event_type: string; rawData?: any; frame?: 'A' | 'B' | 'C' }
 const eventFeed = ref<FeedEvent[]>([])
 const LP_GLOBE_FEED_MAX = 12
@@ -2281,7 +2281,7 @@ const lpStream = useLedgerStream()
  * (eu./the apex do, asia. does not); the list arrives with the stream's first fetch. */
 const lpSandboxStrip = computed(() => stripHasFrames('sandbox'))
 let lpOffRaw: null | (() => void) = null
-/* §FEFRAME W2: the globe (untouched, his word) colours arcs by THREE slots it calls A, B and C. A frame's slot is its
+/* §FEFRAME W2: the globe (untouched) colours arcs by THREE slots it calls A, B and C. A frame's slot is its
  * place in the frame manifest (this console's own frame first), never the first letter of its name: 'eu' and 'asia'
  * both used to collapse to slot A, so the flagship and its peer drew in one colour. A fourth frame shares slot C. */
 function lpGlobeSlot(frameKey: string): 'A' | 'B' | 'C' {

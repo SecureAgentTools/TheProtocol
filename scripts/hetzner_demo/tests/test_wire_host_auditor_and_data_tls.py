@@ -1,4 +1,4 @@
-"""§MTLSHOPS T3 and (a) (2026-09-15, agentvault2-b5; his decision (a), agentvault2-85's calls): the host auditor slot wire()
+"""§MTLSHOPS T3 and (a) (2026-09-15, agentvault2-b5; decision (a), agentvault2-85's calls): the host auditor slot wire()
 writes for a frame, by what the frame's compose shows and what the running host auditor lists.
 
 - A frame whose databases take TLS clients with a frame certificate only (T3) gets a public_only slot at its public es

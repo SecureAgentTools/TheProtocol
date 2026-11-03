@@ -2,8 +2,8 @@
 
 The console suite (§FESUITE: Playwright lifecycles over this console, desktop and phone, against a sandbox frame) runs on
 the host (scripts/fesuite/run.py), not from a console, so nothing here starts a run: the runner RECORDS each run it made,
-here, and the console-suite page reads it. His word 2026-10-03: "make sure to make the frontend suite runs also visible.
-if it makes sense make a new test page for it".
+here, and the console-suite page reads it (2026-10-03: the console suite's runs are visible on a
+page of their own).
 
 Why not the MCP tester's history: that history holds 60 runs in all (MCP_TESTER_MAX_HISTORY) and the nightly fills it
 (EU held 60 of 60 on 2026-10-03), while the suite is run many times a day, mostly a few lifecycles at a time (a wording

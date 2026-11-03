@@ -1,5 +1,5 @@
 """§MCPTEST30 (V0651, order (p) gwo_b109ec1d4454d0db66ef6d32, agentvault2-d3, 2026-10-31): the retired token bridge,
-measured where it is retired. His word, typed in agentvault2-d3's session ~11:43Z: "retire." Session-release's
+measured where it is retired (decided in agentvault2-d3's session ~11:43Z). Session-release's
 v0651/retire-token-bridge (e2fb85a8f) answers each of the bridge's six routes 410 Gone (application/problem+json, title
 "Gone", the retirement sentence in "detail") on every registry, whatever TOKEN_BRIDGE_ENABLED says, reading no body and
 running no dependency (room seq 238). Its five MCP tools left the catalogs; getBridgeAggregate stays, an admin read of the

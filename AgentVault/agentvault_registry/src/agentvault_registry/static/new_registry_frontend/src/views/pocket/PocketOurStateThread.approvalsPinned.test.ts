@@ -4,7 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 
 /**
  * V0650 (l): in an org room the approvals panel is pinned ABOVE the history, outside the message scroll, so the
- * messages move underneath it (his words: "it should stay locked above the chat window"); an approval card arriving
+ * messages move underneath it (it stays locked above the chat window); an approval card arriving
  * in the thread refreshes it; a direct thread has no panel. BASE (V0649): no panel exists.
  */
 const h = vi.hoisted(() => ({

@@ -219,7 +219,7 @@ router = APIRouter(prefix="/admin/mcp-tester", tags=["MCP Tester"])
 #   mcp_tester:run:{run_id}:hardfail → JSON-encoded list
 #   mcp_tester:run:{run_id}:skipped  → JSON-encoded list
 #
-# TTL: 30 days on every key (his word 2026-09-12, raised from 3). Index is a sorted set with
+# TTL: 30 days on every key (raised from 3 on 2026-09-12). Index is a sorted set with
 # a capped size that HARD-DELETES the oldest run's keys when exceeded — so the cap, not
 # just the TTL, decides how far back the history goes. Measured 2026-09-12: one completed
 # sweep is 7 keys / 1.15 MB, so a nightly at 03:00 UTC costs ~34 MB per 30 days and the
@@ -228,8 +228,8 @@ router = APIRouter(prefix="/admin/mcp-tester", tags=["MCP Tester"])
 _REDIS_PREFIX = "mcp_tester"
 _MAX_HISTORY = int(os.getenv("MCP_TESTER_MAX_HISTORY", "60"))   # ≥30 nightlies + manual runs
 _MAX_LOG_LINES = 2000
-_RUN_TTL = int(os.getenv("MCP_TESTER_RUN_TTL_S", str(365 * 86400)))  # 365 days (his word 2026-09-16: "make it 365
-# days"). ⚠ The store is a CACHE: the frame's redis runs --save "" --appendonly no with a 128mb allkeys-lru ceiling, so a
+_RUN_TTL = int(os.getenv("MCP_TESTER_RUN_TTL_S", str(365 * 86400)))  # 365 days (since
+# 2026-09-16). ⚠ The store is a CACHE: the frame's redis runs --save "" --appendonly no with a 128mb allkeys-lru ceiling, so a
 # restart empties it and pressure can evict a run regardless of this TTL (measured 2026-09-16: a redis recreate took the
 # history from nine runs to two). scripts/mcp_tester_cron.py archives each finished run to disk for that reason.
 
@@ -541,8 +541,8 @@ def _pass_depth(rows: List[Dict[str, Any]]) -> Dict[str, int]:
 
 
 # ── a pass that was only a refusal ─────────────────────────────────────────────────────────────────────────────────
-# §MCPTEST30 (V0636; his question of 2026-10-19, "is this like second calls on an endpoint that was already successfully
-# tested ... because this seems completely cheated otherwise", and his word of 2026-10-24 to close the gaps): a tool row
+# §MCPTEST30 (V0636; 2026-10-19: a second call on an endpoint already measured is no measurement of its own;
+# 2026-10-24: close the gaps): a tool row
 # passes on a refusal when its route refuses the sweep's input as its contract says (a 404 for an agent that does not
 # exist). That shows the route refuses; it never shows the tool does its job. Where nothing else in the run answered 2xx
 # for the same tool (its own row, an `admin_effect:` row, a probe family's row), the pass was the tool's only test: V0635's

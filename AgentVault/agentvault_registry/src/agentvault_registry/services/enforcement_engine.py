@@ -436,7 +436,7 @@ class EnforcementEngine:
     async def _policy_version(self, db: AsyncSession) -> int:
         """The version of the policy this frame is running, as `frame_policy.load()` reports it.
 
-        §BATCH0911 (his decision 2, 2026-09-11) — this was `row.version if row else 1`, and the
+        §BATCH0911 (decision 2, 2026-09-11) — this was `row.version if row else 1`, and the
         first STORED row is also version 1 (`crud_enforcement.update_policy`), so an action taken
         under the factory default and one taken under the first amendment recorded the same number.
         The factory default is version 0 everywhere else (the card, the compliance endpoints, the

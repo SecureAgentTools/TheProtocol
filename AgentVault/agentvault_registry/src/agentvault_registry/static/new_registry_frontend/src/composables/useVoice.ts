@@ -17,7 +17,7 @@ export const ttsSupported = typeof globalThis.speechSynthesis !== 'undefined'
 
 const REPLIES_KEY = 'tp_voice_replies'
 
-/** §COOKIES (2026-10-02, his word "voice replies default off"): an answer is read aloud only after the person switches
+/** §COOKIES (2026-10-02: voice replies off by default): an answer is read aloud only after the person switches
  *  voice replies on, in Pocket or in the desktop dock (one stored choice). A reply read aloud can leave the device
  *  (Chrome may speak it with an online Google voice), so it is never a default: a browser that never chose starts
  *  silent, and storage that refuses to answer reads as off. */

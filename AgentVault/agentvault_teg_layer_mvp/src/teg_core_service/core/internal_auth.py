@@ -31,7 +31,7 @@ from .config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# §MONEY-R51 (2026-09-04, his word "widen the rule") — WHICH trusted SPIFFE identities are internal
+# §MONEY-R51 (2026-09-04, the rule widened) — WHICH trusted SPIFFE identities are internal
 # callers. The old rule was three SUBSTRINGS ("/service/registry-", "/service/teg-", "/operator/"),
 # written for prod's naming (registry-a, teg-a, teg-core-a) and copied into FIVE files. A frame the
 # frame provisioner stands up names its registry `/service/registry` and its svid-writer identity
@@ -146,7 +146,7 @@ def local_leg_caller_ok(caller: Optional[str]) -> bool:
     return False
 
 
-# §TEGSCOPE (2026-10-07, his word "2. yes fix"; sessionlogs2026/FINDINGS_2026-10-02_TEG_ADMIN_SCOPE.md) — the admin ROLE
+# §TEGSCOPE (2026-10-07; sessionlogs2026/FINDINGS_2026-10-02_TEG_ADMIN_SCOPE.md) — the admin ROLE
 # follows the caller's RELATION to this TEG, not only its identity class. is_internal_service_identity() names which
 # identities are internal callers; it never asked WHOSE: a peer frame's registry (any trusted domain) was an admin on every
 # admin route here (treasury transfer and receive, fee-collector distribute, burns, suspensions), measured 200 on the

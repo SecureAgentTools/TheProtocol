@@ -35,8 +35,8 @@
              from an operator whose provisioning is granted -->
         <ReadFailedNotice v-if="eligibilityFailed" dense :retry="loadEligibility" data-testid="op-elig-failed" />
         <p v-else class="op-account-elig-sub">
-          <!-- §LANDINGTRUTH (his words 2026-10-02 "cloud operators are free for testing there is no fiat lane anymore",
-               "remove the owner portal euro unlock too"): the network team grants provisioning; nothing is bought. -->
+          <!-- §LANDINGTRUTH (2026-10-02: cloud operators are free for testing, there is no fiat lane any more,
+               and the owner portal's euro unlock is gone): the network team grants provisioning; nothing is bought. -->
           <template v-if="eligibility?.is_unlocked">
             Provisioning granted until {{ formatAbsolute(eligibility?.unlocked_until) }}.
           </template>

@@ -3,7 +3,7 @@
 Revision ID: 0183_commons_seasons
 Revises: 0182_fed_licence_certs
 
-His word 2026-10-02 ("approved", "do it fully autonomously") on sessionlogs2026/DESIGN_2026-10-02_STAKING_REPLACEMENT.md
+2026-10-02, sessionlogs2026/DESIGN_2026-10-02_STAKING_REPLACEMENT.md
 § 12 (S3): a registry's fee income funds a commons that its members steer, and it pays only for work. A season has a
 published budget; anyone submits work already done, with its evidence; each member spreads 100 points over the
 submissions (never their own); a submission's share is the median of its points; awards go out through the reward

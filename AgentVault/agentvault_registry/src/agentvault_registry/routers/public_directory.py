@@ -1,7 +1,6 @@
 """§MTLSGAP (2026-09-08) — the console reads the federated index THROUGH this registry, over mTLS.
 
-His word: *"everything is mtls enforced … i need to know if mtls is setup to directory otherwise we
-need to set this up too."* It was not, in either direction. The Directory held no SVID at all, and
+Is mTLS set up to the Directory, as everywhere else? It was not, in either direction. The Directory held no SVID at all, and
 the console reached it over a hand-added `location /directory/ { proxy_pass http://127.0.0.1:8600/; }`
 on the host vhost — plain http on loopback, with no identity on either end.
 

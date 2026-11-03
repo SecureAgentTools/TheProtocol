@@ -1,6 +1,6 @@
 """§FRAMEPROV P3 (2026-09-13): the host frame runner, behind the platform admin flag.
 
-His words 2026-09-13: "application ui is public. management/admin view is private needs platform admin flag"; the new
+Since 2026-09-13: the application form is public, the management view private (the platform admin flag); the new
 frame's admin credential is shown once; Start/Stop for frames the runner did not build retire. This router replaces
 routers/frame_demo.py, whose launcher ran a privileged nsenter container through the docker socket: root on the host
 behind admin_federation.
@@ -242,7 +242,7 @@ async def teardown_frame(request: Request, name: str = Path(..., max_length=64),
 @router.post("/frames/{name}/reveal")
 async def reveal_admin_credential(request: Request, response: Response, name: str = Path(..., max_length=64),
                                   db: AsyncSession = Depends(get_db), admin: Any = Depends(platform_admin)) -> Dict[str, Any]:
-    """Hands the new frame's admin credential over once (his word: show once). The runner deletes its copy as it
+    """Hands the new frame's admin credential over once (shown once). The runner deletes its copy as it
     answers; the frame's own env on the host still holds it. The audit row records the hand-over, never the password."""
     result = await _act(db, request, admin, "reveal", "frame", name, "reveal", name=name)
     await _audit(db, request, admin, "reveal", "frame", name, severity="warning",

@@ -1,7 +1,7 @@
 """§MCPTEST30 (V0636): a pass that was only a refusal counts as not measured.
 
-His question of 2026-10-19 ("is this like second calls on an endpoint that was already successfully tested ... because
-this seems completely cheated otherwise") and his word of 2026-10-24 to close the gaps. V0635's run 9bc6416cf52d41c5
+2026-10-19: a second call on an endpoint already measured is no measurement of its own; 2026-10-24:
+close the gaps. V0635's run 9bc6416cf52d41c5
 passed 204 tools on a refusal alone (a 404 for an agent that does not exist, and nothing else): 1207 of 1242 rows read
 97.18%, 970 read 78.1%. A tool row that passed on a refusal while no passing row of the run answered 2xx for the same
 tool (its own row, an `admin_effect:` row, a probe family's row) now counts as not measured, on the row, in the

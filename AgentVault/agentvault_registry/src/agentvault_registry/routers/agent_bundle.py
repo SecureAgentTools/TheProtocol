@@ -38,7 +38,7 @@ MINIMAL_TEMPLATE_DIR = Path(os.getenv("MINIMAL_TEMPLATE_DIR", "/app/minimal-temp
 # §MCPTEST30 (V0640): the templates a bundle can be built from, in the order Agent Forge offers them; one is available
 # where its directory exists. "full-capacity" was a host bind mount on Frame A (./Agents/GeraldShip as
 # /app/agent-template), which no frame stood up since 2026-09-07 carries, so a request for it answered 500 everywhere.
-# Whether to ship it in the image is his call (agentvault2-d6's decision list); until then the registry lists what it
+# Whether to ship it in the image is an open decision (agentvault2-d6's decision list); until then the registry lists what it
 # has.
 def _template_dirs() -> List[Tuple[str, Path]]:
     return [("full-capacity", TEMPLATE_DIR), ("minimal", MINIMAL_TEMPLATE_DIR), ("ppao", PPAO_TEMPLATE_DIR)]

@@ -1,4 +1,4 @@
-"""§REPATLANE-4 (V0606; his word 2026-10-12: "fee back after refund"): a payment the FX route's gateway returned, having
+"""§REPATLANE-4 (V0606; 2026-10-12: the fee back after a refund): a payment the FX route's gateway returned, having
 reached nobody, costs its payer nothing. The round trip's two cross-TEG fees (the ingress's and the refund leg's, each
 0.5% where the money landed) go back to the payer from the payer's home frame's fee collector, through the TEG's
 fee-free distribute under the route's own Idempotency-Key.

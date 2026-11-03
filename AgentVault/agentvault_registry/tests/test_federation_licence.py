@@ -1,5 +1,5 @@
-"""§FEDLICENCE (2026-09-28): the signed federation licence. His word: a licence hash on every card, "a derived field also
-so it cant be tricked". These pin the property that makes that true: a verdict comes from the ISSUER's signature and the
+"""§FEDLICENCE (2026-09-28): the signed federation licence: a licence hash on every card, a derived
+field, so it cannot be tricked. These pin the property that makes that true: a verdict comes from the ISSUER's signature and the
 issuer's signed list, never from what the showing frame says about itself.
 
 Pure functions only (no database, no network); the per-cycle refresh runs against in-memory stand-ins for its storage."""
@@ -724,8 +724,8 @@ def test_5_a_stale_operator_card_keeps_its_own_verdict_but_does_not_refuse_its_l
 
 
 def test_one_category_list_educational_is_perpetual_and_government_takes_the_enterprise_year(net):
-    # his words 2026-09-28: "free license for educational, research and non profits. but enterprise and goverment orgs will
-    # not have the same privilige" -- the form, the site and the legal text name this same list
+    # 2026-09-28: a free licence for educational, research and non-profit organisations, not the same for enterprises
+    # and governments -- the form, the site and the legal text name this same list
     assert all(fl.NETWORK_PLANS[p] is None for p in ("private", "educational", "research", "non-profit"))
     assert fl.NETWORK_PLANS["enterprise"] == fl.NETWORK_PLANS["government"] == 365
     gov = _frame(net.gpriv, net.gkid, fl.licence_hash(net.root), net.fjwk, plan="government", days=365)
@@ -736,7 +736,7 @@ def test_one_category_list_educational_is_perpetual_and_government_takes_the_ent
 
 
 def test_the_frame_request_form_asks_the_category_list_the_licence_issues():
-    """His words 2026-09-28 (the frame-commander form): the form's categories are NETWORK_PLANS without the network's
+    """2026-09-28 (the frame-commander form): the form's categories are NETWORK_PLANS without the network's
     own two plans, so a request always names a plan a frame licence can be issued under."""
     from typing import get_args
 

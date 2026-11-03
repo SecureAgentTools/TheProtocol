@@ -4,8 +4,8 @@
   Until now, the only way to start a thread was a twelve-row cast that appeared
   when you had no threads and vanished the moment you had one. So the answer to
   "who else is out there" was: whoever we happened to list on your first day.
-  His words, on seeing SYBIL sitting alone on frame-c: *discovery should be
-  federation-wide with filters*.
+  SYBIL sitting alone on frame-c said it: discovery should be
+  federation-wide, with filters.
 
   It rides the EXISTING discover rail (`GET /agent-cards/discover`, §DISCREFINE)
   — the same one Pocket Discover uses, so the ONE pricing brain answers here

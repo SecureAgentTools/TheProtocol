@@ -6,7 +6,7 @@ to Kafka instead of writing to the DB directly.  The existing Kafka consumer
 becomes the sole DB writer, eliminating the dual-path contention that caused
 164 deadlocks in a 45-minute burst on Frame A (2026-04-16).
 
-§SOVKIT-2 R1 (2026-09-14): Kafka is private to the store (his decision). Every record this publisher sends carries the store's
+§SOVKIT-2 R1 (2026-09-14): Kafka is private to the store. Every record this publisher sends carries the store's
 record signature (src/kafka_record_auth.py), which the consumer requires before the ledger takes it, and `publish` waits
 for the broker's acknowledgement, so the route's 202 means the broker holds the record.
 

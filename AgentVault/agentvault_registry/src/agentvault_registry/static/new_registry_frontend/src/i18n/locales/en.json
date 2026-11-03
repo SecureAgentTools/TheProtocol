@@ -7021,7 +7021,8 @@
       "label": "Contract deadline near"
     },
     "jurisdiction_countersign_broken": {
-      "label": "Countersigned contract no longer verifies"
+      "label": "Countersigned contract no longer verifies",
+      "desc": "A contract behind a live authorization left its agreed state, so its public countersign no longer verifies."
     },
     "guild_order_cancelled": {
       "label": "Guild: order cancelled"
@@ -7124,6 +7125,9 @@
     "webhook_failing": {
       "label": "Webhook deliveries failing",
       "desc": "Said before the webhook is switched off."
+    },
+    "support_desk": {
+      "label": "A support ticket waits for the desk"
     }
   },
   "notifications": {
@@ -8510,7 +8514,17 @@
       "noStatus": "no live status",
       "active": "active {ago} ago",
       "approvalsPinned": "{n} pinned above the chat",
-      "approvalsOpen": "Show them all there"
+      "approvalsOpen": "Show them all there",
+      "message": "Message",
+      "messageAria": "Message {who} directly",
+      "mention": "Mention",
+      "mentionAria": "Mention {who} in this room",
+      "profile": "Profile",
+      "profileAria": "Profile of {who}",
+      "ringLive": "{who}: live, a status line is set",
+      "ringQuiet": "{who}: quiet, no live status line",
+      "ringOnCall": "{who}: on call, wakes only when named",
+      "ringOff": "{who}: off, nothing in this room wakes it"
     },
     "cardHistory": {
       "title": "History of this card",
@@ -8575,6 +8589,18 @@
       "onCallHelp": "Wakes only when named, for a direct message, a decision on its own request, or your @all",
       "off": "Off",
       "offHelp": "Nothing in this room wakes it, until it is set back"
+    },
+    "dm": {
+      "aria": "Direct message with {who}",
+      "openThread": "Open the thread",
+      "opening": "Opening the thread…",
+      "empty": "No messages yet. Your first line starts the thread.",
+      "you": "You",
+      "card": "(a card: open the thread to see it)",
+      "placeholder": "Message {who} directly",
+      "send": "Send",
+      "failed": "The direct thread could not be opened just now.",
+      "sendFailed": "The line was not sent; it is still in the box."
     }
   },
   "ourstate.away.digestHead": "While you were away",
@@ -9220,7 +9246,9 @@
       "retention": "History is kept for {n} days.",
       "title": "Notifications",
       "unavailable": "History not available on this registry.",
-      "unavailableSub": "It records from the moment this build is deployed."
+      "unavailableSub": "It records from the moment this build is deployed.",
+      "reasonPresent": "you were in the app",
+      "chanAll": "every channel"
     },
     "senate": {
       "against": "AGAINST",

@@ -1,7 +1,7 @@
 """§MCPTEST30 W6 (agentvault2-aa, 2026-10-25): the critical words, for the MCP tester's listing check and answers census.
 
-His words that day to agentvault2-69: "i dont want the critical wording. only compliant ones" and "i want the illegal
-wording completly gone before opening" (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md: W6 checks tool names,
+Only compliant wording, the critical words gone before the opening (
+sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md: W6 checks tool names,
 descriptions and answers for the words on a frame with production's switches). The list is the console's own gate
 (static/new_registry_frontend/src/i18n/vocabulary.test.ts: WORDS for stake, CRITICAL for the rest), held here for the
 MCP surface: the stake words, the critical words, and a token only in its value sense (tokenomics, a utility token, a

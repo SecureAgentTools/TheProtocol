@@ -1250,7 +1250,7 @@ def teardown_frame_test(ctx: FrameTestContext) -> FrameTestTeardownResult:
 
 # ── SPIRE entry registration for the test frame's own services ──────────
 
-# ── §FRAMEFED (2026-09-04, his word: "fix the frame provisioner federatesWith too") ──────────
+# ── §FRAMEFED (2026-09-04: the frame provisioner's federatesWith too) ──────────
 # Federation has three layers (HANDOVER_2026-09-03_SANDBOX_STANDUP §7.1): the bundle IMPORT, the
 # SPIRE federation RELATIONSHIP, and `-federatesWith` on every WORKLOAD ENTRY. The provisioner
 # created every entry without the third, so a fresh frame's SVIDs never carried a peer's bundle
@@ -1526,7 +1526,7 @@ def register_test_frame_spire_entries(ctx: FrameTestContext) -> tuple[bool, str]
 
     parent_id = f"spiffe://{ctx.trust_domain}/spire/agent/x509pop/{fingerprint}"
 
-    # Register the default entries the frame needs. §F5 (2026-09-26, his word "approved ... do it fully"): ONE IDENTITY
+    # Register the default entries the frame needs. §F5 (2026-09-26): ONE IDENTITY
     # PER SERVICE (DESIGN_2026-09-26_F5_F6.md §3). The registry keeps its two (the cert-writer's file identity and its
     # own Workload-API identity). The TEG's `/service/teg-layer` is selected by ITS WRITER's label: it used to be
     # selected by the TEG container's own label, and nothing ever fetched it (the TEG read the registry's files), so

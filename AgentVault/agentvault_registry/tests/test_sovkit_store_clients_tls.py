@@ -10,7 +10,7 @@ context trusts the SPIRE bundle AND the system roots and carries the SVID, so on
   1. (structure) the pinned store callers build their clients from the helper; parsed, never grepped;
   2. (structure, tree-wide) no function that reads EVENT_STORE_URL hands httpx a literal verify=True/False;
   3. (behaviour) the saga scan hands httpx exactly the helper's value, and says so when the store is unreadable;
-  4. (behaviour, §SOVKIT-2, his decision 2026-09-14) a scan that could not read the store completely decides nothing: it
+  4. (behaviour, §SOVKIT-2, 2026-09-14) a scan that could not read the store completely decides nothing: it
      answers None, and the sweep refunds nothing that cycle (control: a readable, empty scan still refunds).
 
 Control: STORE_TLS_SRC=<a pre-T5 copy of agentvault_registry> turns 1 and 2 RED; the behaviour tests go RED on the pre-T5
@@ -224,7 +224,7 @@ def test_the_saga_scan_uses_the_helper_with_no_svid(monkeypatch, tmp_path):
 
 
 def test_an_unreadable_store_is_said_and_decides_nothing(monkeypatch, tmp_path, caplog):
-    # §SOVKIT-2 (his decision 2026-09-14): None, not "nothing settled"; an empty set refunded the whole batch
+    # §SOVKIT-2 (2026-09-14): None, not "nothing settled"; an empty set refunded the whole batch
     caplog.set_level(logging.WARNING)
     _, settled = _scan(monkeypatch, tmp_path, "fail", with_svid=True)
     assert settled is None, f"an unreadable scan answered {settled!r}, which the sweep reads as 'nothing settled'"

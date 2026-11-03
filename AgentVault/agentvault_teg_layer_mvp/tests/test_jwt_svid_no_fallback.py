@@ -1,4 +1,4 @@
-"""§DEPS (2026-09-27, his words "the no jwt fallback path trap needs deletion. shouldnt be possible").
+"""§DEPS (2026-09-27: the JWT fallback path, a trap, deleted; it must not be possible).
 
 Measured before: core/jwt_svid/validator.py imported `pyspiffe`, every TEG image ships `spiffe` (never `pyspiffe`), so
 with USE_JWT_SVID_AUTH=true every token went to a fallback that checked HS256 against an environment secret whose

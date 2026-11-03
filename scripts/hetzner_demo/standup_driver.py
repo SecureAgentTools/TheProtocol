@@ -625,7 +625,7 @@ def load_tester_fixture_secrets(path):
     return {k: str(doc[k]) for k in TESTER_FIXTURE_SECRET_KEYS}
 
 
-# §NIGHTPROV (2026-09-27, his words "the frame runner may build sandbox-posture frames at night"): the host sidecar pieces
+# §NIGHTPROV (2026-09-27: the frame runner may build sandbox-posture frames at night): the host sidecar pieces
 # a frame is wired into. --wire-prod = every piece (the fleet's frames, unchanged); --wire-only = the named ones. A nightly
 # sandbox pair takes sni + bundle: it federates through this host's stream SNI map and its ES vhosts verify the pair's
 # roots, while the host's Prometheus, the public auditor, the apex vhosts and the production compose never hear of it.
@@ -912,8 +912,8 @@ def mutate_rendered(ctx, args):
          if args.showcase_catalog_json else []
     ):
         env = upsert_env_line(env, k, v)
-    # The frame kit's standup (agentvault2-56, 2026-10-22; his word: "make sure terms are accepted also on framekit
-    # standup. because there an account is issued"): frame-up.py asked the person running it to accept the Federation
+    # The frame kit's standup (agentvault2-56, 2026-10-22: the terms are accepted on a frame-kit
+    # standup too, because an account is issued there): frame-up.py asked the person running it to accept the Federation
     # Operator Terms before anything existed, and passes the acceptance here; the registry's operator_seed records it
     # with the first admin it creates (TheProtocolReleaseV0632 and later). Only frame-up passes it: a frame the network
     # runs carries no such line.
@@ -1039,7 +1039,7 @@ def mutate_rendered(ctx, args):
         # also has an env_file, and compose inline env WINS over env_file. Setting it
         # only in .env.frame-test looks applied and silently loses (how this defect
         # survived a green run).
-        # §BATCH5 (2026-09-05, his word "fix the driver to not hardcode es url but ask and fail without a fresh one"):
+        # §BATCH5 (2026-09-05: the driver asks for the store's URL and fails without a fresh one, never a hardcoded one):
         # the frame's PUBLIC EventStore host is a REQUIRED per-run argument (--es-public-url), validated in main();
         # the demo-day literal that the first JUICE standup inherited (its operators would have emitted into the
         # hetzner ES) is gone. Unset or a production ledger host is a refusal, never a fallback.
@@ -1709,7 +1709,7 @@ def kit_data_tls_gate(ctx, args):
 
 
 def kit_kafka_gate(ctx, args):
-    """§SOVKIT K1 (2026-09-14, his word "2 yes": Kafka is PRIVATE to the event store) — the ledger bus is the store's
+    """§SOVKIT K1 (2026-09-14: Kafka is PRIVATE to the event store) — the ledger bus is the store's
     alone, MEASURED before the standup goes on: the topics exist with the partitions the env names (the init service
     ran), the broker refuses an anonymous client and a wrong password, the registry container cannot reach the broker
     (the ledger network has two members), the store reports SASL_SSL with record auth enforced, and its consumer group
@@ -2846,7 +2846,7 @@ def post_boot(args, ctx, meta, resume_from=None, prov=None):
         except Exception as _fa_e:  # noqa: BLE001 — never fail a standup over a convenience copy
             log(f"!! frame admin secret write failed: {_fa_e} — the value is still in .env.frame-test")
 
-        # HIS DECISION 2026-09-07 — the Commander onboards nothing. Four purpose-named service
+        # DECIDED 2026-09-07 — the Commander onboards nothing. Four purpose-named service
         # developers, each with only its rail's authority and its agents hidden from discovery.
         _svc: dict = {}
         if getattr(args, "service_accounts", True):
@@ -3048,7 +3048,7 @@ def post_boot(args, ctx, meta, resume_from=None, prov=None):
                            "identity_net": getattr(ctx, "identity_net_name", None) or "", "operators": _ops_done, "stack_dir": ctx.stack_dir_host},
                       only=_only, log=log)
 
-    # §MTLSGAP (2026-09-08), his word: "it can never mint a frame like this." The LAST thing before
+    # §MTLSGAP (2026-09-08): a frame is never minted like this. The LAST thing before
     # the frame is called live is a census of its own gateways, from the RUNNING containers — not
     # from the template, which R10 already gates. The EventStore had no gateway on every frame this
     # driver ever built and nothing reported it, because a plaintext hop raises nothing, logs
@@ -3511,8 +3511,8 @@ def build_parser():
     # §FRAMELIC (2026-09-07, findings row 153) — DEFAULT TO THE PROTOCOL MARK, BY THEME.
     # The default used to be `hetzner-logo.png` (this driver was born as the Hetzner demo
     # standup), so EU and ASIA both stood up wearing another company's logo on their
-    # registry cards and on the globe. His words: "eu and asia have hetzner logo instead
-    # of protocol logo as we agreed. this is bad." It was fixed by hand on the previous
+    # registry cards and on the globe, instead of the protocol logo as
+    # agreed. It was fixed by hand on the previous
     # pair and the fix died with the teardown — which is the whole reason it belongs here
     # and not in a runbook step ("update the driver. so if we might have to reprovision
     # clean we can do it again smoothly, not like this").

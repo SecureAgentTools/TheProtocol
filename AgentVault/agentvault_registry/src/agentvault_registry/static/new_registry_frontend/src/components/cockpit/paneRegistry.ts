@@ -199,7 +199,7 @@ export const PANES: Record<PaneId, PaneDef> = {
   // §COCKPITMODULES M1 — the mirror of `denials`: that pane shows what the gates REFUSED,
   // this shows what the system TRIED AND FAILED. They sit next to each other on purpose.
   // §COCKPITMODULES M2 — the income half of `book`, which shows only assets. Titled "Income" since 2026-10-25 (agentvault2-69's
-  // gallery pass, his word "only compliant ones"): nothing is paid for a lock or for membership; the id and key stay.
+  // gallery pass, only compliant words): nothing is paid for a lock or for membership; the id and key stay.
   earnings: {
     id: 'earnings', titleKey: 'cockpit.pane.earnings', titleFallback: 'Income',
     icon: 'mdi:cash-multiple', refreshMode: 'poll', pollSeconds: 180,
@@ -274,7 +274,7 @@ export const PANES: Record<PaneId, PaneDef> = {
     unavailableReason: '',
   },
   channels: {
-    // §COCKPITA R4 — progress (observe) + instruct (act) in ONE module, his call. POLL and
+    // §COCKPITA R4 — progress (observe) + instruct (act) in ONE module. POLL and
     // not LIVE: progress notes arrive on a Redis ring the desk re-reads, and claiming LIVE
     // on a polled pane is the freshness lie the chip exists to prevent.
     id: 'channels', titleKey: 'cockpit.pane.channels', titleFallback: 'Agent channels',

@@ -1700,7 +1700,7 @@ async def _do_audit(frame: dict) -> Optional[dict]:
     live_circ = 0.0
     http_extra: dict = {}
     http_error: Optional[str] = None
-    # §MTLSHOPS (a) (2026-09-15, his decision; agentvault2-85's rules): what this read may send is decided per slot
+    # §MTLSHOPS (a) (2026-09-15; agentvault2-85's rules): what this read may send is decided per slot
     # (tls_client.live_read_plan). An extra slot never inherits this host's key; a public read sends no key and no
     # certificate; an extra slot with neither a key nor a certificate of this auditor is not read, and says so.
     plan = tls_client.live_read_plan(frame, EVENT_STORE_KEY, cert=AUDITOR_TLS_CERT, key=AUDITOR_TLS_KEY, ca=AUDITOR_TLS_CA)

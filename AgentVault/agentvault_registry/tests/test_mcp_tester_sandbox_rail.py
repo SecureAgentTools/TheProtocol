@@ -1,7 +1,7 @@
 """§TESTBED (2026-09-19): the MCP tester view's sandbox rail.
 
-His words: "the sandbox provisioning should be also in the frontend mcp-tester view ... options to pick and you can see
-progress. and possible errors". The rail passes one request per route to the frame runner (the operator socket a kit
+The sandbox provisioning lives in the MCP tester view, with options to pick and its progress and
+errors on screen. The rail passes one request per route to the frame runner (the operator socket a kit
 frame mounts), names THIS frame (the runner checks the claim against the calling container), audits every act and every
 refusal (a password never), and answers `available: false` with the reason where no runner offers sandboxes, so the view
 can say so rather than show an empty panel. A fake stands in at the client's one seam.

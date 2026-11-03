@@ -1,8 +1,7 @@
 <!--
-  QUICK ONBOARDING (2026-10-09). His words: "a new view where you can issue simple agent identity. by giving the agent a
-  name. get standard valid agent card. the agentbuilder stays as is ... it should list your existing agents and allow to
-  initiate password reset from there. with their balances (hidden but unhideable) ... make it beautiful ... new users just
-  their identity with quick explanation how to use them with an 'i'."
+  QUICK ONBOARDING (2026-10-09): a view that issues a simple agent identity from a name, with a standard valid agent
+  card (the agent builder stays as is); it lists your existing agents, starts a credential reset from there, and shows
+  their balances (hidden until asked); new users get their identity with a short explanation behind an 'i'.
 
   /onboarding renders this page; the Agent Builder (/agent-builder, /agent-forge) stays AgentForge.vue. One name in, one
   identity out: a DID, a standard A2A v1.0 card (the console's quick template, the registry's validator asked once) and

@@ -1,4 +1,4 @@
-"""§OPLANE (V0614, agentvault2-5b, 2026-10-14; his word "please fix the header policy thing if its needed"): how a cloud
+"""§OPLANE (V0614, agentvault2-5b, 2026-10-14; the header policy): how a cloud
 operator reaches its PARENT frame for the calls that carry its federation licence.
 
 The operator's self-service (self-logs, self-restart) and its IRONHAND proxy (an agent's SPIRE entry, its inline SVID and

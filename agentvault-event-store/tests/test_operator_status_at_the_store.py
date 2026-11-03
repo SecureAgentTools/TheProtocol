@@ -12,7 +12,7 @@ and the row's max_events_per_minute never applied. What these tests pin, through
 - another operator's row, or a peer frame's row with the same name, does not touch this operator;
 - a live operator keeps working: an active row (in any case: the provisioner writes 'ACTIVE'), an operator that also
   holds an older revoked row, an active row made from the licence alone;
-- 2026-10-17 (his word: "no operator accepted without record ... record must exist first"): an operator that no row
+- 2026-10-17 (no operator is accepted without a record; the record must exist first): an operator that no row
   names is refused like a suspended one, on an append and on a read, with a reason that says there is no record, and
   named in the log; another operator's record, or a peer frame's record with the same name, is not its record; and a
   record created after a refusal takes effect within the same cache window (a refusal is not kept longer than an

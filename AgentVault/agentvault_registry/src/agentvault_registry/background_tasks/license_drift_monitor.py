@@ -429,7 +429,7 @@ async def _check_operator_network_topology() -> List[dict]:
     Uses docker-py via asyncio.to_thread (same pattern as frame_trust_manager).
     """
     def _blocking() -> List[dict]:
-        # §F6 (2026-09-27, his words "i approve to finish f6 implementation on sandbox"): a registry with NO docker socket
+        # §F6 (2026-09-27, F6 finished on the sandbox): a registry with NO docker socket
         # is F6's posture (the frame runner holds its host reach), not a fault, so this check stands down at DEBUG. It
         # judges Frame A's and Frame B's identity networks and the legacy cloud-op-op-* sidecars, the retiring network's
         # topology. A socket that exists and fails is still a WARNING below.

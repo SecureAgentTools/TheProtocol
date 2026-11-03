@@ -1,4 +1,4 @@
-"""R57 / §JSONCAST-3 (2026-09-05, his word "r57 approved") — converge the seven json-family
+"""R57 / §JSONCAST-3 (2026-09-05) — converge the seven json-family
 columns that drifted to `json` on the four older Frame-A operators onto `jsonb`, the type every
 mainframe, qatest16 and both sandbox frames already carry.
 

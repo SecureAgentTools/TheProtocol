@@ -218,8 +218,8 @@
 
 <script setup lang="ts">
 /**
- * FrameKit: the applicant's own page for their frame (§HELLOFRAME, his word 2026-09-19: "the operator-portal is
- * outdated, make a glorious version for the frame export"). Behind FRAME_KIT_ENABLED (off by default): the router
+ * FrameKit: the applicant's own page for their frame (§HELLOFRAME, 2026-09-19: the operator portal was
+ * outdated; a new version for the frame export). Behind FRAME_KIT_ENABLED (off by default): the router
  * guard and the sidebar hide it, and the registry answers 404 when the flag is off.
  *
  * The page leads with the frame's own address, shows where the request stands, hands over the kit (one object, one

@@ -116,7 +116,7 @@ describe('the pane registry', () => {
     expect(missing, `title keys missing from en.json: ${missing.join(', ')}`).toEqual([])
   })
 
-  // agentvault2-69's gallery pass, 2026-10-25 (his word "only compliant ones"): the income half of `book` is titled Income,
+  // agentvault2-69's gallery pass, 2026-10-25 (only compliant words): the income half of `book` is titled Income,
   // not Earnings; nothing is paid for a lock or for membership. The id and the key stay; the fallback and English agree.
   it('titles the income pane Income, in its fallback and in English', () => {
     expect(PANES.earnings.titleFallback).toBe('Income')

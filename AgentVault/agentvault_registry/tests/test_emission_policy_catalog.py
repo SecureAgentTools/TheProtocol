@@ -1,4 +1,4 @@
-"""W3 (agentvault2-d6, 2026-10-25; his word: "the event emission policy which needs hardening"): the code, the catalog and
+"""W3 (agentvault2-d6, 2026-10-25; the event emission policy hardened): the code, the catalog and
 the policy rows pinned together, and the registry gate's modes.
 
 Read on 2026-10-25: ASIA's event_emission_policies held 180 rows and lacked 106 of the types the registry and the TEG

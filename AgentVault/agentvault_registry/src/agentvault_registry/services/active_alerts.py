@@ -1,7 +1,6 @@
 """§ALERTS (2026-10-06, agentvault2-09): the alerts that are firing, read where they live.
 
-His words: "check why alerts are not connected to the header thing where the broadcasts are displayed" and, on the
-recommendation to wire it to the real data, "1. yes".
+The alerts reach the header where the broadcasts are displayed, wired to the real data.
 
 Prometheus here only scrapes (its rule_files moved to vmalert on 2026-04-30), so its /api/v1/alerts is empty by
 construction. The header strip's alerts mode (which also asked a path that does not exist) and the Health Monitor's
@@ -16,8 +15,8 @@ read with alerts, read and empty. Sandbox alerts (env="sandbox") are withheld un
 that removes something says what it removed.
 
 The alert e-mails hold a warning back while its critical fires (alertmanager's second inhibit rule, stack
-monitoring/alertmanager/alertmanager.yml, his word 2026-10-06 on "critical disk space warning comes before host diskspace
-low or whatever it seems to be multiple"). vmalert keeps BOTH firing, so this reader applies the same rule, read the same
+monitoring/alertmanager/alertmanager.yml, 2026-10-06: one disk space alert, not a warning and a
+critical for the same disk). vmalert keeps BOTH firing, so this reader applies the same rule, read the same
 way, or the header strip shows one condition twice: a held-back warning leaves the list and the counts, and is named in
 `inhibited` (with the critical that holds it) and counted in `withheld.inhibited`.
 """

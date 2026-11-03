@@ -1,5 +1,5 @@
-# §OPA (2026-10-06, agentvault2-09; his words "please roll out and enable opa for the whole production cluster", then
-# "we need this whole ... provisioner fix"): the operator's own OPA. Its registry asks every authz decision of it in
+# §OPA (2026-10-06, agentvault2-09; OPA on the whole production cluster, then the provisioner
+# fix): the operator's own OPA. Its registry asks every authz decision of it in
 # SHADOW (OPA_ENABLED=true, OPA_ENFORCE=false, written to .env.operator by the same provisioning step): Python decides,
 # OPA is asked and the answer recorded beside Python's ([OPA-SHADOW] lines, opa_decisions_total). The frames have
 # carried one since §SOVKIT (the frame template's kit); an operator had none, so its registry's OPA code stayed dark.

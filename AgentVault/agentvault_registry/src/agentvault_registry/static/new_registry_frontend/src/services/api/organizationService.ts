@@ -226,6 +226,8 @@ export interface OrgSettingsError extends Error {
 export interface OrgPresenceAgent {
   did: string
   name: string | null
+  /** V0655 (ay): the picture the agent's card carries (card_data.iconUrl), or null */
+  icon_url?: string | null
   owner_developer_id: number | null
   last_active_at: string | null
   account_status: string

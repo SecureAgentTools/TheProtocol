@@ -1,5 +1,5 @@
-// W3 (agentvault2-d6, 2026-10-25; his word: "the event emission policy which needs hardening and a fe page to check the
-// exact configuration from the fe. i really need it visualized"): the effective emission-policy configuration in one
+// W3 (agentvault2-d6, 2026-10-25: the event emission policy hardened, with a console page that shows its
+// exact configuration): the effective emission-policy configuration in one
 // read, GET /admin/event-emission-policies/effective (routers/admin_health.py, admin flag admin_treasury like its
 // siblings; services/emission_policy_view.py builds it). The page: views/AdminEmissionPolicy.vue (agentvault2-69).
 import { apiClient } from './client'

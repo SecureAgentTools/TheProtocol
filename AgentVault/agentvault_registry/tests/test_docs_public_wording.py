@@ -1,6 +1,6 @@
 """W1 (agentvault2-69, 2026-10-26): the console's documentation keeps the public wording.
 
-His words: "i want the illegal wording completly gone before opening" (2026-10-25). The doc folder (assets/docs) is the one
+The critical wording is gone before the opening (2026-10-25). The doc folder (assets/docs) is the one
 source of the console's #/docs and #/operator-docs, of docs.theprotocol.cloud (docs-site/sync-content.mjs) and of the open
 source export's PUBLIC_DOCS. This test reads every chapter as a production frame shows it: a part marked
 <!-- on: name --> is left out, since staking_rewards, agora_distributions and fiat_onramp are off on EU, ASIA and their

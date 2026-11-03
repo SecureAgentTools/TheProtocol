@@ -1,7 +1,7 @@
 """W4 phase 1 (agentvault2-aa, 2026-10-25): every registry reader of a renamed ledger event asks the map.
 
-His words that day to agentvault2-69: "i want the illegal wording completly gone before opening" and, on the ledger, "just
-use the new wording and make it accept both or something" (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md, W4).
+The critical wording is gone before the opening; the ledger writes the new words and reads
+both (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md, W4).
 Phase 2 lets an emitter write the new names (UnitsTransferred for TokensTransferred ...); a reader that compares against the
 old literal alone would go blind that day without an error. So:
 

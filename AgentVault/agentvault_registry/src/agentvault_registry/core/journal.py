@@ -1,4 +1,4 @@
-"""§HELLOFRAME (his word 2026-09-19, "Ship without it"): does THIS frame carry the journal?
+"""§HELLOFRAME (2026-09-19; the export ships without it): does THIS frame carry the journal?
 
 The journal is theprotocol.cloud's own writing: 46 posts whose text is built into the console and whose figures and
 videos (276 MB) sit in the built console's `blog/` directory. A frame stood up from the export is a stranger's frame

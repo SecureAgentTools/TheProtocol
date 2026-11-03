@@ -1,7 +1,7 @@
 """W4 phase 1 (agentvault2-aa, 2026-10-25): the auditor counts a mint under its old and its new name.
 
-His words that day to agentvault2-69: "i want the illegal wording completly gone before opening" and, on the ledger, "just
-use the new wording and make it accept both or something" (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md, W4).
+The critical wording is gone before the opening; the ledger writes the new words and reads
+both (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md, W4).
 Phase 2 lets the registry's emitter write UnitsIssued for TokensIssued. The auditor's native-supply reconciliation reads
 the typed mint events of the immutable log (TRUE_SUPPLY_SQL) and asks whether a frame has any mint before the baseline
 (the coverage probe): reading TokensIssued alone, every mint written as UnitsIssued would be missing from true_minted, and

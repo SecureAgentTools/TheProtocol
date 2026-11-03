@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mount, RouterLinkStub } from '@vue/test-utils'
 import RoadmapView from './RoadmapView.vue'
 
-// §SUITES1018 (2026-10-19), his word: code changes do not run through the network yet, only its policy; the idea
+// §SUITES1018 (2026-10-19): code changes do not run through the network yet, only its policy; the idea
 // that they will sits on the Horizon, marked Idea, neither designed nor scheduled. Rendered, not read as source.
 describe('roadmap horizon', () => {
   it('shows two entries on the horizon, the second marked Idea, and Idea in the status key', () => {

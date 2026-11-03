@@ -39,7 +39,7 @@ OPERATORS_V0641 = """acceptComplianceBaseline guildCrossRegistryBid slashAgent""
 # §MCPTEST30 V0644 (agentvault2-aa's word 2026-10-26): three sandbox-only routes, which SANDBOX_MODE (a sandbox
 # frame's switch, unset on an operator) opens; on an operator each row says why
 OPERATORS_SANDBOX_ONLY = """previewVotingPowerAttestation runAttestationExpirySweep runAttestationScheduleCron""".split()
-# (tester batch 2 item 2's two bridge routes left with the token bridge in V0651, his word "retire.")
+# (tester batch 2 item 2's two bridge routes left with the token bridge, retired in V0651)
 # §MCPTEST30 (tester batch 2 item 3): the commons season's money steps, refusal-only on a standing frame (write-off
 # everywhere: a healthy target never gives a run a failed payment)
 COMMONS_MONEY = """adminCommonsPaySeason adminCommonsWriteOffAward""".split()

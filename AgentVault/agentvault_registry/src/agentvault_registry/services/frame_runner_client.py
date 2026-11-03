@@ -1,6 +1,6 @@
 """§FRAMEPROV P3 (2026-09-13): the registry's half of the host frame runner.
 
-His decision 2026-09-13: the registry never holds host root to stand a frame up. The runner
+Decided 2026-09-13: the registry never holds host root to stand a frame up. The runner
 (`tools/frame-runner/frame_runner.py` in the stack repo) is a root service on the HOST with a closed job set; this
 registry only speaks to its unix socket, one JSON object on one line in and one line out, then the connection closes.
 The runner decides everything (protected names, host gates, one job at a time, the caller's uid by SO_PEERCRED), and a

@@ -1,6 +1,6 @@
 """§SOVKIT K1 / V0372 (2026-09-14) — the drainer of the registry's durable ledger-emit outbox (`es_emit_outbox`, migration 0178).
 
-Why it exists: K1 deleted the registry's Kafka producer (his word: Kafka is private to the event store), and agentvault2-85
+Why it exists: K1 deleted the registry's Kafka producer (Kafka is private to the event store), and agentvault2-85
 measured what that producer had been doing besides bypassing the store's checks: BUFFERING the registry's writes through a
 store restart. The emitter's three fast attempts (1 s, 2 s) then lost every emit during a store outage longer than ~4 s.
 The emitter now DEFERS an emit the store could not take (connection errors, timeouts, 429, 5xx; never a 4xx) into this

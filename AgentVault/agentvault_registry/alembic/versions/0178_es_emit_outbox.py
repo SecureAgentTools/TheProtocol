@@ -1,6 +1,6 @@
 """§SOVKIT K1 / V0372 (2026-09-14) — the registry's ledger emits get a DURABLE outbox.
 
-K1 deleted the registry's Kafka producer (his word: Kafka is private to the event store). agentvault2-85 then measured
+K1 deleted the registry's Kafka producer (Kafka is private to the event store). agentvault2-85 then measured
 what the producer had been doing besides bypassing the store's checks: BUFFERING the registry's writes through a store
 restart. Without it the emitter's three attempts (1 s, 2 s) lose every registry emit during a store outage longer than
 ~4 s: every store recreate, every store image roll, is a registry write gap. Money events log EMIT-LOST, the rest only

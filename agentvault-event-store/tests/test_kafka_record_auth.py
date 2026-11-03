@@ -1,6 +1,6 @@
 """§SOVKIT-2 R1 (2026-09-14): the ledger takes a Kafka record only when this store signed it.
 
-His decision: Kafka is private to the event store. Measured before the change: the consumer wrote whatever arrived on :9092 with
+Kafka is private to the event store. Measured before the change: the consumer wrote whatever arrived on :9092 with
 none of the HTTP route's checks and trusted `source_operator_id` from the record, while every container on a frame's network could
 reach the broker. What these tests pin:
 - a record the store signed verifies; a changed value, topic, key or version does not; another frame's key does not;

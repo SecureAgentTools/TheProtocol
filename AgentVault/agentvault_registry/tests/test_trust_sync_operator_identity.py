@@ -1,4 +1,4 @@
-"""2026-10-17 (his word: "no operator accepted without record ... record must exist first"): the trust sync names each of
+"""2026-10-17 (no operator is accepted without a record; the record must exist first): the trust sync names each of
 this frame's own operators by its OWN SVID, never by the frame's bare trust domain.
 
 SF-5B's trust sync sends one update per licence this frame issued, and since §TRUSTROW it names the peer as spiffe_id so

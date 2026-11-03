@@ -444,15 +444,15 @@ async def _assert_credited(rig, send: str, recv: str, agents, state, budget: flo
 
 # ─── §SENDEARLY (2026-09-26): send at the start of the run, judge at its end ───────────────────────────────────────
 #
-# His words: "fix the test so the transfer goes out at the beginning of the test run and success is measured later in
-# the test run", then, on the three choices put to him, "1. yes 2. yes 3. yes". For the two cross-frame OPERATOR
+# The transfer goes out at the beginning of the test run and its success is measured later in
+# the test run, with the three choices below. For the two cross-frame OPERATOR
 # pairs (test_cross_frame_economic_flows), so:
 #   1. send as soon as the CONVERTING frame (the sender's parent) knows the new receiver, and do NOT wait for the
 #      delivering frame. A payment to an agent created a minute ago is the case that broke every night from 09-23 to
 #      09-25; whether the delivering frame knows the receiver yet decides only WHICH way the money arrives (delivered
 #      at once, or parked after the conversion and re-delivered by that frame's keeper), never WHETHER.
 #   2. the keeper re-delivers a parked route once it is FX_REMOTE_RECOVERY_MIN_AGE_SEC old: 300 s on the sandbox pair
-#      (his word; EU and ASIA keep 900 s), which the window below covers.
+#      (EU and ASIA keep 900 s), which the window below covers.
 #   3. both directions.
 # ONE send and no retry: the retry is what hid the stranded routes for three nights.
 

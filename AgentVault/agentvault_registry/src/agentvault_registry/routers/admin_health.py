@@ -1005,8 +1005,8 @@ def _format_event_title(event_type: str) -> str:
         "AgentExported":                "Agent Exported",
         "AgentImported":                "Agent Imported",
         "AgentCloned":                  "Agent Cloned",
-        # the console's words (§VOCAB, agentvault2-56, 2026-10-23: locked and units, not staked and tokens; his word
-        # 2026-10-25 to agentvault2-69: "i dont want the critical wording. only compliant ones"); the type stays the ledger's
+        # the console's words (§VOCAB, agentvault2-56, 2026-10-23: locked and units, not staked and tokens;
+        # 2026-10-25: only compliant wording); the type stays the ledger's
         "TokenTransferred":             "Units Transferred",
         "TokensTransferred":            "Units Transferred",
         "TokensIssued":                 "Units Issued",

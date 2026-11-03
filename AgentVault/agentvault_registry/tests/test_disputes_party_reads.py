@@ -1,4 +1,4 @@
-"""§SECFIX D6-465 (2026-10-16, his word): a dispute is read by the owners of its parties and by the administrators
+"""§SECFIX D6-465 (2026-10-16): a dispute is read by the owners of its parties and by the administrators
 who rule on disputes; nobody else.
 
 Measured on the base (14520b9f) through these same requests: GET /api/v1/disputes/ listed every dispute of the

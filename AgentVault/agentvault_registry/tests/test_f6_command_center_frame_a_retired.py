@@ -1,5 +1,5 @@
-"""§F6 group 4 (2026-09-27, his decision "retire frame a actions" and his words "i approve to finish f6 implementation on
-sandbox"): the Command Center's Frame-A-era actions are retired, not ported, because each reached into Frame A or
+"""§F6 group 4 (2026-09-27, the Frame A actions retired, F6 finished on the
+sandbox): the Command Center's Frame-A-era actions are retired, not ported, because each reached into Frame A or
 Frame B from whichever frame ran it:
 
 - `spire-bundle-refresh` ran `bundle set` on agentvault-spire-server and frame-b-spire-server by constant and restarted

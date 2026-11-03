@@ -251,7 +251,7 @@ def test_teardown_touches_only_a_frame_this_runner_built(rig):
 
 
 def test_a_teardown_removes_the_frames_secret_copies_and_only_those(rig):
-    # His word 2026-09-13 ("torn down secrets ... have no use anymore, you decide"): the per-job copies go with the frame.
+    # Since 2026-09-13 (torn-down secrets have no use any more): the per-job copies go with the frame.
     cfg, srv, tmp_path = rig
     job = wait_state(cfg, call(cfg, op="standup", spec=SPEC)["result"]["job"]["id"])
     secrets = tmp_path / "state" / "jobs" / job["id"] / "secrets"
@@ -378,7 +378,7 @@ def _conf(**over):
 
 
 def test_the_posture_comes_from_the_policy_and_not_a_literal():
-    """§LANTERNT3 (2026-09-16, his word "lantern shouldnt be sandbox"): driver_argv carried the literal "sandbox",
+    """§LANTERNT3 (2026-09-16: lantern is no sandbox): driver_argv carried the literal "sandbox",
     and standup_driver.py:695 turns the rate limiter OFF for any posture that is not "production" — so every frame
     the runner ever built went live on a public DNS name with no rate limiting. The default is now production, a
     host that really wants a sandbox frame says so in its policy, and --env-label follows the same key so the tier

@@ -1,4 +1,4 @@
-"""§MONEY-R50 (2026-09-04, his word "r50 approved too") — the cross-TEG funding-origin allowlist a
+"""§MONEY-R50 (2026-09-04) — the cross-TEG funding-origin allowlist a
 provisioned frame renders is, by construction, the value its own guard accepts.
 
 Before: the frame template put CROSS_TEG_FUND_ORIGIN_ALLOWLIST in the TEG's env block (no reader;

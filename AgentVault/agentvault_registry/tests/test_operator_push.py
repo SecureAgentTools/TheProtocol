@@ -1,7 +1,7 @@
 """§PUSH (2026-10-06, agentvault2-09): the operator's own push relay, through the provisioning flow.
 
-His words: "afterwards we do the same with push", "provisioner should also provision them", "fix the things you find on
-the way make it secure". Every operator ran with push switched off (no PUSH_NOTIFY_ENABLED), so neither Web Push nor
+Push after OPA, provisioned by the provisioner, and secure along the
+way. Every operator ran with push switched off (no PUSH_NOTIFY_ENABLED), so neither Web Push nor
 Pocket's phone pairing reached an operator's users. host_work now carries an override (the frames' ntfy relay on the
 operator's own network) and writes its values; the registry renders a SUBSCRIBE-ONLY public vhost the runner writes beside
 the console's. These pin the rules every half derives from, and the one shape that must never regress: a public push door

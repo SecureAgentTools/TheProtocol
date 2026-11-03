@@ -1,6 +1,6 @@
 <template>
-  <!-- §COCKPITDESK (2026-10-15) — HIS WORD: "webhooks needs design refresh it uses wrong design elements boxes etc are
-       wrong. needs redo and polish". Rebuilt in the house language (Design_Language.md: the subtle card, stat tiles,
+  <!-- §COCKPITDESK (2026-10-15) — the webhooks page used the wrong design elements (its boxes and
+       more): redone and polished. Rebuilt in the house language (Design_Language.md: the subtle card, stat tiles,
        eyebrow, hairline rows): one card holds the endpoints as rows, never a grey box per endpoint. The old class
        names stay on the rows and buttons as hooks only (lifecycle 04 and the tours address them). -->
   <div class="whm" data-testid="whm-root">

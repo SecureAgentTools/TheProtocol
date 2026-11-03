@@ -138,7 +138,7 @@ async def create_agent_card(
         )
 
     # §FRAMELIC (2026-09-07) — a SERVICE ACCOUNT's agents are out of discovery by construction.
-    # His word: hide the eigentrust sim agents, the FX router and their kind. `unlisted`
+    # The eigentrust sim agents, the FX router and their kind are hidden. `unlisted`
     # (§DISCREFINE) already removes a card from the page, the facets AND the tag counts while
     # leaving a direct DID lookup working; what was missing was the thing that SETS it. Reading
     # it off the OWNING developer means nobody has to remember at each mint, and a service

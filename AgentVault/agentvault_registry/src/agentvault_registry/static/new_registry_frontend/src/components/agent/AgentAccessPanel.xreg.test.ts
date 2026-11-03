@@ -1,5 +1,5 @@
 /**
- * §FESUITE V0595 (his word 2026-10-11 "also close console gaps"): cross-registry delegation in the agent's Access panel.
+ * §FESUITE V0595 (2026-10-11, a console gap closed): cross-registry delegation in the agent's Access panel.
  * The rail (POST/GET/DELETE /agents/delegate-cross-registry) acted AS the agent and had no console surface at all: API and
  * MCP only. It acts as THIS agent (its token), so it waits for the agent switcher; it lists what this agent delegated,
  * issues, says whether the other registry took it (signed here is not delivered there), and revokes at their registry.

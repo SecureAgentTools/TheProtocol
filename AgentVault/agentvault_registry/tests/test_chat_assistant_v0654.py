@@ -1,7 +1,7 @@
 """V0654 (ap) (2026-11-02, agentvault2-14): the assistant in OurChat, order gwo_03a846cb91b37628c3c6710a.
 
-His words in the sessions' room (seq 1091, signed in): the assistant pickable per identity in the "send as" choice; his
-prompt visible to himself alone; the assistant's answer below it, marked. POST /chat/conversations/{id}/assist asks his
+The assistant is pickable per identity in the "send as" choice; the
+prompt is visible to its author alone; the assistant's answer below it, marked. POST /chat/conversations/{id}/assist asks his
 personal assistant (services/assistant_bridge, the bridge's no-tools profile) with the room's recent lines and the
 REGISTRY posts the answer, as the identity he sends with (himself, or his agent through his own signed-in session), with
 sent_with "assistant". Only the identity's owner, signed in, on an account the bridge serves (admin_credential), where

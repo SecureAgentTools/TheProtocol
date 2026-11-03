@@ -1,5 +1,5 @@
 """§RELEASECHANNEL: the registry reads the signed release channel and tells its admins when a stable release or a
-hotfix is out, once per version, so they can schedule the rollout themselves (his words 2026-09-21).
+hotfix is out, once per version, so they can schedule the rollout themselves (2026-09-21).
 
 What it does, every RELEASE_CHANNEL_CHECK_INTERVAL_SECONDS (default 6 h) on the leader:
   1. GET RELEASE_CHANNEL_URL (15 s, no redirects, at most 1 MB). A 404 is the channel not published yet: recorded as

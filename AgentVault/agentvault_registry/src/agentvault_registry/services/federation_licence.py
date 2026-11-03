@@ -1,16 +1,16 @@
 """§FEDLICENCE (2026-09-28): federation licences as issuer-signed certificates.
 
-His word: the software is free to run (AGPL), membership in the network is licensed. "without an active license issued
-you can still do everything but not federate with other frames. but you can still provision your cloud operators. we
-can make eu registry genesis registry and give it a genesis federation license issued to itself ... display the license
-hash on the registry card ... it should be a derived field also so it cant be tricked."
+The software is free to run (AGPL), membership in the network is licensed. Without an active licence a frame does
+everything but federate with other frames, and still provisions its cloud operators. The EU registry is the genesis
+registry, holding a genesis licence issued to itself; the licence hash shows on the registry card, a derived field, so
+it cannot be tricked.
 
 A hash a frame derives about itself is only as honest as that frame's build, and AGPL lets anyone run a modified build.
 So a licence is a small certificate SIGNED by its issuer, and anybody can check the signature against the chain:
 
     genesis   self-signed by the network's root (EU in production); its hash is the network's pin
     frame     signed by the genesis; carries the frame's own licence-signing public key (`key`)
-    operator  signed by its frame's key (under the FRAME's own operator policy, his word: each frame decides)
+    operator  signed by its frame's key (under the FRAME's own operator policy: each frame decides)
 
 The unit of network licensing is the TRUST DOMAIN (a frame and its operators share one): crossing between two trust
 domains needs a genesis-issued licence on both sides, inside one trust domain nothing is checked. That is his "you can
@@ -54,8 +54,8 @@ TYPES = ("genesis", "frame", "operator")
 # His plans (2026-09-28): private, research and non-profit perpetual and free; enterprise free for one year (terms may
 # change, so the plan and the expiry ride IN the certificate and a later price is a renewal, not a code change);
 # founding = grandfathered, perpetual; genesis = the root's own. Values are days of validity, None = perpetual.
-# One category list (his words 2026-09-28 on the frame-commander form: "free license for educational, research and non
-# profits. but enterprise and goverment orgs will not have the same privilige"): educational joins the perpetual plans,
+# One category list (2026-09-28, the frame-commander form: a free licence for educational, research and non-profit
+# organisations, not the same for enterprises and governments): educational joins the perpetual plans,
 # government takes the enterprise term. The form, the site copy, the viewer and the legal text name the same list.
 NETWORK_PLANS: Dict[str, Optional[int]] = {
     "genesis": None,
@@ -115,7 +115,7 @@ def terms_version() -> str:
 
 
 def operator_policy() -> Dict[str, Any]:
-    """THIS frame's operator licence policy (his word: each frame decides its own licensing / fee model; free for now).
+    """THIS frame's operator licence policy (each frame decides its own licensing / fee model; free for now).
     FEDERATION_OPERATOR_LICENCE_PLAN (default 'operator-free') and FEDERATION_OPERATOR_LICENCE_DAYS (unset = perpetual).
     There is no payment rail: the plan names the terms, a price is the frame's own business."""
     plan = (os.getenv("FEDERATION_OPERATOR_LICENCE_PLAN", "operator-free") or "operator-free").strip().lower()
@@ -935,7 +935,7 @@ def _operator_slug_from_spiffe(spiffe_id: str, local_td: str) -> Optional[str]:
 async def parent_answer_for_operator(db, *, spiffe_id: str, public_name: str,
                                      operator_url: Optional[str] = None) -> Dict[str, Any]:
     """What a frame hands ITS OWN operator that asks over mTLS: the operator's licence (issued on first ask while the
-    frame's operator policy auto-issues, his word: free for now), the frame's own network certificate and chain, and
+    frame's operator policy auto-issues: free for now), the frame's own network certificate and chain, and
     the frame's verdict about both. Raises PermissionError for an identity that is not one of this frame's operators."""
     local_td = local_trust_domain()
     slug = _operator_slug_from_spiffe(spiffe_id, local_td)

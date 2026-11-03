@@ -1,7 +1,7 @@
 """§FESUITE (2026-10-10, the operator batch) — a registry says what it runs, and the console follows it.
 
-His word: "operators will choose what they want to run ultimately in frames allowed configuration ... operators will
-run contracts and liability for sure". Measured on the sandbox operators' consoles: the Cockpit and Pocket Approvals
+Operators choose what they run within the frame's allowed configuration, contracts and liability
+among it. Measured on the sandbox operators' consoles: the Cockpit and Pocket Approvals
 asked liability routes that answer 404 where LIABILITY_MODE is off, Contracts and the desk asked the template library
 (503 where CONTRACT_TEMPLATES_ENABLED is off), and the Federation Test page asked /sandbox/a, which dialed registry-test
 (a tier torn down at §BATCH3) and answered 502. The registry-config said none of it. Now:

@@ -1,8 +1,8 @@
 /**
  * W4 phase 1 (agentvault2-aa, 2026-10-25): the ledger's event names, old and new, read as one, in the console.
  *
- * His words that day to agentvault2-69: "i want the illegal wording completly gone before opening" and, on the ledger,
- * "just use the new wording and make it accept both or something" (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md,
+ * The critical wording is gone before the opening; the ledger writes the new words and reads both
+ * (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md,
  * W4). Phase 2 lets an emitter write UnitsTransferred for TokensTransferred (and the rest below); before any emitter does,
  * every screen that compares an event type, or looks one up in a table keyed by it, reads both names the same. This is the
  * registry's map (agentvault_registry/core/ledger_names.py), data for data; ledgerNames.test.ts pins it.

@@ -5,6 +5,11 @@
 
 import type { Ref } from 'vue'
 
+/** V0655 (az): whether the page is in view; without a document (a test, a worker) it counts as visible */
+export function pageVisible(): boolean {
+  return typeof document === 'undefined' || document.visibilityState !== 'hidden'
+}
+
 export interface WebSocketMessage {
   type: string
   data: any
@@ -119,6 +124,7 @@ export class WebSocketManager {
   private authRefreshTried = false
   private reconnectTimer: NodeJS.Timeout | null = null
   private heartbeatTimer: NodeJS.Timeout | null = null
+  private onVisibility: (() => void) | null = null
   private listeners: Map<string, Set<Function>> = new Map()
   private messageQueue: WebSocketMessage[] = []
   private isReconnecting = false
@@ -375,11 +381,21 @@ export class WebSocketManager {
    * Start heartbeat to keep connection alive
    */
   private startHeartbeat(): void {
-    this.heartbeatTimer = setInterval(() => {
-      if (this.isConnected) {
-        this.send('ping', { timestamp: Date.now() })
-      }
-    }, this.config.heartbeatInterval)
+    this.stopHeartbeat()
+    this.heartbeatTimer = setInterval(() => this.ping(), this.config.heartbeatInterval)
+    // V0655 (az): the registry counts you present (and holds back a notice) only while a page of yours is visible, so
+    // the heartbeat says whether this one is, and a page that is shown or hidden says so at once
+    if (typeof document !== 'undefined') {
+      this.onVisibility = () => this.ping()
+      document.addEventListener('visibilitychange', this.onVisibility)
+    }
+  }
+
+  /** One heartbeat: when it was sent and whether this page is visible (a hidden tab, a phone in a pocket: false) */
+  private ping(): void {
+    if (this.isConnected) {
+      this.send('ping', { timestamp: Date.now(), visible: pageVisible() })
+    }
   }
 
   /**
@@ -390,6 +406,10 @@ export class WebSocketManager {
       clearInterval(this.heartbeatTimer)
       this.heartbeatTimer = null
     }
+    if (this.onVisibility && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.onVisibility)
+    }
+    this.onVisibility = null
   }
 
   /**

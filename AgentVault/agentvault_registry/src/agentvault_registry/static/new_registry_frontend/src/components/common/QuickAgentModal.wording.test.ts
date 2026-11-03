@@ -1,5 +1,5 @@
 /**
- * The quick agent sheet's own words (2026-10-09, his word "fix the popup text"):
+ * The quick agent sheet's own words (2026-10-09, the popup text fixed):
  * - its success line named Staking on every registry ("Agent-required pages (Contracts, Disputes, Staking, Attestations)
  *   just unlocked.", in Pocket "Send, Stake and OurChat ..."), while EU and ASIA run STAKING_ENABLED=false (the BaFin
  *   letter's posture). It names Staking only where the registry says a staking position can be opened; an unread

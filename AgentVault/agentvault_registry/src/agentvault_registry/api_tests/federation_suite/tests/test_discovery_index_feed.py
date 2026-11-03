@@ -1,7 +1,7 @@
 """THE DISCOVERY INDEX FEED, driven as a feed rather than as a list (§DIRFEED).
 
-His word, 2026-09-06: *"there is a new discovery in … we will write tests for
-after implementation too."* This is that. The mechanism agentvault2-27 built
+2026-09-06: the new discovery gets its tests after the
+implementation too. This is that. The mechanism agentvault2-27 built
 turns `GET /api/v1/agent-cards/` from a page of rows into a CHANGE FEED an index
 can walk — `agent_did` + `updated_at` on the summary, an `updated_since` cursor,
 `natives_only`, and `applied_filters` echoing what the server actually ran.

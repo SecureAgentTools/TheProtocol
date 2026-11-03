@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// §LANDINGTRUTH (16), V0564: his word ~17:25Z (agentvault2-09) switches production to membership governance. A docs
+// §LANDINGTRUTH (16), V0564: production switched to membership governance (agentvault2-09). A docs
 // chapter that describes lock-weight voting then says, where the registry counts votes by membership, which rule this
 // registry runs; the chapter rewrites stay for his docs pass. Rendered only where governance_weight_mode = member, so a
 // registry that counts votes by locks shows the chapter exactly as before.

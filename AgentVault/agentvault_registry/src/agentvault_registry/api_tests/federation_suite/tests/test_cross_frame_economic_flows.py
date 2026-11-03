@@ -298,8 +298,8 @@ async def test_cross_cloud_op_transfer_alpha_to_delta(rig: FederationTestRig):
     delivery to sbx-beta, which pays the receiver on its operator. §FEDSKIPS (2026-09-04) made this row move real money
     and assert the RECEIVER's balance (it used to poll canary status), the only check the escrow legs cannot fake.
 
-    §SENDEARLY (2026-09-26, his words "fix the test so the transfer goes out at the beginning of the test run and
-    success is measured later in the test run" and "1. yes 2. yes 3. yes"): the runner starts this row first; it sends
+    §SENDEARLY (2026-09-26: the transfer goes out at the beginning of the test run and
+    its success is measured later in the test run): the runner starts this row first; it sends
     ONCE as soon as sbx-alpha knows the new receiver, without waiting for sbx-beta, and is judged after every other
     test. If sbx-beta could not deliver yet, the converted money is parked and sbx-beta's keeper re-delivers it five
     minutes later (the nightly's alpha->delta stranding, 09-23 to 09-25, is exactly that case, and until V0454 it was

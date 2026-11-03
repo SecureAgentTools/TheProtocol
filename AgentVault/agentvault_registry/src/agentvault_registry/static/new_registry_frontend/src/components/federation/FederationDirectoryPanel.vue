@@ -1,7 +1,7 @@
 <template>
   <!-- §FEDDIR (2026-09-09) — the federated index, as a Federation tab.
-       His word: "would be good if you can also add the directory in a new tab. since its
-       federation related." It is: the index is the only component that sees every frame's cards
+       The directory gets a tab of its own here, since it is federation
+       related. It is: the index is the only component that sees every frame's cards
        at once, and `DISCOVERY_VIA_DIRECTORY` means registries RENDER what it returns.
 
        Body-only, like FederationOperationsPanel — the hero and ambient belong to Federation.vue.

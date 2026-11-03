@@ -3,10 +3,9 @@
 
   There were two. The header's picker (search, scroll, the whole vault) and the
   composer's speaker picker (a bare v-for, no search, no scroll container). With
-  640 stored credentials the second one was unusable — his words: "if i scroll
-  the bottom selecter that says 'you' its not working. not scrollable. maybe
-  list too large. top picker works really good with search functionality and
-  proper scrolling."
+  640 stored credentials the second one was unusable: the bottom picker (the one
+  that says "you") would not scroll, while the top picker worked well with its
+  search and proper scrolling.
 
   Worse than the ergonomics: the two controls held two SEPARATE selections, so
   the header could say "Acting as Trader Tilly" while the composer said "You".

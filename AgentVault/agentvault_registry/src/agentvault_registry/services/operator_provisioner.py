@@ -343,8 +343,8 @@ def register_operator_data_entry(operator_name: str, fingerprint: str, dns_name:
 def register_operator_opa_entry(operator_name: str, fingerprint: str, dns_name: str) -> int:
     """The operator OPA's own SVID: one entry, never federated, with the OPA container name as its DNS SAN.
 
-    §OPA (2026-10-06, his words "please roll out and enable opa for the whole production cluster", then "we need this
-    whole ... provisioner fix"): the frames carried an OPA since §SOVKIT and no operator did, so every operator
+    §OPA (2026-10-06, OPA on the whole production cluster, then the provisioner
+    fix): the frames carried an OPA since §SOVKIT and no operator did, so every operator
     registry's OPA code stayed dark. The OPA serves TLS on this SVID and verifies its callers against the bundle that
     comes with it; the registry dials it by container name (OPA_URL), so that name is the SAN.
 

@@ -1039,14 +1039,14 @@ class FrameAnswersCard(BaseModel):
 
 
 class FrameAnswersNetwork(BaseModel):
-    """Federation intent. Federation is a bilateral act after launch, never part of the standup (his decision)."""
+    """Federation intent. Federation is a bilateral act after launch, never part of the standup."""
     model_config = ConfigDict(extra="forbid")
 
     intent: Optional[Literal["federate_later", "standalone", "standalone_test_operator"]] = None
     partners: Optional[List[str]] = None
-    # Who runs the frame, which decides the plan of the network licence it is issued when it federates (his words
-    # 2026-09-28: "free license for educational, research and non profits. but enterprise and goverment orgs will not
-    # have the same privilige"). services.federation_licence.NETWORK_PLANS without the network's own two (genesis,
+    # Who runs the frame, which decides the plan of the network licence it is issued when it federates (2026-09-28:
+    # a free licence for educational, research and non-profit organisations, not the same for enterprises and
+    # governments). services.federation_licence.NETWORK_PLANS without the network's own two (genesis,
     # founding); tests/test_federation_licence.py keeps the two lists equal.
     licence_category: Optional[Literal["private", "educational", "research", "non-profit", "enterprise", "government"]] = None
 
@@ -1074,7 +1074,7 @@ class FrameAnswersProvisioning(BaseModel):
     @field_validator("posture", mode="before")
     @classmethod
     def _legacy_stage(cls, v: Any) -> Any:
-        # V0364 (his word: "sandbox" undersold a whole frame): the form calls the first stage "pilot". V0363 sent
+        # V0364 ("sandbox" undersold a whole frame): the form calls the first stage "pilot". V0363 sent
         # "sandbox", the frame runner's name for the posture it stands up, and a page loaded before the roll still does.
         return "pilot" if v == "sandbox" else v
 
@@ -1174,7 +1174,7 @@ class FrameRequestBody(BaseModel):
     # people to answer seven lines and skip the rest, and any client that
     # predates this (or a person who skipped a box) must still be able to
     # submit. Shape is validated, completeness never is.
-    # 2026-09-13 (the form rebuild, his word): the shapes follow the host frame runner's spec, so a request always maps
+    # 2026-09-13 (the form rebuild): the shapes follow the host frame runner's spec, so a request always maps
     # into a frame the runner can provision (frame_runner.validate_spec: a name of 2 to 32 not ending with '-', a
     # ticker of 2 to 6, frame_label 60, currency_name 40).
     frame_name: Optional[str] = Field(
@@ -1308,7 +1308,7 @@ def _send_frame_notification_email(
 
 
 # ── §FRAMESHOWCASE: the requester's receipt ─────────────────────────
-# His word 2026-09-14: every requester gets a receipt. A public POST that mails an address the caller typed can make this
+# Since 2026-09-14 every requester gets a receipt. A public POST that mails an address the caller typed can make this
 # frame mail anyone, so the receipt is shaped for that: one per stored request (a repeat submission while a request is
 # pending reuses the row and mails nothing), fixed text in our words (the request id, the frame name the body already
 # validated as a slug, the time) and nothing a caller wrote, and a budget per address of origin and per hour that
@@ -1581,7 +1581,7 @@ async def request_frame(
             )
 
     # ── §FRAMESHOWCASE: every requester hears back once ─────────────
-    # His word 2026-09-14 ("1. yes": every requester gets a receipt). The welcome above already tells a new account
+    # Every requester gets a receipt (2026-09-14). The welcome above already tells a new account
     # holder the request is in; everyone else gets the receipt, once per stored request and inside its budget.
     receipt_sent = False
     if stored_new and not magic_link_sent:

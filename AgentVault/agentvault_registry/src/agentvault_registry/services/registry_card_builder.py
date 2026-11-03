@@ -421,7 +421,7 @@ async def _jurisdiction_etag_token(db: AsyncSession) -> Optional[str]:
 def _build_spiffe_id() -> str:
     """spiffe://<trust_domain>/registry/<name>, the name the card publishes (federation_name()).
 
-    §MEMBERSHIP (V0560, his word 2026-10-03 "do the one more place left"): this was settings.REGISTRY_NAME, which on a
+    §MEMBERSHIP (V0560, 2026-10-03, the one place left): this was settings.REGISTRY_NAME, which on a
     cloud operator is its container label, so the card key of sbxbetaop was spiffe://sandbox-b.theprotocol.cloud/registry/
     cloud-op-sbxbetaop while its card, SVID and parent's row say sbxbetaop. A frame is unchanged (it sets no
     REGISTRY_FEDERATION_NAME). On an operator the change is a KEY MIGRATION, deliberate: the keystore is keyed by this
@@ -773,8 +773,8 @@ async def _build_federation_block(db: AsyncSession, frame_policy=None) -> Dict[s
         "license_status": os.environ.get("FEDERATION_LICENSE_STATUS"),
     }
 
-    # §FEDLICENCE (2026-09-28, his word: "display the license hash on the registry card ... a derived field also so it
-    # cant be tricked"). DERIVED from the certificates this registry holds and its own last verdict, never from the
+    # §FEDLICENCE (2026-09-28: the licence hash on the registry card, a derived field, so it
+    # cannot be tricked). DERIVED from the certificates this registry holds and its own last verdict, never from the
     # operator-editable card JSON; its state and hashes are signed leaves and part of the ETag. The certificate rides
     # along so anyone can check the issuer's signature without trusting this card.
     from . import federation_licence as _fl

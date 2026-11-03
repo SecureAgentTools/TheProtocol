@@ -31,7 +31,7 @@ def tier_for_group(group: Optional[str]) -> str:
 
 
 # ---------------------------------------------------------------------------------------------------------------
-# E11 (2026-09-13, his word "E11 approved"): three more halves of the same rule, measured on the flagship after the
+# E11 (2026-09-13): three more halves of the same rule, measured on the flagship after the
 # V0359 roll. The trusted-registries rail carried an UNTYPED twin per frame ("ASIA" beside the peer row "asia", "eu"
 # beside "EU": the fan-out's card-name ghost, kept forever by a cache that never regresses), stack-health named the
 # twin first and so grouped the peer FRAME `operator`; and a peer frame's TEG and Event Store tiles read `sandbox`

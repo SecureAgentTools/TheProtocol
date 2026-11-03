@@ -1,4 +1,4 @@
-"""§SSRFGUARD (2026-09-16, his word "1-3 approved"): the agent-card fetch asks about every redirect hop.
+"""§SSRFGUARD (2026-09-16): the agent-card fetch asks about every redirect hop.
 
 `_is_skippable_host` runs on the url a card NAMES, and both fetch sites built their client with
 `follow_redirects=True`, so a host the registry was pointed at could answer 302 and send the fetch to a loopback or

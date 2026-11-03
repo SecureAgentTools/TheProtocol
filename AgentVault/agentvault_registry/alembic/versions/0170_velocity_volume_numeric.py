@@ -1,7 +1,7 @@
 """velocity_metrics.tx_volume: BigInteger -> Numeric(36, 18)
 
-§VITALS 2026-09-04. His word: "migration approved if you have fully verified its
-needed. truncation is not good."
+§VITALS 2026-09-04: this migration was verified as needed first; a truncated value
+is never good enough.
 
 WHAT WAS VERIFIED, on live registry-a data
 ------------------------------------------

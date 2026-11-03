@@ -1,12 +1,12 @@
-"""W3 (agentvault2-d6, 2026-10-25; his words through agentvault2-69: "i want the illegal wording completly gone before
-opening"): the OpenAPI schema documents only what the registry's switches let run, and says it in the compliant words.
+"""W3 (agentvault2-d6, 2026-10-25; the critical wording gone before
+the opening): the OpenAPI schema documents only what the registry's switches let run, and says it in the compliant words.
 
 With production's switches (STAKING_ENABLED and STAKING_REWARDS_ENABLED off) the routes that start a lock or pay, rate,
 relock or distribute a payout on locked units are left out of the schema (core/staking_gate.route_documented; they still
 answer, with the switch's sentence, when called), while releasing and the lock reads stay documented (nobody's units may
 be stuck). No summary, description, tag, parameter description or model description then carries a staking, reward,
 rate, earnings or token-as-value word; what may stay is an identifier in backticks or quotes (a permission name, a reason
-code, an enum value) and the kept terms ("non-profit"). Route paths and model names are identifiers: his call (plan
+code, an enum value) and the kept terms ("non-profit"). Route paths and model names are identifiers: a separate decision (plan
 PLAN_2026-10-25_COMPLIANT_OPENING.md), not checked here.
 RED control: against bddf8fd6 every switched-off route is documented and 58 operations carry the words.
 """

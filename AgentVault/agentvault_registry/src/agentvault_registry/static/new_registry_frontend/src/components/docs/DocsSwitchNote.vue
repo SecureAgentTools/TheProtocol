@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// §FESUITE V0595 (his word 2026-10-11, "also correct the avt prose in the docs"): a docs page says which of its parts it
+// §FESUITE V0595 (2026-10-11, the unit prose in the docs corrected): a docs page says which of its parts it
 // left out and why: a switch this registry runs off (named by the setting an operator reads), or a configuration it could
 // not read (then it says neither on nor off). Rendered only once the read settled and only where a part was left out.
 import { computed } from 'vue'

@@ -1,4 +1,4 @@
-"""Journal 52, "Here It Is" (agentvault2-56, 2026-10-23; his word: "do the blog draft refinements autonomously now"):
+"""Journal 52, "Here It Is" (agentvault2-56, 2026-10-23; the draft's refinements):
 the post that goes out with the code base and the open image registry keeps the platform's public vocabulary.
 
 Held in the suite every image runs, like journals 50 and 51: a later edit cannot bring back a word this network does not
@@ -12,8 +12,8 @@ import re
 FE = pathlib.Path(__file__).resolve().parents[1] / "src/agentvault_registry/static/new_registry_frontend"
 VIEW = FE / "src/views/BlogView.vue"
 SLUG = "here-it-is"
-# the production set (/gallery/) or the sandbox set (/gallery/sandbox/, his word 2026-10-25: "we could just say its testing
-# data from sandbox")
+# the production set (/gallery/) or the sandbox set (/gallery/sandbox/, 2026-10-25: said to be testing
+# data from the sandbox)
 GALLERY = r"https://docs\.theprotocol\.cloud/gallery/(?:sandbox/)?full/"
 BANNED = re.compile(r"\b(earn\w*|rewards?|yields?|returns|dividends?|shares|invest\w*|profit share|banks?|banking|stocks?|IPO|"
                     r"revenue|staking|stake[sd]?|utility token|crypto\w*|on-chain|central bank|tokens?)\b", re.I)
@@ -46,7 +46,7 @@ def test_journal_52_keeps_the_public_vocabulary():
 def test_every_figure_it_shows_is_shipped_and_described():
     _entry, content = _post()
     figs = re.findall(r'<img src="/static/blog/(p52-[a-z0-9-]+\.jpg)" alt="([^"]*)"', content)
-    # the whole console gallery inside the post (his word 2026-10-25: "whole gallery inside post would be cool"): the
+    # the whole console gallery inside the post (2026-10-25): the
     # docs site's shots, served from docs.theprotocol.cloud/gallery/ (the stack's docs-site/public/gallery). A suite
     # here cannot reach that site; the preview's render check loads every one of them
     shots = re.findall(r'<img src="' + GALLERY + r'([a-z0-9_-]+\.(?:webp|jpg))" alt="([^"]*)"', content)
@@ -67,8 +67,8 @@ def test_it_says_the_images_pull_without_an_account():
 
 
 def test_the_sandbox_preview_banner_never_ships():
-    # the sandbox preview (his word 2026-10-23: "put a draft thing on the top so people who mistakenly land on sandbox
-    # and read it understand its not the final post") adds the banner on a preview build only; the post never carries it
+    # the sandbox preview (2026-10-23: a draft banner on top, so someone who lands on the sandbox by mistake
+    # knows it is not the final post) adds the banner on a preview build only; the post never carries it
     entry, _content = _post()
     assert "bl-draft-banner" not in entry and "DRAFT: " not in entry
 

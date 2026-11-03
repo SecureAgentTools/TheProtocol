@@ -18,7 +18,7 @@ vmalert rule (`TreasuryLow`, monitoring/prometheus_alerts.yml).
 The contract
   · PLATFORM — read the TEG treasury through the shared client (`get_teg_client().get_treasury_info()`,
     which since §MONEY-R27 RAISES on an unreachable TEG instead of inventing numbers). §SECFIX D6-254
-    (2026-10-16, his word): the BALANCE is not exported (`registry_treasury_balance` is gone: /metrics answers
+    (2026-10-16): the BALANCE is not exported (`registry_treasury_balance` is gone: /metrics answers
     whoever reaches the registry); the rule reads `registry_treasury_low_active`, the threshold is published.
   · THRESHOLD — `TREASURY_LOW_NOTIFY_THRESHOLD`, absolute, in the frame's currency. `0` = disabled,
     which is today's fleet (his standing "defaults are deliberately quiet"). The network profile owns

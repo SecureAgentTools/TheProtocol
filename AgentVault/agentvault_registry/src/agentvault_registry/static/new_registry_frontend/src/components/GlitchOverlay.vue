@@ -1,8 +1,8 @@
 <!--
   GlitchOverlay.vue — §GLITCH2 (2026-09-02) — the landing page's on-load distortion, rebuilt.
 
-  His word: "much more realistic distortion, like joining a hostile website; the overall length is good;
-  just the visual on load; make it glorious." The TIMELINE is untouched (`useThemeFlash`: three anomaly
+  A much more realistic distortion, like joining a hostile website; the overall length stays, only the
+  visual on load changes. The TIMELINE is untouched (`useThemeFlash`: three anomaly
   blips, an accelerating neural↔sovereign oscillation, a lock at peak, a decay — ~4.7 s). What this
   component draws changed:
 

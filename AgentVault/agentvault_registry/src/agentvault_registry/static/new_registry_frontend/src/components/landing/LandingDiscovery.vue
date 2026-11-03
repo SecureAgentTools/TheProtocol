@@ -1,9 +1,8 @@
 <script setup lang="ts">
 // ─────────────────────────────────────────────────────────────────────────────
-// §LANDINGDISC (2026-09-06, his word: "replace the 'sandbox networks' on discovery with an embedded
-// version of the agent discovery /explore and a button or something to the whole version"), refined on
-// his second look: "it should contain the current cards of the discovery and also the avatar place. how
-// the discovery display on card with encirclements and everything. clickable modal opens."
+// §LANDINGDISC (2026-09-06): the 'sandbox networks' strip replaced with an embedded version of the agent
+// discovery (/explore) and a door to the whole of it, refined to carry the discovery's current cards with
+// their avatar place, encirclements and everything, each opening its modal.
 //
 // So this MOUNTS Discovery in `embedded` mode instead of rendering a preview card of its own. The tiles
 // are the real ones — avatar, flare encirclement, provenance badge, bond chip — and clicking one opens

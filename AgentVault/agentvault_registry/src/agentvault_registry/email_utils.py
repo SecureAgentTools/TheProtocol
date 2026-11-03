@@ -588,7 +588,7 @@ async def send_verification_email(to_email: EmailStr, username: str, token: str)
     verification_link = f"{_base}/api/v1/auth/verify-email?token={token}"
     _registry = deployment_identity()["registry_name"]
     return await send_themed_email(
-        subject="Verify your email for TheProtocol",   # §MAILCOPY 2026-09-03 (his word): the platform, not the card name
+        subject="Verify your email for TheProtocol",   # §MAILCOPY 2026-09-03: the platform, not the card name
         recipients=[to_email],
         template="verification",
         context={

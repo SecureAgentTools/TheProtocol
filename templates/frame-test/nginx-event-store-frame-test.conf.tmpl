@@ -6,8 +6,8 @@
 # the ES's `verify_event_auth()` can authenticate Mode 1 (mTLS) instead of a shared key.
 #
 # WHY THIS FILE EXISTS AT ALL.
-# His word 2026-09-08: *"everything is mtls enforced … not acceptable for sandbox, it should be a
-# realistic env."* Measured, the sandbox was exactly as realistic as production: `nginx-teg` and
+# 2026-09-08: everything is mTLS enforced, and the sandbox must be a
+# realistic environment too. Measured, the sandbox was exactly as realistic as production: `nginx-teg` and
 # `nginx-federation` run `ssl_verify_client on` on EU, ASIA, sbx-alpha and sbx-beta, and **not one
 # of them had an ES gateway** — every registry reached its own ledger over plain
 # `http://<frame>-event-store:8200`. The only ES gateway in the fleet was Frame A's, on the frame

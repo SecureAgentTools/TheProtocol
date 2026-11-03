@@ -1,6 +1,6 @@
 <template>
-  <!-- §TESTBED (2026-09-19, his words: "the sandbox provisioning should be also in the frontend mcp-tester view ... options
-       to pick and you can see progress. and possible errors"). Shown only where this frame's runner answers: a registry
+  <!-- §TESTBED (2026-09-19: the sandbox provisioning in the MCP tester view, options to pick, the
+       progress and the errors on screen). Shown only where this frame's runner answers: a registry
        with no runner renders nothing; a runner that refuses (a sandbox itself, sandboxes not offered) says why. -->
   <section v-if="visible" class="mcp-section" data-testid="mcp-sandbox">
     <div class="sbx">

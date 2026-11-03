@@ -1,8 +1,8 @@
 """
 Reactors: FrameInvitationApproved and FrameFederationEstablished → TEG partner add
 ==================================================================================
-(agentvault2-56, 2026-10-21; his word: "1. yes" to "build the reactor so federating frames trust each other
-automatically")
+(agentvault2-56, 2026-10-21: the reactor through which federating frames trust each other
+automatically)
 
 The TEG partner rule (ledgergate3) runs a cross-TEG leg only with a peer the TEG holds as a current partner, and only
 add-partner makes one. A frame added its cloud operators at provisioning and a peer back at reactivation, quarantine

@@ -23,7 +23,7 @@ export interface TutorialTrack {
   requireAdmin?: boolean                  // Gate behind the is_admin super-flag
   requireFlag?: string                    // Gate behind an RBAC flag: "admin_enforcement"
   // Offered only where the registry's public config says this switch is on (the guided tours' rule, TutorialHub's
-  // tourOffered): the staking track where staking is (his word 2026-10-25: "staking doesnt exist anymore in the way it did")
+  // tourOffered): the staking track where staking is (since 2026-10-25 staking no longer exists in the way it did)
   requiresRegistryFlag?: 'staking_enabled' | 'fiat_onramp_enabled'
 }
 

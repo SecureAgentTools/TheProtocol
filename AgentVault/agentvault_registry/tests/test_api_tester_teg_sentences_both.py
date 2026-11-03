@@ -1,7 +1,7 @@
 """W1/W4 (agentvault2-aa, 2026-10-25): the API tester reads the TEG's two refusals it matches in their old and new words.
 
-agentvault2-69 rewords the TEG's sentences for the opening (fix/teg-compliant-sentences from a9cad595, his words that day:
-"i want the illegal wording completly gone before opening"): "Cannot transfer tokens to yourself" becomes "Cannot transfer
+agentvault2-69 rewords the TEG's sentences for the opening (fix/teg-compliant-sentences from a9cad595, the
+critical wording gone before the opening): "Cannot transfer tokens to yourself" becomes "Cannot transfer
 units to yourself", "Active stake not found" becomes "Active lock not found". The tester's expected-failure rules matched
 the old words at seven sites; until every TEG runs the new image either TEG may answer, so each rule takes both
 (agentvault2-d6's order: "your contracts accept BOTH the old and the new sentence, so the TEG roll order no longer

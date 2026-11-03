@@ -1,5 +1,5 @@
 /**
- * A ledger event's type, as a person reads it (agentvault2-56, 2026-10-23; his word: the console says locked and units,
+ * A ledger event's type, as a person reads it (agentvault2-56, 2026-10-23: the console says locked and units,
  * not staked and tokens). `TokensTransferred` reads "Units transferred", `TokensStaked` "Units locked",
  * `ExchangeTradeExecuted` "Exchange trade executed", `A2APaymentAuthorized` "A2A payment authorized".
  *

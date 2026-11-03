@@ -1,4 +1,4 @@
-"""§F6 stage 5 (2026-09-27, his words "finish f6 with the parallel session"): the frame template's registry holds no host
+"""§F6 stage 5 (2026-09-27, F6 finished with the parallel session): the frame template's registry holds no host
 reach of its own and sends every host job to the frame runner (contract rule R38).
 
 Stage 3 took the docker socket, the host stack and the host's nginx sites off sbx-beta's registry (17:49:14Z) and stage 4

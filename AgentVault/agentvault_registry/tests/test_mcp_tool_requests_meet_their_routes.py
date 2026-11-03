@@ -146,7 +146,7 @@ def test_no_tool_sends_a_request_its_route_always_refuses(survey):
 # §MCPTEST30 (V0547): MCP tools whose route authenticates only a federation PEER (mTLS, the internal secret or a
 # federation licence), measured 2026-10-02 on V0545: no MCP caller holds such an identity, so none of these can ever
 # succeed. Three turned the 401 into an empty list and read as passes (V0547 makes them say the refusal). Whether each
-# leaves the MCP surface or gains a route its caller may call is his decision. THIS LIST MAY ONLY SHRINK: a new tool at
+# leaves the MCP surface or gains a route its caller may call is a separate decision. THIS LIST MAY ONLY SHRINK: a new tool at
 # a peer route fails here, and a tool that leaves the class must leave the list.
 PEER_ROUTE_BASELINE = {
     "theprotocol_blockFederationAgent", "theprotocol_unblockFederationAgent",          # admin: the peer blocklist entry

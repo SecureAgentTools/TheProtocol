@@ -1,6 +1,6 @@
 """§SOVKIT-2 R1 (2026-09-14): the ledger takes a Kafka record only when this store signed it.
 
-His decision (2026-09-14, "2 yes"): Kafka is PRIVATE to the event store. Only the store's HTTP route publishes and only the
+Decided 2026-09-14: Kafka is PRIVATE to the event store. Only the store's HTTP route publishes and only the
 store's consumer writes the ledger. Measured before: the consumer wrote whatever arrived on :9092 with none of the route's checks
 (the mint-origin rule, the event-type check, the idempotency-key rule) and trusted `source_operator_id` from the record itself,
 while every container on a frame's network could reach the broker. The route's checks and the store's mTLS were a door beside

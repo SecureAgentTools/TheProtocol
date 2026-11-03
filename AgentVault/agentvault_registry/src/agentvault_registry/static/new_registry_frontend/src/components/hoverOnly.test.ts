@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 /**
- * §FEFRAME (2026-10-01, his words "make the hover-only copy buttons visible on touch too"): NO CONTROL THAT ONLY A
+ * §FEFRAME (2026-10-01: the hover-only copy buttons visible on touch too): NO CONTROL THAT ONLY A
  * HOVER CAN REVEAL.
  *
  * A phone has no hover. A control that rests at opacity 0 and appears on hover is still tappable there, but nobody

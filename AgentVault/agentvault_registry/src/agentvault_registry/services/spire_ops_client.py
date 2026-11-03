@@ -1,5 +1,4 @@
-"""The frame runner's identity ops, from the registry's side (§F6 WP6.1, 2026-09-26, his words "approved ... do it fully
-autonomously").
+"""The frame runner's identity ops, from the registry's side (§F6 WP6.1, 2026-09-26).
 
 What the registry did against its OWN SPIRE server through the Docker socket (the frame-invitation rail's bundle and
 federation steps, the workload entries' -federatesWith, IRONHAND's entries, SVID mint and node list) can instead be

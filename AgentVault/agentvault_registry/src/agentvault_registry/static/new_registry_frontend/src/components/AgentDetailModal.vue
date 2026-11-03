@@ -16,8 +16,8 @@
     </div>
 
     <!-- Embedded / anonymous (landing globe): no authed fetch — invite to sign in. §pass78c ① -->
-    <!-- §EMBEDGATE (2026-09-08, his word: "it routes to this older modal to when we didnt had
-         public explore … just make the correct modal pop up there").
+    <!-- §EMBEDGATE (2026-09-08: the globe opened an older modal from before the public explore; the
+         correct modal pops up there now).
          THE SIGN-IN TEASER THAT USED TO LIVE HERE IS GONE. It was `v-else-if="embedded"` — keyed
          on the SURFACE, not on the viewer: the landing page's globe passes `embedded`, so every
          click there got "Sign in to open the full agent card" whether or not anyone was signed in.
@@ -282,8 +282,8 @@
           <!-- The state is said in ALL THREE cases, not only the bad one. Before this, a dead
                endpoint got a badge and a sentence while a working one got silence, so "no news"
                and "no address" looked identical on screen — my own §DISCMIX rule, broken by me,
-               and exactly what he asked about ("where are the links for the reachable ones").
-               His call on the wording: a dot for reachable, no timestamp. -->
+               and exactly the question: where are the links for the reachable ones.
+               The wording: a dot for reachable, no timestamp. -->
           <span class="adm-ep-state" :class="`adm-ep-state--${endpointState}`"
                 data-testid="adm-endpoint-state">
             <span class="adm-ep-dot" aria-hidden="true"></span>
@@ -1092,7 +1092,7 @@ function hireViaGuild() {
  *  it. Only rendered when the preview says the door is open, so it cannot 404 on the way. */
 const offerBusy = ref(false)
 const offerOpen = ref(false)
-const offerOpenThread = ref(false)   // §DEALTHREADS — unticked by default (his call)
+const offerOpenThread = ref(false)   // §DEALTHREADS — unticked by default
 async function offerContract() {
   if (offerBusy.value || !resolvedDid.value) return
   offerBusy.value = true
@@ -1820,7 +1820,7 @@ function formatAuthScheme(scheme: any): string {
 .adm-ep-state--reachable { color: var(--nc-success, #3fa66a); }
 .adm-ep-state--dead { color: var(--nc-danger, #d9534f); }
 .adm-ep-state--unknown { color: var(--nc-text-dim, #8a8f98); }
-/* His call: a dot, no timestamp. The dot carries the state at a glance; the words carry it for
+/* A dot, no timestamp. The dot carries the state at a glance; the words carry it for
    anyone who cannot use colour, which is why both are present and neither is decorative. */
 .adm-ep-dot {
   display: inline-block;

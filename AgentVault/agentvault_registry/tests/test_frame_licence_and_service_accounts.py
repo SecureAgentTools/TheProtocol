@@ -1,8 +1,8 @@
 """§FRAMELIC (2026-09-07) — gates for the three rails this batch adds.
 
-His word: *"frames get a license from new eu frame when stood up so already test this here …
-showcase shows its own agents … we also need an option to hide system agents like eigentrust sim
-agents fx router etc from discovery."*
+A frame gets its licence from the EU frame when it is stood up, tested here; the showcase shows
+its own agents; and system agents (the eigentrust sim agents, the FX router and their kind) can be
+hidden from discovery.
 
 Each gate has a CONTROL that fails on the pre-fix shape, because a gate that cannot fail measures
 nothing (PART 1). The structural gates read the AST rather than the text: a `grep` for

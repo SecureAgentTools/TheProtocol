@@ -95,7 +95,7 @@ def _emit_safe_dumps(payload: Any) -> str:
     return json.dumps(payload, default=_emit_safe_default)
 
 # ---------------------------------------------------------------------------
-# §SOVKIT K1 (his word 2026-09-14 "2 yes": Kafka is PRIVATE to the event store).
+# §SOVKIT K1 (2026-09-14: Kafka is PRIVATE to the event store).
 # The registry used to produce to Redpanda first (fire-and-forget: `send()` never awaited delivery) and fall back to
 # HTTP; agentvault2-85 measured the store's consumer writing whatever arrived on :9092 with none of the HTTP route's
 # checks, reachable by every container on the frame network. The registry now writes ONLY through the store's HTTP

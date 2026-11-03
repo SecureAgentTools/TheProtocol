@@ -1332,7 +1332,7 @@ async def unlock(db: AsyncSession, agent: Agent, *, actor: str,
                  policy: Optional[Dict[str, Any]] = None) -> ReputationBond:
     """§BONDFILL-3 — pay the DECLARED share of a matured bond back and keep the rest bonded.
 
-    His decision (2026-09-11): maturity should unlock capital, not end the business. `release()`
+    Decided 2026-09-11: maturity should unlock capital, not end the business. `release()`
     returns everything and sets is_bonded false, which under enforce refuses the agent at all six
     provider gates; this returns `bond_maturity_releases_percent` (at most 80) and leaves the
     remainder locked, so the agent keeps trading with less capital tied up. Once per bond.

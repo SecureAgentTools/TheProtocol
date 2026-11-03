@@ -111,7 +111,7 @@ interface NavItem {
   // "Become a Backer" advertising a lane with nothing behind it. The item STAYS
   // in the sidebar (Commander's call) but locks, with a tooltip pointing at the
   // local-currency shop — the same treatment Disputes/Staking already get.
-  // §BAFIN (2026-10-02, his words "there is no fiat lane anymore"; the letter: the euro lane and its public price list
+  // §BAFIN (2026-10-02: there is no fiat lane any more; the letter: the euro lane and its public price list
   // are off): "Become a Backer" is no longer locked but HIDDEN where the euro lane is off (requiresRegistryFlag
   // 'fiat_onramp_enabled', the read the router guard uses), so no page advertises a euro door that is closed.
   requiresFiat?: boolean
@@ -137,7 +137,7 @@ interface NavGroup {
 const topItems: NavItem[] = [
   { name: 'Mission Control', i18nKey: 'nav.items.missionControl', path: '/mission-control', icon: 'mdi:view-grid', color: 'text-blue-600' },
   // §DASHRESTORE (2026-09-02) — the 3D bridge kept its view and gained its own
-  // entry on his word ("bridge gets bridge menu item button"). data-tour is
+  // entry of its own (a Bridge menu item). data-tour is
   // DERIVED from path in the template, so this row is also `nav-bridge` for free.
   { name: 'Bridge', i18nKey: 'nav.items.bridge', path: '/bridge', icon: 'mdi:telescope', color: 'text-indigo-400' },
   // POCKET mode (2026-07-07) — a peer of Mission Control: the simplified consumer shell.
@@ -631,7 +631,7 @@ const lockReason = computed<LockReason | null>(() => {
   }
   // §FLARESHOP — the euro lane is not enabled on this registry
   if (item.requiresFiat && !_fiatEnabled.value) {
-    // D6-836 (agentvault2-d6, 2026-10-25, his word through agentvault2-69: "greyed out so you cant use it"): Fiat
+    // D6-836 (agentvault2-d6, 2026-10-25: greyed out, so it cannot be used): Fiat
     // Operations is the one item that asks; Become a Backer HIDES where the lane is off (requiresRegistryFlag)
     return { kind: 'fiat', title: 'Euro on-ramp off here', sub: 'FIAT_ONRAMP_ENABLED is off on this registry', icon: 'mdi:currency-eur-off' }
   }

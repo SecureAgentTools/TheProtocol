@@ -1,5 +1,4 @@
-"""SEC-20 (2026-10-17, his decision on the trust value: "it has to be dervied in a meaningful way. setting it manually
-doesnt make sense to me"): on /operators/sync only this frame's own services (origin) change a record, the trust value
+"""SEC-20 (2026-10-17: the trust value is derived in a meaningful way, never set by hand): on /operators/sync only this frame's own services (origin) change a record, the trust value
 (bayesian_discount) included. Its registry derives that value from what it measured of each peer itself; no other
 caller sets it.
 

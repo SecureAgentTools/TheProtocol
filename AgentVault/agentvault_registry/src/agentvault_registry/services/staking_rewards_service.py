@@ -139,7 +139,7 @@ class StakingRewardsService:
         except Exception as e:
             logger.warning(f'[StakingRewards] Could not load enforcement policy: {e}')
         # §TRUSTCHAIN P4.7 — the readout. A staker with NO trust vector yet and a staker whose
-        # vector is BELOW the floor are both skipped (the payout is unchanged, his call), but they
+        # vector is BELOW the floor are both skipped (the payout is unchanged), but they
         # are different facts and were logged as one ("eigentrust 0.0000 < floor"): the
         # §TRUSTPOLICY rule, applied to stakers — unmeasured is a state, not a low score.
         report: Dict[str, Any] = {

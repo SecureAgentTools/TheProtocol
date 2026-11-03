@@ -1,5 +1,5 @@
 <template>
-  <!-- §FESUITE (2026-10-04, his word "settings ... needs some polish"): this panel was a stock card (white/gray surfaces,
+  <!-- §FESUITE (2026-10-04, the settings polished): this panel was a stock card (white/gray surfaces,
        a bright blue button, its own headings) inside the Settings card that already titles it; it now speaks the page's
        language: the card's help text, a status pill, the console's buttons. The labels the security lifecycle presses
        stay ("Enable Two-Factor Authentication", "Disable 2FA"). -->

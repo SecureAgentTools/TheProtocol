@@ -936,8 +936,8 @@ async def delete_developer(
     # Measured on frame-c 2026-09-10: 32 `OSFE …` OurState E2E throwaways, every owner
     # soft-deleted, every card still active and still listed, and — because each carries a
     # shadow_chancellor flare sidecar — filling registry-a's DISTINGUISHED AGENTS shelf ahead
-    # of every real flare-bearer, on a mirror, on another frame. His words: *"our state
-    # throwaway agents are still displayed at distiguished agents … make them not list."*
+    # of every real flare-bearer, on a mirror, on another frame.
+    # OurState throwaway agents are not listed among the distinguished agents.
     #
     # Unlisting is the right verb, not deactivating: the card must stay FETCHABLE by DID so a
     # counterparty holding a past receipt can still read who they dealt with. `updated_at` is

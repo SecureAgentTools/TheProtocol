@@ -1,7 +1,7 @@
 """W4 phase 1 (agentvault2-aa, 2026-10-25): the TEG's copy of the ledger names map is the registry's, data for data.
 
-His words that day to agentvault2-69: "i want the illegal wording completly gone before opening" and, on the ledger, "just
-use the new wording and make it accept both or something" (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md, W4). The
+The critical wording is gone before the opening; the ledger writes the new words and reads
+both (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md, W4). The
 TEG's reader of a renamed event (the inbound reconciler, tests/test_inbound_reconciler.py) asks this map; the TEG's own
 emission gate is fail-closed, so a new name no policy row allows is never emitted by a TEG.
 """

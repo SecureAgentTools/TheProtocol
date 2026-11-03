@@ -1,5 +1,5 @@
 /**
- * What Settings does with the ?tab= in its address (§FESUITE, 2026-10-04, his word "settings ... needs some polish").
+ * What Settings does with the ?tab= in its address (§FESUITE, 2026-10-04, the settings polished).
  *
  * The address names the tab that is open. Before this, a deep link (?tab=notifications) stayed in the address after
  * another tab was clicked, so a reload or a copied link went back to it; and a ?tab= this viewer cannot see stayed in

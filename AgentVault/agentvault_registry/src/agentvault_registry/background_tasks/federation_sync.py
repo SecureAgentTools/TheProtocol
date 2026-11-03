@@ -1099,8 +1099,7 @@ def trust_sync_payloads(peers, licences, own_trust_domain: str = "",
     a peer frame its trust domain, spiffe://<td>; one of this frame's own operators its own SVID (operator_store_identity),
     or no spiffe_id at all when that cannot be read from its row.
 
-    SEC-20 (2026-10-17, his word: "it has to be dervied in a meaningful way. setting it manually doesnt make sense to
-    me"): the bayesian_discount sent is DERIVED here from the peer's recorded outcomes and the clock
+    SEC-20 (2026-10-17: derived in a meaningful way, never set by hand): the bayesian_discount sent is DERIVED here from the peer's recorded outcomes and the clock
     (services/bayesian_trust.derived_trust_for), never read from the peer row's column, so a value written into that
     column by anything is never what the store weighs the peer's votes by. A peer with no record sends the prior, 0.5.
 
@@ -1130,7 +1129,7 @@ def trust_sync_payloads(peers, licences, own_trust_domain: str = "",
         lid, lname = pick[0]
         seen.add(lid)
         payload = {"id": lid, "operator_name": lname, "bayesian_discount": derived_trust_for(peer, now)}
-        # §TRUSTROW (2026-09-16, his word "approved ... dont change the overall mechanism"): name the peer as well as
+        # §TRUSTROW (2026-09-16; the overall mechanism unchanged): name the peer as well as
         # the licence. The event store's vote weight resolves a voter by its SPIFFE id, so a payload carrying only the
         # licence id updates a row nothing reads (measured: EU held two rows for ASIA, the read one at the prior). The
         # licence still decides which row this is about; this only lets the store find the peer's own row.

@@ -138,8 +138,8 @@ const SIDEBAR_MODE_KEY = 'theprotocol:sidebar-mode'
 export type AmbientMode = 'full' | 'subtle' | 'off'
 const AMBIENT_MODE_KEY = 'theprotocol:ambient-mode'
 
-// The strip at the top of every page (§ALERTS header strip, 2026-10-06; his words "can we make the new announcement
-// bar optional in the settings? i really like the led"):
+// The strip at the top of every page (§ALERTS header strip, 2026-10-06: the announcement
+// bar optional in the settings, the LED kept):
 //   led — the dot-matrix ticker (the default)
 //   bar — the announcement bar: one broadcast at a time, still, with open / mark-read and the alert chip
 export type HeaderStrip = 'led' | 'bar'

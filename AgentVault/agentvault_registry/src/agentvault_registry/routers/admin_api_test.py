@@ -10740,7 +10740,7 @@ async def test_federation(
 # ════════════════════════════════════════════════════════════════════════════
 # The sandbox target's admin token, shared by the proxies above (cached 10 min).
 # §NIGHTLYPROV 2026-09-27: the chained / dual-frame lifecycle bridges that lived here are RETIRED with
-# the Frame-A-era provisioner tests they proxied to (his decision); this helper is what survives of them.
+# the Frame-A-era provisioner tests they proxied to; this helper is what survives of them.
 # ════════════════════════════════════════════════════════════════════════════
 
 _SANDBOX_ADMIN_TOKEN_CACHE: dict = {"token": None, "acquired_at": 0.0}

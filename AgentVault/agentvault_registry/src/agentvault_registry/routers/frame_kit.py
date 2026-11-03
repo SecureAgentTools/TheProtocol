@@ -1,5 +1,5 @@
-"""§HELLOFRAME: the frame kit, the applicant's own page for a frame they run themselves (his word 2026-09-19: "build it
-behind the flag, off by default").
+"""§HELLOFRAME: the frame kit, the applicant's own page for a frame they run themselves (2026-09-19: built
+behind a flag, off by default).
 
     GET  /api/v1/frame-kit/me                      the caller's frame requests, each with its kit window and progress,
                                                     the kit release this frame publishes, and the network to join

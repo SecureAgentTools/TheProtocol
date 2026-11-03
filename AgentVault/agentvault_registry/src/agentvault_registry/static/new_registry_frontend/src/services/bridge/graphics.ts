@@ -1,8 +1,8 @@
 /**
  * §LITEBRIDGE (2026-08-21) — the bridge for machines that cannot run the bridge.
  *
- * His words, carried since §BRIDGE R8: *"the LOW-GFX FALLBACK (keep the old
- * Mission Control + its tour for machines without the compute)"*. The old
+ * Carried since §BRIDGE R8: the LOW-GFX FALLBACK (the old Mission Control and
+ * its tour kept for machines without the compute). The old
  * Mission Control is gone — §BRIDGE P4 deleted 375 lines of it, including the
  * health arithmetic that printed '80.0% GOOD' beside '5 DOWN' — so restoring it
  * would restore a view that lied. What it needs is a bridge that reports the

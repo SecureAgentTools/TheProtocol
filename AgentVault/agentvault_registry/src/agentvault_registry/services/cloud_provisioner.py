@@ -254,7 +254,7 @@ async def allocate_port_block(db: AsyncSession) -> int:
     holder: dict = {}   # host port -> the container publishing or configured to publish it
     for _b in live_bases:
         used.update({_b + off for off in _BLOCK_OFFSETS})
-    # §F6 (2026-09-27, his words "i approve to finish f6 implementation on sandbox"): a registry with NO docker socket is
+    # §F6 (2026-09-27, F6 finished on the sandbox): a registry with NO docker socket is
     # F6's posture, not a fault. The frame runner does its host work, and the runner's one-shot binds the block for real
     # and refuses loudly if it is held. Here the host-wide census and the bind probe cannot run; this frame's own live
     # blocks, the cool-down below and the frame's own CLOUD_PORT range decide, which the log says ONCE per allocation

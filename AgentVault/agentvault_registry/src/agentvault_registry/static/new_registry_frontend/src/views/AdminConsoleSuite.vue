@@ -157,8 +157,8 @@
 </template>
 
 <script setup lang="ts">
-// §MCPTEST30 (V0555, 2026-10-03): the console suite's runs, visible. His word: "make sure to make the frontend suite runs
-// also visible. if it makes sense make a new test page for it". Its own page: the suite's question is which lifecycle, on
+// §MCPTEST30 (V0555, 2026-10-03): the console suite's runs, visible,
+// on a test page of their own. Its own page: the suite's question is which lifecycle, on
 // which screen, did what, and its history is its own (routers/console_suite.py), apart from the MCP tester's 60 runs.
 import { ref, computed, onMounted } from 'vue'
 import Icon from '@/components/Icon.vue'

@@ -1,5 +1,5 @@
 /**
- * §FESUITE V0595 (his word 2026-10-11, "also correct the avt prose in the docs"): a docs source marks the parts that
+ * §FESUITE V0595 (2026-10-11, the unit prose in the docs corrected): a docs source marks the parts that
  * apply only where a registry switch is on, and a page shows them only where THIS registry says that switch is on.
  *
  *   <!-- on: staking_rewards -->

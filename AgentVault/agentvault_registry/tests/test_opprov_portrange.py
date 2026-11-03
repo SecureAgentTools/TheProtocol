@@ -1,4 +1,4 @@
-"""§OPPROV (2026-09-27, his words "fix operators provisioning"): the cloud operator port allocator, measured on sbx-alpha.
+"""§OPPROV (2026-09-27, the operators' provisioning fixed): the cloud operator port allocator, measured on sbx-alpha.
 
 sbx-alpha's range CLOUD_PORT_MIN..MAX = 31100..31499 (four blocks) held its own operator at 31100 and, above it, three
 blocks published by OTHER frames' operators on the same host (sbxbetaop 31200, amsterdam 31300, lisbon 31400). The

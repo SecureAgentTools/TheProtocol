@@ -1,6 +1,5 @@
 """§MCPTEST30 (V0649): the admin tools a run drives only where its target is torn down after the run (agentvault2-d3,
-2026-10-31; his words in d3's session that morning: "continue with big batch of tester improvements before proofing
-whole image", and step 2 of sessionlogs2026/BACKLOG_2026-10-19_MCP_REFUSAL_ONLY_PASSES.md, where his reading of a pass
+2026-10-31; a batch of tester improvements before the image is proven, and step 2 of sessionlogs2026/BACKLOG_2026-10-19_MCP_REFUSAL_ONLY_PASSES.md, where his reading of a pass
 on a refusal alone is "completly cheated").
 
 A target says it is one with MCP_TESTER_EPHEMERAL_TARGET=true in its registry's environment: the two frames of the
@@ -58,7 +57,7 @@ anywhere else reads it unset: the safe answer.
                                             on the account between the read and the payout is paid for again and
                                             retried once, then NOT MEASURED, named (never a pass)
              What the agent holds at the end goes back to the treasury, and the agent and its developer are removed
-             (Throwaways.close). tegTreasuryIssue is not run, here or anywhere: minting is never automated (his decision
+             (Throwaways.close). tegTreasuryIssue is not run, here or anywhere: minting is never automated (decision
              D9), so its row keeps that reason (the by-design reasons table). Why only there: a payout from the fee account is
              paid out of what the frame's agents paid in fees; the supply stays whole (the pair proof reads both frames'
              supply audit after the suites).

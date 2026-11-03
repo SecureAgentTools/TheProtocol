@@ -73,7 +73,7 @@ const rows = computed(() => sum.value ? [
 .ckd-money-unit b { color: var(--nc-primary, #00e5ff); }
 .ckd-unit-missing { color: var(--nc-warning, #d29922); }
 .ckd-money-rows { margin: 0; display: flex; flex-direction: column; gap: .22rem; }
-/* §COCKPITTILES T3 — his words: "some look very cheap for displaying huge sums". Three
+/* §COCKPITTILES T3 — some looked cheap for displaying huge sums. Three
    label/number lines at .76rem in a laptop-sized box is why. The box is one row unit now
    (T1) and the FIGURE is the thing that reads: tabular so the columns line up, and never
    truncated — a rounded number that does not say it rounded is a wrong number. */

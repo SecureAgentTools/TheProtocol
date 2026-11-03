@@ -3,8 +3,8 @@
  * The header strip's LED ticker (the default strip; Settings > Preferences > Header strip offers the still announcement
  * bar instead, AnnouncementBar.vue).
  *
- * §ALERTS header strip (2026-10-06, agentvault2-09). His words: "check why alerts are not connected to the header thing
- * where the broadcasts are displayed", then "i really like the led but polishing it would be cool additionally". What
+ * §ALERTS header strip (2026-10-06, agentvault2-09): the alerts connected to the header where the broadcasts
+ * are displayed, and the LED polished. What
  * changed:
  *  - ALERTS mode asked the Health Monitor's alerts route with an extra 'health' path segment, which does not exist (the
  *    route is /admin/prometheus-metrics,

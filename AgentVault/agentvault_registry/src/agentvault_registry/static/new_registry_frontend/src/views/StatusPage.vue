@@ -1,6 +1,6 @@
 <template>
   <div class="st" data-testid="status-root" :data-overall="overall">
-    <!-- the landing page's ambient: the grid, the scan beam, the three glows (his word: take the landing's background) -->
+    <!-- the landing page's ambient: the grid, the scan beam, the three glows (the landing's background) -->
     <div class="st-ambient" aria-hidden="true">
       <div class="st-grid"></div>
       <div class="st-scan"></div>

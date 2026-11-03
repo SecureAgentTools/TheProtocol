@@ -205,7 +205,7 @@ _PATTERNS: List[Tuple[str, "re.Pattern[str]", str]] = [
         # frame whose SPIFFE id was not /service/registry-* or /service/teg-*
         # (backlog B8). That coupling is FIXED: R51 widened
         # is_internal_service_identity to accept '<name>-registry', and both
-        # sandbox operators were seeded through that exact rail on his word —
+        # sandbox operators were seeded through that exact rail —
         # first call, HTTP 200, Δ=0 on both stores. The prediction the old note
         # made came true in the same run: this code went 3 → 0.
         #

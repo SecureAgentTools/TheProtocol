@@ -260,7 +260,7 @@ def start_emission_policy_invalidation_listener():
 
 
 # ---------------------------------------------------------------------------
-# §SOVKIT K1 (his word 2026-09-14 "2 yes": Kafka is PRIVATE to the event store).
+# §SOVKIT K1 (2026-09-14: Kafka is PRIVATE to the event store).
 # The TEG used to produce to Redpanda first and fall back to HTTP; the store's consumer took whatever arrived on
 # :9092 with none of the HTTP route's checks. The TEG now writes ONLY through the store's HTTP route (over the
 # frame's mTLS sidecar, V0370+ template); the broker belongs to the store alone. `shutdown_kafka` stays as a

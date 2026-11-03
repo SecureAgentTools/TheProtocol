@@ -102,7 +102,7 @@ RUN pip install --no-cache-dir -c /tmp/constraints.txt \
 RUN pip install --no-cache-dir -c /tmp/constraints.txt spiffe cryptography PyJWT
 
 # Install remaining dependencies
-# §DEPS (2026-09-27, his words "would be cool if we get everything to the newest stable version that runs with us"):
+# §DEPS (2026-09-27):
 # the newest stable release of each, resolved together on this base. Held back, each for a reason a gate cannot see:
 # stripe 15 (§DEPS stripe15, 2026-09-29) is no longer held: 15.0 made StripeObject a non-dict (no .get()/.items()), so
 # the one module that talks to the SDK hands out plain dicts (.to_dict() on the webhook event, the created and the

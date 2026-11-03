@@ -1,5 +1,5 @@
-"""W3 (agentvault2-d6, 2026-10-25; his words through agentvault2-69: "i want the illegal wording completly gone before
-opening"): which public MCP tools are LISTED follows the registry's switches (mcp/tool_switches.py), and no listed name
+"""W3 (agentvault2-d6, 2026-10-25; the critical wording gone before
+the opening): which public MCP tools are LISTED follows the registry's switches (mcp/tool_switches.py), and no listed name
 on production's switches carries a staking, reward, rate, earnings or token-as-value word.
 
 A tool that starts a lock is listed only where STAKING_ENABLED is on, a payout tool only where STAKING_REWARDS_ENABLED is

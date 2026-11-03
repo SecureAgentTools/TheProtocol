@@ -1,7 +1,7 @@
 """§OPA (2026-10-06, agentvault2-09): the operator's own OPA, through the provisioning flow.
 
-His words: "please roll out and enable opa for the whole production cluster", then, on hearing the operators had none,
-"we need this whole ... provisioner fix". The frames carried an OPA since §SOVKIT (the frame template's kit); no
+OPA on the whole production cluster, then, as the operators had none, the provisioner
+fix. The frames carried an OPA since §SOVKIT (the frame template's kit); no
 operator did, so every operator registry's OPA code stayed dark. host_work now materialises the operator's OPA the way
 it materialises the database's TLS: an override from the live templates, the policies, and an entry registered at
 stack time, never federated, before anything starts. These pin that shape, and the one property the override cannot

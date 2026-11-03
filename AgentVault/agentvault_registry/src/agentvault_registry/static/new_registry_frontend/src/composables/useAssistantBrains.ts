@@ -121,7 +121,7 @@ export function useAssistantBrains(opts: {
   /* The example COMMAND stays English (the parser only matches English — a
      translated example would not work); only the gloss after the dash moves. */
   // the stake example only where a stake can be opened (registry-config's staking_enabled, as the stake sheet's door;
-  // his word 2026-10-25: "staking doesnt exist anymore in the way it did"); D6-835: each example names the frame's unit
+  // 2026-10-25: staking no longer exists in the way it did); D6-835: each example names the frame's unit
   const { config: assistantRegistryCfg } = useRegistryConfig()
   const caps = computed(() => CAPABILITY_ENTRIES
     .filter(c => c.key !== 'stake' || assistantRegistryCfg.value.staking_enabled === true)

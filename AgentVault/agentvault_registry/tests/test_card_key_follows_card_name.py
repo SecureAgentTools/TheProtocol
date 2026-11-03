@@ -1,4 +1,4 @@
-"""§MEMBERSHIP (V0560, his word 2026-10-03 "do the one more place left"): a registry's card key is named as its card.
+"""§MEMBERSHIP (V0560, 2026-10-03, the one place left): a registry's card key is named as its card.
 
 registry_card_builder._build_spiffe_id() took settings.REGISTRY_NAME, a cloud operator's container label, so sbxbetaop's
 card key was spiffe://<td>/registry/cloud-op-sbxbetaop while its card, SVID and parent's row say sbxbetaop. It now takes

@@ -2,7 +2,7 @@
 """§FRAMEPROV P2 (2026-09-13): the frame runner, a small root service on a local socket that runs the frame standup
 driver for the admin UI, and nothing else.
 
-His decision 2026-09-13 (the host-runner recommendation): the registry never holds host root for frame provisioning.
+Decided 2026-09-13 (the host-runner recommendation): the registry never holds host root for frame provisioning.
 It holds this socket, and the socket accepts a CLOSED set of jobs with validated arguments:
 
     ping · plan · standup · resume · teardown · cancel · status · events · reveal · dns_status · dns_ensure · dns_remove
@@ -13,7 +13,7 @@ Milestone 1 never federates, never grants host reach, never provisions operators
 Protocol: one JSON object on one line in; one line out, {"ok": true, "result": ...} or {"ok": false, "refused": "..."};
 then the connection closes. Callers are admitted by the socket's mode (0660 root:deploy) and by SO_PEERCRED (uid 0, or
 the registry's uid 1000). State (0700): jobs/<id>/{job.json, stdout.log, progress.jsonl, secrets/}, frames/<name>.json
-(which job built it) and audit.jsonl. The frame admin credential is handed over ONCE (`reveal`, his word "show once");
+(which job built it) and audit.jsonl. The frame admin credential is handed over ONCE (`reveal`, shown once);
 the frame's own .env.frame-test keeps it on the host.
 
 Plan: sessionlogs2026/PLAN_2026-09-13_FRAME_PROVISIONING.md. Unit: theprotocol-frame-runner.service beside this file.
@@ -51,7 +51,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import frame_dns  # noqa: E402  (beside this file, stdlib only)
 
 VERSION = "4"   # 4: the sandbox ops (§TESTBED), unadopt, the calling frame identified by its container   # 2: ping names the images, the domain, the resumable steps and the spec fields · 3: the dns ops (P5)
-# §LANTERNT3 (2026-09-16, his decision "route it through the frame runner"; the scoping is agentvault2-b5's).
+# §LANTERNT3 (2026-09-16: routed through the frame runner; the scoping is agentvault2-b5's).
 # TWO OP SETS AND TWO SOCKETS, because a unix socket already carries scope in its PATH.
 #   OPS           — frame management. Served on the full socket, which is where the admin console lives.
 #   OPERATOR_OPS  — what a FRAME's own registry may ask for on its own behalf. Served on a SECOND socket.
@@ -64,7 +64,7 @@ VERSION = "4"   # 4: the sandbox ops (§TESTBED), unadopt, the calling frame ide
 # rest in the runner's own words. The frame template mounts THAT socket; the full one stays with the console.
 # ⚠ OPERATOR_OPS IS DELIBERATELY NOT ADDED TO OPS. One flag would let the full-socket callers gain them too;
 # two sets cannot be confused, which is the same argument as teardown being its own op rather than a flag.
-# §F6 WP6.1 (2026-09-26, his words "approved ... do it fully autonomously"): the IDENTITY ops, what a frame's registry
+# §F6 WP6.1 (2026-09-26): the IDENTITY ops, what a frame's registry
 # did against its OWN SPIRE server through the Docker socket (the frame-invitation rail's bundle and federation steps,
 # the workload entries' -federatesWith, IRONHAND's entries, SVID issuance and node list), done here as closed ops on the
 # operator socket, each bound to the calling frame (see Runner._identity_ctx and the spec_* rules below).
@@ -76,7 +76,7 @@ IDENTITY_OPS = ("spire_bundle_set", "spire_bundle_show", "spire_bundle_list", "s
 # through a docker:cli sidecar holding the Docker socket (restart_cloud_service, fetch_cloud_logs), done here on the
 # operator's own compose stack. Bound by the OPERATOR's containers (Runner._caller_operator), so they serve frames this
 # runner did not build as well as the ones it did.
-# Slice 2 (2026-09-26, his words "continue with wp6.2 slice 2 on the sandbox pair"): the SPIRE half of an operator's revoke
+# Slice 2 (2026-09-26, on the sandbox pair): the SPIRE half of an operator's revoke
 # and purge (only /operator/<op>/ of the caller's frame, never its own node or another operator's), and the host half of
 # a purge (the stack, the edge, the stack dir, and the genesis drain run inside the operator's own TEG).
 OPERATOR_LIFECYCLE_OPS = ("operator_restart", "operator_logs", "operator_revoke_spire", "operator_purge")
@@ -85,8 +85,8 @@ OPERATOR_LIFECYCLE_OPS = ("operator_restart", "operator_logs", "operator_revoke_
 OBSERVATION_OPS = ("containers_census", "container_stats")
 OPERATOR_OPS = (("operator_ping", "operator_provision", "operator_teardown", "operator_status")
                 + IDENTITY_OPS + OPERATOR_LIFECYCLE_OPS + OBSERVATION_OPS)
-# §TESTBED (2026-09-19, his words "the sandbox provisioning should be also in the frontend mcp-tester view ... all
-# provisioned thru the proper lanes"): a kit frame's console provisions its SANDBOX through these, on the operator socket
+# §TESTBED (2026-09-19: the sandbox provisioning in the MCP tester view, all
+# provisioned through the proper lanes): a kit frame's console provisions its SANDBOX through these, on the operator socket
 # it already mounts, and only where the policy says `"sandboxes": true` (the kit installer writes it; this network's own
 # runner has no such key, so they are refused here). Each one acts for the CALLING frame only, identified by its container.
 SANDBOX_OPS = ("sandbox_status", "sandbox_up", "sandbox_down", "sandbox_events", "sandbox_reveal")
@@ -98,7 +98,7 @@ OPS = ("ping", "plan", "standup", "resume", "teardown", "cancel", "status", "eve
        "dns_remove", "dns_push_ensure", "relink_auditor", "adopt", "unadopt")
 NAME_RE = re.compile(r"[a-z][a-z0-9-]{0,30}[a-z0-9]")
 INSTANCE_RE = NAME_RE
-# §NIGHTPROV (2026-09-27, his words "1 yes 2 approved 3 00:30z. go ahead.": the frame runner may build SANDBOX-posture
+# §NIGHTPROV (2026-09-27: the frame runner may build SANDBOX-posture
 # frames at night, DNS names and a certificate per frame, created and removed automatically). The nightly provisioning
 # job's pair is nt<yymmdd> (nt<yymmdd>x<n> for a second pair the same day: a proof, a re-run), its two frames
 # <pair>a and <pair>b. The whole nt<6 digits> namespace is the job's: any other name in it is refused, so nothing but
@@ -720,7 +720,7 @@ class Config:
         # host auditor slot, the SNI map, the apex ws lane). True on the host that runs the fleet; a stranger's
         # host that has no sidecars.json sets it false and the frame relies on its own kit.
         self.wire_prod = bool(conf.get("wire_prod", True))
-        # §LANTERNT3 (2026-09-16, his word "lantern shouldnt be sandbox"): the posture a frame this runner builds is
+        # §LANTERNT3 (2026-09-16: lantern is no sandbox): the posture a frame this runner builds is
         # BORN with. It was the literal "sandbox" in driver_argv, and standup_driver.py:695 turns the rate limiter OFF
         # for any posture that is not "production" — so every frame the runner has ever built (hansa, orchard, both
         # lanterns) went live on a public DNS name with a real certificate and NO rate limiting. Measured 2026-09-16:
@@ -1522,7 +1522,7 @@ class Runner:
                            needle=os.path.basename(self.cfg.driver), extra={"dns_managed": True}, mail=mail)
 
     def _remove_frame_secrets(self, frame, uid):
-        """His word 2026-09-13 ("torn down secrets ... have no use anymore, you decide"): a torn-down frame's credential
+        """Since 2026-09-13 (torn-down secrets have no use any more): a torn-down frame's credential
         copies go with it. Only a `secrets` directory directly inside one of this runner's job directories is removed;
         any other path is named and left alone."""
         recorded = frame.get("secrets_dir") or ""
@@ -2232,7 +2232,7 @@ class Runner:
         return out
 
     def _check_operator_push(self, vhost, edge, slug):
-        """§PUSH (2026-10-06, his words "fix the things you find on the way make it secure"): the operator's public push
+        """§PUSH (2026-10-06, secure along the way): the operator's public push
         vhost, checked like its console vhost against what spec.edge declares, plus what the declaration itself must keep.
         The push name is ONE label under the operator's own suffix (`<label>-push.<suffix>` for `<label>.<suffix>`) and the
         port is its block's push offset, so a registry cannot name another host or reach another port through this
@@ -4435,8 +4435,8 @@ print(json.dumps({"status": r.status, "body": body}))
             return self._dns_remove(name, uid)
 
     def op_dns_push_ensure(self, req, uid):
-        """§PUSH (2026-10-06, his words "the key/token that the provisioner is using to issue subdomains. needs to do this
-        in the provisioner. and you can do it for us too"): ONE name, `<name>-push.<domain>`, for a frame whose other
+        """§PUSH (2026-10-06: the provisioner issues these subdomains with the key it already
+        uses, here too): ONE name, `<name>-push.<domain>`, for a frame whose other
         names predate the runner (the sandbox pair: sandbox-a and sandbox-b were stood up before P5 and have no public
         push name). dns_ensure is all-or-nothing over the four names and refuses such a frame, rightly: it never adopts.
         This op adopts nothing either. It creates the push name alone, with the runner's own token and mark, and writes

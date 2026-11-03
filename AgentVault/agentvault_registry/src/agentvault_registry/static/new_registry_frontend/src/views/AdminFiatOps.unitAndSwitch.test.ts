@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 
 /**
- * D6-835 and D6-836 (agentvault2-d6, 2026-10-25; his words through agentvault2-69: "sweep for avt again", "make fiat
- * operations inaccessible if deactivated. or best just greyed out so you cant use it"). Fiat Operations said AVT on
+ * D6-835 and D6-836 (agentvault2-d6, 2026-10-25: a sweep for AVT again, and Fiat
+ * Operations greyed out while it is switched off). Fiat Operations said AVT on
  * every frame (the hero "EUR → AVT", the KPIs, the tables, the pricing editor), also on EU, whose unit is ECU and whose
  * on-ramp is off. Now every label names the registry's own unit (a neutral word while the config is unread, never a
  * wrong unit), and the page says when the on-ramp is off; the sidebar greys it out then (requiresFiat).

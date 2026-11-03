@@ -187,7 +187,7 @@ services:
     logging: *default-logging
 
   {{REGISTRY_NAME}}-redpanda:
-    # §SOVKIT K1 (his word 2026-09-14 "2 yes": Kafka is PRIVATE to the event store; "fix kafka scalable and secure").
+    # §SOVKIT K1 (2026-09-14: Kafka is PRIVATE to the event store, scalable and secure).
     # agentvault2-85 measured the store's consumer writing whatever arrived on :9092 with none of the HTTP route's
     # checks, reachable by every container on the frame network. Now the broker sits on the ledger-only network with
     # the store as its ONLY client: SASL/SCRAM-SHA-256 over TLS on the frame's own SVID (§MTLSHOPS S5: from its own volume,
@@ -677,8 +677,8 @@ services:
   # ═══════════════════════════════════════════════════════════════════════
   # EVENTSTORE mTLS SIDECAR (§MTLSGAP 2026-09-08)
   # ═══════════════════════════════════════════════════════════════════════
-  # His word: *"everything is mtls enforced … not acceptable for sandbox, it should be a
-  # realistic env."* Measured, the sandbox was exactly as realistic as production: this template
+  # Everything is mTLS enforced, and the sandbox must be a
+  # realistic environment too. Measured, the sandbox was exactly as realistic as production: this template
   # rendered `-nginx-federation` and `-nginx-teg` and NO ES equivalent, so no frame ever stood up
   # from it has had one, and every registry writes to its own ledger over plain http. The only ES
   # gateway in the fleet is Frame A's — on the frame being retired.
@@ -767,7 +767,7 @@ services:
       ES_OWN_TRUST_DOMAIN: ${FT_ES_ES_OWN_TRUST_DOMAIN}
       KAFKA_CONSUMER_BATCH_SIZE: ${FT_ES_KAFKA_CONSUMER_BATCH_SIZE}
       KAFKA_CONSUMER_BATCH_TIMEOUT_MS: ${FT_ES_KAFKA_CONSUMER_BATCH_TIMEOUT_MS}
-      # §SOVKIT K1 (2026-09-14, his word "2 yes"): the ONLY client of the ledger broker. SCRAM over TLS verified against
+      # §SOVKIT K1 (2026-09-14): the ONLY client of the ledger broker. SCRAM over TLS verified against
       # the frame's bundle (the broker serves the frame's SVID), and every record signed: the consumer takes a record only
       # when this store signed it (agentvault2-85's R1, ES_KAFKA_RECORD_AUTH=enforce from birth).
       KAFKA_SECURITY_PROTOCOL: ${FT_ES_KAFKA_SECURITY_PROTOCOL}
@@ -1174,7 +1174,7 @@ services:
       # each other.
       FRAME_LOCAL_BUNDLE_ENDPOINT_URL: ${FT_REG_FRAME_LOCAL_BUNDLE_ENDPOINT_URL}
       FRAME_LOCAL_FEDERATION_ENDPOINT_URL: ${FT_REG_FRAME_LOCAL_FEDERATION_ENDPOINT_URL}
-      # §F6 stage 5 (2026-09-27, his words "finish f6 with the parallel session"): EVERY host job of this registry goes
+      # §F6 stage 5 (2026-09-27, F6 finished with the parallel session): EVERY host job of this registry goes
       # to the frame runner. The registry holds no docker socket, no host stack, no nginx sites and no CA (R38), so each
       # switch's default ("local", docker exec on a socket it does not have; IRONHAND's "proxy" to a central registry)
       # would fail. HOST_REACH_PREFER=runner also closes the route on a frame rendered WITH host reach: the runner or a
@@ -1224,7 +1224,7 @@ services:
       # docker-compose.operator.yml, generate-operator-env.sh, pgbouncer.ini
       # from here when packaging a chained operator bundle.
       - {{NGINX_TEMPLATES_DIR}}:/app/nginx-templates:ro
-      # §LANTERNT3 (2026-09-16, his decision "route it through the frame runner"): the OPERATOR socket, and
+      # §LANTERNT3 (2026-09-16: routed through the frame runner): the OPERATOR socket, and
       # only that one. A frame's registry cannot provision its own cloud operator itself — the bundle is built
       # through the host Docker API and this template withholds that socket on purpose, because a docker socket
       # is unrestricted root on the host. The runner does that work instead, and this mount is how the frame
@@ -1375,7 +1375,7 @@ services:
     logging: *default-logging
 
   # ════════════════════════════════════════════════════════════════
-  # §SOVKIT (2026-09-14, his word "frames will be completely sovereign"): THE KIT A FRAME SHIPS
+  # §SOVKIT (2026-09-14: frames completely sovereign): THE KIT A FRAME SHIPS
   # WITH. Before this a runner-built frame carried ONE sidecar of its own (ntfy); its metrics, its
   # alerts, its auditor, its policy engine and its index all lived on THIS host's sidecars, so a
   # frame run anywhere else had none of them. Every image is an env value (the operator pins it),

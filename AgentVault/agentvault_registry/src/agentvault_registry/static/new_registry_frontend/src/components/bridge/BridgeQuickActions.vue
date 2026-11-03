@@ -44,8 +44,8 @@ import ActingContextNotice from '@/components/common/ActingContextNotice.vue'
 /**
  * §BRIDGE R11 #5 — CLAIM HAD NOTHING TO SAY FOR ITSELF.
  *
- * His words: *"fund send stake claim i dont know what claim means but i cant
- * test it like this."* He was right twice over: the button never said what it
+ * Fund, send, stake, claim: nobody could say what Claim meant, or test it like that,
+ * for two reasons: the button never said what it
  * would claim, and with nothing locked there is nothing to claim, so pressing
  * it could only ever return an empty success.
  *
@@ -235,10 +235,8 @@ const actions = computed<QuickAction[]>(() => {
       needsTarget: false,
     },
     /*
-     * §BRIDGE R13 #3 — LOCK and CLAIM are GONE from here, on his word:
-     * "top staking is irrelevant. can be removed ... the bottom modal you have
-     * created is better more complete" and "claim button greyed out. can be
-     * removed is already in staking modal".
+     * §BRIDGE R13 #3 — LOCK and CLAIM are GONE from here: the bottom modal is
+     * more complete, and claiming already lives in the staking modal.
      *
      * He is right on the merits, not just the duplication: this LOCK button could only
      * ever lock for a fixed 7 days with no tier choice, while the LOCKS
@@ -253,8 +251,8 @@ const actions = computed<QuickAction[]>(() => {
 /*
  * §BRIDGE R9 — SUBAGENTS ARE HANDS, NOT PAYEES.
  *
- * His words: *"we need treatment for subagents and delegation so we dont get
- * errors."* A spawned sub-agent (§SPAWN-ANCHOR) is a walletless HAND: its
+ * Sub-agents and delegation get their own treatment, so they meet no errors.
+ * A spawned sub-agent (§SPAWN-ANCHOR) is a walletless HAND: its
  * PRINCIPAL holds the purse, and the registry resolves a hand's spend to that
  * principal's wallet. So aiming FUND or SEND at a hand offers a payment that
  * cannot land where the screen implies.

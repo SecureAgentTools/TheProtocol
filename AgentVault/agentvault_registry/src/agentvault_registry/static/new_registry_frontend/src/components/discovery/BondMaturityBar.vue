@@ -1,6 +1,6 @@
 <!--
   §BONDFILL (2026-09-11) — HOW FAR A REPUTATION BOND IS FROM MATURITY, as a thing that fills up.
-  §BONDFILL-3 (same night, his word) — AND WHAT HAPPENS WHEN IT GETS THERE, as a thing that burns.
+  §BONDFILL-3 (same night) — AND WHAT HAPPENS WHEN IT GETS THERE, as a thing that burns.
 
   THE BOND IS THE COLLATERAL a counterparty is asked to rely on. `250 ECU` says a provider has
   something to lose; maturity says how long it has had it at stake and what it still has to do.

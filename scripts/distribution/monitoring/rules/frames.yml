@@ -75,7 +75,7 @@ groups:
         annotations:
           summary: "{{ $labels.frame }} reaches fewer than 90% of its federation peers"
           description: "Derived from the peer rows the fan-out stamps; a peer parked after a refused dial stays unreachable for 33 minutes, so this waits 30m before speaking."
-      # §OPAKIT (2026-10-07, his words "prepare a new frame kit including opa metrics"): OPA is scraped (job opa,
+      # §OPAKIT (2026-10-07, a frame kit with OPA metrics): OPA is scraped (job opa,
       # component opa) and the registry counts every shadow decision (opa_decisions_total{policy, decision,
       # source=python|opa|mismatch}); nothing turned either into a signal. Replayed over 7 days of the production cluster
       # and the sandbox the day this was written: the two registry-side rules silent (every OPA answer agreed, none erred).

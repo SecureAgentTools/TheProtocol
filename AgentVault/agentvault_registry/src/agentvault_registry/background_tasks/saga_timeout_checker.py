@@ -472,7 +472,7 @@ async def _find_settled_transfer_ids(transfer_ids: list) -> Optional[set]:
     table is recoverable.
 
     Returns a set of transfer_ids that have a Settled event somewhere, or None when the store could not be read completely
-    (no credential, a failed or refused read of either table). §SOVKIT-2, his decision 2026-09-14 ("3 yes"): the saga waits
+    (no credential, a failed or refused read of either table). §SOVKIT-2 (2026-09-14): the saga waits
     and asks again instead of refunding on a scan that could not see the store. The old answer on a failure, an empty set,
     read as "nothing settled" and refunded transfers the receiving frame may already have credited.
     """
@@ -562,7 +562,7 @@ async def _find_settled_transfer_ids(transfer_ids: list) -> Optional[set]:
                 failures.append(f"{table}: {type(parse_error).__name__}")
                 continue
         # §SOVKIT T5 (2026-09-14): a failed read was `continue`d without a trace, so a scan that could not see the
-        # store and a scan that found nothing settled returned the same empty set. §SOVKIT-2 (his decision 2026-09-14):
+        # store and a scan that found nothing settled returned the same empty set. §SOVKIT-2 (2026-09-14):
         # a scan missing either table decides nothing; the peer's Settled events live in the foreign table.
         if failures:
             logger.warning(
@@ -659,7 +659,7 @@ async def check_cross_frame_timeouts() -> list:
     candidate_tids = [row.id for row in rows]
     settled_tids = await _find_settled_transfer_ids(candidate_tids)
     if settled_tids is None:
-        # §SOVKIT-2 (his decision 2026-09-14, "3 yes"): a scan that could not read the store decides nothing. Refunding on
+        # §SOVKIT-2 (2026-09-14): a scan that could not read the store decides nothing. Refunding on
         # it pays the sender back for transfers the receiving frame may already have credited (value on both frames);
         # waiting costs the sender time. The rows stay locked and the next cycle asks again.
         _LAST_CYCLE_STATS["cross_frame_refund_deferred"] = len(rows)

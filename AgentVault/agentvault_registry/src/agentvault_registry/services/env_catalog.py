@@ -1,6 +1,6 @@
 """The configuration catalog: what a registry can choose to run, in the words the application forms show (§FESUITE
-V0595, his word 2026-10-11: "we need env setup in the application forms. but we need to map all the flags ... the env
-flips that are frame exclusive should be still displayed for operators but greyed out and not chooseable").
+V0595, 2026-10-11: every flag mapped; a switch only a frame may flip shows to operators, greyed out and not
+choosable).
 
 ONE source for the frame request's switch board (the Frame Commander), the operator application's configuration step
 and the provisioner that writes an operator's env. Before this the Frame Commander's 23 switches lived only in the

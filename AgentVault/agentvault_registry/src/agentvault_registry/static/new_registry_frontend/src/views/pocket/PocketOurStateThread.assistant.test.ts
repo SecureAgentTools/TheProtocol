@@ -3,7 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 /**
- * V0654 (ap) (order gwo_03a846cb91b37628c3c6710a; his words in the sessions' room, seq 1091): the assistant in OurChat.
+ * V0654 (ap) (order gwo_03a846cb91b37628c3c6710a): the assistant in OurChat.
  * Pickable per identity in the "Speak as" choice; the "as" chip turns amber with the assistant's mark while it is on;
  * what he types then goes to his assistant, not the room: his request shows to him alone and the answer the registry
  * posts (sent_with "assistant") comes below it, marked "written by your assistant" for him and "written by the

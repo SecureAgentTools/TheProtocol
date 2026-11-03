@@ -69,7 +69,7 @@ PANELS = [
      {"thresholds": [(0, "green"), (1, "red")], "desc": "No success in 3h AND still erroring in the last hour — the vitals verdict ERRORING. A bare staleness count would list every daily worker."}),
     ("Worker cycles / h by outcome", 'sum by (outcome) (increase(worker_cycles_total{frame="$frame", component="registry"}[1h]))', "ts", "none",
      {"desc": "ok and error cycles per hour across every worker; a healthy frame shows an ok line and no error line."}),
-    # §OPAKIT (2026-10-07, his words "prepare a new frame kit including opa metrics"): the registry counts every OPA shadow
+    # §OPAKIT (2026-10-07, a frame kit with OPA metrics): the registry counts every OPA shadow
     # decision (opa_decisions_total{policy, decision, source=python|opa|mismatch}, opa_decision_latency_seconds) and the
     # kit scrapes OPA itself (job opa, component opa); nothing showed either. Measured that day on the production cluster
     # and the sandbox: every OPA answer agreed with the registry's (0 mismatch, 0 error in 6 h).

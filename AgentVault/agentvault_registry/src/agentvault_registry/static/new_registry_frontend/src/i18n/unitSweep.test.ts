@@ -4,7 +4,7 @@ import path from 'node:path'
 import { createI18n } from 'vue-i18n'
 
 /**
- * D6-835 (agentvault2-d6, 2026-10-25; his words through agentvault2-69: "sweep for avt again ... currency agnostic"):
+ * D6-835 (agentvault2-d6, 2026-10-25; a sweep for AVT again, currency agnostic):
  * the console said AVT on every frame in the places the docs gallery shows (Fiat Operations, the Treasury's mint, Agent
  * Forge, the Senate's funding card, the reactors' worker cards, the command palette, the Pocket assistant's examples,
  * the org policy) and in a few more (the FX desk's notes, the CI/CD template prices, the payment-token states). EU's

@@ -1,6 +1,6 @@
 """§REPATLANE-8 (V0610, 2026-10-13) — a kept answer outlives Redis: the durable copy of an Idempotency-Key's record.
 
-His decision, left to agentvault2-45 2026-10-13 ("do your decision for the database copy"): the answers a money endpoint
+Decided by agentvault2-45 2026-10-13 (the database copy): the answers a money endpoint
 keeps under its Idempotency-Key (V0606's kept attempts, services/idempotency/cache.py) lived only in Redis, and Redis runs
 allkeys-lru (128 MB; EU used 75 MB, 56 of them tester history): a kept answer the cache evicted inside its 24 h window made
 the same key run the payment AGAIN, because nothing else remembers it (the TEG does not dedup transfers by the client's key).

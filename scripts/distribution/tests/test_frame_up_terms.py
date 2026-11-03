@@ -1,5 +1,5 @@
 """frame-up asks for the Federation Operator Terms before it creates the frame and its admin account (agentvault2-56,
-2026-10-22; his word: "make sure terms are accepted also on framekit standup. because there an account is issued").
+2026-10-22: the terms are accepted on a frame-kit standup too, because an account is issued there).
 
 Pinned: --accept-terms accepts; a terminal asks and only "yes" accepts; no flag and no terminal refuses before anything
 exists; a dry run asks nothing; a sandbox inherits its parent frame's acceptance and never refuses (frame-sandbox runs

@@ -1,4 +1,4 @@
-"""§NIGHTPROV (2026-09-27, his words "1 yes 2 approved 3 00:30z. go ahead."): the nightly provisioning job's pair.
+"""§NIGHTPROV (2026-09-27): the nightly provisioning job's pair.
 
 The frame runner may build SANDBOX-posture frames at night, DNS names and a certificate per frame, created and removed
 automatically. What that must mean and nothing more, pinned here on a real server with a FAKE driver:

@@ -81,7 +81,7 @@ if not os.getenv("FRAME_A_EVENT_STORE_URL"):
 # Frame C = BVT. Each is env-overridable (FRAME_<X>_CURRENCY / SBX_FRAME_<X>_CURRENCY)
 # so any re-denominated frame needs no code change.
 _FRAME_SLOTS = [
-    # §LEGACYTIER 2026-09-09 (his word "i want a third where you move the legacy stack in"): registry-a /
+    # §LEGACYTIER 2026-09-09 (a third tier the legacy stack moved into): registry-a /
     # frame-b / frame-c are the RETIRING stack, reachable at a|frame-b|frame-c.theprotocol.cloud with their
     # operators off. They are still real ledgers with real history, so they keep their attestation chain
     # (ATTEST_MODES) and only leave the 'prod' tier, which now means the live EU/ASIA cluster.
@@ -91,7 +91,7 @@ _FRAME_SLOTS = [
     ("sandbox", "sbx-frame-a", "Frame A", "SBX_FRAME_A_EVENT_STORE_URL", "SBX_FRAME_A_ES_DSN", "AVT"),
     ("sandbox", "sbx-frame-b", "Frame B", "SBX_FRAME_B_EVENT_STORE_URL", "SBX_FRAME_B_ES_DSN", "AVT"),
     ("sandbox", "sbx-frame-c", "Frame C", "SBX_FRAME_C_EVENT_STORE_URL", "SBX_FRAME_C_ES_DSN", "BVT"),
-    # §BATCH9 (2026-09-06, his word "list them under sandbox and wire the new sandboxes also"): the fresh pair
+    # §BATCH9 (2026-09-06: listed under sandbox, the new sandboxes wired too): the fresh pair
     # (NOT promoted — a sandbox dry run) and the live sandbox tier (sbx-alpha / sbx-beta, 2026-09-03). The
     # retired sandbox A/B/C slots above stay declared; their env is unset in the compose, so the loop skips them.
     ("sandbox", "juice",     "JUICE",         "SBX_JUICE_EVENT_STORE_URL", "SBX_JUICE_ES_DSN", "JUICE"),
@@ -223,7 +223,7 @@ import json as _json_extra
 EXTRA_FRAMES_FILE: str = (os.getenv("AUDITOR_EXTRA_FRAMES_FILE", "") or "").strip()
 BUILTIN_FRAME_IDS: frozenset[str] = frozenset(f["id"] for f in FRAMES)
 
-# §MTLSHOPS (a) (2026-09-15, his decision; agentvault2-85's calls). The slot shapes this auditor reads, listed on
+# §MTLSHOPS (a) (2026-09-15; agentvault2-85's calls). The slot shapes this auditor reads, listed on
 # /api/auditor/modes so a slot writer asks before it writes one. A public-only frame is one whose databases take TLS
 # clients with a frame certificate only: this host reads its public supply audit and nothing else; a public reading never
 # feeds the atomic status, CONSERVED, the uptime or the streak, and opens an incident only after

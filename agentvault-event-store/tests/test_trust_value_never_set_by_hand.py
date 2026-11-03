@@ -1,5 +1,5 @@
-"""SEC-20, the store's remaining setters (2026-10-17, his word on the trust value: "it has to be dervied in a meaningful
-way. setting it manually doesnt make sense to me"; and on an operator's record: "record must exist first").
+"""SEC-20, the store's remaining setters (2026-10-17: the trust value is derived in a meaningful way, never set
+by hand; an operator's record must exist first).
 
 The federation vote multiplies an agent vote's power by the submitting registry's trust value (bayesian_discount). This
 frame's registry derives that value from what it measured of each peer and writes it (the upsert at a frame invitation

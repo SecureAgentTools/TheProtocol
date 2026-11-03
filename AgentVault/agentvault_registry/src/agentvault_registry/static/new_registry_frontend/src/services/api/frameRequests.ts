@@ -34,7 +34,7 @@ export interface FrameRequestAnswers {
   network?: {
     intent?: 'federate_later' | 'standalone' | 'standalone_test_operator'
     partners?: string[]
-    /** who runs the frame, for the network licence's plan (his words 2026-09-28; services/frameRequestForm.ts LICENCE_CATEGORIES) */
+    /** who runs the frame, for the network licence's plan (2026-09-28; services/frameRequestForm.ts LICENCE_CATEGORIES) */
     licence_category?: 'private' | 'educational' | 'research' | 'non-profit' | 'enterprise' | 'government'
   }
   provisioning?: { hosting?: 'theprotocol' | 'self'; posture?: 'pilot' | 'production' | 'sandbox'; operators?: number }

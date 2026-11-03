@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """§FRAMELIC (2026-09-07) — onboard THE SOVEREIGN AGENTS onto a frame, with their own flares.
 
-His words: *"onboard the sovereign agents on frame eu. set their vanity items as it was they
-each have their own. make a reusable script out of it."*
+The sovereign agents onboarded on frame EU with their own vanity items, as before, by a
+reusable script.
 
 The eleven sovereigns are the frame's flagship agents — the ones the landing page names. Each
 carries its OWN encirclement variant and overlay; those are the vanity items, and they are not

@@ -1,5 +1,5 @@
 # {{NAME}}-push — the ntfy push endpoint of frame {{NAME}} (§BATCH10, rendered; 443 only, 80 is the acme vhost)
-# §PUSH (2026-10-06, his words "fix the things you find on the way make it secure"): SUBSCRIBE ONLY, by PATH, not by
+# §PUSH (2026-10-06, secure along the way): SUBSCRIBE ONLY, by PATH, not by
 # method. `limit_except GET` alone is not subscribe-only: ntfy publishes on GET too (<topic>/publish?message=, /send,
 # /trigger, measured 2026-09-15) and since v2.16 deletes and clears on GET (<topic>/<id>/delete|read|clear). This
 # template rendered the method-only shape until 2026-10-06 while the live EU/ASIA vhosts carried the allowlist below

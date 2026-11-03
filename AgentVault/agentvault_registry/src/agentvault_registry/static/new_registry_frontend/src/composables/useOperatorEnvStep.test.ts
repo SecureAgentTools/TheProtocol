@@ -1,7 +1,6 @@
 /**
- * §FESUITE V0595: the operator application's configuration step (his word 2026-10-11: "we need env setup in the
- * application forms ... the env flips that are frame exclusive should be still displayed for operators but greyed out
- * and not chooseable"). Before, an operator application had no configuration at all. The step starts from the frame's
+ * §FESUITE V0595: the operator application's configuration step (2026-10-11: configuration in the
+ * application forms; a switch only a frame may flip shows to operators, greyed out and not choosable). Before, an operator application had no configuration at all. The step starts from the frame's
  * own settings, locks the frame-scope ones, and sends only what the applicant chose differently; an unread catalog is
  * said, and sends nothing (never a guess).
  */

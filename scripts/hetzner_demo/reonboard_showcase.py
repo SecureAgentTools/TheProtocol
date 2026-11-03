@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """§SHOWCASEOWN (2026-09-07) — give a fresh frame its OWN showcase agents.
 
-His word: *"showcase shows its own agents. we reonboard all the agents via a script."*
+The showcase shows its own agents; every agent is reonboarded by a script.
 
 MEASURED on EU 2026-09-07, before this script existed: `/api/v1/public/showcase/agents` on the EU
 frame returned **registry-a's eleven agents** — DIDs issued on Frame A, endpoints under

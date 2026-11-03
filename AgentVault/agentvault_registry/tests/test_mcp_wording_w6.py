@@ -1,6 +1,6 @@
 """§MCPTEST30 W6 (agentvault2-aa, 2026-10-25): the MCP tester reads the critical words on the MCP surface.
 
-His words that day to agentvault2-69: "i want the illegal wording completly gone before opening"
+The critical wording is gone before the opening
 (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md, W6). The listings: a listed tool whose name or description names a
 critical word fails its own row, and so does a renamed tool's old name still listed (read from the listing: calling an old
 name would count kind="mcp_w3", the instrument for dropping the old names). The answers: every answer is scanned and the

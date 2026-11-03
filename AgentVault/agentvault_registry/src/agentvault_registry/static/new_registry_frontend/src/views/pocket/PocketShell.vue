@@ -28,7 +28,7 @@
              mark would only add a second voice for one control. -->
         <ProtocolMark :size="24" class="pk-mark" aria-hidden="true" />
         <!-- The ENFORCE text badge was header real estate spent on something More
-             already states (his call). The dot that was always here now CARRIES
+             already states. The dot that was always here now CARRIES
              the meaning: solid green = IRONKEY enforce, mode readable on
              touch/hover and to screen readers. -->
         <span class="pk-dot" :class="{ enforce: ironkeyMode === 'enforce' }" role="img"

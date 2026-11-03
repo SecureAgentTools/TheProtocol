@@ -1,7 +1,7 @@
 """W4 phase 1 (agentvault2-aa, 2026-10-25): the event store reads a ledger event under its old and its new name.
 
-His words that day to agentvault2-69: "i want the illegal wording completly gone before opening" and, on the ledger, "just
-use the new wording and make it accept both or something" (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md, W4).
+The critical wording is gone before the opening; the ledger writes the new words and reads
+both (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md, W4).
 Phase 2 lets an emitter write UnitsTransferred for TokensTransferred (and the rest of src/ledger_names.py); before any
 emitter does, every reader in the store reads both names the same. Measured that day: every running store projects
 balances from LedgerBalanceChanged alone (projection_config.single_writer on EU, ASIA, both sandbox frames and Frame A),

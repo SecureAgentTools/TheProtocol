@@ -1,4 +1,4 @@
-"""§DEPS 2a (2026-09-29, his words "we need to do this ... spire->"refrain from others list"->..."): every compose a frame or
+"""§DEPS 2a (2026-09-29): every compose a frame or
 an operator is born from runs Postgres 18 in the 18 image's layout (contract rule R39).
 
 postgres:18 keeps PGDATA in /var/lib/postgresql/18/docker and refuses to start when it sees a 16-style mount (measured on

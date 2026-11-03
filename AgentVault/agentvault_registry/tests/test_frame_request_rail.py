@@ -1,4 +1,4 @@
-"""§FRAMEFORM rebuild (his word 2026-09-13: the request form "needs complete rework ... no advanced settings"): the rail
+"""§FRAMEFORM rebuild (2026-09-13: the request form reworked, with no advanced settings): the rail
 behind the public frame request form.
 
 The body keeps every existing client valid (the old form and the MCP tool post the legacy minimal shape) while a new
@@ -281,7 +281,7 @@ def test_a_malformed_request_is_refused_before_anything_is_stored_or_mailed(monk
     assert r.status_code == 422 and session.statements == [] and mails == []
 
 
-# ---- the requester hears back once (his word 2026-09-14: every requester gets a receipt) --------------------------------
+# ---- the requester hears back once (2026-09-14: every requester gets a receipt) --------------------------------
 
 class FakeRedis:
     """incr, expire and ttl: enough to count a budget."""

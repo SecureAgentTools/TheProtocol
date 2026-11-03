@@ -1,4 +1,4 @@
-"""§MONEY-R51 (2026-09-04, his word "widen the rule") — ONE path-anchored rule for which trusted SPIFFE
+"""§MONEY-R51 (2026-09-04, the rule widened) — ONE path-anchored rule for which trusted SPIFFE
 identities are internal callers of the TEG.
 
 The old rule was three substrings ("/service/registry-", "/service/teg-", "/operator/") copied into

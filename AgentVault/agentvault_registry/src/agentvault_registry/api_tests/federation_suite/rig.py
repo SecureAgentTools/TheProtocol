@@ -336,8 +336,7 @@ async def _did_from_sidecar(container: str) -> str:
 
 
 async def fixture_agent_dids(rig, tag: str, sides: Tuple[str, ...] = ("A", "B")) -> Tuple[str, ...]:
-    """§MCPTEST30 (V0651, tester batch 3 item 2, Guild order gwo_5b6bc38b2e17c317754d6e29; his words "2. approved very
-    good"): an agent DID on each named frame for a test that reads ABOUT an agent (its flare, its enforcement status, its
+    """§MCPTEST30 (V0651, tester batch 3 item 2, Guild order gwo_5b6bc38b2e17c317754d6e29): an agent DID on each named frame for a test that reads ABOUT an agent (its flare, its enforcement status, its
     developer's trust graph). The fed-test-agent sidecars where they still run (their persisted creds.json); else, as on
     every tier since the sandbox tier retired, a throwaway agent of the run's own on that frame, made by the suite's
     developer there and retired once the test's verdict is in (throwaways). Before it these four tests skipped on every
@@ -953,8 +952,8 @@ class AssertionResult:
 class DeferredCheck:
     """What a `start_first` test returns once it has ACTED (§SENDEARLY, 2026-09-26).
 
-    His words: "fix the test so the transfer goes out at the beginning of the test run and success is measured later
-    in the test run". The runner starts such a test before every other one, keeps this object while the rest of the
+    The transfer goes out at the beginning of the test run and its success is measured later
+    in the test run. The runner starts such a test before every other one, keeps this object while the rest of the
     suite runs, and awaits `check()` once they are all done: the row's verdict is that AssertionResult. The act and the
     verdict stay ONE row, so the nightly history and its expected-red list read the same. `started_at` is set by the
     runner, so the row's timing spans the act, the wait and the verdict.

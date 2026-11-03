@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# §FRAMEPROV P0 (2026-09-13, his word): a frame lifecycle script names its frame, and never a protected one.
+# §FRAMEPROV P0 (2026-09-13): a frame lifecycle script names its frame, and never a protected one.
 #
 # Sourced FIRST by teardown_hetzner_frame.sh and start_hetzner_frame.sh. Why it exists: the admin UI's Tear down
 # posts no target (FrameManagement.vue -> frame_demo_launcher.start_teardown(None)), and both scripts used to fall

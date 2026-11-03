@@ -1,6 +1,6 @@
 """§MCPTEST30 (V0636): the agent and public tools that passed on a refusal alone, earning their success path
-(agentvault2-66; sessionlogs2026/BACKLOG_2026-10-19_MCP_REFUSAL_ONLY_PASSES.md, step 2; his words of 2026-10-24: "all
-mcp-tester and fe tester suites are targets. you guys keep going until the gaps are closed").
+(agentvault2-66; sessionlogs2026/BACKLOG_2026-10-19_MCP_REFUSAL_ONLY_PASSES.md, step 2; 2026-10-24: every
+MCP tester and console suite is a target until the gaps are closed).
 
 Lifecycles only, on the subjects and row helpers of earned_fixtures. mcp_lifecycles.py extends its LIFECYCLES with
 this module's at its end; this module never imports mcp_lifecycles at module level (earned_fixtures.lc()).
@@ -532,7 +532,7 @@ async def lifecycle_earned_disputes(rpc: RpcCall, parse: ParseResult, bag: Any, 
     and files an enhanced one (logEnhancedDispute); the admin dismisses both and the agents are deleted. The sentinel
     reads the TEG dispute phase 4 filed for it (getTegDisputeDetail); a run with no phase 4 (a cloud operator's) has A
     file that TEG dispute against B itself (logTegDispute) and read it back. resolveTegDispute refuses every caller by
-    design (who may resolve is his decision, routers/teg_integration.py): its row says so, and the refusal is kept
+    design (who may resolve is decided in routers/teg_integration.py): its row says so, and the refusal is kept
     beside it."""
     tag = _tag()
     t = ef.Throwaways(rpc, parse, bag, "disputes")
@@ -1561,7 +1561,7 @@ PEER_ONLY_DEV_TOOLS: Tuple[Tuple[str, Dict[str, Any]], ...] = (
 
 
 # a tool that can succeed, held back on purpose where it is switched on (where it is off, its switch's verdict stands).
-# V0651 (p, his word "retire."): its one entry, bridgeTransfer, left with the token bridge's five tools
+# V0651 (p, retired): its one entry, bridgeTransfer, left with the token bridge's five tools
 HELD_BACK: Tuple[Tuple[str, str, str, str], ...] = ()
 
 

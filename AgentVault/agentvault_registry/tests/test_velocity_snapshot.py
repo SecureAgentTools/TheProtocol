@@ -212,8 +212,8 @@ async def test_a_transfer_under_its_new_name_counts_the_same(monkeypatch):
 
 # ------------------------------------------------- the fee's velocity index (2026-10-16)
 # It was the agent's volume over the hour's LARGEST volume, so the busiest sender of any hour read 1.0 and paid the
-# maximum fee, a lone sender on a quiet frame included (his word: "its not intended to do this even on a quiet
-# network"). velocity_indices() compares a sender with the typical sender of the hour instead.
+# maximum fee, a lone sender on a quiet frame included (not intended, even on a quiet
+# network). velocity_indices() compares a sender with the typical sender of the hour instead.
 
 def _vols(*amounts):
     return {f"did:theprotocol:a{i}": Decimal(str(a)) for i, a in enumerate(amounts)}

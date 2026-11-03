@@ -1,6 +1,6 @@
 <template>
-  <!-- §LANDINGDISC-2 — `embedded` renders the RESULTS GRID ONLY (his word: the landing preview must be
-       "the current cards of the discovery … with encirclements and everything. clickable modal opens"). One
+  <!-- §LANDINGDISC-2 — `embedded` renders the RESULTS GRID ONLY (the landing preview carries
+       the discovery's current cards, with encirclements and everything, each opening its modal). One
        view, two densities: the cards, their flares, the provenance badges and the detail modal are literally
        the same code, so the preview cannot drift from the page it previews. -->
   <div class="nc-page nc-discovery-page" :class="{ 'disc-embedded': embedded }">
@@ -426,7 +426,7 @@
         </section>
 
         <!-- Cross-currency Agents — foreign-frame agents (B9, surfaced past the fetch cap) -->
-        <!-- §DISCMIX (2026-09-06, his word) — the "Cross-currency Agents" section is RETIRED. A foreign-frame
+        <!-- §DISCMIX (2026-09-06) — the "Cross-currency Agents" section is RETIRED. A foreign-frame
              agent is not a different kind of thing, it is an agent whose home settles in another currency:
              it sorts with everything else, keeps its purple skin as the marker, and is reachable through the
              ordinary FX filter. One list; the filters do the splitting. -->
@@ -1238,7 +1238,7 @@ const availableFrameOptions = computed<FrameOption[]>(() => {
 // §DISCFIX — the origin filter is applied SERVER-side now (performSearch sends
 // selectedFrames); this passthrough keeps the template stable.
 // ─────────────────────────────────────────────────────────────────────────────
-// §DISCMIX (2026-09-06, his word "we need to retire this 2 split discovery … sorting mix all sources") —
+// §DISCMIX (2026-09-06: the split discovery retired, every source sorted together) —
 // ONE list, three sources, deduplicated:
 //   1. the registry's own ranked page (its natives AND the mirrors it syncs) — the only rows you can act on here;
 //   2. the cross-currency rescue (B9): foreign-frame agents the ranked page's cap would bury — they used to be
@@ -1381,8 +1381,8 @@ const totalShown = computed(() => totalResults.value + foreignExtras.value.lengt
 /**
  * §MARKSURFACES (2026-09-10) — the sentence beside the earned-mark legend.
  *
- * His words were *"we had a ranking display on the avatar man this got compeltly lost"*,
- * and the measurement behind them is the whole reason this line exists: the apex moved to
+ * The ranking display on the avatar had got completely lost,
+ * and the measurement behind that is the whole reason this line exists: the apex moved to
  * EU on 2026-09-09, EU's guild ledger held ZERO settled orders, so every avatar on the
  * flagship rendered no mark — correctly, and indistinguishably from the feature having
  * been removed. §DISCMIX is my own rule and this surface never had it: a gate that removes

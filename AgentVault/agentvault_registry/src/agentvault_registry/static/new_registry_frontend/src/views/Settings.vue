@@ -93,7 +93,7 @@ const canManageInvites = computed(
   () => authStore.isAdmin || !!authStore.user?.admin_support,
 )
 const tabs = computed(() => [
-  // §FESUITE (2026-10-04, his word "settings ... needs some polish and maybe reordering"): the everyday tabs first
+  // §FESUITE (2026-10-04, the settings polished and reordered): the everyday tabs first
   // (who you are, how you sign in, what reaches you, how the console looks), then the developer and agent tools, then
   // where you appear (the Developer Card before the globe position it feeds), the multi-frame sessions and, for an
   // invite-gated registry, the invitations.
@@ -367,8 +367,8 @@ const ambientOptions = computed(() => [
   { v: 'subtle' as const, label: t('settingsView.preferences.bgSubtle'), sub: t('settingsView.preferences.bgSubtleSub') },
   { v: 'off' as const,    label: t('settingsView.preferences.bgOff'),    sub: t('settingsView.preferences.bgOffSub') },
 ])
-// §ALERTS header strip (2026-10-06; his words "can we make the new announcement bar optional in the settings? i really
-// like the led"): the strip at the top of every page. Per browser, like the background level; applies at once.
+// §ALERTS header strip (2026-10-06: the announcement bar optional in the settings, the LED
+// kept): the strip at the top of every page. Per browser, like the background level; applies at once.
 const headerStripOptions = computed(() => [
   { v: 'led' as const, label: t('settingsView.preferences.headerStripLed', 'LED ticker'),
     sub: t('settingsView.preferences.headerStripLedSub', 'The scrolling dot-matrix board (the default)') },

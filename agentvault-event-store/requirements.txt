@@ -1,4 +1,4 @@
-# §DEPS (2026-09-27, his words "would be cool if we get everything to the newest stable version that runs with us"):
+# §DEPS (2026-09-27):
 # the newest stable release of each, resolved together on python:3.11-slim; constraints.txt (the built image's own
 # `pip freeze --all`) pins everything they pull in and the Dockerfile installs with `-c constraints.txt`.
 # SQLAlchemy 2.1 since §DEPS store-jwt (2026-09-29): the store builds only asyncpg engines from an explicit

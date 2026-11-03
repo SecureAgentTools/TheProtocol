@@ -172,7 +172,7 @@ async def list_disputes(
     For example ``?defendant_did=X&status=open``.
 
     \f
-    §SECFIX D6-465 (2026-10-16, his word): this listed every dispute of the registry, evidence included, to any
+    §SECFIX D6-465 (2026-10-16): this listed every dispute of the registry, evidence included, to any
     developer credential. The parties' owners read a dispute, and the administrators who rule on it.
     """
     effective_status = status or status_filter

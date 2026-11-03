@@ -51,8 +51,8 @@ def version_of(path):
         return "dev"
 
 
-# The Federation Operator Terms (agentvault2-56, 2026-10-22; his word: "make sure terms are accepted also on framekit
-# standup. because there an account is issued"). Joining the network as a frame operator means accepting them
+# The Federation Operator Terms (agentvault2-56, 2026-10-22: the terms are accepted on a frame-kit
+# standup too, because an account is issued there). Joining the network as a frame operator means accepting them
 # (PUBLIC_DOCS/11_LEGAL_FOR_OPERATORS.md); every other rail that issues an account records what its person accepted.
 # frame-up asks before anything is created and hands the acceptance to the registry, which records it with the first
 # admin it creates (operator_seed, TheProtocolReleaseV0632 and later); frame-up.json keeps it for the frame's sandboxes.

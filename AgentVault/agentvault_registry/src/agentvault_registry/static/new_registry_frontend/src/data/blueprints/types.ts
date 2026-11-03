@@ -155,8 +155,8 @@ export interface Blueprint {
  *  is built counts whether it runs enforced (LIVE), per deployment (LIVE
  *  (gated)) or observe-only (SHADOW). Only DESIGNED (specified, not built)
  *  counts against. The badge on each row still says how this deployment runs
- *  it (2026-09-25, his word: "should probably count capability and not if its
- *  enabled on our deployment right at this moment"). The field keeps its old
+ *  it (2026-09-25: the count is of capability, not of what
+ *  this deployment has switched on right now). The field keeps its old
  *  name, liveRatio, so the data files need no change. */
 export function liveRatioOf(primitives: PrimitiveRow[]): [number, number] {
   const built = primitives.filter((p) => p.railStatus !== 'DESIGNED').length

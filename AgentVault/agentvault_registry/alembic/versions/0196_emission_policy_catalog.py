@@ -1,4 +1,4 @@
-"""W3 (agentvault2-d6, 2026-10-25; his word: "the event emission policy which needs hardening"): every event type the
+"""W3 (agentvault2-d6, 2026-10-25; hardening the event emission policy): every event type the
 registry and the TEG emit has an emission-policy row.
 
 core/event_catalog.py names what the code emits (252 types from the registry, 12 from the TEG, pinned against the source

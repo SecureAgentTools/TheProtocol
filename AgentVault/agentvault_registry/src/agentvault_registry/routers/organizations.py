@@ -2471,7 +2471,8 @@ async def get_organization_presence(
     db: AsyncSession = Depends(get_db),
 ):
     """V0650 (a). Every agent assigned to the organization (a revoked one is no longer present): its DID, its card's
-    name, its owner, when it was last active, its account status and its live status line (null once the line expired,
+    name and picture (icon_url, V0655 (ay)), its owner, when it was last active, its account status and its live status
+    line (null once the line expired,
     and for a suspended agent). Read by whoever the organization's room admits, by the room's own rule: an active member
     (guests included) or an agent assigned to the organization. A developer JWT or an agent JWT."""
     from agentvault_registry.services import agent_status_line as sl

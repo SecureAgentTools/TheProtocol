@@ -1,4 +1,4 @@
-"""§F6 WP6.2 slice 2 (2026-09-26, his words "continue with wp6.2 slice 2 on the sandbox pair"): the SPIRE half of an
+"""§F6 WP6.2 slice 2 (2026-09-26, on the sandbox pair): the SPIRE half of an
 operator's revoke and purge, the host half of a purge, and the read-only census and stats of what the caller owns.
 
 Each rule has a planted bad argument refused BEFORE anything runs, and a good request whose effect is pinned. The SPIRE

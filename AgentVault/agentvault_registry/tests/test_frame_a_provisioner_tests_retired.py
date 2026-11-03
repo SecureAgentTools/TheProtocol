@@ -1,4 +1,4 @@
-"""§NIGHTLYPROV 2026-09-27: the Frame-A-era provisioner tests are RETIRED, never revived (his decision, "1 yes").
+"""§NIGHTLYPROV 2026-09-27: the Frame-A-era provisioner tests are RETIRED, never revived.
 
 The sandbox provisioner-lifecycle test, the chained-frame and dual-frame lifecycle tests and the cross-registry transfer
 test drove retired Frame-A hosts, bypassed the rails (psql writes, a direct TEG mint: the delta-breach shape) and could

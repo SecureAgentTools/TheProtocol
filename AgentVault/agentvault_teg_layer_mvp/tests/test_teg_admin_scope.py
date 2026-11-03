@@ -1,4 +1,4 @@
-"""§TEGSCOPE (2026-10-07, his word "2. yes fix"): the TEG's admin role follows the caller's RELATION to this TEG.
+"""§TEGSCOPE (2026-10-07): the TEG's admin role follows the caller's RELATION to this TEG.
 
 sessionlogs2026/FINDINGS_2026-10-02_TEG_ADMIN_SCOPE.md: every internal service identity of every trusted domain was an
 admin on every admin route, so a peer frame's registry could read and move this frame's treasury (measured 200 on

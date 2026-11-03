@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PUBLIC_DOCS is GENERATED from the one doc source (§DOCSOURCE, 2026-10-16, his word "ok. i approve. do this autonomously").
+"""PUBLIC_DOCS is GENERATED from the one doc source (§DOCSOURCE, 2026-10-16).
 
 The documentation is written in ONE place: the console's doc folder in AgentVault,
     agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/assets/docs

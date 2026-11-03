@@ -1,5 +1,5 @@
 /**
- * §FESUITE V0595 (his word 2026-10-11, "also correct the avt prose in the docs"): the docs show the parts that apply only
+ * §FESUITE V0595 (2026-10-11, the unit prose in the docs corrected): the docs show the parts that apply only
  * where a switch is on only where this registry says it is on, and every doc source's markers are sound. The wording
  * half at the end is an early warning for the build; lifecycle 51 (public wording, read live as a visitor) decides.
  */

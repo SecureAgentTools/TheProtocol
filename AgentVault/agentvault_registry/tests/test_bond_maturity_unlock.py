@@ -1,6 +1,6 @@
 """§BONDFILL-3 (2026-09-11) — maturity unlocks capital, the trust gate is relative, one key per rule.
 
-His decision: maturity should unlock capital instead of ending the business, the trust gate should
+The design: maturity should unlock capital instead of ending the business, the trust gate should
 be relative, and it belongs in policy. Each test here names the defect it pins and carries a control
 that must fail on the pre-fix tree — a test that cannot fail measures nothing.
 """

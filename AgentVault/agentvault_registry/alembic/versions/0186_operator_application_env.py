@@ -1,4 +1,4 @@
-"""§FESUITE V0595 (2026-10-11, his word "we need env setup in the application forms"): an operator application keeps the
+"""§FESUITE V0595 (2026-10-11): an operator application keeps the
 configuration its applicant chose.
 
 operator_applications gains env_choices (JSONB, '{}' by default): the catalog keys an applicant chose

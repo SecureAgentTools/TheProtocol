@@ -1,4 +1,4 @@
-"""§FEDLICENCE (2026-09-28, his word "cross-teg cut off also approved on revoke") — the registry publishes what it decided
+"""§FEDLICENCE (2026-09-28; the cross-TEG cut-off on a revoke) — the registry publishes what it decided
 about each peer, so its own TEG can refuse the same frames on the cross-TEG legs.
 
 GET /api/v1/federation/licence/verdicts answers the mode, this registry's trust domain, every peer verdict, and the

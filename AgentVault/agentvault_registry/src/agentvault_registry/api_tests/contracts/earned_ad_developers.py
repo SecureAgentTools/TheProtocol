@@ -24,7 +24,7 @@ equips it on its first agent (equipFlare), sets its variant and overlay there (s
 moves it to its second agent (moveFlare); revokeFiatFlare takes it back. Cosmetic only: nothing moves.
 
 Not here: refundFiatPurchase, replayFiatPurchase and resendFiatMagicLink (a fiat purchase exists only after a Stripe
-checkout and its webhook; the run makes none), tegTreasuryIssue (his decision D9: no automated mint, so the tester
+checkout and its webhook; the run makes none), tegTreasuryIssue (decision D9: no automated mint, so the tester
 never mints), simulationFundingPreview (it runs the former network's host script, which no current frame carries).
 """
 from __future__ import annotations

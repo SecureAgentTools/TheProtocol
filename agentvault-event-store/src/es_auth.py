@@ -245,8 +245,7 @@ def trust_value_ok(value) -> bool:
     return math.isfinite(value) and 0.0 <= float(value) <= 1.0
 
 
-# SEC-20 (2026-10-17, his word on the trust value: "it has to be dervied in a meaningful way. setting it manually
-# doesnt make sense to me"). The value a new record starts with when the caller sends none: the registry's own
+# SEC-20 (2026-10-17: the trust value is derived in a meaningful way, never set by hand). The value a new record starts with when the caller sends none: the registry's own
 # derivation for a peer it has measured nothing of yet (services/bayesian_trust.derived_trust), never the full 1.0.
 NO_RECORD_TRUST = 0.5
 
@@ -259,8 +258,8 @@ def voter_trust_weight(rows: Iterable[Tuple], auth_context: Optional[Dict[str, s
     an operator), a peer frame's bare trust domain (§TRUSTROW), or an operator's identity in this frame's own trust
     domain (row_names_operator). Several records of one caller: the smallest value, as with the rate limit.
 
-    None when the caller has no active record here: its vote is refused (2026-10-17, his word: "record must exist
-    first"), never weighted 1.0. Before, the vote looked the record up by the caller's full SPIFFE id, which a peer
+    None when the caller has no active record here: its vote is refused (2026-10-17: the record must exist
+    first), never weighted 1.0. Before, the vote looked the record up by the caller's full SPIFFE id, which a peer
     frame's record (its bare domain) and an operator's record (often another of its workloads' ids) do not carry, and a
     caller it could not find counted at full weight, above every peer the registry had measured."""
     ctx = auth_context or {}

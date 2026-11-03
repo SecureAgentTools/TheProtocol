@@ -1896,8 +1896,8 @@ function drawerTabLabel(key: string): string {
       <button v-if="canFederation" class="fed-tab" data-tour="fed-ops-tab" :class="{ 'fed-tab-active': activeTopTab === 'operations' }" @click="activeTopTab = 'operations'">
         <Icon name="mdi:cog" :size="14" /> {{ t('federationView.tabs.operations') }}
       </button>
-      <!-- §FEDDIR (2026-09-09), his word: the federated index belongs here, "since its federation
-           related". NOT admin-gated: the index is read through the registry's own public proxy and
+      <!-- §FEDDIR (2026-09-09): the federated index belongs here, since it is federation
+           related. NOT admin-gated: the index is read through the registry's own public proxy and
            the same content already renders on /explore for a visitor. Gating it here would hide a
            public fact from a signed-in operator. -->
       <button class="fed-tab" data-tour="fed-dir-tab" :class="{ 'fed-tab-active': activeTopTab === 'directory' }" @click="activeTopTab = 'directory'">

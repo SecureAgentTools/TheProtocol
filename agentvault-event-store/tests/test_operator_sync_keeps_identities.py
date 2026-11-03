@@ -1,4 +1,4 @@
-"""2026-10-17 (his word: "no operator accepted without record ... record must exist first"): /operators/sync never moves
+"""2026-10-17 (no operator is accepted without a record; the record must exist first): /operators/sync never moves
 an operator's record onto the wrong identity.
 
 The store finds a federation_operators row by the payload's spiffe_id first and by its licence id second (§TRUSTROW),

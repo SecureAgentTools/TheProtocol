@@ -1,5 +1,5 @@
 /**
- * Quick onboarding through the page (2026-10-09, his word): /onboarding issues an agent identity from a name, lists the
+ * Quick onboarding through the page (2026-10-09): /onboarding issues an agent identity from a name, lists the
  * developer's agents with their balances hidden until asked, and resets an agent's credentials with the account
  * password. Every claim the page makes is read back: the DID on screen is the one the registry lists, the wallet it
  * calls unlisted is unlisted on the registry, the console acts as the agent it says it acts as, a "Valid card" badge is

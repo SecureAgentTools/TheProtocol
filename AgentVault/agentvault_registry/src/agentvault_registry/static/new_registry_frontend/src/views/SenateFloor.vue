@@ -1054,8 +1054,8 @@ useEscapeClose(() => showFedVetoModal.value && !!selectedFedProposal.value, () =
 /* §MCPTEST30 (V0557): federal ballots (§MEMBERSHIP D2) on this floor. Where this registry runs ballot mode, the open
    ballot proposals here and at its frame peers are read beside the proposals; a ballot proposal then shows its ballots
    and this registry's next step instead of an agent's vote bar, and the proposals other registries host get a section
-   of their own (a peer's proposal lives in the peer's store, not in this registry's list). Ballot mode off (production
-   until his word): nothing new is read or shown. */
+   of their own (a peer's proposal lives in the peer's store, not in this registry's list). Ballot mode off (production,
+   for now): nothing new is read or shown. */
 const ballotModeHere = computed(() => senateRegistryCfg.value.federation_ballot_mode === true)
 const ballotDoc = ref<OpenBallotsDoc | null>(null)
 const ballotHosts = computed(() => ballotDoc.value?.hosts ?? [])

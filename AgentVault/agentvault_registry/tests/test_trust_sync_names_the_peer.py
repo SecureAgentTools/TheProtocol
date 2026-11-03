@@ -1,4 +1,4 @@
-"""§TRUSTROW (2026-09-16, his word "1. approved ... dont change the overall mechanism"): the trust sync names the peer.
+"""§TRUSTROW (2026-09-16; the overall mechanism unchanged): the trust sync names the peer.
 
 The sync keys a peer by the LICENCE id this frame issued, while the event store's vote weight resolves a voter by its
 SPIFFE id (services/federation_governance.py, via routers/federation_governance.py:117, which takes

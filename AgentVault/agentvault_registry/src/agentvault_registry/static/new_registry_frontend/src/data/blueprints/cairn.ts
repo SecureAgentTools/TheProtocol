@@ -1,7 +1,7 @@
 import type { Blueprint } from './types'
 import { liveRatioOf } from './types'
 
-// CAIRN: off-world sites beyond live contact (agentvault2-69, 2026-10-26, on his word). A frontier chamber: the rails
+// CAIRN: off-world sites beyond live contact (agentvault2-69, 2026-10-26). A frontier chamber: the rails
 // are the live ones, carried to a site that runs its own frame through two weeks without a link. Machines from several
 // companies work there, each frame sovereign; the protocol carries authority, payment and evidence, never a command.
 

@@ -28,7 +28,7 @@ NOT_READ_NO_KEY = ("not read: this extra slot carries no store key, is not a pub
 
 
 def live_read_plan(frame: dict, default_key: str, cert: str = "", key: str = "", ca: str = "") -> dict:
-    """§MTLSHOPS (a) (2026-09-15, his decision; agentvault2-85's rules): what one live read of a slot may send.
+    """§MTLSHOPS (a) (2026-09-15; agentvault2-85's rules): what one live read of a slot may send.
 
     - A built-in frame's URL and key come from this host's own env: its key, else `default_key` (unchanged).
     - A public read (`public_read`, the frame's public supply audit) sends no key and no certificate, on the system roots.

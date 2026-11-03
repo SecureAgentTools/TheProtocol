@@ -1,4 +1,4 @@
-"""§OPPROV (2026-09-27, his words "fix operators provisioning"): a purge's step 4.5, the operator's rows elsewhere.
+"""§OPPROV (2026-09-27, the operators' provisioning fixed): a purge's step 4.5, the operator's rows elsewhere.
 
 Measured on sbx-alpha (V0469, the socket route): the purge of the throwaway operator opprovs drained, removed the stack
 and the edge, deleted this frame's peer row, and logged "cross-frame peer/app/ES rows purged for opprovs", yet sbx-beta

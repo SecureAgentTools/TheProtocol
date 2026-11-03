@@ -30,7 +30,7 @@
           </p>
         </div>
       </div>
-      <!-- his word 2026-10-03: no Discord on the contact page (as on the landing) -->
+      <!-- since 2026-10-03: no Discord on the contact page (as on the landing) -->
       <div class="gs-layer">
         <div class="gs-layer-num">!</div>
         <div class="gs-layer-body">

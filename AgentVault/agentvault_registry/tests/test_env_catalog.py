@@ -1,5 +1,5 @@
-"""§FESUITE V0595 (his word 2026-10-11: "we need env setup in the application forms. but we need to map all the flags ...
-the env flips that are frame exclusive should be still displayed for operators but greyed out and not chooseable").
+"""§FESUITE V0595 (2026-10-11: configuration in the application forms, every flag mapped; a switch only a frame
+may flip shows to operators, greyed out and not choosable).
 
 The configuration catalog (services/env_catalog.py) is the ONE source the Frame Commander, the operator application and
 the provisioner read. Before it, the Frame Commander's 23 switches lived only in the console and no server code turned a

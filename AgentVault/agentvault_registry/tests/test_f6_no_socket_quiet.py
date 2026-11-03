@@ -1,4 +1,4 @@
-"""§F6 (2026-09-27, his words "i approve to finish f6 implementation on sandbox"): a registry with NO docker socket is
+"""§F6 (2026-09-27, F6 finished on the sandbox): a registry with NO docker socket is
 F6's posture (the frame runner does its host work), not a fault. Stage 3 takes the socket off sbx-beta's registry and
 gates on 24 hours of its log with zero docker failures, and two paths would have failed that gate by warning every
 time they ran without one:

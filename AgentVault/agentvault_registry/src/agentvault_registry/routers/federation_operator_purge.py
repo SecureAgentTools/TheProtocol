@@ -1,4 +1,4 @@
-"""§F6 WP6.2 slice 2 (2026-09-26, his words "continue with wp6.2 slice 2 on the sandbox pair"): a peer frame asks THIS
+"""§F6 WP6.2 slice 2 (2026-09-26, on the sandbox pair): a peer frame asks THIS
 frame to purge its own copies of one of the PEER's cloud operators.
 
   POST /api/v1/federation/operators/{operator}/purge-rows      (peer frames only, over the mTLS federation address)

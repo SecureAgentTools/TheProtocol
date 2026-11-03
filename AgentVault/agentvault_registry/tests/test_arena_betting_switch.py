@@ -1,4 +1,4 @@
-"""Arena betting where ARENA_BETTING_ENABLED is off (agentvault2-d6, 2026-10-25; his word through agentvault2-69 at 21:15Z):
+"""Arena betting where ARENA_BETTING_ENABLED is off (agentvault2-d6, 2026-10-25):
 getArenaMatchBets is not listed on the public MCP surface, robowars_bet is not listed by the arena MCP server, and the
 spectator's bet read is refused with the retired surface's sentence. Where the switch is on (or unset), all three are as
 before."""

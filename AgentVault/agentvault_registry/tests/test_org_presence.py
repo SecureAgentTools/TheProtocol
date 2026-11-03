@@ -44,7 +44,10 @@ def _seed():
                                             (A_OTHER, "org-x", "active"), (A_NONE, None, "active")), start=1):
         s.add(models.Agent(id=i, did=did, client_id=f"c{i}", hashed_client_secret="x", creator_developer_id=OWNER,
                            organization_id=org, status=status, created_at=T0 + dt.timedelta(minutes=i)))
-    s.add(models.AgentCard(developer_id=OWNER, agent_did=A1, card_data={}, name="session-release", is_active=True))
+    s.add(models.AgentCard(developer_id=OWNER, agent_did=A1, card_data={"iconUrl": " https://docs.example.org/a1.png "},
+                           name="session-release", is_active=True))
+    s.add(models.AgentCard(developer_id=OWNER, agent_did=A_SUS, card_data={"iconUrl": {"not": "a string"}},
+                           name="suspended one", is_active=True))
     if hasattr(models, "AgentStatusLine"):
         s.add(models.AgentStatusLine(agent_did=A1, status_text="building V0650", set_at=T0,
                                      expires_at=T0 + dt.timedelta(hours=1)))
@@ -118,6 +121,16 @@ async def test_the_presence_lists_assigned_agents_with_their_live_lines(presence
     assert by[A1]["status"]["text"] == "building V0650" and by[A1]["account_status"] == "active"
     assert by[A2]["name"] is None and by[A2]["status"] is None
     assert by[A_SUS]["status"] is None and by[A_SUS]["account_status"] == "suspended"
+
+
+@pytest.mark.asyncio
+async def test_each_agent_carries_its_cards_picture(presence):
+    # V0655 (ay), order gwo_57362aa3484807226198b8de: the room's side panel draws each agent's logo. BASE (V0654): no
+    # icon_url key at all
+    by = {a["did"]: a for a in (await presence(_dev(MEMBER))).json()["agents"]}
+    assert by[A1]["icon_url"] == "https://docs.example.org/a1.png", "the card's iconUrl, trimmed"
+    assert by[A2]["icon_url"] is None, "an agent without a card has no picture"
+    assert by[A_SUS]["icon_url"] is None, "a value that is not text is no picture"
 
 
 @pytest.mark.asyncio

@@ -137,7 +137,7 @@ def _internal_url_sql_regex() -> str:
     return _SANDBOX_INTERNAL_URL_SQL_REGEX if _is_sandbox_mode() else _INTERNAL_URL_SQL_REGEX
 
 
-# §ALERTFIX (2026-10-07, his word "yes fix"): the registry's OWN hosts are not candidates. A card whose interface URL
+# §ALERTFIX (2026-10-07): the registry's OWN hosts are not candidates. A card whose interface URL
 # sits on this registry's public host is a card the registry hosts itself (canaries, the treasury agent, service and
 # showcase agents served under paths). `_well_known_url_for` keeps only scheme+host, so every one of them resolved to
 # ONE root document that cannot describe any one of them (EU: 26 cards, one 404 at
@@ -368,7 +368,7 @@ def _is_skippable_host(url: str) -> bool:
     return False
 
 
-# --- §SSRFGUARD (2026-09-16, his word "1-3 approved") ---------------------------------------------------------
+# --- §SSRFGUARD (2026-09-16) ---------------------------------------------------------
 # `_is_skippable_host` asks about the url a card NAMES. Both fetch sites used to build their client with
 # `follow_redirects=True`, so a host the registry was pointed at could answer 302 and send the fetch to a loopback or
 # private address, and `_merge_pulled_card` put that body into a publicly readable card (measured on the image the

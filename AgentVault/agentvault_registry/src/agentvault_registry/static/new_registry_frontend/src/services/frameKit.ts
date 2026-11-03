@@ -1,6 +1,6 @@
 /**
- * services/frameKit.ts: §HELLOFRAME (his word 2026-09-19: "the operator-portal is outdated, make a glorious version for
- * the frame export").
+ * services/frameKit.ts: §HELLOFRAME (2026-09-19: the operator portal was outdated; a new version for the
+ * frame export).
  *
  * Everything the frame page decides, as pure functions so the view only renders: the commands a self-hosted applicant
  * runs (with their frame's values filled in and the values only they know left as visible placeholders), the shell

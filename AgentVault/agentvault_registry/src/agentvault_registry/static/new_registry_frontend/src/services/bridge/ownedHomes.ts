@@ -1,9 +1,9 @@
 /**
  * §OWNEDHOMES (2026-08-21) — which of your agents get drawn, and WHERE.
  *
- * THE DEFECT, in his words: *"i need all the owned agents displayed ... orbiting
- * their registries"*, against a bridge that showed agents around exactly five of
- * the sixteen registries he is signed in to.
+ * THE DEFECT: every owned agent should be displayed orbiting its registry,
+ * against a bridge that showed agents around exactly five of
+ * the sixteen registries its owner is signed in to.
  *
  * Three walls stood between "I own it" and "it is on the stage", and only the
  * first had been found:

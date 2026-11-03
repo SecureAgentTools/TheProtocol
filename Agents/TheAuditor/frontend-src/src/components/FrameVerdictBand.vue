@@ -100,7 +100,7 @@ const rows = computed(() => (props.frames || []).map((fr: any) => {
   const ns = ed.native_supply || {}
   const checks: Array<{ key: string; question: string; answer: string; level: Level; explain: string }> = []
 
-  // §MTLSHOPS (a) (2026-09-15, his decision): a public-only frame's databases take TLS clients with a frame certificate
+  // §MTLSHOPS (a) (2026-09-15): a public-only frame's databases take TLS clients with a frame certificate
   // only, so this host reads its public supply audit and nothing else. Every check that needs a database reads NOT MEASURED
   // here with its reason; the public reading is shown with its source and never answers "conserved"; the frame's own
   // auditor holds the exact check and its attestation.

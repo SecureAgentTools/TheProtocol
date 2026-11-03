@@ -34,7 +34,7 @@ reasoned before it shipped, because a federation is never one version:
 
 What travels is one boolean and a coarse `since`. Never the reason, never the content.
 
-🔴 §DARKSYNC (2026-09-22, his words "figure out why dark agents dont synch. fix it properly"): UNLISTED MEANS "NOT IN
+🔴 §DARKSYNC (2026-09-22: why unlisted agents did not sync, fixed properly): UNLISTED MEANS "NOT IN
 DISCOVERY", NOT "NEVER LEAVES HOME". The tombstone made a discovery flag a federation gate: a card BORN unlisted (every
 service account's agent since §FRAMELIC: canaries, clerks, listing funders, market makers) was never mirrored by any peer,
 so everything that places an agent through the card mesh failed for it (a venue resolving a clerk's home: every operator

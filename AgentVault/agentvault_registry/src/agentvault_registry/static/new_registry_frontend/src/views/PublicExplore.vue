@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // ─────────────────────────────────────────────────────────────────────────────
-// §DISCPUBLIC (2026-09-06, his word: "i want the discovery to be public … i want to display it in a showcase
-// later on when deploying new frames to prod") — Agent Discovery without a session.
+// §DISCPUBLIC (2026-09-06: the discovery public, to show in a showcase
+// when new frames go to production) — Agent Discovery without a session.
 //
 // It is the SAME view, not a copy: every endpoint Discovery reads is already public (the discover rail, the
 // facets, the federation strip, the registry cards, and the federated index), and the view holds no session
@@ -16,8 +16,8 @@ import { computed, onMounted, ref } from 'vue'
 import Discovery from '@/views/Discovery.vue'
 import { useI18n } from '@/composables/useI18n'
 import { useRegistryConfig } from '@/composables/useRegistryConfig'
-// §BRANDEXPLORE (2026-09-08, his word: "add protocol logo and background to /explore, logo top left
-// replacement for existing random logo"). The mark was a 10px rounded square drawn in CSS — a shape,
+// §BRANDEXPLORE (2026-09-08: the protocol's logo and background on /explore, the logo top left in
+// place of the random one). The mark was a 10px rounded square drawn in CSS — a shape,
 // not a brand. This is the real one, and it is the SAME FILE the frames serve as their registry-card
 // icon (md5-identical to `scripts/hetzner_demo/assets/protocol-mark-neural.png`), so the public page
 // and the signed card cannot drift apart.

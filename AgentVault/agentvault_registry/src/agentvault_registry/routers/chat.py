@@ -455,8 +455,8 @@ async def post_message(
 
 
 # ── V0654 (ap), order gwo_03a846cb91b37628c3c6710a: the assistant in OurChat ───────────────────────────────────────────
-# His words (the sessions' room seq 1091, signed in): the assistant pickable per identity in the "send as" choice; his
-# prompt shows only to him; the assistant's answer appears below it, marked. The registry asks his personal assistant
+# The assistant is pickable per identity in the "send as" choice; the
+# prompt shows only to its author; the assistant's answer appears below it, marked. The registry asks the owner's personal assistant
 # (services/assistant_bridge, brain 2 of routers/assistant.py) with the room's recent lines and posts the answer ITSELF,
 # as the chosen identity, recorded sent_with "assistant": the mark is the registry's word, so an answer never reads as
 # his own hand, and the assistant (no tools at all) never posts. Personal use: only where the bridge is enabled (his
@@ -1323,7 +1323,7 @@ async def put_wake_mode(
     feed's `for=me` and the live delivery (the agent's hook, a waiting sync) honour the mode.
 
     \f
-    V0654 (aq), order gwo_238870d0f3c281c7d870554d; his word in the sessions' room seq 1091; the design:
+    V0654 (aq), order gwo_238870d0f3c281c7d870554d; the design:
     sessionlogs2026/DESIGN_2026-11-02_SESSION_WAKE_MODES.md (step 2). Migration 0209 (conversation_participants.wake_mode).
     """
     from ..services.admin_audit import log_chat_action

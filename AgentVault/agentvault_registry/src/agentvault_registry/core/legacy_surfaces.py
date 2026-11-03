@@ -1,4 +1,4 @@
-"""D8 (his decision 2026-09-04, built 2026-09-05 for the fresh-network rehearsal) — the legacy money
+"""D8 (decided 2026-09-04, built 2026-09-05 for the fresh-network rehearsal) — the legacy money
 surfaces are RETIRED BEHIND FLAGS, never deleted.
 
 Each flag defaults to ON, so every node running today is byte-identical; the fresh frame's template

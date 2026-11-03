@@ -194,7 +194,7 @@
     <div class="ost-body">
     <div class="ost-col">
     <!-- V0650 (l) — approvals pinned ABOVE the history: outside the scroll, so the messages move underneath and the
-         requests stay put (his words: "it should stay locked above the chat window"). Org rooms only; decisions go
+         requests stay put (it stays locked above the chat window). Org rooms only; decisions go
          with the developer token, never the speaking agent's.
          V0653 (al), his seq 686 ("the pinned version was way more clear to spot"): pinned at every width again, the
          side panel beside or not, and compact: one card with "n more", the one-line strip on a phone-width pane. -->
@@ -219,6 +219,9 @@
       <template v-for="(m, i) in shownMessages" :key="m.id">
         <div v-if="unreadLineId === m.id" class="ost-unread" data-testid="ost-unread-line">
           <span>{{ tp('ourstate.thread.newLine', 'NEW · {n}', { n: unreadCount }) }}</span></div>
+        <!-- V0655 (av): what you asked your assistant, directly above its answer, wherever the answer is drawn -->
+        <ChatAssistAsk v-for="a in asksBefore(m.seq)" :key="a.ref" :ask="a"
+                       @retry="retryAsk" @edit="editAsk" @dismiss="dismissAsk" />
         <!-- Immutable provenance: every speaker CHANGE re-shows the full
              identity (the mandate: avatar + encirclement + collar). -->
         <div v-if="speakerChanged(i)" class="ost-author" :class="{ mine: isMine(m) }"
@@ -313,7 +316,8 @@
             who: speakerName(bars[m.id].last), when: bars[m.id].last?.created_at ? timeLabel(String(bars[m.id].last?.created_at), Date.now(), appLocale()) : '' }) }}</span>
           <span class="ost-thread-act"><span class="sr-only">, </span>{{ bars[m.id].expanded ? t('ourstate.thread.threadHide', 'Hide') : t('ourstate.thread.threadShow', 'Show') }}</span>
         </button>
-        <!-- V0654 (ap): what you asked your assistant after this line: only you see it, and its answer comes below -->
+        <!-- V0654 (ap): what you asked your assistant after this line: only you see it; V0655 (av): while it waits or was
+             refused (an answered one sits above its answer) -->
         <ChatAssistAsk v-for="a in asksAfter(m.seq)" :key="a.ref" :ask="a"
                        @retry="retryAsk" @edit="editAsk" @dismiss="dismissAsk" />
       </template>
@@ -411,7 +415,7 @@
     <ChatSidePanel v-if="sideOn" :org-id="String(room?.org_id || '')" :viewer-key="myKey || 'me'"
                    :approvals-count="approvalsCount" :focus-approvals="!!focusApprovalId"
                    :wake-modes="room?.wake_modes || null" :can-set-wake="!!room?.can_set_wake" :wake-busy="wakeBusy"
-                   @set-wake="(key, m) => setWake(key, m)">
+                   @set-wake="(key, m) => setWake(key, m)" @message="(a) => (dmTarget = a)" @mention="insertMention">
       <!-- V0653 (al): WAITING ON YOU keeps its count; the requests themselves are pinned above the history, and this
            section opens their whole list there -->
       <template #approvals>
@@ -430,6 +434,10 @@
       </template>
     </ChatSidePanel>
     </div><!-- .ost-body -->
+    <!-- V0655 (ay): a direct message to a member, in a small window over this room (the side panel's Message) -->
+    <Teleport to="body">
+      <ChatDmWindow v-if="dmTarget && sideOn" :token="token" :target="dmTarget" @close="dmTarget = null" @open="openDmThread" />
+    </Teleport>
 
     <!-- Service-call confirm: the money moment. ActingContextNotice above the
          confirm; the quote is what the agent's own gate will accept. -->
@@ -916,6 +924,7 @@ import ChatNotifySheet from '@/components/ourstate/ChatNotifySheet.vue'
 import ChatRoomSettings from '@/components/ourstate/ChatRoomSettings.vue'
 import ChatYouPanel from '@/components/ourstate/ChatYouPanel.vue'
 import ChatSidePanel from '@/components/ourstate/ChatSidePanel.vue'
+import ChatDmWindow from '@/components/ourstate/ChatDmWindow.vue'
 import ChatCardHistory from '@/components/ourstate/ChatCardHistory.vue'
 import ChatBoard from '@/components/ourstate/ChatBoard.vue'
 import { foldThreads, lastReplyAt, type ThreadBar } from '@/services/chat/threads'
@@ -947,7 +956,7 @@ import { contractsV2Api } from '@/services/api/contractsV2'
 import { useAuthStore } from '@/stores/auth'
 import { usePocketAgent } from '@/composables/usePocketAgent'
 import { rememberedSpeaker, rememberSpeaker, resolveSpeaker } from '@/services/chat/speakAs'
-import { YOU, assistantIds, rememberAssistant, readAsks, writeAsks, type AssistAsk } from '@/services/chat/assistOn'
+import { YOU, assistantIds, rememberAssistant, readAsks, writeAsks, placeAsks, type AssistAsk } from '@/services/chat/assistOn'
 import { useUIStore } from '@/stores/ui'
 import { usePocketLock } from '@/composables/usePocketLock'
 import { useActingContext } from '@/composables/useActingContext'
@@ -1006,8 +1015,8 @@ const paneWidth = ref(0)
 const surface = computed(() => chatSurfaceFor(base.value))
 const sideOn = computed(() => showSidePanel(paneWidth.value, kind.value, room.value?.org_id, surface.value))
 const approvalsCount = ref<number | null>(null)
-/* V0653 (al), his words in the sessions' room (seq 686): the arrow over the chat "just leave[s] the chat and says pick
-   a conversation". Inside the shell's two panes it folds and opens the list instead (OurChatShell keeps the choice);
+/* V0653 (al), the sessions' room (seq 686): the arrow over the chat used to leave the chat for "pick a
+   conversation". Inside the shell's two panes it folds and opens the list instead (OurChatShell keeps the choice);
    on one pane, or outside the shell, it leaves the thread for the list as before. */
 const listFold = inject(OURCHAT_LIST_FOLD, null)
 const arrowAct = computed(() => headerArrow(!!listFold?.twoPane.value, !!listFold?.folded.value))
@@ -1391,6 +1400,18 @@ const speakerTitle = computed(() =>
 
 /* ── composer ── */
 const input = ref('')
+/* V0655 (ay): the side panel's quick actions. Message opens a small direct-message window over the room (the room keeps
+   its place); Mention puts "@<name>" into this room's composer, after what is already there */
+const dmTarget = ref<{ did: string; name: string | null } | null>(null)
+function insertMention(label: string) {
+  const v = input.value
+  input.value = `${v}${v && !/\s$/.test(v) ? ' ' : ''}@${label} `
+  void nextTick(() => inputEl.value?.focus())
+}
+function openDmThread(id: string) {
+  dmTarget.value = null
+  if (id) router.push(`${base.value}/${id}`).catch(() => {})
+}
 const hint = ref('')
 const hintSendAsText = ref(false)
 const hintNeedsAgent = computed(() => !!hint.value && !credAgents.value.length && !sealedLocked.value)
@@ -2453,9 +2474,9 @@ const speakingToken = computed(() =>
   speakerDid.value ? ((auth as any).agentToken || token.value) : token.value)
 
 /* ── V0654 (ap), order gwo_03a846cb91b37628c3c6710a: the assistant in OurChat ──
-   His words (the sessions' room seq 1091): pickable per identity in the "send as" choice, the chip amber while it is on,
-   his request shown to himself and the answer below it, on the phone and the desktop. Only where his personal assistant
-   is enabled for him (GET /assistant/status: the bridge, admin-only), never in an agent's service thread (the rail fixes
+   Pickable per identity in the "send as" choice, the chip amber while it is on,
+   the request shown to its author and the answer below it, on the phone and the desktop. Only where the owner's personal
+   assistant is enabled for them (GET /assistant/status: the bridge, admin-only), never in an agent's service thread (the rail fixes
    who speaks there) or a support thread (the desk writes it). The registry posts the answer as the identity this thread
    sends with (POST /chat/conversations/{id}/assist); the request is never posted, and stays on this device. */
 const assistAvailable = ref(false)
@@ -2479,8 +2500,12 @@ const asks = ref<AssistAsk[]>(readAsks(convId.value, assistReloaded()))
 watch(convId, (id) => { asks.value = readAsks(id, assistReloaded()) })
 const roomAsks = computed(() => asks.value.filter(a => a.conversationId === convId.value))
 const shownSeqs = computed(() => new Set(shownMessages.value.map((m: any) => Number(m.seq))))
-function asksAfter(seq: number): AssistAsk[] { return roomAsks.value.filter(a => a.afterSeq === Number(seq)) }
-const asksUnanchored = computed(() => roomAsks.value.filter(a => !shownSeqs.value.has(a.afterSeq)))
+/* V0655 (av), order gwo_ce52bf8dc39e7202817f16c7: an answered request sits directly above its answer wherever the answer
+   is drawn, and folds with it; a waiting or refused one keeps its place (after its line, else at the bottom) */
+const askPlaces = computed(() => placeAsks(roomAsks.value, shownSeqs.value))
+function asksBefore(seq: number): AssistAsk[] { return askPlaces.value.before.get(Number(seq)) ?? [] }
+function asksAfter(seq: number): AssistAsk[] { return askPlaces.value.after.get(Number(seq)) ?? [] }
+const asksUnanchored = computed(() => askPlaces.value.bottom)
 function patchAsk(a: AssistAsk, p: Partial<AssistAsk>) {
   const inView = asks.value.some(x => x.ref === a.ref)
   const list = inView ? asks.value : readAsks(a.conversationId, assistReloaded())   // the room was left meanwhile
@@ -3222,6 +3247,7 @@ onUnmounted(() => {
 })
 
 watch(convId, () => { endAnchor(); messages.value = []; openThreads.value = new Set(); closedThreads.value = new Map(); replyTo.value = null; void load() })
+watch(convId, () => { dmTarget.value = null })   // V0655 (ay): the window belongs to the room it was opened over
 </script>
 
 <style scoped>

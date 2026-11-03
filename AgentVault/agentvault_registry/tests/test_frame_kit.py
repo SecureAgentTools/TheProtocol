@@ -1,4 +1,4 @@
-"""§HELLOFRAME (his word 2026-09-19: "build it behind the flag, off by default"): the frame kit rail.
+"""§HELLOFRAME (2026-09-19: built behind a flag, off by default): the frame kit rail.
 
 The applicant's page lists only their own requests (by id, or by a VERIFIED email), each with a download window whose
 state names the reason it is closed; the kit is the file a manifest names, served only when its size matches; a

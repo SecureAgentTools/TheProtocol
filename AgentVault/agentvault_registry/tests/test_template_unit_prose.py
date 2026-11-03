@@ -1,4 +1,4 @@
-"""§FESUITE V0595 (his word 2026-10-11, "also correct the avt prose in the docs"): the official template bundles name the
+"""§FESUITE V0595 (2026-10-11, the unit prose in the docs corrected): the official template bundles name the
 registry's own unit, not AVT. 0187 rewrites the Herald template's seeded description where it still stands (and only
 there), and 0076's blueprint carries the same words, so a fresh frame and an old one read alike. The migrations are
 loaded from their files with a recording stand-in for the database.

@@ -1,5 +1,5 @@
-"""Which public MCP tools are LISTED depends on the registry's switches (W3, agentvault2-d6, 2026-10-25; his words through
-agentvault2-69: "i want the illegal wording completly gone before opening").
+"""Which public MCP tools are LISTED depends on the registry's switches (W3, agentvault2-d6, 2026-10-25;
+the critical wording gone before the opening).
 
 A tool that starts a lock is listed only where STAKING_ENABLED is on; a tool that pays, rates, relocks, distributes or
 reports a payout on locked units only where STAKING_REWARDS_ENABLED is on. These are the switches the routes themselves
@@ -31,7 +31,7 @@ NEEDS_STAKING_PAYOUTS = frozenset(_P + n for n in (
 NEEDS_STAKING_PROMPTS = frozenset({"lock_units"})
 
 # Arena betting is a retired surface where ARENA_BETTING_ENABLED is off (core/legacy_surfaces.py, D8): its bet reads are
-# not listed there (his word through agentvault2-69, 2026-10-25 21:15Z); the route refuses with the surface's sentence.
+# not listed there (2026-10-25); the route refuses with the surface's sentence.
 NEEDS_ARENA_BETTING = frozenset({_P + "getArenaMatchBets"})
 
 

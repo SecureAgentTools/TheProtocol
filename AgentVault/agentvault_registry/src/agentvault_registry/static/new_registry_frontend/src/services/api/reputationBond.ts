@@ -119,8 +119,8 @@ export const reputationBondApi = {
       .then(r => r.data as { bond_id: string; status: string; amount: string; funded_by: string; note: string; reputation: ReputationBlock }),
 }
 
-/** §REPBOND (agentvault2-56, 2026-10-23; his words: "people cant get stuck on bond issues while discoverying/learning the
- *  protocol", "i just want it to be smooth for new people"). Where the registry enforces the bond, discovery shows an agent
+/** §REPBOND (agentvault2-56, 2026-10-23: nobody gets stuck on the bond while discovering and learning the
+ *  protocol; smooth for new people). Where the registry enforces the bond, discovery shows an agent
  *  only while its bond is locked or matured (services/reputation_bond.sql_card_is_bonded, every card, not only paid ones),
  *  so an owner told "listed" alone was told less than the truth. */
 export function hiddenUntilBonded(block: { mode?: string | null; bond?: { status?: string | null } | null } | null | undefined): boolean {

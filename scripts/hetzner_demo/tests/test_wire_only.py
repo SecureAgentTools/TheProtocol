@@ -1,4 +1,4 @@
-"""§NIGHTPROV (2026-09-27, his words "the frame runner may build sandbox-posture frames at night"): `--wire-only`.
+"""§NIGHTPROV (2026-09-27: the frame runner may build sandbox-posture frames at night): `--wire-only`.
 
 A nightly sandbox pair must federate through this host's stream SNI map and have its roots in the ES vhosts' bundle
 refresh, and nothing else of the host: no Prometheus job, no host auditor slot (the public auditor page), no apex

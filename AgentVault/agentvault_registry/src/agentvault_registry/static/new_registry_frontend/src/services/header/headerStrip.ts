@@ -1,7 +1,6 @@
 /**
- * §ALERTS header strip (2026-10-06, agentvault2-09). His words: "check why alerts are not connected to the header thing
- * where the broadcasts are displayed", then "can we make the new announcement bar optional in the settings? i really
- * like the led but polishing it would be cool additionally".
+ * §ALERTS header strip (2026-10-06, agentvault2-09): the alerts connected to the header where the broadcasts
+ * are displayed, the announcement bar optional in the settings, and the LED kept and polished.
  *
  * The pure parts the two strips share (the LED ticker and the announcement bar): which broadcasts and alerts are shown,
  * in what order, in what words, and how the LED board spells text it has no glyph for. No network and no Vue here, so

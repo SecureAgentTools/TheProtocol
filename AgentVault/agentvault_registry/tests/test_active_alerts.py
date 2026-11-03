@@ -141,7 +141,7 @@ def test_an_alert_in_its_pending_to_firing_minute_is_one_row():
 
 
 def test_a_critical_holds_back_its_warning_as_the_alert_emails_do():
-    """His word 2026-10-06 ("critical disk space warning comes before host diskspace low ... it seems to be multiple"):
+    """2026-10-06: one disk space alert, not a warning and a critical for the same disk:
     alertmanager's inhibit rule, read the same way here. Only a FIRING critical with a family holds back, only a warning
     of that family, and only with the same device, job, instance and frame (missing on both sides is equal)."""
     other_disk = dict(DISK_LOW, device="/dev/md3")

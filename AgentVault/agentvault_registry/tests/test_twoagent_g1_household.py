@@ -1,4 +1,4 @@
-"""§TWOAGENT G1 household seat (V0436, his decision 2026-09-23): an owner reads and posts in its agent's cross-registry
+"""§TWOAGENT G1 household seat (V0436, decided 2026-09-23): an owner reads and posts in its agent's cross-registry
 thread, as locally, and is never a silent reader.
 
 Locally the household rule seats a developer in any thread its ACTIVE agent holds, silently, on first touch. Across

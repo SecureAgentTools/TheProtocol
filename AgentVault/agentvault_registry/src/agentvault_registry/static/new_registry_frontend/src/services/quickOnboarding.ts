@@ -1,7 +1,7 @@
 /**
- * QUICK ONBOARDING (2026-10-09, his words: "a new view where you can issue simple agent identity. by giving the agent a
- * name. get standard valid agent card ... it should list your existing agents and allow to initiate password reset from
- * there. with their balances (hidden but unhideable)"). The view is views/QuickOnboarding.vue; this module is its
+ * QUICK ONBOARDING (2026-10-09): a view that issues a simple agent identity from a name, with a standard valid agent
+ * card; it lists your existing agents, starts a credential reset from there, and shows their balances (hidden until
+ * asked). The view is views/QuickOnboarding.vue; this module is its
  * decisions, kept pure so each one is tested on its own:
  *
  *   - which rows of GET /developers/me/agents are the person's agents (a deleted agent is status "revoked" and still

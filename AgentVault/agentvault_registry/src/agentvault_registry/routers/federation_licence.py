@@ -108,8 +108,8 @@ async def public_licence_lookup(cert_hash: str = Path(..., pattern=_HASH_RE),
 @router.get("/api/v1/federation/licence/verdicts")
 async def licence_verdicts() -> Dict[str, Any]:
     """The licence verdict this registry reached about each peer trust domain, its mode, and the domains it refuses.
-    Its own TEG copies this and refuses the same domains on the cross-TEG legs (his word 2026-09-28 "cross-teg cut off
-    also approved on revoke"), so a revoked or suspended frame is cut off at the TEGs as well as the registries. Not
+    Its own TEG copies this and refuses the same domains on the cross-TEG legs (2026-09-28: the cross-TEG
+    cut-off on a revoke), so a revoked or suspended frame is cut off at the TEGs as well as the registries. Not
     secret: every frame publishes its own licence and the genesis publishes the list of every licence it issued."""
     from agentvault_registry.core import mtls_auth
     await mtls_auth.refresh_peer_trust_domains()

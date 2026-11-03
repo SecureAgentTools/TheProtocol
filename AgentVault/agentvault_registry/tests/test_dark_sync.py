@@ -1,4 +1,4 @@
-"""§DARKSYNC (2026-09-22, his words "figure out why dark agents dont synch. fix it properly"): UNLISTED means "not in
+"""§DARKSYNC (2026-09-22: why unlisted agents did not sync, fixed properly): UNLISTED means "not in
 discovery", not "never leaves home".
 
 Measured on the sandbox before the fix: 19 of sbx-alpha's 21 unlisted native agents (svc-sim's clerks, svc-market's

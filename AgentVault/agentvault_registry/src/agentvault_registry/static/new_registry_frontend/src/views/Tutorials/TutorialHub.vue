@@ -40,9 +40,8 @@ function lockLabel(item: { requireAdmin?: boolean; requireFlag?: string }): stri
   return item.requireFlag ? `Requires ${item.requireFlag}` : 'Requires admin access'
 }
 
-// §SANDBOXGATE (2026-09-02, his word: "4 is gated by sandbox running … display a
-// visible banner for tutorials when sandbox is off. we cant run this on prod.
-// its the correct behaviour just miscommunications.")
+// §SANDBOXGATE (2026-09-02): track 4 is gated by a running sandbox, and a visible banner says so
+// while the sandbox is off (it cannot run on production; the gate is correct, its message was not).
 //
 // The API tracks make REAL calls against the sandbox tier, which is off by
 // default on prod — correct behaviour, not a bug. Until now nothing said so:

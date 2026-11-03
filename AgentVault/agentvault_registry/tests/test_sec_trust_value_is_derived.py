@@ -1,5 +1,4 @@
-"""SEC-20 (2026-10-17, his word: "no, not set. it has to be dervied in a meaningful way. setting it manually doesnt make
-sense to me."): the trust value a frame registry holds for a peer (bayesian_discount), which the frame's event store
+"""SEC-20 (2026-10-17: derived in a meaningful way, never set by hand): the trust value a frame registry holds for a peer (bayesian_discount), which the frame's event store
 multiplies the peer's federation votes by, is DERIVED from the peer's record and the clock, never set.
 
 The derivation (services/bayesian_trust.derived_trust): no record gives 0.5; otherwise the Beta(1,1) posterior mean

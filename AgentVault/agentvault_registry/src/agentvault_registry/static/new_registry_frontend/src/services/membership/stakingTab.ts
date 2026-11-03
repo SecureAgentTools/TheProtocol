@@ -2,8 +2,8 @@
  * §MEMBERSHIP (V0564; agentvault2-81's finding, agentvault2-33's fix): the Senate floor's Staking tab on a registry that
  * opens no new locks, or that votes by membership.
  *
- * Production runs member mode with STAKING_ENABLED=false from V0564 (his word 2026-10-03 "the rest can go production
- * cluster"). The tab was ungated and the page's DEFAULT, so every visit read "Lock units to gain voting weight." where a
+ * Production runs member mode with STAKING_ENABLED=false from V0564 (2026-10-03, the production
+ * cluster). The tab was ungated and the page's DEFAULT, so every visit read "Lock units to gain voting weight." where a
  * lock gives no weight and no new lock opens. Hiding the tab outright would hide the only console door to UNSTAKE the
  * positions people still hold (core/staking_gate.py keeps unstake working so nobody's units are stuck), so the rule is:
  * the tab exists where new positions open, or where the person still holds positions to release; nowhere else.

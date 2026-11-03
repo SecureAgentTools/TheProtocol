@@ -50,7 +50,7 @@ describe('the side panel of an organization room', () => {
     expect(w.find('[data-testid="slot-board"]').exists() && w.find('[data-testid="slot-live"]').exists()).toBe(true)
   })
 
-  it('names who is present: a live status line first, a filled dot for it, a hollow one without, the count', async () => {
+  it('names who is present: a live status line first, a live ring for it, a quiet one without, the count', async () => {
     m.presence.mockResolvedValue(presence([
       agent('did:x:bbbb', 'session-lead', null),
       agent('did:x:aaaa', 'session-release', 'building (ad), the side panel'),
@@ -64,8 +64,9 @@ describe('the side panel of an organization room', () => {
     expect(rows[0].find('.csp-name').text()).toBe('did:x:cccc')            // no name: the DID, never blank
     expect(rows[1].text()).toContain('building (ad), the side panel')
     expect(rows[2].text()).toContain('no live status')
-    expect(rows[0].find('.csp-dot').classes()).toContain('on')
-    expect(rows[2].find('.csp-dot').classes()).not.toContain('on')
+    // V0655 (ay): the ring around the logo replaced the dot (presenceRing.test.ts and ChatSidePanel.quick.test.ts)
+    expect(rows[0].find('.csp-face').attributes('data-ring')).toBe('live')
+    expect(rows[2].find('.csp-face').attributes('data-ring')).toBe('quiet')
     expect(w.find('[data-testid="csp-present-count"]').text()).toBe('2 of 3 live')
   })
 

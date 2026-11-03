@@ -4941,8 +4941,7 @@ def _result_shape_close(outcomes: List["ContractOutcome"], token: Any) -> Dict[s
 
 
 def _wording_close(outcomes: List["ContractOutcome"], token: Any, listings: Dict[str, Any]) -> Dict[str, Any]:
-    """§MCPTEST30 W6 (agentvault2-aa, 2026-10-25; his words to agentvault2-69 that day: "i want the illegal wording
-    completly gone before opening"): the critical words on the MCP surface (api_tests/contracts/critical_words.py).
+    """§MCPTEST30 W6 (agentvault2-aa, 2026-10-25; the critical wording gone before the opening): the critical words on the MCP surface (api_tests/contracts/critical_words.py).
 
     The LISTINGS: a listed tool whose name or description names a critical word fails its own row, and so does a renamed
     tool's old name still listed; the listings' row is red with either, and NOT MEASURED when no listing was read. The

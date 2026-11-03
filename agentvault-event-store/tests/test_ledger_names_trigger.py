@@ -1,7 +1,7 @@
 """W4 phase 1 (agentvault2-aa, 2026-10-25): the projection trigger applies a typed event under its new name as its old one.
 
-His words that day to agentvault2-69: "i want the illegal wording completly gone before opening" and, on the ledger, "just
-use the new wording and make it accept both or something" (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md, W4).
+The critical wording is gone before the opening; the ledger writes the new words and reads
+both (sessionlogs2026/PLAN_2026-10-25_COMPLIANT_OPENING.md, W4).
 Integration test of the REAL trigger (src/migrations/materialized_balances.sql, applied whole) against a THROWAWAY
 database from DATABASE_URL, one schema per store, dropped at the end, as tests/test_projection_negative_mark.py does.
 

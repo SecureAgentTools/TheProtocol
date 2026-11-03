@@ -1,4 +1,4 @@
-"""§MAILCOPY (2026-09-03, his word) — the two account mails name the PLATFORM in the subject and the
+"""§MAILCOPY (2026-09-03) — the two account mails name the PLATFORM in the subject and the
 greeting; the registry keeps its place in the footer ("Sent by <registry>, a TheProtocol registry.").
 The send functions are exercised end to end with the transport recorded, so the subject, the template
 and the link shape are asserted as the recipient receives them. Pure: no SMTP, no relay, no network."""

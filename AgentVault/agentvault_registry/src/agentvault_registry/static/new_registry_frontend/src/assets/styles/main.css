@@ -1,5 +1,5 @@
 /*
-  Tailwind CSS 4 (§FEFRAME, 2026-10-01; his words "you can do tailwind now"), imported WITHOUT cascade layers on
+  Tailwind CSS 4 (§FEFRAME, 2026-10-01), imported WITHOUT cascade layers on
   purpose. The app's own stylesheets (neural-command.css, showcase.css, the scoped component styles) are unlayered, and
   v4's layered utilities would lose to every one of them whatever the specificity: 264 class attributes mix both.
   Unlayered, the cascade is v3's: Tailwind's preflight, the base rules below, the utilities, then everything imported

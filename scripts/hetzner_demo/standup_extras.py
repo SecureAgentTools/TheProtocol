@@ -12,8 +12,8 @@ Secrets are read from files and containers and written to 600 files; nothing her
   identity_nets_append         finding 8
   ops_secret_file              finding 18: ONE shape for operator-admin secret files
   version_gate                 finding 12: the card reports the image's OWN constant (never the env)
-  card_extras / put_jurisdiction   the card's tags, links (no GitHub), commitments, and the jurisdiction profile (his word)
-  put_operator_card            the operator's card location = the city it is named for (his word: the agentworld derives it)
+  card_extras / put_jurisdiction   the card's tags, links (no GitHub), commitments, and the jurisdiction profile
+  put_operator_card            the operator's card location = the city it is named for (the agentworld derives it)
   seed_local_canary_paths      finding 19: two local canary paths (sender/receiver agents funded) so the canaries fire
   tester_fixture_env           finding 22: the API/MCP testers' fixture posture behind ONE flag
 """
@@ -442,7 +442,7 @@ def auditor_slot(slug: str, name: str, currency: str, es_container: str, es_db_c
         out = subprocess.run(["docker", "inspect", container, "--format", "{{range .Config.Env}}{{println .}}{{end}}"],
                              capture_output=True, text=True).stdout
         return dict(l.split("=", 1) for l in out.splitlines() if "=" in l)
-    # §MTLSHOPS (a) (2026-09-15, his decision; agentvault2-85's calls): a public read goes to the frame's public supply audit
+    # §MTLSHOPS (a) (2026-09-15; agentvault2-85's calls): a public read goes to the frame's public supply audit
     # with no key; public_only also holds no DSN and joins no network. Such a slot is written only for a host auditor that
     # lists the shape (an older one fills a keyless slot's key with its mode key and sends this host's key to the frame's
     # address), and only through the frames file, never through the env carrier and a recreate.
@@ -786,8 +786,8 @@ def tester_fixture_env() -> Dict[str, str]:
 
 # ══════════════════════════════════════════════════════════════════════════════════════════════════
 # §FRAMELIC (2026-09-07) — what a PRODUCTION standup needs that the rehearsal did by hand.
-# His word: service accounts instead of the Commander, a frame licence from the anchor, the frame's
-# OWN showcase, and "jurisdiction everything approve as DEMO similar to registry-a but you can refine".
+# Service accounts instead of the Commander, a frame licence from the anchor, the frame's
+# OWN showcase, and every jurisdiction item approved as DEMO, as on registry-a, refined where it helps.
 # ══════════════════════════════════════════════════════════════════════════════════════════════════
 
 # The four concerns a standup touches, and the authority each one actually needs. One developer per
@@ -897,8 +897,8 @@ def create_service_accounts(
     registry_base: str, admin_headers: Dict[str, str], frame_slug: str,
     *, only: Optional[List[str]] = None, invite_codes: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Dict[str, str]]:
-    """Create this frame's four purpose-named service developers. HIS DECISION 2026-09-07:
-    *"i want to do all the onboarding not with the commander account i want special service accounts"*.
+    """Create this frame's four purpose-named service developers. DECIDED 2026-09-07: all the onboarding
+    is done by special service accounts, never the Commander account.
 
     The frame admin CREATES them and then does not run the standup. Each gets only the admin flags
     its own rail needs, and `agents_unlisted_by_default=true` so its agents never reach discovery —
@@ -1126,7 +1126,7 @@ def issue_frame_license(
 
 
 # ── the DEMO jurisdiction profile, complete ───────────────────────────────────────────────────────
-# His word: "jurisdiction everything aprove as DEMO similar to registry-a but you can refine".
+# Every jurisdiction item approved as DEMO, as on registry-a, refined where it helps.
 # registry-a publishes four regulated actions in SHADOW plus four authorizations with reference ids
 # and evidence hashes. Two refinements over it: the authority is named for THIS frame (registry-a
 # says "Frame-A Demo Authority" on every frame that copied it), and the reference ids carry the
@@ -1377,7 +1377,7 @@ def _sh(argv):
 
 
 # ── §MTLSGAP (2026-09-08) — A FRAME CANNOT BE MINTED WITH A PLAINTEXT RAIL ────────────────────
-# His word: *"it can never mint a frame like this."* Every instance of this class was invisible
+# A frame is never minted like this. Every instance of this class was invisible
 # for the same reason: a hop with no gateway raises nothing, logs nothing and passes every health
 # check. The EventStore had no gateway on ANY frame this driver has ever built — because the
 # template rendered two sidecars and never a third — and nobody noticed for as long as nobody
@@ -1561,7 +1561,7 @@ def assert_operator_mtls(slug: str, log=print) -> None:
 
 
 # ── §FRAMESHOWCASE: a genesis issuance larger than the registry's per-call ceiling ──────────────────────────────────────────
-# His word 2026-09-14 ("your recommendation. but not cap at 1m"): the driver issues in pieces. hansa asked for 5,000,000;
+# 2026-09-14 (no cap at 1m): the driver issues in pieces. hansa asked for 5,000,000;
 # the registry's mint rail refused the single call (TEG_MINT_MAX_AVT is 1,000,000 in a runner-built frame's network
 # profile) and the driver logged the refusal and went on, so the frame came up with an empty treasury until the rest was
 # issued by hand. The ceiling is asked of the running registry, never assumed: its validator reads

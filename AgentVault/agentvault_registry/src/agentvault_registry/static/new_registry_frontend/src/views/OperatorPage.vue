@@ -43,7 +43,7 @@
       <h1 class="op-h1">{{ t('operatorPageView.hero.h1a') }}<br/><span class="op-h1-accent">{{ t('operatorPageView.hero.h1Accent') }}</span></h1>
       <p class="op-lead">{{ t('operatorPageView.hero.lead') }}</p>
       <div class="op-hero-acts">
-        <!-- §OPPAGE (2026-10-02, his words "cloud operators are free for testing there is no fiat lane anymore"):
+        <!-- §OPPAGE (2026-10-02: cloud operators are free for testing, there is no fiat lane any more):
              the euro backing button is gone; the first door is the free test operator. -->
         <button type="button" class="op-btn op-btn-primary" @click="setTab('cloud')">
           <span>{{ t('operatorPageView.ctas.tryCloud') }}</span>
@@ -282,7 +282,7 @@
         <textarea id="op-app-usecase" v-model="appForm.use_case" class="op-form-input" rows="3" :placeholder="t('operatorPageView.selfHosted.formUseCasePh')"></textarea>
       </div>
 
-      <!-- §FESUITE V0595 (his word 2026-10-11): what the operator runs. It starts as this frame runs it; the frame-exclusive
+      <!-- §FESUITE V0595 (2026-10-11): what the operator runs. It starts as this frame runs it; the frame-exclusive
            settings are shown greyed with the frame's value and cannot be chosen; only what differs is sent -->
       <details v-if="envCatalog?.role === 'frame' || envFailed" class="op-env" data-testid="op-env" :open="envChangedCount > 0">
         <summary class="op-env-summary">
@@ -541,7 +541,7 @@ const frameNames = computed(() => {
 })
 
 // ─── The application form (shown below the Cloud and the Self-Hosted tab) ───
-// §OPPAGE (2026-10-02, his words "cloud operators are free for testing there is no fiat lane anymore"): the euro
+// §OPPAGE (2026-10-02: cloud operators are free for testing, there is no fiat lane any more): the euro
 // backing ladder, its tiers, the founder-slot stats and the fiat lane's probe are gone (the lane answers 503 on every
 // frame, and the page asked it on every visit). One form serves both routes; `deployment`
 // says which, and follows the tab the visitor came from.

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * The announcement bar: the header strip's still alternative to the LED ticker (§ALERTS header strip, 2026-10-06,
- * agentvault2-09; his words "can we make the new announcement bar optional in the settings? i really like the led").
+ * agentvault2-09: the announcement bar optional in the settings, the LED kept).
  * Settings > Preferences > Header strip chooses it; the LED stays the default.
  *
  * One broadcast at a time, in plain type: its kind, its title, one line of its body, its age. Several rotate every

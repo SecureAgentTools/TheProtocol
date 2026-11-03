@@ -1,6 +1,6 @@
 """§MCPTEST30 (V0612) — zero-knowledge attestations v2 through the MCP tools (agentvault2-90's §ZKV2).
 
-His word in agentvault2-90's session: the tester tests the v2 circuits. Every step here goes through a tool an agent or
+The tester tests the v2 circuits (agentvault2-90's session). Every step here goes through a tool an agent or
 an operator uses. The circuit reads are public; the proof is made by the registry's own prover (generateTutorialProof,
 admin bridge) for a THROWAWAY agent made for this run, and that agent submits it (submitAttestation). A fresh agent
 makes every count exact: its first proof of a circuit on a UTC day earns one point, a second earns nothing, and the

@@ -305,7 +305,7 @@ def _normalize_trust_domain(td: str) -> str:
     return td.rstrip("/")
 
 
-# ── §MONEY-R52 (2026-09-04, his word "r52 approved too") — the SPIRE federation RELATIONSHIP ──────
+# ── §MONEY-R52 (2026-09-04) — the SPIRE federation RELATIONSHIP ──────
 # Federation has three layers: the bundle IMPORT (add_peer_bundle), the workload entries'
 # -federatesWith (§FRAMEFED), and the RELATIONSHIP — `spire-server federation create`, which is what
 # makes SPIRE re-fetch the peer's bundle from the peer's bundle endpoint before it expires. Nothing

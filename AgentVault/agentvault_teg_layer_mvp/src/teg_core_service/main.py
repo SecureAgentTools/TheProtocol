@@ -312,7 +312,7 @@ async def lifespan(app: FastAPI):
             else:
                 logger.warning("continuing_without_cross_teg - Cross-TEG transfers disabled")
 
-    # §FEDLICENCE (his word 2026-09-28 "cross-teg cut off also approved on revoke"): copy this frame's registry's licence
+    # §FEDLICENCE (2026-09-28; the cross-TEG cut-off on a revoke): copy this frame's registry's licence
     # verdicts, so the certificate reader refuses a frame the registry refuses (core/licence_gate). Every worker holds
     # its own copy; a failed read keeps the last one.
     try:

@@ -1,6 +1,6 @@
 """§SOVKIT K1 (2026-09-14) — the registry holds no Kafka producer.
 
-His word "2 yes": Kafka is PRIVATE to the event store. agentvault2-85 measured the store's consumer taking whatever
+Kafka is PRIVATE to the event store. agentvault2-85 measured the store's consumer taking whatever
 arrived on :9092 with none of the HTTP route's checks; the registry's fire-and-forget producer (`send()` returned after
 the buffer append, delivery never awaited) was one of the two producers on that path. The module keeps `shutdown_kafka`
 as a no-op for main.py's shutdown hook and nothing else of it: no aiokafka import, no KAFKA_ENABLED read, no topic

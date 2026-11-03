@@ -50,7 +50,7 @@ Gates over the export tree (every one has a CONTROL that must fire on a planted 
      `docker inspect` in-process, compared in-process, never written or printed (a denylist that hardcodes a live
      secret is the leak; G1's file holds what a pre-commit must refuse, this holds what is live right now). A host
      where docker cannot be asked refuses the export: NOT MEASURED is not passed.
-  G10 (§HELLOFRAME 2026-09-19, his word "Ship without it") the journal's media: nothing under the console's
+  G10 (§HELLOFRAME 2026-09-19, the export ships without it) the journal's media: nothing under the console's
      public/blog ships. The same predicate as the copy (JOURNAL_MEDIA); a frame without the media offers no journal
      (AgentVault core/journal.py), so a stranger's console never shows our posts or their broken images.
   G13 (§EXPORTIP 2026-09-29) a public IPv4 address: none may stand except the public resolvers and the documentation
@@ -59,6 +59,9 @@ Gates over the export tree (every one has a CONTROL that must fire on a planted 
   G14 (§DOCSOURCE 2026-10-16) PUBLIC_DOCS at the exported stack commit equals its generation from the one doc source
      (the console's doc folder at the AgentVault commit the stack pins; scripts/distribution/gen_public_docs.py):
      a hand edit, a page the source dropped or a stale copy refuses, and a check that cannot run is NOT MEASURED.
+  G15 (V0655 (aw)) a code comment or a docstring that says a choice was the maintainer's own (the phrases G15_PHRASE
+     builds): none may stand beyond the counts the export's own AgentVault/agentvault_registry/tests/attribution_kept.json
+     allows (strings that tests pin); an export without that list allows none.
 The export mode has its own control in --selftest: an untracked file and an uncommitted edit must stay out.
 """
 from __future__ import annotations
@@ -82,7 +85,7 @@ AV_SHIP = [  # relative to the AgentVault repository
 STACK_SHIP = [  # relative to the stack repository
     "agentvault-event-store", "identity-fabric", "directory", "theprotocol-sdk", "PUBLIC_DOCS",
     "scripts/distribution", "scripts/hetzner_demo", "templates/frame-test", "sidecars",
-    # §SOVKIT (his word 2026-09-14: "do opa auditor directory and cli runner for the export"): the `tp` host CLI, the
+    # §SOVKIT (2026-09-14: OPA, the auditor, the Directory and the CLI runner in the export): the `tp` host CLI, the
     # frame runner (the host service Frame Management provisions through) and the solo auditor the frame kit ships;
     # OPA's policies ride in identity-fabric/, the Directory in directory/, the kit's files in templates/frame-test/kit.
     "tools/operator-cli", "tools/frame-runner", "Agents/TheAuditor",
@@ -92,8 +95,8 @@ STACK_SHIP = [  # relative to the stack repository
     # §HELLOFRAME: the cert-writer image (six sidecars of a federated frame run it) and the nginx entrypoint every mTLS
     # terminator mounts; the rest of nginx/ is this host's vhosts and never ships
     "nginx/Dockerfile.cert-writer", "nginx/cert-writer.sh", "nginx/nginx-entrypoint.sh",
-    # §AGORASIM-2 (his words 2026-09-22: "update the sim so anyone can easily onboard it when standing up the export
-    # framekit"): the market simulation engine scripts/distribution/frame-sim.py drives (every knob derived from the
+    # §AGORASIM-2 (2026-09-22: the sim easy to onboard for anyone standing up the export's
+    # frame kit): the market simulation engine scripts/distribution/frame-sim.py drives (every knob derived from the
     # frame's own answers; the production tables inside it are never used when frame-sim names the network)
     "scripts/sim_eigentrust.py",
     # §OSSRC: DCO.md is the contribution terms CONTRIBUTING.md links to; the 09-13 set shipped CLA.md without it
@@ -110,7 +113,7 @@ STACK_SHIP = [  # relative to the stack repository
     "NOTICE", "REUSE.toml", "LICENSES",
 ]
 SHIP = [f"AgentVault/{p}" for p in AV_SHIP] + STACK_SHIP
-# §HELLOFRAME (his word 2026-09-19 on the export's journal: "Ship without it"): the journal's media, 276 MB of our own
+# §HELLOFRAME (2026-09-19, the export's journal ships without it): the journal's media, 276 MB of our own
 # posts' figures and videos, stay home. The console offers no journal where they are absent (AgentVault
 # core/journal.py). One predicate for the copy (NEVER) and for G10, so the gate asks the question the copy answered.
 JOURNAL_MEDIA = ["**/new_registry_frontend/public/blog", "**/new_registry_frontend/public/blog/**"]
@@ -139,7 +142,7 @@ NEVER = [
     # canary runner then finds no map and uses its documented bearer fallback.
     "**/agentvault_registry/config/canary_mtls_map.mainnet-2026.json", "**/agentvault_registry/tests/test_canary_mtls_map.py",
 ]
-# §HELLOFRAME (his word 2026-09-19: "we dont ship screenshots"): captures of our own consoles are exports of our data.
+# §HELLOFRAME (2026-09-19: no screenshots ship): captures of our own consoles are exports of our data.
 # The 09-18 export carried 83 e2e screenshots of admin pages (one showed the Commander's audit log), a Playwright report
 # and five loose captures at the frontend's root. A path is a screenshot when any directory on it is a capture folder, or
 # when it is an image at the frontend's root or named for what it is; the app's own images live under public/ and
@@ -542,6 +545,34 @@ def g13_public_ipv4(rel: str, data: bytes, allow: dict) -> list:
     return found
 
 
+# G15 (V0655 (aw), order gwo_22ba4784e0615b4537aefa21): a comment or a docstring says what the code does and why; who chose
+# it belongs in the session log, not in what ships. The phrases are built from parts, so this file holds none of them. The
+# strings that keep one (the MCP tester's skip and refusal reasons, which tests pin, two test titles, the tester's matching
+# rule) are listed with their counts in the AgentVault repository, agentvault_registry/tests/attribution_kept.json, read here
+# from the export itself: a file holding more than the list allows fires, and an export without the list allows none. The
+# same pattern as that repository's own test (tests/test_no_attribution_phrases_v0655.py, which also refuses a stale
+# line) and this repository's (scripts/distribution/tests/test_no_attribution_phrases_v0655.py): change all three together.
+_G15_HIS = "h" + "is"
+G15_PHRASE = re.compile(rf"(?i)\b({_G15_HIS} words?|on {_G15_HIS} word|{_G15_HIS} decision|{_G15_HIS} call|{_G15_HIS} order)\b".encode())
+G15_KEPT = "AgentVault/agentvault_registry/tests/attribution_kept.json"
+
+
+def g15_kept(out: Path) -> dict:
+    """{export path: how many phrases it may hold} from the export's own list; {} (none may stand) when the export carries
+    no list or the list cannot be read"""
+    try:
+        kept = json.loads((out / G15_KEPT).read_text(encoding="utf-8"))["kept"]
+        return {f"AgentVault/{k}": int(v) for k, v in kept.items()}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return {}
+
+
+def g15_attribution(rel: str, data: bytes, kept: dict) -> "str | None":
+    """The file's G15 hit, or None: it holds no more phrases than the list allows it"""
+    n = len(G15_PHRASE.findall(data))
+    return f"{rel} ({n}, the list allows {kept.get(rel, 0)})" if n > kept.get(rel, 0) else None
+
+
 def public_docs_drift(stack_ref: str) -> list:
     """G14: every way the committed PUBLIC_DOCS differs from its generation; a check that cannot run is a hit."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -556,8 +587,11 @@ def gate(out: Path, log, live=None) -> dict:
     """Every gate returns its hits; the caller refuses on any. The denylist is read by NAME; no value is ever printed.
     `live` is G8's population ((container, VAR, value) tuples); None means ask docker, [] means an empty census."""
     hits = {"G1_denylist": [], "G2_shape": [], "G3_keyfile": [], "G4_hex_secret": [], "G8_live_env": [], "G9_screenshots": [],
-            "G10_journal_media": [], "G11_secret_literal": [], "G12_provider_detail": [], "G13_public_ipv4": []}
+            "G10_journal_media": [], "G11_secret_literal": [], "G12_provider_detail": [], "G13_public_ipv4": [],
+            "G15_attribution": []}
     g12_ref = g12_reference()
+    g15 = g15_kept(out)
+    hits["_g15_kept_files"] = len(g15)
     g13_allow = g13_allowlist()
     hits["_g13_allowlist_entries"] = sum(len(v) for v in g13_allow.values())
     hits["_g12_reference_loaded"] = len(g12_ref)
@@ -602,6 +636,9 @@ def gate(out: Path, log, live=None) -> dict:
                     hits["G12_provider_detail"].append(f"{rel} ({name})")
             for addr in g13_public_ipv4(rel, data, g13_allow):
                 hits["G13_public_ipv4"].append(f"{rel} ({addr})")
+            g15_hit = g15_attribution(rel, data, g15)
+            if g15_hit:
+                hits["G15_attribution"].append(g15_hit)
             for i, ref in enumerate(g12_ref):
                 if ref in data and not (b"@" in ref and matches(rel, G12_MAILBOX_ALLOWED)):
                     # a MAILBOX of the author may stand where it is the SOFTWARE's contact (the security policy,
@@ -725,6 +762,25 @@ def selftest(log) -> bool:
         unreadable = public_docs_drift("0" * 40)
         fired = len(unreadable) == 1 and unreadable[0].startswith("NOT MEASURED")
         log(f"  control G14 (a stack ref the check cannot read is NOT MEASURED, a hit): {'FIRED' if fired else 'DID NOT FIRE ' + str(unreadable)}"); ok &= fired
+        # G15: a comment that names whose choice it was FIRES; a string the export's own list keeps is quiet up to its count and
+        # FIRES one over it; a longer word and the list's absence behave as the docstring says. The phrases are built here.
+        his = _G15_HIS
+        p = t / "planted/tool.py"; p.write_text(f"x = 1   # ({his} word 2026-11-03)\n")
+        h = gate(t, log, live=[]); fired = h["G15_attribution"] == ["planted/tool.py (1, the list allows 0)"]; p.unlink()
+        log(f"  control G15_attribution (a comment that says whose choice it was): {'FIRED' if fired else 'DID NOT FIRE ' + str(h['G15_attribution'])}"); ok &= fired
+        k = t / G15_KEPT; k.parent.mkdir(parents=True, exist_ok=True)
+        k.write_text(json.dumps({"kept": {"agentvault_registry/x/reasons.py": 1}}))
+        r = t / "AgentVault/agentvault_registry/x/reasons.py"; r.parent.mkdir(parents=True, exist_ok=True)
+        r.write_text(f"REASON = 'skipped: {his} decision, pinned by a test'\n")
+        h = gate(t, log, live=[]); quiet = not h["G15_attribution"] and h["_g15_kept_files"] == 1
+        log(f"  control G15 quiet (a kept string within its count): {'ok' if quiet else 'FAILED ' + str(h['G15_attribution'])}"); ok &= quiet
+        r.write_text(f"REASON = 'skipped: {his} decision, pinned by a test'   # {his} call\n")
+        h = gate(t, log, live=[]); fired = h["G15_attribution"] == ["AgentVault/agentvault_registry/x/reasons.py (2, the list allows 1)"]
+        log(f"  control G15 over the count (a kept file with one more): {'FIRED' if fired else 'DID NOT FIRE ' + str(h['G15_attribution'])}"); ok &= fired
+        k.unlink(); h = gate(t, log, live=[]); fired = bool(h["G15_attribution"]) and h["_g15_kept_files"] == 0; r.unlink()
+        log(f"  control G15 without the list (none may stand): {'FIRED' if fired else 'DID NOT FIRE ' + str(h['G15_attribution'])}"); ok &= fired
+        p.write_text(f"# t{his} word, {his} wording and {his} orders\n"); h = gate(t, log, live=[]); quiet = not h["G15_attribution"]; p.unlink()
+        log(f"  control G15 quiet (longer words): {'ok' if quiet else 'FAILED ' + str(h['G15_attribution'])}"); ok &= quiet
         if DENYLIST.exists():
             lits = [l.strip() for l in DENYLIST.read_text().splitlines() if l.strip() and not l.startswith("#")]
             if lits:
@@ -936,6 +992,7 @@ def main() -> int:
         log(f"[gate] {k}: {len(v)} hit(s)" + (f" e.g. {v[:5]}" if v else ""))
     log(f"[gate] G12 reference set loaded: {hits.get('_g12_reference_loaded', 0)} value(s) (from the facts file outside the repositories; 0 means shapes only)")
     log(f"[gate] G13 allowlist: {hits.get('_g13_allowlist_entries', 0)} address/path binding(s) (from {G13_ALLOW_FILE}, outside the repositories; 0 means none may stand)")
+    log(f"[gate] G15 kept list: {hits.get('_g15_kept_files', 0)} file(s) may hold a listed string (from the export's {G15_KEPT}; 0 means none may)")
     log(f"[gate] denylist literals checked: {hits['_denylist_literals']} · live env values censused (G8): {hits['_live_values'] if hits['_live_values'] is not None else 'NOT MEASURED (docker could not be asked)'} · circuit artifacts carried: {hits['_circuit_artifacts']}")
     bad = {k: v for k, v in hits.items() if not k.startswith("_") and v}
     if bad or hits["_denylist_literals"] == 0 or hits["_live_values"] is None:

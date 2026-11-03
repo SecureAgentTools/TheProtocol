@@ -6,8 +6,8 @@ trusts its FX peer's domain for the cross-frame pool: the peer's registry reads 
 (measured on production 2026-10-02: EU's TEG accepted ASIA's registry 893 and 29 times in 24 h, and the reverse).
 nginx-teg forwards every /api/v1/ path with its proxy marker and holds no per-identity path rule. So the peer's registry
 is an admin on EVERY admin route of this frame's TEG (treasury, fee collector, exchange moves, reward funding), where its
-designed use is two routes (and the cross-TEG 2PC, a separate router). SCOPED since 2026-10-07 (his word "2. yes fix";
-§TEGSCOPE, TEG agentvault2-teg-layer:adminscope1 on every frame: a peer keeps GET fx/reserve and POST fx/move only),
+designed use is two routes (and the cross-TEG 2PC, a separate router). SCOPED since 2026-10-07
+(§TEGSCOPE, TEG agentvault2-teg-layer:adminscope1 on every frame: a peer keeps GET fx/reserve and POST fx/move only),
 so this row is no longer an expected red: it is the regression guard, and a TEG without the scope fails it.
 
 From inside sandbox-B's registry, with its own SVID and the frame's bundles, the flow reads three admin routes on

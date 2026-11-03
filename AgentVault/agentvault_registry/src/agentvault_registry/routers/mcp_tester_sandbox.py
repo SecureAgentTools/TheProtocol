@@ -1,9 +1,7 @@
 """§TESTBED (2026-09-19): the MCP tester view provisions this frame's SANDBOX through the frame runner.
 
-His words 2026-09-19: "the sandbox provisioning should be also in the frontend mcp-tester view. there should be options
-like 1 frame 2 federated frames for federation suite and a cloud operator all provisioned thru the proper lanes so the
-tests will make sense. so just options to pick and you can see progress. and possible errors that would be already
-enough." and "only kit sandbox for now".
+The view offers one frame, two federated frames (for the federation suite) and a cloud operator, each provisioned
+through the proper lanes, with its progress and its errors on screen; kit sandboxes only, for now.
 
 A kit frame's registry mounts the runner's OPERATOR socket (never the full one). Where the runner's policy offers
 sandboxes it serves the sandbox ops there, each for the calling frame only: the runner names the caller by the container

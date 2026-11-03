@@ -1,4 +1,4 @@
-"""§TRUSTROW (2026-09-16, his word "1. approved"): a peer's row is found by the identity it votes with, then by licence.
+"""§TRUSTROW (2026-09-16): a peer's row is found by the identity it votes with, then by licence.
 
 The vote weight resolves a voter by its SPIFFE id (services/federation_governance.py:70-90, whose caller passes
 `auth_context.get("spiffe_id") or operator_id or "origin"`), while the registry's trust sync keyed its refresh by the

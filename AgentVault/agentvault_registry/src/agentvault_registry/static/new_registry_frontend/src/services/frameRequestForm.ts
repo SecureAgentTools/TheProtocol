@@ -1,6 +1,6 @@
 /**
- * services/frameRequestForm.ts: the public frame request form's rules (§FRAMEFORM rebuild, his word 2026-09-13: "the
- * frame-commander form is not correct anymore ... old legacy frames to choose to federate with ... no advanced settings").
+ * services/frameRequestForm.ts: the public frame request form's rules (§FRAMEFORM rebuild, 2026-09-13: the old
+ * frame-commander form offered legacy frames to federate with and advanced settings; it does neither now).
  *
  * One testable place for everything the view only renders: the draft and its six steps, each field's rule (aligned to
  * the host frame runner's spec, so a request always maps into something the admin can plan and start), the addresses a
@@ -23,8 +23,8 @@ export type Hosting = 'theprotocol' | 'self'
 export type FrameTheme = 'neural' | 'sovereign'
 export type NetworkIntent = 'federate_later' | 'standalone' | 'standalone_test_operator'
 export type Posture = 'pilot' | 'production'
-/** Who runs the frame, which decides the network licence's plan (his words 2026-09-28: "free license for educational,
- * research and non profits. but enterprise and goverment orgs will not have the same privilige"). The same list as the
+/** Who runs the frame, which decides the network licence's plan (2026-09-28: a free licence for educational,
+ * research and non-profit organisations, not the same for enterprises and governments). The same list as the
  * server's NETWORK_PLANS: the first four are free with no end date, enterprise and government free for the first year. */
 export const LICENCE_CATEGORIES = ['private', 'educational', 'research', 'non-profit', 'enterprise', 'government'] as const
 export type LicenceCategory = (typeof LICENCE_CATEGORIES)[number]

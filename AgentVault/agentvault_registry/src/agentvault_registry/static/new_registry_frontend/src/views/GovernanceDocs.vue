@@ -1,7 +1,7 @@
 <template>
 <div class="gd" :data-mode="cfgRead ? mode : 'unread'" data-testid="governance-docs">
-  <!-- §LANDINGTRUTH (21), his words 2026-10-03: "i think /governance-docs needs a complete makeover ... the layout is old
-       and janky ... i think there is more wrong information". Every statement here was checked against the code (fact
+  <!-- §LANDINGTRUTH (21), 2026-10-03: /governance-docs made over, its old layout and its wrong
+       information replaced. Every statement here was checked against the code (fact
        sheet, session scratchpad governance_facts.md); what differs per registry is read live from the registry's public
        settings and its membership statistics, never written as a fixed claim. -->
   <header class="gd-top">

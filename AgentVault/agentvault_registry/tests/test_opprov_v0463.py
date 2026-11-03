@@ -1,4 +1,4 @@
-"""§OPPROV (2026-09-27, his words "keep testing and fixing this stuff on sandbox ... fix operators provisioning"): the
+"""§OPPROV (2026-09-27, the operators' provisioning tested and fixed on the sandbox): the
 socket route's operator lifecycle, brought to the rules the runner route already keeps. Each defect was measured on
 sbx-beta during §F6 WP6.2 slice 2 (FINDINGS_2026-09-26_F6_WP62.md, D2-D6) or named by agentvault2-a1's review:
 

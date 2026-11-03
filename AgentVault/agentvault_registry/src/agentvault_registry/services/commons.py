@@ -1,6 +1,6 @@
 """§MEMBERSHIP phase B (2026-10-02): the commons. A registry's fee income funds work its members steer.
 
-His word 2026-10-02 ("approved", "do it fully autonomously") on DESIGN_2026-10-02_STAKING_REPLACEMENT.md § 12 (S3).
+2026-10-02, DESIGN_2026-10-02_STAKING_REPLACEMENT.md § 12 (S3).
 The success link of the old staking idea, pointed at the people who create it: a busy registry collects fees, a share
 of them becomes a season's budget, and the budget pays for work, never for holding anything.
 

@@ -231,7 +231,7 @@ type Kind = 'slash' | 'offense' | 'pause' | 'resume' | 'suspend' | 'reinstate' |
 const confirmKind = ref<Kind | null>(null)
 
 const { config: enfRegistryCfg } = useRegistryConfig()
-// his word 2026-10-25: "staking doesnt exist anymore in the way it did": the payout lever shows where payouts on locks run
+// since 2026-10-25 staking no longer exists in the way it did: the payout lever shows where payouts on locks run
 const stakingRewardsOn = computed(() => enfRegistryCfg.value.staking_rewards_enabled === true)
 const validSlashAmount = computed(() => typeof slashAmount.value === 'number' && Number.isFinite(slashAmount.value) && slashAmount.value >= 1)
 const policyDirty = computed(() => policyText.value.trim() !== policyLoaded.value.trim())

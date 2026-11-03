@@ -387,7 +387,7 @@ async function copy(s?: string | null) { try { if (s) { await navigator.clipboar
                     <div class="rcm-row"><dt>Issuing authority</dt><dd>{{ yn(fed.is_genesis_registry) }}</dd></div>
                     <div class="rcm-row"><dt>Sovereign frame</dt><dd>{{ yn(fed.is_sovereign_frame) }}</dd></div>
                     <div class="rcm-row"><dt>Active peers</dt><dd>{{ val(fed.active_peer_count) }}</dd></div>
-                    <!-- §FEDLICENCE (his word 2026-09-28): three different licences meet on this card, so each row names its own. The
+                    <!-- §FEDLICENCE (2026-09-28): three different licences meet on this card, so each row names its own. The
                          old unsigned status string is the legacy federation key's; the network licence below is the
                          derived, issuer-signed one; Commitments' row is the SOFTWARE licence (AGPL). -->
                     <div class="rcm-row" v-if="fed.license_status"><dt>Legacy licence</dt><dd>{{ val(fed.license_status) }}</dd></div>

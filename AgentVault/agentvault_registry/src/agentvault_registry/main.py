@@ -258,7 +258,7 @@ def _kit_build_info() -> "dict | None":
 def metrics_enabled() -> bool:
     """METRICS_ENABLED (default true): whether this registry serves GET /metrics.
 
-    §SECFIX D6-254 (2026-10-16, his word: keep /metrics, as a switch per registry an operator can turn off). /metrics
+    §SECFIX D6-254 (2026-10-16: /metrics kept, as a switch per registry an operator can turn off). /metrics
     answers whoever reaches the registry's address, a console that proxies every path to the registry included. Off
     (false, 0, no, off), the route does not exist: nothing can scrape the registry, its own Prometheus included."""
     return (os.getenv("METRICS_ENABLED", "true") or "true").strip().lower() not in ("0", "false", "no", "off")
@@ -812,7 +812,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_registry_card.router, prefix=settings.API_V1_STR)
     # --- END Registry Card v0.3 ---
 
-    # §NIGHTLYPROV (his decision 2026-09-27): the four Frame-A-era provisioner tests (sandbox provisioner-lifecycle,
+    # §NIGHTLYPROV (2026-09-27): the four Frame-A-era provisioner tests (sandbox provisioner-lifecycle,
     # chained frame, dual frame, cross-registry transfer) and their ENABLE_SANDBOX_PROVISIONER_TEST gate are RETIRED,
     # never revived: they drove retired Frame-A hosts, bypassed the rails (psql writes, a direct TEG mint) and could
     # not pass template validation. Provisioning is tested nightly on a throwaway pair (scripts/nightly/).
@@ -3041,7 +3041,7 @@ def create_app() -> FastAPI:
         return {"url": f"http://{host}:{port}/a2a", "public": f"{_AGENT_PUBLIC_BASE}/{slug}/a2a",
                 "price": price, "name": name}
 
-    # §SHOWCASEOWN (2026-09-07, his word "showcase shows its own agents"). The dict below is
+    # §SHOWCASEOWN (2026-09-07: the showcase shows its own agents). The dict below is
     # FRAME A's catalog and nothing else: eleven DIDs minted on registry-a, endpoints under
     # api.theprotocol.cloud, and container names (`weather-agent:8055`) that resolve on ONE
     # docker network. A frame stood up fresh inherited all of it and published another frame's
@@ -4529,8 +4529,8 @@ def create_app() -> FastAPI:
 
     @app.get("/api/v1/public/env-catalog", tags=["Public"])
     async def public_env_catalog():
-        """What this registry can choose to run, in the words the application forms show (§FESUITE V0595, his word
-        2026-10-11 "we need env setup in the application forms"): every catalog entry (services/env_catalog.py) with its
+        """What this registry can choose to run, in the words the application forms show (§FESUITE V0595,
+        2026-10-11): every catalog entry (services/env_catalog.py) with its
         options and scope, and this registry's own option read from its env (set / default / unknown, never a guess).
         A frame-scope entry is the frame's: an operator application shows it greyed with this value and cannot choose
         it. Public, like registry-config: what a registry runs is no secret, and the forms are filled in signed out."""
@@ -4658,8 +4658,8 @@ def create_app() -> FastAPI:
             "commons_enabled": _commons_enabled(),
             # §MEMBERSHIP phase D2 — are federation proposals here decided by one ballot per registry? Default off.
             "federation_ballot_mode": _federation_ballot_mode(),
-            # §FESUITE (2026-10-10, the operator batch; his word: "operators will choose what they want to run
-            # ultimately in frames allowed configuration") — what this registry runs, read from the SAME functions its
+            # §FESUITE (2026-10-10, the operator batch: operators choose what they run within
+            # the frame's allowed configuration) — what this registry runs, read from the SAME functions its
             # routes refuse on, so the console says "not run here" instead of asking a route that refuses: liability
             # mandates (off | shadow | enforce; off = the Cockpit Card's routes answer 404), the contract template
             # library (off = 503), and which sandbox registries the /sandbox/{a,b} proxy reaches (none = 503).

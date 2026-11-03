@@ -59,7 +59,7 @@ def docker_daemon_available() -> tuple:
 def runner_available() -> tuple:
     """Can this registry ask the FRAME RUNNER to do the host work for it?
 
-    §OPDIST (2026-09-16), his decision: the privileged work moved to the privileged component, so "cannot provision"
+    §OPDIST (2026-09-16): the privileged work moved to the privileged component, so "cannot provision"
     stopped meaning "has no docker socket" the moment a frame could ask the runner instead. A refusal that outlives
     its reason is the same class as a tolerance that does, so the predicate gained this term in the same change that
     made it possible rather than after someone noticed the message had become false.
@@ -117,7 +117,7 @@ ROUTES = ("direct", "runner")
 def host_route() -> tuple:
     """WHICH ROUTE an operator's host work takes here: ("direct" or "runner", why), or (None, why) when neither may.
 
-    §F6 WP6.0 (2026-09-26, his word "approved ... do it fully autonomously"): a registry that holds BOTH routes (the
+    §F6 WP6.0 (2026-09-26): a registry that holds BOTH routes (the
     docker socket with the host stack, and the frame runner's operator socket; EU, ASIA and the sandbox pair since the
     runner's operator socket was mounted on all four) must not take one by the accident of which check runs first.
     HOST_REACH_PREFER names it:

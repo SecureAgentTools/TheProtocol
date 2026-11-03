@@ -1,4 +1,4 @@
-"""D6-801, wave 6 (2026-10-17; his word on the quarantine check for the remaining money routes: "yes please"): a
+"""D6-801, wave 6 (2026-10-17; the quarantine check on the remaining money routes): a
 registry this one holds in quarantine, soft quarantine or blacklisted takes no part in a cross-registry slash or a
 routed fiat purchase with it.
 

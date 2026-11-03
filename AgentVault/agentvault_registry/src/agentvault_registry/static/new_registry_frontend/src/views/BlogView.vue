@@ -147,7 +147,7 @@ const posts: BlogPost[] = [
     date: '2026-10-27',
     author: 'ruFFa',
     readingTime: 29,
-    hidden: false,   // published at the opening (his word 2026-10-27)
+    hidden: false,   // published at the opening (2026-10-27)
     excerpt: "Software has started to act on its own. Today the network that gives it an identity, a limit someone answers for, a way to pay and books anyone can check is open: the code, the images and the books. This is the post with the link, what you can do with it today, who it is for, why the books of a network like this should belong to nobody, the whole system in seven views, what it looks like if it is adopted, the one thing it does not vote on yet, the patch notes, and the part I cannot do alone.",
     tags: ["Open Source", "Release", "Research", "Governance", "Security", "Testing", "Documentation", "Patch Notes"],
     content: `

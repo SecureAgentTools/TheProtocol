@@ -1,6 +1,6 @@
 """§BAFIN (2026-10-01): AGORA distributions can be switched off per registry.
 
-AGORA stays on the public test network (his decision 2026-10-01: production is a place where anyone can register and
+AGORA stays on the public test network (decided 2026-10-01: production is a place where anyone can register and
 try the platform with play credits). The one share-like feature it carries is the distribution: units paid to point
 holders out of an organization's listing treasury. ESMA's guidelines on the classification of crypto-assets as
 financial instruments (Rn. 22 and 23) treat votes on technical and fee matters as not share-like, and look at financial

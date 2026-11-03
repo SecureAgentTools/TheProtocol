@@ -104,8 +104,8 @@ async def cast_federation_vote(
         raise ValueError("this proposal is decided by registry ballots; an agent's vote does not count here")
 
     # SF-5B, SEC-20: the vote weighs by the trust value of the caller's own record, the value this frame's registry
-    # derived (es_auth.voter_trust_weight); a caller with no active record here casts nothing (2026-10-17, his word:
-    # "record must exist first").
+    # derived (es_auth.voter_trust_weight); a caller with no active record here casts nothing (2026-10-17: the
+    # record must exist first).
     rows = (await db.execute(select(
         FederationOperator.id, FederationOperator.spiffe_id, FederationOperator.operator_name,
         FederationOperator.status, FederationOperator.bayesian_discount,

@@ -1,5 +1,5 @@
 /**
- * The Emission policy page (agentvault2-69, 2026-10-25; his word "i really need it visualized"): it draws the read the
+ * The Emission policy page (agentvault2-69, 2026-10-25; the configuration visualized): it draws the read the
  * way it is meant to be read. A store count that was not read says so and is never drawn as 0; a lost event is red on
  * the side that loses it; a finding chip narrows the matrix and says what the finding means; a peer that could not be
  * read says why; a failed read says it failed, never an empty table.

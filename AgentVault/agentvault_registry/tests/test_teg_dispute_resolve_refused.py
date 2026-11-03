@@ -7,7 +7,7 @@ registry route `POST /teg/disputes/{id}/resolve` was the only gate in front of t
 any dispute's resolution, penalty included: the route sent `resolution` in a JSON body and the TEG reads it from the
 query, so every call met the TEG's 422 (cloud-op sbxalphaop's TEG log, 2026-10-02 04:34:19Z: "missing query.resolution",
 after "[TEG-AUTH] mode=mtls ... spiffe=.../operator/sbxalphaop/svid-writer"). The route now refuses before it forwards;
-who may resolve a TEG dispute through the registry is his decision.
+who may resolve a TEG dispute through the registry is a separate decision.
 """
 from __future__ import annotations
 

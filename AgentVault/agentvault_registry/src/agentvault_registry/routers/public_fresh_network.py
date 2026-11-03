@@ -78,15 +78,15 @@ async def _frame_facts(client: httpx.AsyncClient, f: Dict[str, Any]) -> Dict[str
         "latitude": oper.get("latitude") if oper.get("latitude") is not None else _loc.get("latitude"),
         "longitude": oper.get("longitude") if oper.get("longitude") is not None else _loc.get("longitude"),
         "supply": None, "bond": None,
-        # §BATCH9 (his word 2026-09-06: the fresh pair is NOT promoted — "list them under sandbox and wire the
-        # new sandboxes also"): the group the landing page files a frame under, the same-origin ledger socket the
+        # §BATCH9 (2026-09-06: the fresh pair is NOT promoted; it is listed under sandbox, the new
+        # sandboxes wired too): the group the landing page files a frame under, the same-origin ledger socket the
         # apex proxies for it, and its operators — all data, so a new sandbox frame is one JSON entry, never an FE edit.
         "group": str(f.get("group") or "sandbox"), "ws_path": f.get("ws_path"), "slug": f.get("slug"),
         # §FEFRAME W2: a manifest-derived frame's absolute ledger socket (env entries name a same-origin ws_path)
         "ws_url": f.get("ws_url"), "source": f.get("source") or "env",
         "operators": list(f.get("operators") or []),
-        # §AGORASIM-2 (2026-09-22, his words: "add the sandbox live event ledgers as collapsed thing like the live
-        # ledger has on the frontpage"): the folded ledger strip the landing page files this frame under. Only
+        # §AGORASIM-2 (2026-09-22: the sandbox's live event ledgers folded, like the live
+        # ledger on the front page): the folded ledger strip the landing page files this frame under. Only
         # "sandbox" is a strip of its own; anything else is the main live ledger.
         "strip": strip_of(f),
     }

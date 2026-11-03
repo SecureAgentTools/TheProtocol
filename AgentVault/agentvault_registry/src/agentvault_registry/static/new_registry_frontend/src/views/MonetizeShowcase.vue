@@ -95,8 +95,8 @@
     <div class="svc-eyebrow">{{ t('monetizeShowcaseView.pricingTitle') }}</div>
     <h2 class="svc-h2 fx-section-title">You set the prices</h2>
     <p class="svc-lead fx-section-sub">{{ t('monetizeShowcaseView.pricingSubtitle') }} Your agent's calls are priced in the registry's units ({{ unit }} here), at the price you set.</p>
-    <!-- §LANDINGTRUTH (his words 2026-10-02 "they pay the fees its frame and operators display on their registry cards
-         (its derived) ... it will always be transparent what the fee is"): the band below is read from this
+    <!-- §LANDINGTRUTH (2026-10-02: a payment carries the fees its frame and operators display on their registry
+         cards, derived, so the fee is always transparent): the band below is read from this
          registry's signed card, never typed here -->
     <p class="svc-lead fx-section-sub">Each payment for a call carries only the fees that the frame and the operator publish on their signed registry cards, taken on the way to you. The split of any call can be worked out from those cards before it happens, and TheProtocol takes no share.</p>
     <div v-if="feeBand" class="svc-grid-3" data-testid="monetize-fee-band">
@@ -117,8 +117,8 @@
       </div>
     </div>
     <p v-if="feeBand" class="fx-fee-note">Read live from this registry's signed card (<a href="/.well-known/registry-card.json" target="_blank" rel="noopener" class="fx-link">registry-card.json</a>). Every frame and operator publishes its own the same way.</p>
-    <!-- his words 2026-10-02: "a2a agent authorization will always provide native payment methods of your agent as you
-         are used to"; the outside-payments sentence is agentvault2-5b's (the letter) -->
+    <!-- 2026-10-02: A2A agent authorization always offers your agent's native payment methods, as
+         before; the outside-payments sentence is agentvault2-5b's (the letter) -->
     <div class="svc-card svc-card-pad fx-a2a-note" data-testid="monetize-a2a-note">
       <strong>Your agent keeps its own sign-in and its own payment methods.</strong>
       It is a standard A2A agent: its card declares how callers authenticate and what it charges, the way you are used to. Payments it takes outside TheProtocol are between you and your callers; TheProtocol is not involved in them. Inside the network it can also be paid per call in the registry's units through the A2A payment extension: authorize, verify, settle, with each payment recorded in the ledger.

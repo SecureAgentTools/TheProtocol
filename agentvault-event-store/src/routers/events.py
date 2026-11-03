@@ -41,7 +41,7 @@ from ..es_auth import (
 
 router = APIRouter(prefix="/api/v1/events", tags=["events"])
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
-# §SOVKIT T2 (2026-09-14, his word: "make this required on because its a big trap not enabling it"): the licence
+# §SOVKIT T2 (2026-09-14: required on, because leaving it off is a big trap): the licence
 # fallback is refused unless a store is explicitly configured EVENTSTORE_MTLS_REQUIRED=false.
 MTLS_REQUIRED = os.getenv("EVENTSTORE_MTLS_REQUIRED", "true").strip().lower() not in ("false", "0", "no", "off")
 EVENTSTORE_HTTP_VIA_KAFKA = os.getenv("EVENTSTORE_HTTP_VIA_KAFKA", "false").lower() == "true"
@@ -110,7 +110,7 @@ def _note_internal_key_change_refused(request: Request) -> None:
 # hours later, and its max_events_per_minute never applied. Now every request from such an operator asks its rows
 # (es_auth.operator_standing), through a verdict cached OPERATOR_STANDING_TTL seconds per worker: a suspension stops the
 # operator within a minute without a database read on every event.
-# 2026-10-17 (his word: "no operator accepted without record ... record must exist first"): an operator that no row
+# 2026-10-17 (no operator is accepted without a record; the record must exist first): an operator that no row
 # names is refused like a suspended one. Every verdict, a refusal included, lives the same OPERATOR_STANDING_TTL, so a
 # record created after a refusal takes effect within the same window a suspension does.
 OPERATOR_STANDING_TTL = 30.0
@@ -701,7 +701,7 @@ async def health_check():
 # ---------------------------------------------------------------------------
 
 async def find_operator_row(db, op_id, spiffe_id, own_domain: str = ""):
-    """§TRUSTROW (2026-09-16, his word "1. approved"): a peer's row, found by the identity it VOTES with first and by
+    """§TRUSTROW (2026-09-16): a peer's row, found by the identity it VOTES with first and by
     the licence id second.
 
     The vote weight resolves a voter by its SPIFFE id (services/federation_governance.py:70-90, whose caller passes
@@ -743,8 +743,7 @@ async def sync_federation_operator(
     revoked, and its SF-5B trust sync refreshes each licensed peer's
     bayesian_discount here.
 
-    SEC-20 (2026-10-17, his decision: the trust value "has to be dervied in a meaningful way. setting it manually
-    doesnt make sense to me"): bayesian_discount is the weight the federation vote multiplies an agent vote by
+    SEC-20 (2026-10-17: the trust value is derived in a meaningful way, never set by hand): bayesian_discount is the weight the federation vote multiplies an agent vote by
     (services/federation_governance.cast_federation_vote). This frame's own registry derives it from what it measured of
     each peer itself (its services/bayesian_trust.py: clean settlements raise it, lost disputes lower it, inactivity
     pulls it toward 0.5) and is the only writer. Every other caller (an operator of this frame, a peer frame's service, a
@@ -782,7 +781,7 @@ async def sync_federation_operator(
     raw_spiffe = operator_data.get("spiffe_id")
     spiffe_id = str(raw_spiffe).strip() if raw_spiffe else None
 
-    # 2026-10-17 (his word: "no operator accepted without record ... record must exist first"): the identity a row
+    # 2026-10-17 (no operator is accepted without a record; the record must exist first): the identity a row
     # carries is the operator's record (es_auth.row_names_operator). The registry's trust sync sent every operator of
     # this frame the frame's BARE trust domain; the lookup below found the row that first carried it and this handler
     # overwrote its identity, so one row per frame took every same-domain operator's update (name flipping, identity

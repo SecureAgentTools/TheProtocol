@@ -1,4 +1,4 @@
-"""§SECFIX D6-254 (2026-10-16, his word): /metrics stays, as a switch per registry an operator can turn off
+"""§SECFIX D6-254 (2026-10-16): /metrics stays, as a switch per registry an operator can turn off
 (METRICS_ENABLED, default on, so nothing changes for anyone who relies on it); the treasury's balance leaves the metrics;
 /health no longer names the event store's internal address.
 

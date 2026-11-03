@@ -1,5 +1,5 @@
 /**
- * §FESUITE V0595 (his word 2026-10-11, "also correct the avt prose in the docs"): a compliance document shows the parts
+ * §FESUITE V0595 (2026-10-11, the unit prose in the docs corrected): a compliance document shows the parts
  * about the staking reward engine only where this registry says staking rewards are on. Lifecycle 51 read them on
  * sbx-beta, a frame with production's switches (fes-20261011T032003Z-17e0): 27 sentences across the documents, each a
  * hit on a frame without rewards. Off, the parts are left out and the page names the switch; unread, it names none and

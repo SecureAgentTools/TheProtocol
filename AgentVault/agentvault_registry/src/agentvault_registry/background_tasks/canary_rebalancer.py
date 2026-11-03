@@ -109,7 +109,7 @@ CANARY_REBALANCER_LEADER_KEY = os.environ.get("CANARY_REBALANCER_LEADER_KEY", "c
 from ..core import network_profile as _np  # noqa: E402
 CANARY_REBALANCER_FLOOR_AVT = Decimal(_np.knob("CANARY_REBALANCER_FLOOR_AVT", "5000") or "5000")
 CANARY_REBALANCER_TOPUP_AVT = Decimal(_np.knob("CANARY_REBALANCER_TOPUP_AVT", "1000000") or "1000000")
-# §CANARYONBOARD (his words 2026-09-22: "since we dont mint so much on eu-asia frame we have to rebalance them properly"):
+# §CANARYONBOARD (2026-09-22: EU and ASIA mint little, so their canaries are rebalanced properly):
 # the band's upper edge. A canary holding more than the ceiling returns everything beyond FLOOR + TOP-UP (the most a
 # refill leaves it with) to this node's treasury through the escrow rail's fee-free agent -> treasury move (Δ-neutral:
 # the treasury is inside total_circulating). Without it the rebalancer only ever PAID canaries, so whatever a canary
@@ -129,7 +129,7 @@ CANARY_REBALANCER_HTTP_TIMEOUT_SEC = int(os.environ.get("CANARY_REBALANCER_HTTP_
 CANARY_REBALANCER_ERR_EMIT_AFTER = int(os.environ.get("CANARY_REBALANCER_ERR_EMIT_AFTER", "3"))
 CANARY_REBALANCER_ERR_EMIT_INTERVAL_SEC = int(os.environ.get("CANARY_REBALANCER_ERR_EMIT_INTERVAL_SEC", "3600"))
 
-# ── §R5 (batch 2, 2026-09-05, his word "fed sync is mtls"): the mTLS canary-refill rail ─────────────
+# ── §R5 (batch 2, 2026-09-05, federation sync is mTLS): the mTLS canary-refill rail ─────────────
 # The master no longer logs in to an operator with an ADMIN PASSWORD over its host port to refill
 # that operator's canary senders. It asks the operator, over the federation mTLS channel (the only
 # prefix the cross-registry gateway forwards, the canary-fire pattern), to refill ITS OWN senders

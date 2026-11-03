@@ -1,4 +1,4 @@
-"""§HELLOFRAME (his word 2026-09-19, "Ship without it"): the journal is on where the served console carries its media,
+"""§HELLOFRAME (2026-09-19; the export ships without it): the journal is on where the served console carries its media,
 off where it does not (an export frame ships none), and the only override is OFF: an override to ON over missing media
 would render 46 posts of broken images."""
 import ast

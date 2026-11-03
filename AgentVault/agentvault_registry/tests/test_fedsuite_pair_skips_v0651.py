@@ -1,5 +1,5 @@
-"""§MCPTEST30 (V0651, tester batch 3 item 2, agentvault2-d3, Guild order gwo_5b6bc38b2e17c317754d6e29; his words in
-d3's session 2026-10-31 ~11:40Z, "2. approved very good"): the federation suite's 25 unclassified skips on a pair.
+"""§MCPTEST30 (V0651, tester batch 3 item 2, agentvault2-d3, Guild order gwo_5b6bc38b2e17c317754d6e29;
+d3's session 2026-10-31 ~11:40Z): the federation suite's 25 unclassified skips on a pair.
 
 Read on the trial pair nt261031x5's whole federation run (551 passed, 0 failed, 40 skipped of 591; 25 of the 40 matched
 no code). Four tests skipped on every tier for a fed-test-agent sidecar no tier has run since the sandbox tier retired,

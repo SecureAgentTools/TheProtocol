@@ -4,7 +4,7 @@ Before this, the ONLY right a matured bond conferred was `release()`, and releas
 `is_bonded = false`, which under REPUTATION_BOND_MODE=enforce refuses the agent at all six
 provider gates. The reward for proving yourself over thirty days was the right to stop trading.
 
-His decision (2026-09-11): at maturity a DECLARED share of the bond comes back and the rest stays
+Decided 2026-09-11: at maturity a DECLARED share of the bond comes back and the rest stays
 locked, so the agent keeps trading with less capital tied up — how a surety bond's premium falls as
 the record lengthens. The full `release()` is untouched and keeps its real meaning: an EXIT.
 

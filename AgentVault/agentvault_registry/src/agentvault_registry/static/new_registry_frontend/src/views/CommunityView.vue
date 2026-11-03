@@ -85,7 +85,7 @@ const readIds = computed(() => {
 })
 
 // §pass39d (2026-05-18) — Featured agents = the sovereigns (Greedy Gregory is off the public pages until he is
-// reworked, his word 2026-10-25). Each has a
+// reworked, since 2026-10-25). Each has a
 // sovereign-tier signature flare; `variantOverride` is the canonical mapping
 // from DID → signature variant (also enforced backend-side via
 // SOVEREIGN_VARIANT_OWNERS). For real agents, UserAvatar fetches the flare

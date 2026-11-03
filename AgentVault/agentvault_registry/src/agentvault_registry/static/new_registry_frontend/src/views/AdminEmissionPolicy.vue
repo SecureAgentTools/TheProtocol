@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// The Emission policy page (agentvault2-69, 2026-10-25; his words: "the event emission policy which needs hardening
-// and a fe page to check the exact configuration from the fe. i really need it visualized"). One read, the effective
+// The Emission policy page (agentvault2-69, 2026-10-25: the event emission policy hardened,
+// with a console page that shows its exact configuration). One read, the effective
 // configuration agentvault2-d6's W3 builds (services/api/emissionPolicy.ts): for every event type, what the registry's
 // gate does with it, what the TEG's gate does, what the projection does, how many this frame's store holds, what the
 // shadow mode counted, and what is wrong with it; then the same table as the other frames have it. A count that could

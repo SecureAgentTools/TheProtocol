@@ -1,6 +1,6 @@
 import type { GuidedTour } from '../tour.types'
 
-// Locks (his words 2026-10-25: "staking doesnt exist anymore in the way it did", "staking wroding fully gone") — walks
+// Locks (2026-10-25: staking no longer exists in the way it did, its wording fully gone) — walks
 // the lock desk (StakingView, route /staking): what a lock is, the lock sheet, the tiers, the numbers, the positions and
 // their lock, and the cross-registry transfer. Anchors are data-tour attrs in StakingView.vue (stk-*). The view is
 // agent-gated (route meta requiresAgent), so the first navigating step carries requireAgent. The hub offers the tour only

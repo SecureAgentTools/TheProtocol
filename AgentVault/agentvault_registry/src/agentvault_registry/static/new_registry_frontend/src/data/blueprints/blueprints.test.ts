@@ -181,7 +181,7 @@ describe('the Frontier', () => {
   })
 })
 
-// Every chamber, not only the Frontier (2026-09-25, his word "also fix the drawings of the older chambers"): the 21 older
+// Every chamber, not only the Frontier (2026-09-25, the older chambers' drawings fixed too): the 21 older
 // chambers were redrawn to zero findings, and this holds all 27 there.
 describe('every chamber draws clean', () => {
   it.each(BLUEPRINTS.filter((b) => b.loom).map((b) => [b.id, b] as [string, Blueprint]))('%s: the loom', (_id, bp) => {
@@ -214,7 +214,7 @@ describe('the geometry check can fail', () => {
   })
 })
 
-// His word 2026-10-26 ("insurance blueprints approved, reword them like moira"): no chamber sells cover. The console's
+// Since 2026-10-26 (the insurance blueprints reworded like MOIRA): no chamber sells cover. The console's
 // critical-word gate leaves data/blueprints/ out (i18n/vocabulary.test.ts NOT_COUNTED), so the chambers hold their own.
 // Kept senses: a human underwrites an agent (the Cockpit Card's word), and a third party's own insurer reading evidence.
 const SELLS_COVER = /\b(?:insurance|insured|insureds|reinsur\w*|parametric|policyholders?|underwriter|underwriting|loss adjusters?|claims? (?:administrators?|adjusters?|gates?|platforms?|seasons?))\b/i

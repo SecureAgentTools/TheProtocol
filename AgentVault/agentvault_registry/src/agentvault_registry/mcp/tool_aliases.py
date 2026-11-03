@@ -14,8 +14,8 @@ key is advertised, and that an old name executes directly and through invokeTool
 `agora_legacy_name_total{kind="mcp"}` counts resolutions (and `kind="http"` the old `/api/v1/exchange` prefix, see
 main.py): the instrument for dropping the old names in a later release, once it reads zero.
 
-W3 (agentvault2-d6, 2026-10-25; his words through agentvault2-69: "i want the illegal wording completly gone before
-opening"): the tools named with staking, reward, APY, token-as-value or earnings words carry compliant names the same
+W3 (agentvault2-d6, 2026-10-25; the critical wording gone before
+the opening): the tools named with staking, reward, APY, token-as-value or earnings words carry compliant names the same
 way (_W3_RENAMED, the names agreed with agentvault2-69's vocabulary: locks and locked units, payouts on locked units,
 units, income, payment authorizations); an old name still executes, counted as `kind="mcp_w3"`. Which of them are
 LISTED depends on the registry's switches (mcp/tool_switches.py), never which execute.
@@ -91,7 +91,7 @@ _W3_RENAMED: Dict[str, str] = {
     "pauseAgentRewards": "pauseAgentPayouts",
     "resumeAgentRewards": "resumeAgentPayouts",
     "getRewardFundingPolicy": "getPayoutFundingPolicy",
-    # "issue" where units are meant, as the ledger already says (his word through agentvault2-69, 2026-10-25 21:15Z)
+    # "issue" where units are meant, as the ledger already says (2026-10-25)
     "tegTreasuryMint": "tegTreasuryIssue",
     "mintFrameBSimulation": "issueFrameBSimulation",
 }

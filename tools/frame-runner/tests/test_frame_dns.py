@@ -217,7 +217,7 @@ def test_without_its_token_the_runner_refuses_the_plan_and_asks_the_zone_nothing
 
 
 def test_the_token_is_read_in_place_from_certbots_credential_file(rig):
-    # His word 2026-09-13: the runner uses the token that already issues the operators' certificates, read where certbot
+    # Since 2026-09-13 the runner uses the token that already issues the operators' certificates, read where certbot
     # keeps it, so there is one carrier to rotate.
     cfg, _, tmp, cf = rig
     ini = tmp / "cloudflare.ini"

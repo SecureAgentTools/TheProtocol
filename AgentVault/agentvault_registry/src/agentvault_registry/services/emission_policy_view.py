@@ -1,5 +1,5 @@
-"""The exact effective emission-policy configuration of this frame (W3, agentvault2-d6, 2026-10-25; his word: "a fe page
-to check the exact configuration from the fe. i really need it visualized").
+"""The exact effective emission-policy configuration of this frame (W3, agentvault2-d6, 2026-10-25: a console page
+that shows the exact configuration).
 
 GET /api/v1/admin/event-emission-policies/effective returns build_view(): one matrix row per event type (every row of
 the event_emission_policies table, every type the code emits per core/event_catalog.py, every type this frame's event

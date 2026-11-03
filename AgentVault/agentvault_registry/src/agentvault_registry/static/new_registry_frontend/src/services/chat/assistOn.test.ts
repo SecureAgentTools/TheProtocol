@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { YOU, assistantIds, rememberAssistant, readAsks, writeAsks, type AssistAsk } from './assistOn'
+import { YOU, assistantIds, rememberAssistant, readAsks, writeAsks, placeAsks, type AssistAsk } from './assistOn'
 
 /**
  * V0654 (ap) (order gwo_03a846cb91b37628c3c6710a): the assistant's switch is per identity and per room, on this device;
@@ -83,5 +83,53 @@ describe('what you asked: this browser session, this room', () => {
     expect(kept[0].ref).toBe('r5')
     writeAsks('room-a', [], s)
     expect(s.getItem('ourchat.assistAsks.room-a')).toBeNull()
+  })
+})
+
+/**
+ * V0655 (av) (order gwo_ce52bf8dc39e7202817f16c7): an answered request sits directly above its answer wherever the answer
+ * is drawn, and is not drawn while its answer is folded away; a waiting or refused one keeps its place. BASE (V0654): no
+ * placeAsks; the view drew every request after its line, else at the bottom, so one asked after a line that then sat in a
+ * folded thread stayed above the chat box.
+ */
+describe('where a request is drawn', () => {
+  const ask = (p: Partial<AssistAsk>): AssistAsk => ({ ref: p.ref || 'r', conversationId: 'room-a', prompt: 'p', who: '',
+    whoKey: YOU, state: 'waiting', afterSeq: 1, ...p })
+  const at = (pl: ReturnType<typeof placeAsks>) => ({
+    before: Object.fromEntries([...pl.before].map(([k, v]) => [k, v.map(a => a.ref)])),
+    after: Object.fromEntries([...pl.after].map(([k, v]) => [k, v.map(a => a.ref)])),
+    bottom: pl.bottom.map(a => a.ref) })
+
+  it('waiting: after the line it followed, or at the bottom while that line is not drawn', () => {
+    expect(at(placeAsks([ask({ ref: 'w' })], new Set([1, 2])))).toEqual({ before: {}, after: { 1: ['w'] }, bottom: [] })
+    expect(at(placeAsks([ask({ ref: 'w', afterSeq: 2 })], new Set([1])))).toEqual({ before: {}, after: {}, bottom: ['w'] })
+  })
+
+  it('answered in the main list: directly above its answer, not after the line it followed', () => {
+    const a = ask({ ref: 'a', state: 'answered', afterSeq: 1, answerSeq: 3 })
+    expect(at(placeAsks([a], new Set([1, 2, 3])))).toEqual({ before: { 3: ['a'] }, after: {}, bottom: [] })
+  })
+
+  it('answered inside a folded thread: drawn nowhere while the thread is folded, above its answer once it opens', () => {
+    const a = ask({ ref: 'a', state: 'answered', afterSeq: 2, answerSeq: 3 })   // its line and its answer in one thread
+    expect(at(placeAsks([a], new Set([1])))).toEqual({ before: {}, after: {}, bottom: [] })          // never above the box
+    expect(at(placeAsks([a], new Set([1, 2, 3])))).toEqual({ before: { 3: ['a'] }, after: {}, bottom: [] })
+  })
+
+  it('refused: keeps its place, after its line or at the bottom', () => {
+    const f = ask({ ref: 'f', state: 'failed', error: 'The assistant took too long to answer.', afterSeq: 1 })
+    expect(at(placeAsks([f], new Set([1, 2])))).toEqual({ before: {}, after: { 1: ['f'] }, bottom: [] })
+    expect(at(placeAsks([{ ...f, afterSeq: 5 }], new Set([1, 2])))).toEqual({ before: {}, after: {}, bottom: ['f'] })
+  })
+
+  it('an answer without a seq keeps the place it had while waiting', () => {
+    const a = ask({ ref: 'a', state: 'answered', afterSeq: 1 })
+    expect(at(placeAsks([a], new Set([1, 2])))).toEqual({ before: {}, after: { 1: ['a'] }, bottom: [] })
+  })
+
+  it('several requests keep their order at one place', () => {
+    const one = ask({ ref: 'one', state: 'answered', answerSeq: 4 })
+    const two = ask({ ref: 'two', state: 'answered', answerSeq: 4 })
+    expect(at(placeAsks([one, two], new Set([1, 4]))).before).toEqual({ 4: ['one', 'two'] })
   })
 })

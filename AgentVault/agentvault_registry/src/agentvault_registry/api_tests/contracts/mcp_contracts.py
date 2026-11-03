@@ -1642,7 +1642,7 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         # §MCPTEST30 (V0547): the route authenticates only a federation PEER (the survey's PEER_ROUTE class), which no
         # MCP caller holds; the wrapper turned the 401 into an empty list and this contract read it as a pass on
         # every run. The refusal is what any MCP caller gets: documented 4xx. Leaving the surface or a route a
-        # developer may call is his decision (PEER_ROUTE_BASELINE in test_mcp_tool_requests_meet_their_routes.py).
+        # developer may call is decided in PEER_ROUTE_BASELINE (test_mcp_tool_requests_meet_their_routes.py).
         expect_status="error_4xx",
         expect_error_message_contains="Federation authentication required",
         success_path_unmeasured="a federation peer's route: no MCP caller carries a peer identity, by design (anyone reads the federation's registries through listFederationRegistries or discoverRegistries)",
@@ -1654,7 +1654,7 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         # §MCPTEST30 (V0547): the route authenticates only a federation PEER (the survey's PEER_ROUTE class), which no
         # MCP caller holds; the wrapper turned the 401 into an empty list and this contract read it as a pass on
         # every run. The refusal is what any MCP caller gets: documented 4xx. Leaving the surface or a route a
-        # developer may call is his decision (PEER_ROUTE_BASELINE in test_mcp_tool_requests_meet_their_routes.py).
+        # developer may call is decided in PEER_ROUTE_BASELINE (test_mcp_tool_requests_meet_their_routes.py).
         expect_status="error_4xx",
         expect_error_message_contains="Federation authentication required",
         override_coverage_fan=True,
@@ -1819,7 +1819,7 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         # §MCPTEST30 (V0547): the route authenticates only a federation PEER (the survey's PEER_ROUTE class), which no
         # MCP caller holds; the wrapper turned the 401 into an empty list and this contract read it as a pass on
         # every run. The refusal is what any MCP caller gets: documented 4xx. Leaving the surface or a route a
-        # developer may call is his decision (PEER_ROUTE_BASELINE in test_mcp_tool_requests_meet_their_routes.py).
+        # developer may call is decided in PEER_ROUTE_BASELINE (test_mcp_tool_requests_meet_their_routes.py).
         expect_status="error_4xx",
         expect_error_message_contains="Federation authentication required",
         success_path_unmeasured="a federation peer's route: no MCP caller carries a peer identity, by design (an admin reads the same answer through getAdminFederationPolicyCompliance)",
@@ -2600,7 +2600,7 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         tier="admin",
         # §MCPTEST30 (V0549): no MCP caller can succeed (the request survey's PEER_ROUTE, V0547): the route authenticates
         # only a federation peer. Measured 2026-10-02 on the frame and both operators: 401 "Federation authentication required". The refusal is
-        # the contract; whether the tool stays on the surface is his decision (FINDINGS_2026-10-02_PEER_ONLY_MCP_TOOLS).
+        # the contract; whether the tool stays on the surface is a separate decision (FINDINGS_2026-10-02_PEER_ONLY_MCP_TOOLS).
         arguments={"agent_did": "did:theprotocol:00000000-0000-4000-8000-000000000000", "reason": "apitest-probe: no such agent"},
         expect_status="error_4xx",
         expect_error_message_contains=["Federation authentication required"],
@@ -2613,7 +2613,7 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         tier="admin",
         # §MCPTEST30 (V0549): no MCP caller can succeed (the request survey's PEER_ROUTE, V0547): the route authenticates
         # only a federation peer. Measured 2026-10-02 on the frame and both operators: 401 "Federation authentication required". The refusal is
-        # the contract; whether the tool stays on the surface is his decision (FINDINGS_2026-10-02_PEER_ONLY_MCP_TOOLS).
+        # the contract; whether the tool stays on the surface is a separate decision (FINDINGS_2026-10-02_PEER_ONLY_MCP_TOOLS).
         arguments={"agent_did": "did:theprotocol:00000000-0000-4000-8000-000000000000", "reason": "apitest-probe: no such agent"},
         expect_status="error_4xx",
         expect_error_message_contains=["Federation authentication required"],
@@ -2626,7 +2626,7 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         tier="admin",
         # §MCPTEST30 (V0549): no MCP caller can succeed (the request survey's PEER_ROUTE, V0547): the route authenticates
         # only a federation peer. Measured 2026-10-02 on the frame and both operators: 401 "Federation authentication required". The refusal is
-        # the contract; whether the tool stays on the surface is his decision (FINDINGS_2026-10-02_PEER_ONLY_MCP_TOOLS).
+        # the contract; whether the tool stays on the surface is a separate decision (FINDINGS_2026-10-02_PEER_ONLY_MCP_TOOLS).
         arguments={"agent_did": "did:theprotocol:00000000-0000-4000-8000-000000000000", "spire_data": {"apitest": "probe"}},
         expect_status="error_4xx",
         expect_error_message_contains=["Federation authentication required"],
@@ -2639,7 +2639,7 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         tier="admin",
         # §MCPTEST30 (V0549): no MCP caller can succeed (the request survey's PEER_ROUTE, V0547): the route authenticates
         # only a federation peer. Measured 2026-10-02 on the frame and both operators: 401 "Federation authentication required". The refusal is
-        # the contract; whether the tool stays on the surface is his decision (FINDINGS_2026-10-02_PEER_ONLY_MCP_TOOLS).
+        # the contract; whether the tool stays on the surface is a separate decision (FINDINGS_2026-10-02_PEER_ONLY_MCP_TOOLS).
         arguments={"agent_did": "did:theprotocol:00000000-0000-4000-8000-000000000000"},
         expect_status="error_4xx",
         expect_error_message_contains=["Federation authentication required"],

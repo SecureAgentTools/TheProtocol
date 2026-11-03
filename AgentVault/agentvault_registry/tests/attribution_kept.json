@@ -1,0 +1,18 @@
+{
+ "_what": "V0655 (aw), order gwo_22ba4784e0615b4537aefa21: the strings that keep an attribution phrase, by path in the AgentVault repository, with how many each holds. Only strings a test pins or a person reads (the MCP tester's skip and refusal reasons, two test titles, the tester's matching rule); a comment or a docstring keeps none. Read by tests/test_no_attribution_phrases_v0655.py and by the stack's export gate G15.",
+ "kept": {
+  "agentvault_registry/scripts/network_profile_knobs.py": 1,
+  "agentvault_registry/src/agentvault_registry/api_tests/base.py": 1,
+  "agentvault_registry/src/agentvault_registry/api_tests/categories/flow_mcp_lifecycle/test_flow_mcp_lifecycle.py": 2,
+  "agentvault_registry/src/agentvault_registry/api_tests/contracts/earned_agent_public.py": 1,
+  "agentvault_registry/src/agentvault_registry/api_tests/contracts/mcp_contracts.py": 3,
+  "agentvault_registry/src/agentvault_registry/api_tests/contracts/refusal_reasons.py": 2,
+  "agentvault_registry/src/agentvault_registry/routers/mcp_tester.py": 1,
+  "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/services/frameRequestForm.test.ts": 1,
+  "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/services/mcpTester/__tests__/runReading.spec.ts": 1,
+  "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/services/mcpTester/runReading.ts": 1,
+  "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/pocket/PocketAgents.stakingHint.test.ts": 1,
+  "agentvault_registry/tests/test_mcp_earned_ephemeral_value.py": 1,
+  "agentvault_registry/tests/test_skip_census_families.py": 1
+ }
+}

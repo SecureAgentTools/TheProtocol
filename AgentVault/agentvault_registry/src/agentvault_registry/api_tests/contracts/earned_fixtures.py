@@ -1,6 +1,6 @@
 """§MCPTEST30 (V0636): the subjects a refusal-only tool earns its success path on, and the row helpers the earned
-lifecycles share (sessionlogs2026/BACKLOG_2026-10-19_MCP_REFUSAL_ONLY_PASSES.md, step 2; his word of 2026-10-24 to
-close the gaps).
+lifecycles share (sessionlogs2026/BACKLOG_2026-10-19_MCP_REFUSAL_ONLY_PASSES.md, step 2; 2026-10-24: close the
+gaps).
 
 V0635's run passed 192 tool rows on a refusal alone: each tool was called on an object that does not exist, its route
 said 404, and nothing else in the run reached what the tool does. EU's tester router counts such a row as not measured

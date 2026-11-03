@@ -1,6 +1,6 @@
 /**
- * §FESUITE V0595: the switch board on an operator application (his word 2026-10-11: "the env flips that are frame
- * exclusive should be still displayed for operators but greyed out and not chooseable"). A locked setting shows the
+ * §FESUITE V0595: the switch board on an operator application (2026-10-11: a switch only a frame may flip
+ * shows to operators, greyed out and not choosable). A locked setting shows the
  * frame's value with its buttons disabled and the reason beside it, and never emits a change; "changed" counts against
  * the frame's own settings there. The frame request's board (no locks, no baseline) counts against the defaults, as before.
  */

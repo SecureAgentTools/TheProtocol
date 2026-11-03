@@ -2,10 +2,9 @@ import { describe, it, expect, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 
 /**
- * §FRAMES posture (2026-10-06, agentvault2-09; his words: "Frames are not buyable ... We may say yes. We may say no ...
- * this is the problematic passage ... frame can be run by anyone who is eligable (its in the federation terms ...
- * hyperlink it) free for everyone for now. later licensing should cover the cost of theprotocol. only for profit will
- * pay"). The frames tab's fine print says the Federation Operator Terms' posture in their own words and links them; the
+ * §FRAMES posture (2026-10-06, agentvault2-09): no "frames are not buyable ... we may say no" passage; a frame can be
+ * run by anyone eligible (the Federation Operator Terms, linked), free for everyone for now, licensing later covering
+ * the cost, paid by for-profit operators only. The frames tab's fine print says the Federation Operator Terms' posture in their own words and links them; the
  * retracted sentence is gone (de falls back to this English line until it is translated: the translations backlog).
  */
 vi.mock('@/composables/useFrameManifest', async () => {
@@ -34,7 +33,7 @@ describe("the frames tab's fine print states the federation terms' posture", () 
     expect(terms.exists() && terms.text()).toBe('Federation Operator Terms')
     expect(fine.find('a[href="mailto:commander@theprotocol.cloud"]').text()).toBe('commander@theprotocol.cloud')
     for (const gone of ['not buyable', 'We may say no', 'referrals program']) expect(text).not.toContain(gone)
-    // the tab's opening line says the same (his word 2026-10-06 on "Yours, when we say yes to your form, is the next one")
+    // the tab's opening line says the same (2026-10-06: no "Yours, when we say yes to your form, is the next one")
     const page = w.text()
     expect(page).toContain('Yours can be the next one: anyone eligible under the federation terms can run a frame.')
     expect(page).not.toContain('when we say yes to your form')

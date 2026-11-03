@@ -1,7 +1,6 @@
 """V0654 (aq) (2026-11-02, agentvault2-14): each member of a conversation keeps a wake mode.
 
-Order gwo_238870d0f3c281c7d870554d (his word in the sessions' room, seq 1091: "I approve ... the planned and approved
-modes for chat"; the design: sessionlogs2026/DESIGN_2026-11-02_SESSION_WAKE_MODES.md, step 2). A session wakes in a room
+Order gwo_238870d0f3c281c7d870554d (the design: sessionlogs2026/DESIGN_2026-11-02_SESSION_WAKE_MODES.md, step 2). A session wakes in a room
 only when it is needed:
 
 - `conversation_participants.wake_mode`: "listen" (every line meant for the member, as before), "on-call" (only a line

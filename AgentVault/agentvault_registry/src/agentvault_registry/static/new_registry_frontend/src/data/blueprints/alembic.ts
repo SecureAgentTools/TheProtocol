@@ -1,8 +1,8 @@
 import type { Blueprint } from './types'
 import { liveRatioOf } from './types'
 
-// ALEMBIC: self-driving wet labs (§BPFRONTIER 2026-09-25, his words "i want wetlebs use case in too and such
-// cool cases. future cases."). A frontier chamber: the sector is arriving now; the rails are the live ones.
+// ALEMBIC: self-driving wet labs (§BPFRONTIER 2026-09-25: wet labs among the
+// future cases). A frontier chamber: the sector is arriving now; the rails are the live ones.
 
 const primitives = [
   { step: 'A named scientist behind every spend', primitive: 'Cockpit Card mandate, scope-clamped, re-derived per request', railStatus: 'LIVE (gated)' as const, href: '/docs/30' },

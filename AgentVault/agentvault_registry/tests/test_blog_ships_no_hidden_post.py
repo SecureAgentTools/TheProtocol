@@ -1,7 +1,7 @@
 """The release tree carries no hidden journal post (agentvault2-69, 2026-10-25).
 
-His word that night, typed in agentvault2-d6's session about 22:34Z: "approved. just make sure on production newest blog
-draft is hidden. i dont want it to leak there." A post marked hidden: true stays off the journal's list and its page,
+On production the newest journal draft stays hidden: it must not leak
+there. A post marked hidden: true stays off the journal's list and its page,
 but the console's BlogView chunk still carries its whole text, so anyone who fetches the script can read it: hidden is
 not private. So a draft lives on its own branch (journal 52 on draft/journal52-opening, shown only by the sandbox
 preview, scratchpad/blog52/roll_preview_sbx.py) and the release tree holds published posts only; a post that leaves

@@ -1,10 +1,9 @@
 /**
  * V0654 (ap) (order gwo_03a846cb91b37628c3c6710a): the assistant in OurChat, as the console keeps it.
  *
- * His words (the sessions' room, seq 1091): "I want to activate the assistant in our chat. So it is pickable. Ai
- * assistant active or not. Additional option in the choosing of the identity to send with. ... I want the button to
- * maybe turn yellow or whatever when ai assistant for this identity is activated. It should create a little thing that
- * states my prompt visible for myself ... and then when Claude assistant is ready sending the answer it appears below."
+ * The assistant in the chat is pickable, on or off, as an option in the choice of the identity to send with; the
+ * button turns amber while it is on for that identity; the prompt shows to its author alone, and the assistant's
+ * answer appears below it.
  *
  * - The switch is per identity ("you", or one of your agents by DID) and per room, kept on THIS device (localStorage),
  *   like the speaker choice (speakAs.ts). Off unless switched on.
@@ -100,4 +99,38 @@ export function writeAsks(conversationId: string, asks: AssistAsk[], s?: KV | nu
     if (mine.length) kv.setItem(ASKS_PREFIX + conversationId, JSON.stringify(mine))
     else kv.removeItem(ASKS_PREFIX + conversationId)
   } catch { /* a full or blocked storage: they stay for this page only */ }
+}
+
+/** Where each request is drawn among the lines a thread shows (their seqs). V0655 (av), order
+ *  gwo_ce52bf8dc39e7202817f16c7: a request belongs with its answer, not with the chat box. An answered request sits
+ *  directly above its answer, wherever the answer is drawn (the main list, or inside the thread its reply folds it into),
+ *  and scrolls away with it; while its answer is not drawn (its thread folded, or older than the loaded lines) the
+ *  request is not drawn either. A waiting or refused request, or an answered one whose answer has no seq, keeps V0654's
+ *  place: after the line it followed, or at the bottom while that line is not drawn. Before V0655 an answered request
+ *  kept that place too, so one asked after a line that then sat inside a folded thread stayed above the chat box for
+ *  good.
+ */
+export interface AskPlaces {
+  /** answered requests, by the seq of the answer they sit above */
+  before: Map<number, AssistAsk[]>
+  /** the others, by the seq of the line they follow */
+  after: Map<number, AssistAsk[]>
+  /** the others whose line is not drawn */
+  bottom: AssistAsk[]
+}
+
+export function placeAsks(asks: AssistAsk[], shown: Set<number>): AskPlaces {
+  const places: AskPlaces = { before: new Map(), after: new Map(), bottom: [] }
+  const put = (m: Map<number, AssistAsk[]>, seq: number, a: AssistAsk) => m.set(seq, [...(m.get(seq) ?? []), a])
+  for (const a of asks) {
+    const answer = a.state === 'answered' ? Number(a.answerSeq) || 0 : 0
+    if (answer) {
+      if (shown.has(answer)) put(places.before, answer, a)
+      continue
+    }
+    const line = Number(a.afterSeq) || 0
+    if (shown.has(line)) put(places.after, line, a)
+    else places.bottom.push(a)
+  }
+  return places
 }
