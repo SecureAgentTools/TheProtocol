@@ -50,7 +50,8 @@ from ..models import ChatApproval, Conversation, Organization, OrganizationMembe
 logger = logging.getLogger(__name__)
 
 ACTION_TYPE = "chat.approval"
-STATUSES = ("pending", "approved", "denied", "chosen", "expired")
+# V0654 (aq), item 18: "withdrawn": the agent that asked took its request back while it waited (withdraw_refusal)
+STATUSES = ("pending", "approved", "denied", "chosen", "expired", "withdrawn")
 # V0652 (ab): a choice request is decided by choosing one of its options ("choose"), or declined ("deny": none of them)
 DECISIONS = {"approve": "approved", "deny": "denied", "choose": "chosen"}
 OPTIONS_MIN, OPTIONS_MAX, OPTION_MAX = 2, 5, 80
@@ -276,6 +277,38 @@ def consume_refusal(row: Any, *, agent_did: str, act_sha256: str, now: _dt.datet
     return None
 
 
+def withdraw_refusal(row: Any, *, agent_did: str, now: _dt.datetime) -> Optional[Tuple[int, str]]:
+    """V0654 (aq), item 18: why this agent may not withdraw this request, as (status, sentence), or None when it may (or
+    already did: the caller answers a repeat as done). Only the agent that asked, and only while the request waits: a
+    decided or expired one is not taken back. Nothing here writes; mark_withdrawn's UPDATE repeats the conditions."""
+    if row is None:
+        return 404, "approval request not found"
+    if (row.requester_agent_did or "").lower() != (agent_did or "").lower():
+        return 403, (f"only the agent that asked may withdraw this request (it was asked by {row.requester_agent_did}); "
+                     "nothing changed")
+    st = effective_status(row.status, row.expires_at, now)
+    if st in ("pending", "withdrawn"):
+        return None
+    if st == "expired":
+        return 410, f"this request expired at {iso(row.expires_at)}: there is nothing to withdraw"
+    return 409, f"this request was already {st}: a decided request is not withdrawn"
+
+
+async def mark_withdrawn(db: AsyncSession, approval_id: str, *, agent_did: str) -> Optional[_dt.datetime]:
+    """V0654 (aq), item 18: take the request back, or None when it no longer waits at the moment of writing. One UPDATE
+    repeats every condition (the asker, pending, unexpired), so a decision that lands first wins and the request is
+    never both decided and withdrawn. `decided_at` is when it stopped waiting; nobody decided it."""
+    res = await db.execute(sa_text(
+        "UPDATE chat_approvals SET status = 'withdrawn', decided_at = now() "
+        "WHERE id = :id AND status = 'pending' AND expires_at > now() AND lower(requester_agent_did) = lower(:a) "
+        "RETURNING decided_at"), {"id": approval_id, "a": agent_did})
+    got = res.first()
+    if got is None:
+        return None
+    ts = got[0]
+    return ts if (ts is None or ts.tzinfo) else ts.replace(tzinfo=_dt.timezone.utc)
+
+
 def consumed_notice(act_label: str, act_sha256: str, at: _dt.datetime) -> str:
     """The room's line under the approval card when it opens its act (the record is the authority, this shows it)."""
     return (f"This approval opened one act: {act_label} (sha256 {act_sha256[:12]}...), at {iso(at)}. "
@@ -319,6 +352,8 @@ def refusal_when_nothing_decided(skipped: Dict[str, str], decision: str) -> Tupl
         return 404, "none of these approval requests belong to this conversation", False
     if all(v == "expired" for v in found.values()):
         return 410, "these approval requests expired; an expired request cannot be approved", False
+    if all(v in ("already_withdrawn", "expired") for v in found.values()):   # V0654 (aq), item 18
+        return 409, "the agent that asked withdrew this request: there is nothing to decide", False
     same = f"already_{DECISIONS[decision]}"
     if all(v in (same, "expired") for v in found.values()) and any(v == same for v in found.values()):
         return 200, "already decided this way", True
@@ -511,6 +546,8 @@ def serialize(row: Any, now: _dt.datetime, *, requester_name: Optional[str] = No
                       "act_sha256": getattr(row, "consumed_act_sha256", None)}
                      if getattr(row, "consumed_at", None) is not None else None),
     }
+    if st == "withdrawn":                # V0654 (aq), item 18: when the agent that asked took it back
+        out["withdrawn"] = {"at": iso(row.decided_at), "by_agent_did": row.requester_agent_did}
     if getattr(row, "options", None):   # V0652 (ab)
         out["options"] = list(row.options)
         out["chosen"] = ({"index": int(row.chosen_option), "label": list(row.options)[int(row.chosen_option)]}

@@ -6515,6 +6515,8 @@ class ConversationParticipant(Base):
     # §OURSTATE-2 (mig 0156) — the room-scoped /mute flag. Room state ONLY:
     # org membership truth stays in organization_members.
     can_post: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=sa.true())
+    # V0654 (aq), migration 0209: listen | on-call | off: what of the room wakes this member (chat_service.WAKE_MODES)
+    wake_mode: Mapped[str] = mapped_column(String(8), nullable=False, default="listen", server_default="listen")
     joined_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False)
 

@@ -28,10 +28,13 @@ class _World:
     """The registry's book and the ledger's projection of one agent, the treasury's mint, receive and payout routes."""
 
     def __init__(self, *, held: str = "0", fee: str = "3", ledger_skips: str = "", fund_refused: bool = False,
-                 transfer_refused: bool = False, ledger_lag: int = 0, drains: int = 0, refuse_full: bool = False):
+                 transfer_refused: bool = False, ledger_lag: int = 0, drains: int = 0, refuse_full: bool = False,
+                 read_drains: int = 0):
         # V0651 (the trial pair nt261031x9): another rail drains the fee account between the read and the payout
         # `drains` times; refuse_full answers the refusal while the account still holds enough
-        self.drains, self.refuse_full = drains, refuse_full
+        # V0654 (V0653's first pair proof nt261102x1): another rail's fund-agent empties it just before the next
+        # `read_drains` reads, so the read right after the run's own fee says 0
+        self.drains, self.refuse_full, self.read_drains = drains, refuse_full, read_drains
         self.reg = {DID: Decimal(held)}
         self.led = {DID: Decimal(held)}
         self.fee = Decimal(fee)
@@ -81,6 +84,9 @@ class _World:
             return True, {"path": a["path"], "status_code": 200, "ok": True,
                           "response": {"agent_did": did, "liquid_balance": float(self.led.get(did, 0))}}, "200"
         if tool == eph.FEE_INFO:
+            if self.read_drains > 0:
+                self.read_drains -= 1
+                self.fee = Decimal(0)                  # a fund-agent drew on the account first (the TEG's waterfall)
             return True, {"balance": str(self.fee), "did": "teg:system:fee_collector"}, "200"
         if tool == eph.FUND:
             assert a["endpoint"] == "/api/v1/teg/treasury/fund-agent" and a["body"]["reason"] == "admin_grant"
@@ -108,6 +114,7 @@ class _World:
 
 class _Throwaways:
     closed = 0
+    fee_agents = 0      # V0654: the second agent is made once for all of the run's tries
 
     def __init__(self, rpc, parse, bag, tag):
         pass
@@ -117,6 +124,7 @@ class _Throwaways:
 
     async def agent(self, dev: Dict[str, Any], label: str = "") -> Dict[str, Any]:
         if label == "fee":
+            type(self).fee_agents += 1
             return {"did": DID2, "owner_jwt": "owner-jwt", "agent_jwt": "agent-jwt-2"}
         return {"did": DID, "owner_jwt": "owner-jwt", "agent_jwt": "agent-jwt"}
 
@@ -273,12 +281,50 @@ def test_a_payout_drained_once_is_paid_for_again_and_measured(monkeypatch):
     assert _payouts(w) == 2 and [t for t, _a in w.calls].count("theprotocol_transferUnits") == 2
 
 
-def test_a_payout_drained_twice_is_not_measured_and_says_why(monkeypatch):
+def _transfers(w: "_World") -> int:
+    return [t for t, _a in w.calls].count("theprotocol_transferUnits")
+
+
+def test_a_payout_drained_twice_is_paid_for_again_and_measured_on_the_third_try(monkeypatch):
+    # V0654 (at), item 19: up to eph.PAYOUT_TRIES tries (V0651 retried once)
     monkeypatch.setenv(eph.EPHEMERAL_ENV, "true")
     w = _World(fee="3", drains=2)
     row = _run(w, monkeypatch)[effect_name(eph.DISTRIBUTE)]
-    assert not _ok(row) and "drawn on between the read and the payout twice" in str(row.get("skip_reason")), row
-    assert _payouts(w) == 2, "one retry, never more"
+    assert _ok(row), row
+    assert _payouts(w) == 3 and _transfers(w) == 3
+
+
+def test_a_payout_drained_on_every_try_is_not_measured_and_says_why(monkeypatch):
+    monkeypatch.setenv(eph.EPHEMERAL_ENV, "true")
+    w = _World(fee="3", drains=eph.PAYOUT_TRIES)
+    row = _run(w, monkeypatch)[effect_name(eph.DISTRIBUTE)]
+    why = str(row.get("skip_reason"))
+    assert not _ok(row) and f"on each of the run's {eph.PAYOUT_TRIES} tries" in why, row
+    assert f"{eph.PAYOUT_TRIES} of the payouts were refused as drained" in why, why
+    assert _payouts(w) == eph.PAYOUT_TRIES == _transfers(w), "never more than PAYOUT_TRIES tries"
+
+
+def test_a_fee_drawn_on_before_the_read_is_paid_again_and_measured(monkeypatch):
+    """V0654 (at), item 19 (Guild order gwo_a4be529fdaa3e5f38143606e): on V0653's first pair proof (nt261102x1) the
+    account read 0E-18 right after the run paid its own fee (every fund-agent on the frame draws on it first), and the
+    row was NOT MEASURED on that one read. Now the run pays again and the payout is measured. RED on V0653's lifecycle:
+    NOT MEASURED after one fee and no payout."""
+    monkeypatch.setenv(eph.EPHEMERAL_ENV, "true")
+    _Throwaways.fee_agents = 0
+    w = _World(fee="0", read_drains=1)
+    row = _run(w, monkeypatch)[effect_name(eph.DISTRIBUTE)]
+    assert _ok(row), row
+    assert _transfers(w) == 2 and _payouts(w) == 1
+    assert _Throwaways.fee_agents == 1, "one second agent for all of the run's tries"
+
+
+def test_a_fee_drawn_on_before_every_read_is_not_measured_and_names_the_reads(monkeypatch):
+    monkeypatch.setenv(eph.EPHEMERAL_ENV, "true")
+    w = _World(fee="0", read_drains=eph.PAYOUT_TRIES)
+    row = _run(w, monkeypatch)[effect_name(eph.DISTRIBUTE)]
+    why = str(row.get("skip_reason"))
+    assert not _ok(row) and f"on each of the run's {eph.PAYOUT_TRIES} tries" in why and "it read 0, 0, 0, 0" in why, row
+    assert _transfers(w) == eph.PAYOUT_TRIES and _payouts(w) == 0
 
 
 def test_a_refusal_while_the_account_reads_enough_stays_red(monkeypatch):

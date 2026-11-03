@@ -27,7 +27,7 @@ from agentvault_registry.api_tests.federation_suite import throwaways
 from agentvault_registry.api_tests.federation_suite.decorator import federation_test
 from agentvault_registry.api_tests.federation_suite.rig import FederationTestRig, AssertionResult, PreconditionUnmet
 from agentvault_registry.api_tests.federation_suite.tests.test_twoagent_contract_xframe import (
-    _call, _until, _run, _balance,
+    _call, _until, _run, _balance, _rest,
 )
 from agentvault_registry.services.registry_card_builder import _dialable_from_outside
 
@@ -38,6 +38,16 @@ _REQUIRES = [_A, _B, _ADMIN[_A], _ADMIN[_B]]
 _MIRROR_SEC = 240.0     # a fresh card reached the peer in 21.6-92.2 s on the sandbox (TESTPLAN F5)
 _SETTLE_SEC = 90.0
 _PENDING = "PENDING_ADMIN_APPROVAL"
+
+
+async def mirrored_on(rig, admin: str, did: str) -> Optional[Dict[str, Any]]:
+    """V0654 (at), item 21 (Guild order gwo_a4be529fdaa3e5f38143606e): the filing frame knows the defendant the way
+    routers/disputes.defendant_known asks, an ACTIVE card under its DID (GET /agent-cards/{did} falls back to an inactive
+    card, so is_active is read too). The flow waits for this before it files: on V0653's recut pair nt261102x2 the
+    filing was retried while the mirror was on its way and one try answered "Dispute filing request timed out", which
+    the retry took for the answer (the mirror arrived about 21 s after the defendant was made). None until then."""
+    code, card = await _rest(rig, "GET", f"/api/v1/agent-cards/{did}", admin)
+    return card if code == 200 and isinstance(card, dict) and card.get("is_active") is True else None
 
 
 async def _agent(rig, label: str, tag: str, made: List[Tuple[str, str]]) -> Dict[str, str]:
@@ -110,8 +120,8 @@ def _num(v: Any) -> Optional[float]:
     tags=["disputes", "xframe", "owl25", "cross_frame", "settlements", "money", "v0639"],
 )
 async def test_xframe_settlement_reject(rig: FederationTestRig) -> AssertionResult:
-    planned = ["the_amount_is_over_every_threshold_the_home_holds", "the_origin_takes_the_dispute",
-               "the_evidence_names_the_amount", "the_origin_rules_for_the_complainant",
+    planned = ["the_amount_is_over_every_threshold_the_home_holds", "the_origin_mirrors_the_defendant",
+               "the_origin_takes_the_dispute", "the_evidence_names_the_amount", "the_origin_rules_for_the_complainant",
                "the_home_holds_it_for_an_administrator", "getFederationDisputeSettlement_reads_it",
                "rejectDisputeSettlement_rejects_it", "nothing_moved_on_the_home", "the_origin_hears_failed"]
 
@@ -128,6 +138,9 @@ async def test_xframe_settlement_reject(rig: FederationTestRig) -> AssertionResu
         defendant = await _agent(rig, _B, "defendant", made)
         complainant = await _agent(rig, _A, "complainant", made)
         before = await _balance(rig, _B, defendant["jwt"])
+        seen = await _until(lambda: mirrored_on(rig, _ADMIN[_A], defendant["did"]), _MIRROR_SEC)
+        if not legs.check("the_origin_mirrors_the_defendant", bool(seen), {"within_sec": _MIRROR_SEC}):
+            return
 
         async def _file():
             # the origin takes the dispute once it knows the defendant: a mirrored card (routers/disputes.py)

@@ -940,7 +940,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         prefix = licence_prefix(inv.get("review_notes"))
         print(f"[6/7] completed at {inv.get('completed_at')}: peer row id={inv.get('peer_registry_id')}"
               + (f" name={row.get('registry_name')} url={row.get('registry_url')}" if row else " (not in this frame's registry list yet)")
-              + (f"; licence prefix {prefix}" if prefix else "; no licence prefix recorded (the peer issued none, or its image predates §FRAMELIC)"))
+              + (f"; licence prefix {prefix}" if prefix else "; no licence prefix recorded (the peer issued none, or its image predates frame licences)"))
         if prefix and not a.no_licence:
             step7_licence(facts, inv_id, token)
         elif not prefix:

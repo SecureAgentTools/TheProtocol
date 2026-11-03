@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""frame-runner-install.py — put the frame runner on a host stood up from the export (§HELLOFRAME lane 6, 2026-09-18).
+"""frame-runner-install.py — put the frame runner on a host stood up from the export.
 
 A frame on a stranger's host provisions its own cloud operators the way every runner-built frame does: its registry
 holds no docker socket and asks the frame runner over a unix socket; the runner does the host work in a one-shot.
@@ -345,7 +345,7 @@ def build_parser():
     ap.add_argument("--instance", default="", help="a SECOND runner beside this host's own, scoped by this name "
                                                    "(unit, policy, sockets, state); empty = the single runner")
     ap.add_argument("--no-sandboxes", action="store_true",
-                    help="do not let the frame's console stand sandboxes up through this runner (on by default: §TESTBED)")
+                    help="do not let the frame's console stand sandboxes up through this runner (on by default)")
     ap.add_argument("--dry-run", action="store_true", help="print the policy, the unit and the last line; touch nothing")
     ap.add_argument("--no-start", action="store_true", help="write everything, skip systemd and the ping")
     ap.add_argument("--remove", action="store_true", help="take the runner off this host (V0653): its unit, its policy, the "
@@ -448,8 +448,9 @@ def container_exists(name):
 def remove(a, *, sh=None, exists=container_exists, unit_dir=UNIT_DIR, protected=PROTECTED):
     """V0653 (ao) item 2 (the dev machine's beta.30 test): take the frame runner off this host, everything this script
     put there and nothing else: the unit (disabled and stopped), its policy and the backups this script made of it,
-    the protected-frames list once no other runner instance remains (every instance shares it), and the socket group
-    when this script created it and no other runner remains. Refused while the runner still holds a frame whose
+    the protected-frames list once no other runner instance remains (every instance shares it), the runner's two
+    sockets and the runtime directories they leave empty (V0654 (au): the unit preserves its runtime directory over a
+    stop), and the socket group when this script created it and no other runner remains. Refused while the runner still holds a frame whose
     registry container exists (take it down first: frame-down.py --name <name>). The runner's state (its jobs, its
     frame records, its audit) stays, named in the output, unless --purge-state. --dry-run says what it would do."""
     sh = sh or (lambda argv: subprocess.run(argv, capture_output=True, text=True))
@@ -490,6 +491,23 @@ def remove(a, *, sh=None, exists=container_exists, unit_dir=UNIT_DIR, protected=
         run_or_say(["systemctl", "daemon-reload"], "systemd reloaded")
     else:
         say(f"no unit at {paths['unit_path']}")
+    # V0654 (au): the unit keeps its runtime directory over a stop (RuntimeDirectoryPreserve=yes), so the runner's two
+    # sockets stayed on disk after it was gone. Remove those two files and every directory of theirs they leave empty
+    # (never one that holds anything else: another instance's sockets live beside them).
+    gone = set()
+    for sock in (paths.get("operator_socket"), paths.get("socket")):
+        if sock and os.path.lexists(sock) and not os.path.isdir(sock):
+            if not a.dry_run:
+                os.remove(sock)
+            gone.add(sock)
+            did(sock)
+    dirs = {os.path.dirname(x) for x in (paths.get("operator_socket"), paths.get("socket")) if x}
+    for d in sorted(dirs, key=len, reverse=True):          # the deeper one first: its parent may empty after it
+        if os.path.isdir(d) and not [e for e in os.listdir(d) if os.path.join(d, e) not in gone]:
+            if not a.dry_run:
+                os.rmdir(d)
+            gone.add(d)
+            did(f"the empty directory {d}")
     for f in [paths["config"]] + sorted(glob.glob(paths["config"] + ".bak-pre-install-*")):
         if os.path.exists(f):
             if not a.dry_run:
@@ -502,10 +520,13 @@ def remove(a, *, sh=None, exists=container_exists, unit_dir=UNIT_DIR, protected=
             if not a.dry_run:
                 os.remove(protected)
             did(protected)
-        if not policy.get("socket_group_created"):
+        if not group_exists(group):
+            # V0654 (au): a second --remove read no policy (the first removed it) and said it kept a group already gone
+            say(f"no group {group} on this host: nothing to keep or remove")
+        elif not policy.get("socket_group_created"):
             say(f"kept the group {group}: this installer did not create it (it was on the host before, or the policy predates "
                 f"the record); `groupdel {group}` removes it by hand")
-        elif group_exists(group):
+        else:
             run_or_say(["groupdel", group], f"removed the group {group}")
     if os.path.isdir(paths["state"]):
         if a.purge_state:
@@ -513,7 +534,9 @@ def remove(a, *, sh=None, exists=container_exists, unit_dir=UNIT_DIR, protected=
                 shutil.rmtree(paths["state"])
             did(f"the runner's state {paths['state']}")
         else:
-            say(f"kept the runner's state {paths['state']} (its jobs, frame records and audit); --purge-state removes it")
+            again = "frame-runner-install.py --remove" + (f" --instance {paths['instance']}" if paths.get("instance") else "")
+            say(f"kept the runner's state {paths['state']} (its jobs, frame records and audit); "
+                f"`{again} --purge-state` removes it")
     return EXIT_OK
 
 

@@ -94,9 +94,14 @@ export function liveApprovalStatus(messages: Array<{ kind?: string; card?: any }
     if (!id) continue
     if (c.type === 'approval.decided') out[id] = c.data?.decision === 'approved' ? 'approved' : 'denied'
     else if (c.type === 'choice.decided') out[id] = c.data?.decision === 'chosen' ? 'chosen' : 'denied'   // V0652 (ab)
-    else if ((c.type === 'approval.request' || c.type === 'choice.request') && !(id in out)) {
-      const ex = ms(c.data?.expires_at)
-      out[id] = ex !== null && ex <= nowMs ? 'expired' : 'pending'
+    else if (c.type === 'approval.request' || c.type === 'choice.request') {
+      // V0654 (aq), item 18: the agent that asked took it back (its card updated in place); a decision never follows
+      if (c.data?.withdrawn) {
+        if (!(id in out) || out[id] === 'pending' || out[id] === 'expired') out[id] = 'withdrawn'
+      } else if (!(id in out)) {
+        const ex = ms(c.data?.expires_at)
+        out[id] = ex !== null && ex <= nowMs ? 'expired' : 'pending'
+      }
     }
   }
   return out

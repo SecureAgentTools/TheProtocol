@@ -1003,6 +1003,7 @@ _ROOM_TEMPLATE = {
     "motd": "{by} updated the room genesis",
     "assistant_on": "{by} added @assistant to this room",
     "assistant_off": "{by} removed @assistant from this room",
+    "wake": "{by} set {target}'s wake mode to {value}",      # V0654 (aq): listen, on-call or off
 }
 
 
@@ -2282,7 +2283,7 @@ async def list_messages(db: AsyncSession, conversation_id: str, actor: Actor,
         # can_post from your row, ops from your LIVE org role.
         my_org_role = await actor_org_role(db, conv.org_id or "", actor)
         org_row = (await db.execute(sa_text(
-            "SELECT name, settings FROM organizations WHERE id = :o"), {"o": conv.org_id})).first()
+            "SELECT name, settings, owner_id FROM organizations WHERE id = :o"), {"o": conv.org_id})).first()
         live_name = org_row[0] if org_row else None
         # §OCOPTIN — the room tells its members when its work records are
         # public (§CHATDESK visibility law: nothing about a room is ever
@@ -2316,6 +2317,12 @@ async def list_messages(db: AsyncSession, conversation_id: str, actor: Actor,
                 pass
         room["board"] = _board.view(conv, await display_names(db, _keys) if _keys else {}, _who is not None,
                                     _who == "owner")
+        # V0654 (aq): each member's wake mode (by its key), and whether this reader sets another member's (the room's
+        # owner, signed in): the side panel's and the member sheet's switch
+        room["wake_modes"] = {part_key(p): (getattr(p, "wake_mode", None) or "listen") for p in parts
+                              if p.state == "active" and p.ptype in ("developer", "agent")}
+        room["can_set_wake"] = may_set_wake_for_others(
+            actor, int(org_row[2]) if org_row is not None and org_row[2] is not None else None)
 
     return {"conversation_id": conv.id, "kind": conv.kind,
             "last_seq": int(conv.last_seq or 0),
@@ -2581,6 +2588,59 @@ def _mentions_list(value: Any) -> List[dict]:
     return [x for x in value if isinstance(x, dict)] if isinstance(value, list) else []
 
 
+# V0654 (aq), order gwo_238870d0f3c281c7d870554d (his word in the sessions' room, seq 1091; the design:
+# sessionlogs2026/DESIGN_2026-11-02_SESSION_WAKE_MODES.md): what of a room wakes a member. listen: every line meant for it
+# (reaches_me, as before). on-call: only a line that @-names it, a direct message, a decision on its own approval card, or
+# the room owner's @all. off: nothing. Kept per member of a conversation (conversation_participants.wake_mode); set by the
+# member itself, or by the room's owner from a signed-in session (set_wake_mode).
+WAKE_MODES = ("listen", "on-call", "off")
+_DECISION_CARDS = ("approval.decided", "choice.decided")
+WAKE_LINE_ACTION = "wake"     # the room's line for a change: body "room.wake", its card names the member (target)
+
+
+def _card_of(row: dict) -> dict:
+    """A row's card as a dict: a JSON column read through a raw statement can arrive as text."""
+    card = row.get("card")
+    if isinstance(card, str):
+        try:
+            card = json.loads(card)
+        except ValueError:
+            return {}
+    return card if isinstance(card, dict) else {}
+
+
+def wake_line_target(row: dict) -> Optional[str]:
+    """The member a wake mode line is about (its card's target key), or None when the row is not one. Such a line
+    reaches that member alone: a mode change must not wake every session in the room."""
+    if row.get("kind") == "system" and str(row.get("body") or "") == f"room.{WAKE_LINE_ACTION}":
+        return str(_card_of(row).get("target") or "")
+    return None
+
+
+def wake_mode_lets_through(mode: Optional[str], *, me_key: str, me_did: Optional[str], row: dict,
+                           conv_kind: Optional[str], owner_id: Any, decided_for: Optional[str]) -> Optional[bool]:
+    """None for listen (the caller's own rule decides); False for off, and for on call unless the line is one of its four;
+    True for those. `decided_for` is the requester of the approval a decision card decides ("*" where the caller cannot
+    tell: the live delivery's hint, which the sync feed's for=me then decides exactly). Pure."""
+    if mode not in ("on-call", "off"):
+        return None
+    if mode == "off":
+        return False
+    if any(m.get("key") == me_key for m in _mentions_list(row.get("mentions"))):
+        return True
+    if conv_kind in PAIR_KINDS:
+        return True
+    card = _card_of(row)
+    if card.get("type") in _DECISION_CARDS and decided_for is not None and (
+            decided_for == "*" or (me_did is not None and decided_for.lower() == me_did.lower())):
+        return True
+    body = row.get("body")
+    if (body and FOR_ME_ALL_RE.search(body) and owner_id is not None and row.get("sender_ptype") == "developer"
+            and str(row.get("sender_id")) == str(owner_id)):
+        return True
+    return False
+
+
 def reaches_me(actor: Actor, row: dict, conv: Optional[dict], approval: Optional[dict],
                approver_orgs: Set[str]) -> bool:
     """V0651 (t): does this message reach THIS caller in particular? Never its own; otherwise any of: a mention of the
@@ -2591,6 +2651,18 @@ def reaches_me(actor: Actor, row: dict, conv: Optional[dict], approval: Optional
     approver orgs, read once per sync."""
     if row.get("sender_ptype") == actor.ptype and str(row.get("sender_id") or "").lower() == actor.sender_id.lower():
         return False
+    # V0654 (aq): a wake mode line reaches the member it is about, whatever its mode; then the caller's wake mode in this
+    # conversation (the context reads it with the kind and the owner)
+    about = wake_line_target(row)
+    if about is not None:
+        return about == actor.key
+    card = _card_of(row)
+    gate = wake_mode_lets_through(
+        (conv or {}).get("wake_mode"), me_key=actor.key, me_did=actor.agent_did if actor.ptype == "agent" else None,
+        row=row, conv_kind=(conv or {}).get("kind"), owner_id=(conv or {}).get("owner_id"),
+        decided_for=(approval or {}).get("requester_agent_did") if card.get("type") in _DECISION_CARDS else None)
+    if gate is not None:
+        return gate
     if any(m.get("key") == actor.key for m in _mentions_list(row.get("mentions"))):
         return True
     body = row.get("body")
@@ -2635,6 +2707,21 @@ async def _for_me_context(db: AsyncSession, actor: Actor, rows: List[dict]) -> T
             "SELECT id FROM organizations WHERE owner_id = :me UNION SELECT organization_id FROM organization_members "
             "WHERE developer_id = :me AND is_active = true AND (role = 'owner' OR can_approve = true)"), {"me": me})
         approver_orgs = {str(r[0]) for r in res.all()}
+    if conv_ids:
+        # V0654 (aq): the caller's own wake mode in each conversation of the page (its own row: a developer's, or the
+        # agent's); a conversation the caller holds no row in reads listen
+        if actor.ptype == "developer":
+            stmt, who = sa_text(
+                "SELECT conversation_id, wake_mode FROM conversation_participants WHERE conversation_id IN :ids "
+                "AND ptype = 'developer' AND developer_id = :who"), int(actor.developer_id)
+        else:
+            stmt, who = sa_text(
+                "SELECT conversation_id, wake_mode FROM conversation_participants WHERE conversation_id IN :ids "
+                "AND ptype = 'agent' AND lower(agent_did) = lower(:who)"), actor.agent_did or ""
+        res = await db.execute(stmt.bindparams(bindparam("ids", expanding=True)), {"ids": conv_ids, "who": who})
+        for cid, mode in res.all():
+            if cid in convs:
+                convs[cid]["wake_mode"] = mode or "listen"
     return convs, approvals, approver_orgs
 
 
@@ -2682,11 +2769,13 @@ async def sync_since(db: AsyncSession, actor: Actor, since: Optional[str], *,
         skip = "AND m.id NOT IN :seen"
         params["seen"] = [mid for mid, _ in msg_seen]
         binds.append(bindparam("seen", expanding=True))
-    extra = ", m.mentions" if for_me else ""     # V0651 (t): the filter reads (h)'s mentions
-
+    # V0654 (aq), item 24: every message carries how it was sent, who sent an agent's line, and whom it names, as the
+    # thread read does (serialize_message); the feed every session's watcher reads held none of them, so a watcher read
+    # each developer line back from the thread for its mark (chat_link 2.16). V0651 (t)'s filter reads the mentions too.
     stmt = sa_text(f"""
         SELECT m.id, m.conversation_id, m.seq, m.sender_ptype, m.sender_id, m.kind,
-               m.body, m.card, m.reply_to, m.client_ref, m.created_at, m.deleted_at{extra}
+               m.body, m.card, m.reply_to, m.client_ref, m.created_at, m.deleted_at,
+               m.mentions, m.sent_with, m.sent_by_developer_id
         FROM chat_messages m
         JOIN conversation_participants p ON p.conversation_id = m.conversation_id
         WHERE ({reach}) AND p.state = 'active'
@@ -2714,9 +2803,9 @@ async def sync_since(db: AsyncSession, actor: Actor, since: Optional[str], *,
                "card": None if deleted else r[7],
                "deleted": deleted,
                "reply_to": r[8], "client_ref": r[9],
-               "created_at": _as_utc(r[10]).isoformat() if r[10] else None}
-        if for_me:
-            msg["mentions"] = None if deleted else r[12]
+               "created_at": _as_utc(r[10]).isoformat() if r[10] else None,
+               "mentions": [] if deleted else _mentions_list(r[12]),
+               "sent_with": r[13], "sent_by_owner": bool(r[14])}
         msgs.append(msg)
     if for_me:
         # V0651 (t): the page was read whole and is filtered here, so `returned` (every row scanned) moves the
@@ -2724,8 +2813,6 @@ async def sync_since(db: AsyncSession, actor: Actor, since: Optional[str], *,
         convs, approvals, approver_orgs = await _for_me_context(db, actor, msgs)
         msgs = [m for m in msgs if reaches_me(actor, m, convs.get(m["conversation_id"]),
                                               approvals.get(_card_approval_id(m.get("card")) or ""), approver_orgs)]
-        for m in msgs:
-            m.pop("mentions", None)
     truncated = len(rows) >= SYNC_MAX
     nt, ni, ns = next_sync_cursor(prev_t, prev_i, msg_seen, returned, truncated, now)
     updates: List[dict] = []
@@ -2967,7 +3054,8 @@ async def recipients_snapshot(db: AsyncSession, conv: Conversation,
             continue
         keys.append(k)
         out.append({"key": k, "ptype": p.ptype, "developer_id": p.developer_id,
-                    "agent_did": p.agent_did, "muted": mute_in_effect(p.muted, getattr(p, "muted_until", None))})
+                    "agent_did": p.agent_did, "muted": mute_in_effect(p.muted, getattr(p, "muted_until", None)),
+                    "wake_mode": getattr(p, "wake_mode", None) or "listen"})   # V0654 (aq)
     blockers = await blocker_keys_against(db, sender.key, keys)
     out = [r for r in out if r["key"] not in blockers]
     agent_dids = [r["agent_did"] for r in out if r["ptype"] == "agent" and r["agent_did"]]
@@ -2975,7 +3063,26 @@ async def recipients_snapshot(db: AsyncSession, conv: Conversation,
     for r in out:
         r["owner_developer_id"] = (r["developer_id"] if r["ptype"] == "developer"
                                    else owners.get(r["agent_did"] or ""))
+    # V0654 (aq): an on-call member wakes for the room owner's @all, so the delivery needs the owner (one read, and only
+    # then)
+    if conv.kind == "org" and getattr(conv, "org_id", None) and any(r["wake_mode"] == "on-call" for r in out):
+        owner = (await db.execute(sa_text("SELECT owner_id FROM organizations WHERE id = :o"), {"o": conv.org_id})).first()
+        for r in out:
+            r["room_owner_id"] = owner[0] if owner else None
     return out
+
+
+def live_wakes(recipient: dict, message: dict, conv_kind: Optional[str]) -> bool:
+    """V0654 (aq): does the live delivery wake this recipient for this message (its hook, its waiting sync)? Its wake
+    mode decides: off never, on call only for its four (a decision card wakes it as a hint: its sync for=me then
+    reads whether the decision is its own), listen always (what reaches it is the feed's own rule)."""
+    about = wake_line_target(message)
+    if about is not None:
+        return about == recipient.get("key")
+    gate = wake_mode_lets_through(
+        recipient.get("wake_mode"), me_key=recipient.get("key") or "", me_did=recipient.get("agent_did"), row=message,
+        conv_kind=conv_kind, owner_id=recipient.get("room_owner_id"), decided_for="*")
+    return True if gate is None else gate
 
 
 async def fan_out_message(conv_id: str, conv_kind: str, message: dict,
@@ -3001,7 +3108,10 @@ async def fan_out_message(conv_id: str, conv_kind: str, message: dict,
     except Exception:  # noqa: BLE001
         manager = None
 
-    agent_dids = [r["agent_did"] for r in recipients if r["ptype"] == "agent" and r["agent_did"]]
+    # V0654 (aq): an agent member whose wake mode keeps this message out is sent nothing live: no hook, no wake (its
+    # owner's console still shows the room, below)
+    awake = [r for r in recipients if r["ptype"] != "agent" or live_wakes(r, message, conv_kind)]
+    agent_dids = [r["agent_did"] for r in awake if r["ptype"] == "agent" and r["agent_did"]]
     if agent_dids:
         spawn(_tell_agent_owners(conv_id, conv_kind, message, agent_dids),
               what=f"chat.message.received for message {message.get('id')} (seq {message.get('seq')}) in {conv_id} "
@@ -3028,7 +3138,7 @@ async def fan_out_message(conv_id: str, conv_kind: str, message: dict,
             wake = getattr(manager, "wake_chat", None)
             if wake is not None:
                 keys = {principal_key("developer", d) for d in dev_targets}
-                keys |= {principal_key("agent", r.get("agent_did")) for r in recipients
+                keys |= {principal_key("agent", r.get("agent_did")) for r in awake
                          if r.get("ptype") == "agent" and r.get("agent_did")}
                 if keys:
                     await wake(keys)
@@ -3747,6 +3857,69 @@ async def room_action(db: AsyncSession, conversation_id: str, actor: Actor,
             "system_message": serialize_message(msg)}
 
 
+async def room_owner_id(db: AsyncSession, conv: Conversation) -> Optional[int]:
+    """The organization's owner for an org room (the one developer who sets another member's wake mode), else None."""
+    if conv.kind != "org" or not getattr(conv, "org_id", None):
+        return None
+    row = (await db.execute(sa_text("SELECT owner_id FROM organizations WHERE id = :o"), {"o": conv.org_id})).first()
+    return int(row[0]) if row and row[0] is not None else None
+
+
+def may_set_wake_for_others(actor: Actor, owner_id: Optional[int]) -> bool:
+    """V0654 (aq): only the room's owner, signed in (a session: never a key, never an assistant), sets ANOTHER member's
+    wake mode; every member sets its own."""
+    return (actor.ptype == "developer" and owner_id is not None and actor.developer_id is not None
+            and int(actor.developer_id) == int(owner_id) and actor.sent_with == "session")
+
+
+async def set_wake_mode(db: AsyncSession, conversation_id: str, actor: Actor, mode: str,
+                        member_key: Optional[str] = None) -> Tuple[dict, Optional[ChatMessage], Conversation]:
+    """V0654 (aq): set a member's wake mode in a conversation (its own when member_key is None or its own key; another's
+    for the room's owner, signed in). A change writes the mode and one short line in the room, in one commit; setting the
+    mode it already has changes nothing and says so. Returns (the answer, the line or None, the conversation)."""
+    if mode not in WAKE_MODES:
+        raise ChatError(422, "wake mode takes listen, on-call or off")
+    conv = await _get_conversation(db, conversation_id)
+    if getattr(conv, "host_registry", None):
+        raise ChatError(409, "this thread is hosted by another registry: its members' wake modes are kept there")
+    my_row = await resolve_membership(db, conv, actor)          # 403s a non-member
+    target = (member_key or actor.key).strip()
+    if target == actor.key:
+        row, target_name = my_row, actor.display_name
+    else:
+        owner = await room_owner_id(db, conv)
+        if conv.kind != "org":
+            raise ChatError(409, "another member's wake mode is set in an organization room, by its owner")
+        if not may_set_wake_for_others(actor, owner):
+            raise ChatError(403, "only the room's owner sets another member's wake mode, from a signed-in console "
+                                 "(never with a key or an assistant)")
+        row = None
+        for p in (await db.execute(select(ConversationParticipant).where(
+                ConversationParticipant.conversation_id == conv.id,
+                ConversationParticipant.state == "active"))).scalars().all():
+            if part_key(p) == target:
+                row = p
+                break
+        if row is None:
+            raise ChatError(404, "no such member in this room")
+        target_name = (await display_names(db, [target])).get(target) or target
+    if getattr(row, "state", "active") != "active":
+        raise ChatError(409, "you have left this conversation")
+    previous = getattr(row, "wake_mode", None) or "listen"
+    answer = {"conversation_id": conv.id, "member": target, "wake_mode": mode, "previous": previous,
+              "changed": previous != mode}
+    if previous == mode:
+        return answer, None, conv
+    row.wake_mode = mode
+    # the line commits WITH the mode (insert_message commits): a change nobody can see never happens
+    card = _room_system_card(actor, actor.display_name, WAKE_LINE_ACTION, target_name, mode)
+    card["target"] = target                     # the member the line is about: it reaches that member alone
+    msg, _dup = await insert_message(db, conv, my_row, actor, "system", f"room.{WAKE_LINE_ACTION}", card,
+                                     client_ref=str(uuid.uuid4()), rail_author=True)
+    answer["system_message"] = serialize_message(msg)
+    return answer, msg, conv
+
+
 async def room_members(db: AsyncSession, conversation_id: str, actor: Actor) -> dict:
     """The room's member sheet: participant rows joined with LIVE org roles
     and display names. Any active room member may look; ops stay gated at
@@ -3785,10 +3958,14 @@ async def room_members(db: AsyncSession, conversation_id: str, actor: Actor) -> 
             "org_role": dev_roles.get(int(p.developer_id)) if p.ptype == "developer" and p.developer_id is not None else None,
             "can_post": bool(getattr(p, "can_post", True)),
             "is_me": k == actor.key,
+            "key": k,
+            "wake_mode": getattr(p, "wake_mode", None) or "listen",   # V0654 (aq)
         })
     members.sort(key=lambda m: (-(ROOM_ROLE_RANK.get(m["org_role"] or "", -1)), (m["name"] or "").lower()))
     return {"conversation_id": conv.id, "org_id": conv.org_id,
-            "members": members, "note": "members who have opened the room"}
+            "members": members, "note": "members who have opened the room",
+            # V0654 (aq): the room's owner, signed in, sets another member's wake mode
+            "can_set_wake": may_set_wake_for_others(actor, await room_owner_id(db, conv))}
 
 
 # ---------------------------------------------------------------------------

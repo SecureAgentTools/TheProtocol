@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """frame-sandbox: a SANDBOX beside a frame this host runs, stood up from this export, so a change can be tested before it
-is suggested (§TESTBED 2026-09-19).
+is suggested.
 
     ./frame-sandbox.py up     --for myframe [--frames 1|2] [--operators] [--stack-root /opt/theprotocol/stack]
     ./frame-sandbox.py down   --for myframe

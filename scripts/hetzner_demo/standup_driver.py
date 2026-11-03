@@ -2180,9 +2180,21 @@ def provision_child_operator(args, jwt):
     if not _creds.get("admin_password"):   # §BATCH10 finding 39: the provisioner reads the password from the operator's boot banner —
         try:                               # when ITS compose-up failed it saw none; the banner is still in the container's log
             _lg = subprocess.run(["docker", "logs", "--tail", "5000", f"cloud-op-{slug}-registry"], capture_output=True, text=True)
-            _m = re.search(r"FIRST-BOOT ADMIN PASSWORD:\s*(\S+)", (_lg.stdout or "") + (_lg.stderr or ""))
-            if _m:
-                _creds["admin_password"] = _m.group(1); _creds["admin_email"] = _creds.get("admin_email") or f"admin@cloud-op-{slug}.dev"
+            _txt = (_lg.stdout or "") + (_lg.stderr or "")
+            # V0654: the banner names the 0600 file the password is in (operator_seed, CodeQL #381); the printed-password
+            # pattern also matches that line and takes the word "in" (V0654's first pair proof): the file form first
+            _pw = None
+            _f = re.search(r"FIRST-BOOT ADMIN PASSWORD: in (/\S+) \(mode 600\)", _txt)
+            if _f:
+                _cat = subprocess.run(["docker", "exec", f"cloud-op-{slug}-registry", "cat", _f.group(1)], capture_output=True, text=True)
+                if _cat.returncode == 0 and _cat.stdout.strip():
+                    _pw = _cat.stdout.strip()
+                    subprocess.run(["docker", "exec", f"cloud-op-{slug}-registry", "rm", "-f", _f.group(1)], capture_output=True, text=True)
+            else:
+                _m = re.search(r"FIRST-BOOT ADMIN PASSWORD:\s*(\S+)", _txt)   # an image older than V0654 printed it
+                _pw = _m.group(1) if _m else None
+            if _pw:
+                _creds["admin_password"] = _pw; _creds["admin_email"] = _creds.get("admin_email") or f"admin@cloud-op-{slug}.dev"
                 log(f"  operator {slug}: admin credentials recovered from the boot banner (the provision response carried none)")
         except Exception as _e:
             log(f"  operator {slug}: banner read failed: {str(_e)[:80]}")

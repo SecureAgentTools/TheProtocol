@@ -11,7 +11,7 @@ import { appLocale } from '@/services/appLocale'
  * routes, and yanking a desktop bridge user across shells uninvited would be
  * the R3 doors-not-dumps mistake in reverse.
  */
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onScopeDispose, getCurrentScope } from 'vue'
 import { useRouter } from 'vue-router'
 import apiClient from '@/services/api/client'
 import { developerApi } from '@/services/api/developers'
@@ -36,6 +36,45 @@ export interface AssistantMsg {
 }
 
 const BYO_KEY = 'tp_byok'
+
+/* V0654 (ar), order gwo_6a3d3f679899629bf1b4542d (his report, the sessions' room seq 1083: the Pocket assistant's
+   conversation was gone when he came back): ONE conversation for Pocket's panel and the desktop dock, kept for this
+   browser session (sessionStorage), across moves in the app and reloads; Clear empties it, and signing out removes it
+   (stores/auth.ts), like the personal key, which stays where it was (localStorage, tp_byok). Every write re-reads the
+   stored conversation first and tells the other open surfaces, so an answer that arrives after the panel was left is
+   there when it is opened again, and one surface never writes over what another added. */
+export const CONVERSATION_KEY = 'tp_assistant_conv'
+/** ...and the brain it was talking to, so a question after a return goes where the last one went */
+export const BRAIN_KEY = 'tp_assistant_brain'
+const CONVERSATION_KEPT = 60
+const CONVERSATION_EVENT = 'tp-assistant-conv'
+
+function isMsg(m: any): m is AssistantMsg {
+  return !!m && typeof m.id === 'number' && (m.role === 'user' || m.role === 'assistant') && typeof m.text === 'string'
+}
+
+/** The kept conversation, or null when this browser keeps nothing (storage blocked): then the page's own list holds. */
+export function readConversation(): AssistantMsg[] | null {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(CONVERSATION_KEY) || '[]')
+    return Array.isArray(v) ? v.filter(isMsg) : []
+  } catch { return null }
+}
+
+function readBrain(): Brain {
+  try {
+    const v = sessionStorage.getItem(BRAIN_KEY)
+    return v === 'bridge' || v === 'byo' ? v : 'grammar'
+  } catch { return 'grammar' }
+}
+
+function saveConversation(list: AssistantMsg[]) {
+  try {
+    if (list.length) sessionStorage.setItem(CONVERSATION_KEY, JSON.stringify(list.slice(-CONVERSATION_KEPT)))
+    else sessionStorage.removeItem(CONVERSATION_KEY)
+  } catch { /* a full or blocked storage keeps it for this page only */ }
+  try { window.dispatchEvent(new CustomEvent(CONVERSATION_EVENT, { detail: list })) } catch { /* no window */ }
+}
 
 /* Local interpolation: the composable resolves its own templates through the
    two-argument t() (fallback guaranteed) and fills them here — never
@@ -62,11 +101,23 @@ export function useAssistantBrains(opts: {
     .filter(Boolean))))
   const speak = (t: string) => { try { opts.speak?.(t) } catch { /* tts optional */ } }
 
-  const brain = ref<Brain>('grammar')
+  // V0654 (ar): the brain chosen is kept for the browser session with the conversation (Commands until one is chosen,
+  // and again when the personal bridge is not there for this caller)
+  const brain = ref<Brain>(readBrain())
+  watch(brain, (b) => { try { sessionStorage.setItem(BRAIN_KEY, b) } catch { /* storage blocked */ } })
   const status = ref<any>(null)
   const busy = ref(false)
-  const msgs = ref<AssistantMsg[]>([])
-  let mid = 0
+  const msgs = ref<AssistantMsg[]>(readConversation() || [])
+  let mid = msgs.value.reduce((n, m) => Math.max(n, m.id), 0)
+  // V0654 (ar): another surface (or this one, before it was left) wrote the conversation: show what it holds now
+  const onConversation = (e: Event) => {
+    const list = (e as CustomEvent).detail
+    if (!Array.isArray(list) || list === msgs.value) return
+    msgs.value = list.filter(isMsg)
+    mid = msgs.value.reduce((n, m) => Math.max(n, m.id), mid)
+  }
+  try { window.addEventListener(CONVERSATION_EVENT, onConversation) } catch { /* no window */ }
+  if (getCurrentScope()) onScopeDispose(() => { try { window.removeEventListener(CONVERSATION_EVENT, onConversation) } catch { /* ok */ } })
   /* The example COMMAND stays English (the parser only matches English — a
      translated example would not work); only the gloss after the dash moves. */
   // the stake example only where a stake can be opened (registry-config's staking_enabled, as the stake sheet's door;
@@ -128,11 +179,23 @@ export function useAssistantBrains(opts: {
 
   async function loadStatus() {
     try { status.value = (await apiClient.get('/assistant/status')).data } catch { status.value = null }
+    if (brain.value === 'bridge' && !status.value?.bridge?.enabled) brain.value = 'grammar'   // V0654 (ar)
   }
 
   function push(m: Omit<AssistantMsg, 'id'>) {
-    msgs.value.push({ ...m, id: ++mid })
+    // V0654 (ar): onto the conversation as kept now (another surface may have added to it since this one read it)
+    const base = readConversation() ?? msgs.value
+    mid = base.reduce((n, x) => Math.max(n, x.id), mid) + 1
+    const next = [...base, { ...m, id: mid }]
+    msgs.value = next
+    saveConversation(next)
     try { opts.onPush?.() } catch { /* scroll is a nicety */ }
+  }
+
+  /** V0654 (ar): empty the conversation, here and wherever else it shows in this browser session. */
+  function clearConversation() {
+    msgs.value = []
+    saveConversation([])
   }
 
   function openDoor(d: Door) {
@@ -232,5 +295,6 @@ export function useAssistantBrains(opts: {
     } finally { busy.value = false }
   }
 
-  return { brain, status, busy, msgs, caps, brainLabel, brainNote, byoKey, saveByoKey, loadCtx, loadStatus, handle, openDoor }
+  return { brain, status, busy, msgs, caps, brainLabel, brainNote, byoKey, saveByoKey, loadCtx, loadStatus, handle, openDoor,
+    clearConversation }
 }

@@ -8,7 +8,7 @@
 and the federation suite's). When your change touches the test suite itself (anything under api_tests/), the two runs
 cannot be compared, because a changed test is not evidence about the code; then each flow needs a THIRD report,
 --control: the NEW suite run on the UNMODIFIED release images (build the suite change alone, put it on the sandbox, run),
-given in the same order. The rules (§REVIEWLANE): the suite change turns no existing tool red on the release; the new
+given in the same order. The rules: the suite change turns no existing tool red on the release; the new
 tools may be red there, which is your feature's own tests failing before the feature exists; on your change the same
 suite holds no new red, and every one of those reds is green. Red then green, in one archive.
 It writes dist/contribution-<time>.tar.gz in the kit holding:

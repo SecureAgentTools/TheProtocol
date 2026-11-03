@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Can the internet reach this frame? (§EXTREACH design A, agentvault2-5b, 2026-10-14)
+"""Can the internet reach this frame?
 
 A peer federates with a frame only through four public lanes: the console (443), the federation gateway (8443), the
 SPIRE bundle endpoint (8444) and the ledger gateway (8445). From this host nothing can tell whether the internet gets

@@ -114,8 +114,9 @@ nano .env.operator
 # 5. launch
 docker compose -f docker-compose.standalone.yml --env-file .env.operator up -d
 
-# 6. after about two minutes, read the first admin's password, printed once
-docker logs my-registry-registry 2>&1 | grep -A3 "FIRST-BOOT ADMIN PASSWORD"
+# 6. after about two minutes, read the first admin's password from the file its log names, then delete the file
+docker exec my-registry-registry cat /app/data/first-boot-admin-password   # the first admin's password
+docker exec my-registry-registry rm /app/data/first-boot-admin-password    # once you have it
 
 # 7. check the registry
 curl -s http://localhost:8000/health        # {"status":"ok", ...}

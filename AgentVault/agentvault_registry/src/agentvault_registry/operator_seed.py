@@ -38,6 +38,8 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, text
 from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
+# V0654 (aq), CodeQL #381: a generated first-boot password goes to a 0600 file, as prod_seed's ((am) item 4)
+from agentvault_registry.prod_seed import FIRST_PASSWORD_FILE_DEFAULT, write_first_password
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("operator_seed")
@@ -113,7 +115,9 @@ async def seed():
     registry_name = os.environ.get("REGISTRY_NAME", "my-registry")
     slug = slugify(registry_name)
     # Optional chosen-admin overrides: FIRST_ADMIN_EMAIL / FIRST_ADMIN_PASSWORD / FIRST_ADMIN_NAME.
-    # Unset → derived email + random password (the default self-serve behavior).
+    # Unset → derived email + random password (the default self-serve behavior), the password written to
+    # FIRST_ADMIN_PASSWORD_FILE (mode 600, before the account exists); the log names the file, never the password.
+    # V0654 (aq), CodeQL #381: the banner used to print it, into the container's log.
     admin_email = os.environ.get("FIRST_ADMIN_EMAIL") or f"admin@{slug}.dev"
     env_password = os.environ.get("FIRST_ADMIN_PASSWORD")
     password = env_password or secrets.token_urlsafe(20)
@@ -138,6 +142,10 @@ async def seed():
             logger.info(f"operator_seed: Operator admin ({email_for_log(admin_email)}) already exists — skipping.")
             await engine.dispose()
             return
+
+        # ── The generated password, persisted before the account exists (a failed write leaves no account) ──
+        password_file = None if env_password else write_first_password(
+            os.environ.get("FIRST_ADMIN_PASSWORD_FILE") or FIRST_PASSWORD_FILE_DEFAULT, password)
 
         # ── Insert ──
         # §pass65 (2026-05-22) — set ALL admin sub-flags. is_admin=true alone
@@ -166,19 +174,19 @@ async def seed():
             logger.info(f"operator_seed: the admin's acceptance is recorded: {document} {version} at "
                         f"{at.isoformat()} ({VIA_FRAME_STANDUP}{', ' + by if by else ''})")
 
-        # ── Print first-boot banner (only echo the password when it was randomly generated) ──
+        # ── Print first-boot banner: it names the file the generated password is in, never the password ──
         if env_password:
             print(f"\noperator_seed: admin {admin_email} created with the password from FIRST_ADMIN_PASSWORD.\n")
         else:
             banner = "\n".join([
                 "",
                 "=" * 60,
-                f"  FIRST-BOOT ADMIN PASSWORD: {password}",
+                f"  FIRST-BOOT ADMIN PASSWORD: in {password_file} (mode 600), inside the registry's container",
                 "",
                 f"  Email:    {admin_email}",
                 f"  Registry: {registry_name}",
                 "",
-                "  CHANGE THIS PASSWORD BEFORE CONNECTING TO THE INTERNET",
+                "  Read it once, CHANGE IT BEFORE CONNECTING TO THE INTERNET, then delete the file",
                 "=" * 60,
                 "",
             ])

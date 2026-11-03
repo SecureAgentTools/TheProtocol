@@ -34,6 +34,12 @@ as a plain member (invited by D, accepted by M); S, a third, is a stranger to it
     updateChatBoard           D writes it against the revision read: the next read shows the text at the next revision
                               refused: a write against the replaced revision ("the board changed since you read it"),
                               the board still D's text; M, whom the owner did not name ("keeps its status board")
+  (V0653's (w), V0654 (at) item 16, Guild order gwo_a4be529fdaa3e5f38143606e: in the pair proof since V0653)
+    how each line was sent    D makes a developer key of its own; D signed in, the key and A each post one line in the
+                              room; read back (readThread), each says how it was sent: session, api_key, agent
+                              refused: the key deciding A's request ("an API key cannot decide it", 403, whatever the
+                              key's scopes); read back, the request is still pending. The key is revoked after the run
+                              and never written into a row.
 The approvals are denied (deny never asks a phone); the organization is deleted after; the developers and the agent are
 removed (Throwaways). Nothing moves money."""
 from __future__ import annotations
@@ -46,7 +52,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from agentvault_registry.api_tests.contracts.earned_ad_ephemeral import EPHEMERAL_ENV, ephemeral_target
 from agentvault_registry.api_tests.contracts.enum_filter import PREFIX as ENUM_PREFIX
 from agentvault_registry.api_tests.contracts.earned_fixtures import (
-    Throwaways, lc, refusal_step, said, step, unmeasured,
+    Throwaways, lc, refusal_row, refusal_step, said, step, unmeasured,
 )
 
 UNREAD = "theprotocol_getChatUnreadCount"
@@ -67,7 +73,17 @@ STATUS_WANT = ("pending", "decided", "all")          # the vocabulary this check
 MEMBER_LIST_ROW = "chat: a member who is not a decider reads a room's requests, can_decide false"
 MEMBER_WAIT_ROW = "chat: a member who is not a decider waits on none of a room's requests"
 MEMBER_BOARD_ROW = "chat: a member the owner did not name reads the board, can_edit false"
-ROWS = {MEMBER_LIST_ROW: "3", MEMBER_WAIT_ROW: "3", MEMBER_BOARD_ROW: "3"}
+# V0654 (at), item 16: V0653's (w), how each line was sent, and a developer key that never decides
+DECIDE = "theprotocol_decideChatApproval"
+SENT_WITH_ROW = "chat: each line says how it was sent: signed in (session), a developer key (api_key), an agent (agent)"
+KEY_UNDECIDED_ROW = "chat: a request a developer key tried to decide stays pending"
+KEY_DECIDE_WHAT = "with a developer key"
+SENT_WITH_WANT = {"session": "session", "api_key": "api_key", "agent": "agent"}
+# the row's evidence names each line by how it was sent, in words the run record keeps: a key holding "session" or
+# "api_key" is redacted by the audit sanitizer (result_excerpt), which hid the very values the row reads
+LINES = {"session": "signed in", "api_key": "with a developer key", "agent": "as the agent"}
+SENT_WITH_READ = {LINES[k]: v for k, v in SENT_WITH_WANT.items()}
+ROWS = {MEMBER_LIST_ROW: "3", MEMBER_WAIT_ROW: "3", MEMBER_BOARD_ROW: "3", SENT_WITH_ROW: "3", KEY_UNDECIDED_ROW: "3"}
 NOT_EPHEMERAL = (f"the run opens an organization room of its own only where its target is torn down after the run "
                  f"({EPHEMERAL_ENV}=true: the nightly and proof pairs); a room stays after its organization is deleted")
 FILE_TEXT = "The MCP tester's shared file.\nSecond line: read back word for word.\n"
@@ -407,6 +423,59 @@ async def _board(rpc: Any, parse: Any, r: Dict[str, Any], tag: str, outcomes: Di
                        "a member the owner did not name", codes=(403,), text="keeps its status board")
 
 
+async def _sent_with(rpc: Any, parse: Any, bag: Any, r: Dict[str, Any], tag: str, outcomes: Dict[str, dict]) -> None:
+    """V0653's (w) (V0654 (at), item 16): D makes a developer key of its own; D signed in, the key and A each post one
+    line in the room; read back, each says how it was sent. Then A asks an approval and the key tries to decide it:
+    403 with the rule's sentence, and the request stays pending. The key is never written into a row, nor said: a
+    refused creation names only its HTTP status."""
+    conv, djwt, ajwt = r["conv"], r["djwt"], r["ajwt"]
+    keyed = [SENT_WITH_ROW, KEY_UNDECIDED_ROW, refusal_row(DECIDE, KEY_DECIDE_WHAT)]
+    okk, made, code = await _call(rpc, parse, "theprotocol_createApiKey", {"key_name": f"mcp-earn-sentwith-{tag}"}, djwt)
+    info = made.get("api_key_info") if isinstance(made.get("api_key_info"), dict) else {}
+    if info.get("id") is not None:
+        r["key_id"] = info.get("id")                                   # revoked after the run (the lifecycle's finally)
+    key = str(made.get("plain_api_key") or "") if okk else ""
+    if not key:
+        return _nm(outcomes, f"no developer key of the run's own (createApiKey HTTP {code})", keyed)
+    refs = {k: f"mcp-earn-sentwith-{k}-{tag}" for k in SENT_WITH_WANT}
+    t0 = time.time()
+    refused: Dict[str, str] = {}
+    for kind, bearer, extra in (("session", djwt, {}), ("api_key", key, {}), ("agent", ajwt, {"agent_jwt": ajwt})):
+        ok, ans, c = await _call(rpc, parse, "theprotocol_sendChatMessage", {
+            **extra, "conversation_id": conv, "body": f"MCP tester: a line sent as {kind} ({tag})",
+            "client_ref": refs[kind]}, bearer)
+        if not ok:
+            refused[LINES[kind]] = f"HTTP {c}: {said(ans)}"
+    okr, thread, c = await _call(rpc, parse, "theprotocol_readThread", {"conversation_id": conv, "limit": 50}, djwt)
+    msgs = thread.get("messages") if isinstance(thread.get("messages"), list) else []
+    seen = {m.get("client_ref"): m.get("sent_with", "(no sent_with)") for m in msgs if isinstance(m, dict)}
+    got = {LINES[k]: seen.get(refs[k], "(no such line)") for k in SENT_WITH_WANT}
+    _row(outcomes, SENT_WITH_ROW, not refused and okr and got == SENT_WITH_READ, c, t0,
+         f"how each line was sent, read back: {got} (want {SENT_WITH_READ})"
+         + (f"; refused: {refused}" if refused else "") + ("" if okr else f"; readThread HTTP {c}: {said(thread)}"),
+         {"sent_with": got})
+    ok, asked, c = await _call(rpc, parse, "theprotocol_requestChatApproval", {
+        "agent_jwt": ajwt, "conversation_id": conv, "title": f"MCP tester: a developer key must not decide this ({tag})",
+        "client_ref": f"mcp-earn-keydecide-{tag}", "reason": "The MCP tester asks, for a developer key to be refused.",
+        "expires_in_seconds": 600}, ajwt)
+    a1 = asked.get("approval") if isinstance(asked.get("approval"), dict) else asked
+    aid = str((a1 or {}).get("id") or "") if ok else ""
+    if not aid:
+        return _nm(outcomes, f"no approval request of the run's own for the key to try (requestChatApproval HTTP {c}: "
+                             f"{said(asked)})", keyed[1:])
+    r["key_aid"] = aid
+    await refusal_step(rpc, parse, DECIDE, "3", {"conversation_id": conv, "decision": "approve", "approval_ids": [aid],
+                                                 "note": "the MCP tester's developer key must not decide this"},
+                       key, outcomes, KEY_DECIDE_WHAT, codes=(403,), text="an API key cannot decide it")
+    t0 = time.time()
+    oks, status, c = await _call(rpc, parse, "theprotocol_getChatApprovalStatus", {"approval_id": aid}, djwt)
+    a2 = status.get("approval") if isinstance(status.get("approval"), dict) else status
+    st = str((a2 or {}).get("status") or "") if oks else ""
+    _row(outcomes, KEY_UNDECIDED_ROW, st == "pending", c, t0,
+         f"after a developer key tried to approve it the request reads {st or 'nothing'} (HTTP {c}; want pending)",
+         {"status": st})
+
+
 async def lifecycle_earn_chat_tools(rpc: Any, parse: Any, bag: Any, outcomes: Dict[str, dict]) -> None:
     """The ten V0652 chat tools in an organization room of the run's own (the module docstring)."""
     if not ephemeral_target():
@@ -422,17 +491,20 @@ async def lifecycle_earn_chat_tools(rpc: Any, parse: Any, bag: Any, outcomes: Di
         if not r or not r.get("conv"):
             return None
         for part in (_phone_set(rpc, parse, bag, r, tag, outcomes), _progress(rpc, parse, r, tag, outcomes),
-                     _board(rpc, parse, r, tag, outcomes)):
+                     _board(rpc, parse, r, tag, outcomes), _sent_with(rpc, parse, bag, r, tag, outcomes)):
             try:
                 await part
             except Exception as e:                                     # noqa: BLE001 - one part's crash, named
                 lc()._bugfind(outcomes, f"chat: the V0652 tools' lifecycle part {getattr(part, '__name__', '?')}", "2",
                               f"{type(e).__name__}: {str(e)[:200]}")
     finally:
-        if r and r.get("aid"):
-            await _call(rpc, parse, "theprotocol_decideChatApproval",
-                        {"conversation_id": r["conv"], "decision": "deny", "approval_ids": [r["aid"]],
-                         "note": "the MCP tester's own request, closed after its run"}, r["djwt"])
+        for k in ("aid", "key_aid"):
+            if r and r.get(k):
+                await _call(rpc, parse, "theprotocol_decideChatApproval",
+                            {"conversation_id": r["conv"], "decision": "deny", "approval_ids": [r[k]],
+                             "note": "the MCP tester's own request, closed after its run"}, r["djwt"])
+        if r and r.get("key_id") is not None:
+            await _call(rpc, parse, "theprotocol_revokeApiKey", {"key_id": r["key_id"]}, r["djwt"])
         if r and r.get("oid"):
             await _call(rpc, parse, "theprotocol_deleteOrganization", {"org_id": r["oid"]}, r["djwt"])
         await t.close()

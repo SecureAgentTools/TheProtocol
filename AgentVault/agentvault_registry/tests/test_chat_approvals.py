@@ -260,6 +260,7 @@ def room(monkeypatch):
 
     async def _insert(db, conv, my_row, sender, kind, body, card, client_ref, reply_to=None, **kw):
         state["cards"].append((card, client_ref, reply_to, kw.get("rail_author")))
+        state.setdefault("sent_with", []).append(getattr(sender, "sent_with", "no such field"))   # V0654 (aq)
         return SimpleNamespace(id="m-" + client_ref), False
 
     async def _recipients(db, conv, sender):
@@ -363,6 +364,17 @@ def test_approve_all_decides_only_the_pending_ones_and_posts_one_card_each(room)
     assert {c[1] for c in cards} == {"aprdec-apr_1", "aprdec-apr_2"} and all(c[3] for c in cards)
     assert {c[2] for c in cards} == {"msg-apr_1", "msg-apr_2"}            # a reply to each request
     assert room.state["audit"] and room.state["audit"][0]["action"] == "approval.approved"
+
+
+def test_the_decision_card_says_it_was_decided_signed_in(room):
+    # V0654 (aq) (session-lead, the sessions' room seq 1113): the card the registry posts for a decision carries the
+    # decision's own credential (his click: "session"). BASE (V0653): None, so every watcher read his decisions as
+    # "(no credential recorded)" (seq 1112).
+    db = _DB([_row("apr_s1"), _row("apr_s2")], members={OWNER: ("owner", False)})
+    r = room(db, OWNER, {"decision": "approve", "approval_ids": ["apr_s1", "apr_s2"]})
+    assert r.status_code == 200, r.text
+    assert room.state["sent_with"] == ["session", "session"]
+    assert db.rows["apr_s1"].decision_via["credential"] == "session"          # the card says what the record says
 
 
 def test_an_expired_request_cannot_be_approved(room):

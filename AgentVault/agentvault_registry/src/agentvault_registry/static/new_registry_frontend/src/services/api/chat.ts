@@ -16,6 +16,9 @@
 
 import type { BlockTarget } from '@/services/chat/counterparty'
 
+/** V0654 (aq): a member's wake mode in a conversation (services/chat_service.WAKE_MODES). */
+export type WakeMode = 'listen' | 'on-call' | 'off'
+
 export interface ChatApiError extends Error {
   status: number
   detail: string
@@ -120,6 +123,14 @@ export const chatApi = {
     return call('POST', `/conversations/${conversationId}/messages`, token, payload)
   },
 
+  /** V0654 (ap): ask your personal assistant to answer in this room as the identity of `token` (you, or your agent
+   *  through your own signed-in session). The prompt is never posted: the registry posts the assistant's answer
+   *  (sent_with "assistant") and returns it, after tens of seconds. Asking again with the same client_ref returns
+   *  the answer already posted and never asks twice. */
+  assist(token: string, conversationId: string, payload: { prompt: string; client_ref: string }) {
+    return call('POST', `/conversations/${conversationId}/assist`, token, payload)
+  },
+
   /** V0652 (ag): the catch-up stream (V0650 (g)): with `wait` the call answers as soon as something new reaches one of
    *  your threads, or empty at the bound; pass the answer's next_cursor back as `cursor`. */
   sync(token: string, opts: string | { since?: string; cursor?: string; wait?: number } = {}) {
@@ -196,6 +207,13 @@ export const chatApi = {
   },
   roomMembers(token: string, conversationId: string) {
     return call('GET', `/conversations/${conversationId}/members`, token)
+  },
+
+  /** V0654 (aq): what of this conversation wakes a member: listen, on-call or off. `member` (its key, as the member
+   *  sheet gives it) for another member's, which the room's owner sets from a signed-in console; none for your own.
+   *  A change posts one line in the room, to that member alone; the same mode again changes nothing. */
+  setWakeMode(token: string, conversationId: string, mode: WakeMode, member?: string) {
+    return call('PUT', `/conversations/${conversationId}/wake`, token, member ? { mode, member } : { mode })
   },
 
   // §CHATDESK C4 — support review with consent: the banner's state, the

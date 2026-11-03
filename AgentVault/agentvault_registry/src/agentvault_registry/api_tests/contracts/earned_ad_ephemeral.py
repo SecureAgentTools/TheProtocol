@@ -493,6 +493,13 @@ async def _fee_held(bag: Any, parse: Any) -> Optional[Decimal]:
 
 
 FEE_TRANSFER = Decimal("4")   # the frame's 0.5 % transfer fee on it is 0.02, twice FEE_UNIT
+# V0654 (at), item 19 (Guild order gwo_a4be529fdaa3e5f38143606e): how many times the run pays a fee of its own and tries
+# the payout. Every fund-agent on the frame (/api/v1/teg/treasury/fund-agent -> the TEG's /admin/reward-fund) draws on
+# the fee account FIRST (the TEG's DEFAULT_WATERFALL: fee_collector, then treasury), so while the suites fund their
+# throwaways side by side the run's 0.02 can be gone before its read (V0653's first pair proof nt261102x1: the account
+# read 0E-18 right after the run paid, and the row was NOT MEASURED on that one read).
+PAYOUT_TRIES = 4
+PAYOUT_PAUSE_SEC = 3.0
 
 
 def _drained(row: Optional[Dict[str, Any]]) -> bool:
@@ -502,14 +509,16 @@ def _drained(row: Optional[Dict[str, Any]]) -> bool:
 
 
 async def _pay_a_fee(rpc: Any, parse: Any, bag: Any, t: Any, dev: Dict[str, Any], ag: Dict[str, Any],
-                     tag: str) -> Optional[str]:
+                     tag: str, ag2: Optional[Dict[str, Any]] = None) -> Optional[str]:
     """§MCPTEST30 (V0651, tester batch 3 item 3, Guild order gwo_5b6bc38b2e17c317754d6e29): a fresh pair's fee account
     holds less than FEE_UNIT when this lifecycle reaches it (the trial pairs nt261031x3 and nt261031x4), so the payout was
     never measured. The run pays a fee of its own first: FEE_TRANSFER and a unit from the treasury to its agent
     (fund-agent, a transfer), then FEE_TRANSFER from its agent to a second agent of its own (transferUnits: the frame's
     transfer fee goes to the fee account). Both agents give back what they hold when the run closes. Returns None, or
-    why no fee could be paid (the payout is then NOT MEASURED, named)."""
-    ag2 = await t.agent(dev, "fee")
+    why no fee could be paid (the payout is then NOT MEASURED, named). V0654: `ag2`, the second agent made once for all
+    of the run's tries (one throwaway, not one per try)."""
+    if ag2 is None:
+        ag2 = await t.agent(dev, "fee")
     if ag2.get("why"):
         return f"no second agent of the run's own to pay a fee to: {ag2['why']}"
     ok, ans, code = await _admin(bag, parse, FUND, {"method": "POST", "endpoint": "/api/v1/teg/treasury/fund-agent",
@@ -564,47 +573,60 @@ async def lifecycle_earn_ephemeral_value(rpc: Any, parse: Any, bag: Any, outcome
                 await _moved(rpc, parse, bag, outcomes, RECEIVE, did, owner, before, -ONE)
         # §MCPTEST30 (V0651, a fix the live trial nt261031x9 found): the run pays its own fee every time, right before
         # the payout. The suites run side by side on a pair, and the reward rails draw on the fee account first, so an
-        # account that read enough a moment earlier was empty at the payout ("Insufficient fee_collector balance")
-        paid_why = await _pay_a_fee(rpc, parse, bag, t, dev, ag, tag)
-        fee = await _fee_held(bag, parse)
-        if fee is None or fee < FEE_UNIT:
+        # account that read enough a moment earlier was empty at the payout ("Insufficient fee_collector balance").
+        # V0654 (at), item 19: the same draw can empty it before the read, so an empty read or a payout refused as
+        # drained is paid for again and tried again, up to PAYOUT_TRIES times; only then is the row NOT MEASURED, with
+        # every read named. A refusal while the account still reads enough stays red (the read and the payout disagree).
+        fee_agent = await t.agent(dev, "fee")
+        ok, fee, before, paid_why, drained, reads, ended = False, None, None, None, 0, [], "tries"
+        for i in range(PAYOUT_TRIES):
+            n = "" if i == 0 else ("-again" if i == 1 else f"-again{i}")
+            if i:
+                await asyncio.sleep(PAYOUT_PAUSE_SEC)
+            paid_why = await _pay_a_fee(rpc, parse, bag, t, dev, ag, f"{tag}{n}", ag2=fee_agent)
+            fee = await _fee_held(bag, parse)
+            reads.append(fee)
+            if paid_why is not None or fee is None:
+                ended = "unpaid"
+                break
+            if fee < FEE_UNIT:
+                continue                       # drawn on before the read: pay again
+            before = await _settled(rpc, parse, bag, did, owner)
+            ok, _ = await effect(bag, parse, DISTRIBUTE, {"target_agent_did": did, "amount": str(FEE_UNIT),
+                                                          "reason": "manual_payout",
+                                                          "reference_id": f"mcp-earn-payout-{tag}{n}"}, outcomes)
+            if ok:
+                ended = "paid"
+                break
+            if not _drained(outcomes.get(effect_name(DISTRIBUTE))):
+                ended = "refused"              # refused for another reason: the row says which, and stays red
+                break
+            now = await _fee_held(bag, parse)
+            if now is None or now >= FEE_UNIT:
+                ended = "refused"              # refused while the account reads enough: a finding, kept red
+                break
+            drained += 1                       # drawn on between the read and the payout: pay again
+        if ended == "unpaid":
             effect_unmeasured(outcomes, DISTRIBUTE, f"this frame's fee account holds {fee} (read by getFeeCollectorInfo), "
                                                     f"under the {FEE_UNIT} the step pays out"
                                                     + (f", and the run's own fee was not paid: {paid_why}" if paid_why
                                                        else ""))
-        else:
-            before = await _settled(rpc, parse, bag, did, owner)
-            ok, _ = await effect(bag, parse, DISTRIBUTE, {"target_agent_did": did, "amount": str(FEE_UNIT),
-                                                          "reason": "manual_payout",
-                                                          "reference_id": f"mcp-earn-payout-{tag}"}, outcomes)
-            if not ok and _drained(outcomes.get(effect_name(DISTRIBUTE))):
-                now = await _fee_held(bag, parse)
-                if now is not None and now < FEE_UNIT:
-                    # another rail drew on the account between the read and the payout: pay again, retry once
-                    paid_why = await _pay_a_fee(rpc, parse, bag, t, dev, ag, f"{tag}-again")
-                    fee = await _fee_held(bag, parse)
-                    if paid_why is None and fee is not None and fee >= FEE_UNIT:
-                        before = await _settled(rpc, parse, bag, did, owner)
-                        ok, _ = await effect(bag, parse, DISTRIBUTE, {
-                            "target_agent_did": did, "amount": str(FEE_UNIT), "reason": "manual_payout",
-                            "reference_id": f"mcp-earn-payout-{tag}-again"}, outcomes)
-                    if not ok and _drained(outcomes.get(effect_name(DISTRIBUTE))):
-                        effect_unmeasured(outcomes, DISTRIBUTE, (
-                            f"the fee account was drawn on between the read and the payout twice (it read {fee} "
-                            f"and then {await _fee_held(bag, parse)}): another rail on this frame pays out of it "
-                            f"while the suites run, so the payout could not be measured"))
-                # an account that still reads enough after the refusal keeps the row red: the read and the payout
-                # disagree, which is a finding
-            if ok:
-                await _moved(rpc, parse, bag, outcomes, DISTRIBUTE, did, owner, before, FEE_UNIT)
-                after_fee = await _fee_held(bag, parse)
-                row = outcomes.get(effect_name(DISTRIBUTE)) or {}
-                if row.get("healthy") and (after_fee is None or abs((fee - after_fee) - FEE_UNIT) > Decimal("0.000001")):
-                    # other agents pay fees beside the run, so only a fee account that did not fall is a finding
-                    if after_fee is None or after_fee >= fee:
-                        lc()._bugfind(outcomes, effect_name(DISTRIBUTE), "admin_effect",
-                                      f"distributeFromFeeCollector: the fee account read {fee} before and {after_fee} "
-                                      f"after paying {FEE_UNIT} out")
+        elif ended == "tries":
+            effect_unmeasured(outcomes, DISTRIBUTE, (
+                f"the fee account was drawn on by another rail on each of the run's {PAYOUT_TRIES} tries, though the run "
+                f"paid a fee of its own before each (it read {', '.join(str(r) for r in reads)}; {drained} of the "
+                f"payouts were refused as drained): every fund-agent on this frame draws on the account first while "
+                f"the suites run, so the payout could not be measured"))
+        if ok:
+            await _moved(rpc, parse, bag, outcomes, DISTRIBUTE, did, owner, before, FEE_UNIT)
+            after_fee = await _fee_held(bag, parse)
+            row = outcomes.get(effect_name(DISTRIBUTE)) or {}
+            if row.get("healthy") and (after_fee is None or abs((fee - after_fee) - FEE_UNIT) > Decimal("0.000001")):
+                # other agents pay fees beside the run, so only a fee account that did not fall is a finding
+                if after_fee is None or after_fee >= fee:
+                    lc()._bugfind(outcomes, effect_name(DISTRIBUTE), "admin_effect",
+                                  f"distributeFromFeeCollector: the fee account read {fee} before and {after_fee} "
+                                  f"after paying {FEE_UNIT} out")
     finally:
         await t.close()
 

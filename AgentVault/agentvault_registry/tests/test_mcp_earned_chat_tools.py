@@ -21,6 +21,8 @@ from agentvault_registry.api_tests.contracts import earned_admin_dev
 from agentvault_registry.api_tests.contracts import earned_ad_chat_tools as C
 
 DEV, MEMBER, STRANGER, AGENT = "dev-jwt", "member-jwt", "stranger-jwt", "agent-jwt"
+KEY = "avreg_" + "offline-test-key-of-the-run"     # V0654 (at) item 16: D's developer key (a fake, never a real one)
+SENT_WITH = {DEV: "session", KEY: "api_key", AGENT: "agent"}
 DID = "did:theprotocol:sandbox-a:tools-agent"
 ROOM = "conv-org-room-7"
 
@@ -54,6 +56,8 @@ class _World:
         self.card: Optional[Dict[str, Any]] = None
         self.board = {"text": "", "rev": 0}
         self.member_joined = False
+        self.lines: Dict[str, str] = {}            # V0654 (at) item 16: client_ref -> how the line was sent
+        self.key_made = self.key_revoked = False
 
     def who(self, args: Dict[str, Any], jwt: str) -> str:
         return args.get("agent_jwt") or jwt
@@ -77,7 +81,13 @@ class _World:
             self.org_deleted = True
             return True, _body({"deleted": True}), "200"
         if tool == "theprotocol_sendChatMessage":
-            assert me == AGENT and args["conversation_id"] == ROOM and "kind" not in args
+            assert me in (AGENT, DEV, KEY) and args["conversation_id"] == ROOM and "kind" not in args
+            if me == KEY and not self.key_made:
+                return _no("401", "sendChatMessage returned HTTP 401: Could not validate credentials")
+            how = SENT_WITH[me]
+            if self.d.get("key_line_as_session") and me == KEY:
+                how = "session"
+            self.lines[args.get("client_ref") or f"line-{len(self.lines)}"] = how
             if not self.d.get("unread_stuck"):
                 self.unread[DEV] += 1
                 self.unread[MEMBER] += 1
@@ -120,10 +130,34 @@ class _World:
             items = [{"id": a} for a, s in self.approvals.items() if s == "pending"] if mine else []
             return True, _body({"items": items, "count": len(items)}), "200"
         if tool == "theprotocol_decideChatApproval":
+            if jwt == KEY:                         # V0653 (w): a key never decides, whatever its scopes
+                if not self.d.get("key_decides"):
+                    return _no("403", "decideChatApproval returned HTTP 403: an approval is decided in the console or in "
+                                      "Pocket, signed in; an API key cannot decide it")
+                for a in args["approval_ids"]:
+                    self.approvals[a] = "approved"
+                return True, _body({"decided": args["approval_ids"]}), "200"
             assert jwt == DEV and args["decision"] == "deny"
             for a in args["approval_ids"]:
                 self.approvals[a] = "denied"
             return True, _body({"decided": args["approval_ids"]}), "200"
+        if tool == "theprotocol_createApiKey":
+            assert jwt == DEV and args["key_name"].startswith("mcp-earn-sentwith-")
+            self.key_made = True
+            return True, _body({"plain_api_key": KEY, "api_key_info": {"id": 41, "key_name": args["key_name"]}}), "200"
+        if tool == "theprotocol_revokeApiKey":
+            assert jwt == DEV and args == {"key_id": 41}
+            self.key_revoked = True
+            return True, _body({"revoked": True}), "200"
+        if tool == "theprotocol_readThread":
+            assert jwt == DEV and args["conversation_id"] == ROOM
+            msgs = [{"client_ref": ref, **({} if self.d.get("sent_with_missing") else {"sent_with": how})}
+                    for ref, how in self.lines.items()]
+            return True, _body({"conversation_id": ROOM, "messages": msgs}), "200"
+        if tool == "theprotocol_getChatApprovalStatus":
+            assert jwt == DEV
+            return True, _body({"approval": {"id": args["approval_id"],
+                                             "status": self.approvals.get(args["approval_id"])}}), "200"
         if tool == C.POSTP:
             assert me == AGENT and args["state"] == "running" and len(args["steps"]) == 2
             self.card = {"id": "m-card", "author": AGENT, "state": "running", "rev": 0, "updates": []}
@@ -222,7 +256,8 @@ REFUSALS = ("refusal: getChatAttachment a file in a room the caller is not in",
             "refusal: updateChatProgress a card someone else posted",
             "refusal: updateChatProgress a closed card",
             "refusal: updateChatBoard a write against a revision already replaced",
-            "refusal: updateChatBoard a member the owner did not name")
+            "refusal: updateChatBoard a member the owner did not name",
+            "refusal: decideChatApproval with a developer key")
 
 
 def test_it_is_registered():
@@ -250,7 +285,12 @@ def test_a_pair_earns_all_ten_holds_every_rule_and_leaves_nothing(monkeypatch):
         assert out.get(name) and out[name]["healthy"], (name, out.get(name))
     assert w.opened == [DEV, AGENT, MEMBER] and w.member_joined
     assert w.board["rev"] == 1 and w.board["text"].startswith("MCP tester board ")
-    assert w.card["state"] == "passed" and list(w.approvals.values()) == ["denied", "denied"]
+    assert w.card["state"] == "passed" and list(w.approvals.values()) == ["denied", "denied", "denied"]
+    assert w.key_made and w.key_revoked, "the run's key is revoked after the run"
+    # the run record keeps what was read: no value redacted (a key named "session" or "api_key" would be)
+    assert out[C.SENT_WITH_ROW]["result_excerpt"] == {"sent_with": {"signed in": "session", "with a developer key":
+                                                                    "api_key", "as the agent": "agent"}}
+    assert KEY not in json.dumps(out, default=str), "the run's key is never written into a row"
     enum = out.get(C.ENUM_ROW)
     assert _ok(enum) and enum["measured_in"] and enum["result_excerpt"]["decided"] == ["apr_2"], enum
     assert w.org_deleted and _Throwaways.closed == 1
@@ -272,6 +312,11 @@ def test_a_pair_earns_all_ten_holds_every_rule_and_leaves_nothing(monkeypatch):
     ("file_leaks", "refusal: getChatAttachment a file in a room the caller is not in", "expected 4xx, got 200"),
     ("status_dropped", C.ENUM_ROW, "decided: ['apr_1', 'apr_2'] (want ['apr_2'])"),
     ("default_all", C.ENUM_ROW, "(none): ['apr_1', 'apr_2'] (want ['apr_1'])"),
+    # V0654 (at), item 16: V0653's (w)
+    ("sent_with_missing", C.SENT_WITH_ROW, "'signed in': '(no sent_with)'"),
+    ("key_line_as_session", C.SENT_WITH_ROW, "'with a developer key': 'session'"),
+    ("key_decides", "refusal: decideChatApproval with a developer key", "expected 4xx, got 200"),
+    ("key_decides", C.KEY_UNDECIDED_ROW, "reads approved"),
 ])
 def test_each_defect_is_red_on_its_own_row(monkeypatch, defect, row, needle):
     monkeypatch.setenv(C.EPHEMERAL_ENV, "true")
@@ -313,6 +358,24 @@ def test_without_a_transport_into_the_target_the_file_is_not_measured_and_says_s
     assert not _ok(out[C.ATTACH]) and "bag.http_in_target" in str(out[C.ATTACH].get("skip_reason"))
     for tool in (C.UNREAD, C.MARK, C.LISTA, C.WAITING, C.POSTP, C.UPDP, C.HIST, C.BOARD, C.WBOARD):
         assert _ok(out.get(tool)), (tool, out.get(tool))
+
+
+def test_a_key_the_registry_never_made_leaves_the_rows_not_measured_and_says_why(monkeypatch):
+    # V0654 (at), item 16: createApiKey refused (a target before V0653's keyed writes would be red at the key's line)
+    monkeypatch.setenv(C.EPHEMERAL_ENV, "true")
+    w = _World()
+    real = w.public
+
+    async def no_key(tool, args, jwt="", timeout=20):
+        if tool == "theprotocol_createApiKey":
+            return False, _body({"error": "createApiKey returned HTTP 503: try again"}), "503"
+        return await real(tool, args, jwt=jwt, timeout=timeout)
+    w.public = no_key                                                  # type: ignore[assignment]
+    out = _run(w, monkeypatch)
+    for row in (C.SENT_WITH_ROW, C.KEY_UNDECIDED_ROW, "refusal: decideChatApproval with a developer key"):
+        assert not _ok(out.get(row)) and "no developer key of the run's own (createApiKey HTTP 503)" in str(
+            out[row].get("skip_reason")), (row, out.get(row))
+    assert not w.key_revoked
 
 
 def test_the_multipart_body_carries_one_file_whole():

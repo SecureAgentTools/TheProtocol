@@ -527,7 +527,8 @@ const props = withDefaults(defineProps<{
   /** §OURSTATE-6 — the token's LIVE status, when the thread could read it.
    *  Null means "not re-read", never "unsettled": absence is not a verdict. */
   liveSettlement?: string | null
-  /** V0650 (l) — an approval request's live status (pending | approved | denied | expired), read from the thread. */
+  /** V0650 (l) — an approval request's live status (pending | approved | denied | expired | withdrawn: V0654 (aq)),
+   *  read from the thread. */
   liveApproval?: string | null
   /** V0652 (aa): how many times the card was updated in place (0: as posted), and when the last update landed. */
   rev?: number
@@ -595,6 +596,7 @@ const approvalStatusWord = computed(() => ({
   chosen: t('ourstate.card.choiceChosen', 'Chosen'),
   denied: t('ourstate.card.approvalDenied', 'Denied'),
   expired: t('ourstate.approvals.expired', 'expired'),
+  withdrawn: t('ourstate.card.approvalWithdrawn', 'withdrawn by the agent that asked'),   // V0654 (aq), item 18
 } as Record<string, string>)[props.liveApproval || ''] || t('ourstate.card.approvalPending', 'waiting for a decision'))
 
 function fmtWhen(iso: string): string {
@@ -819,7 +821,8 @@ const shorten = (s: string) => !s ? '' : s.length > 18 ? s.slice(0, 8) + '…' +
 /* V0650 (l): an approval request's live status beside its head */
 .osc-approval-status { font-weight: 500; opacity: 0.85; }
 .osc-approval-status[data-status='approved'] { color: var(--nc-success, #2fb36d); opacity: 1; }
-.osc-approval-status[data-status='denied'], .osc-approval-status[data-status='expired'] { opacity: 0.65; }
+.osc-approval-status[data-status='denied'], .osc-approval-status[data-status='expired'],
+.osc-approval-status[data-status='withdrawn'] { opacity: 0.65; }
 .osc-deal-title { font-size: .92rem; font-weight: 600; }
 .osc-deal-ms { list-style: disc; margin: 2px 0 0; padding-left: 18px; font-size: .78rem; opacity: .75; }
 .osc-deal-note { font-size: .8rem; opacity: .7; margin: 4px 0 0; white-space: pre-wrap; }

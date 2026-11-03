@@ -2059,13 +2059,14 @@ async def provision_cloud_operator(
         import docker as _dk_logs
         _dk_client = _dk_logs.from_env()
         _reg_container = _dk_client.containers.get(f"cloud-op-{safe}-registry")
-        _logs = _reg_container.logs(tail=5000).decode(errors="replace")
-        match = re.search(r'FIRST-BOOT ADMIN PASSWORD:\s*(\S+)', _logs)
-        if match:
-            admin_password = match.group(1)
-            logger.info(f"[CLOUD-PROV] Admin credentials captured: {email_for_log(admin_email)}")
+        # V0654 recut: the banner names the 0600 file the password is in (operator_seed, CodeQL #381); the old
+        # printed-password pattern took the word "in" for it (core/first_boot asks the file form first)
+        from ..core import first_boot as _first_boot
+        admin_password, _how = _first_boot.from_sdk_container(_reg_container, tail=5000)
+        if admin_password:
+            logger.info(f"[CLOUD-PROV] Admin credentials captured ({_how}): {email_for_log(admin_email)}")
         else:
-            logger.warning("[CLOUD-PROV] Could not parse first-boot password from logs")
+            logger.warning(f"[CLOUD-PROV] Could not capture the first-boot password: {_how}")
     except Exception as e:
         logger.warning(f"[CLOUD-PROV] Credential capture failed: {e}")
 

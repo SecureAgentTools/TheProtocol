@@ -7,6 +7,10 @@
   <div class="pa-wrap">
     <div class="pa-head">
       <h1 class="pa-title"><Icon name="mdi:robot-outline" /> {{ t('pocket.assistant.title', 'Assistant') }}</h1>
+      <!-- V0654 (ar): the conversation stays while you move around the app and over a reload, until Clear or sign-out -->
+      <button v-if="msgs.length" type="button" class="pa-clear" data-testid="pa-clear"
+              :title="t('pocket.assistant.clearTitle', 'Clear this conversation. It is kept only in this browser tab, until you sign out.')"
+              @click="clearConversation">{{ t('pocket.assistant.clear', 'Clear') }}</button>
       <button class="pa-tts" :class="{ off: !voice.voiceReplies.value }" data-testid="pa-tts" :aria-pressed="voice.voiceReplies.value ? 'true' : 'false'" @click="voice.setReplies(!voice.voiceReplies.value)" :aria-label="voice.voiceReplies.value ? t('pocket.assistant.ttsOn', 'Voice replies on') : t('pocket.assistant.ttsOff', 'Voice replies off')">
         <Icon :name="voice.voiceReplies.value ? 'mdi:volume-high' : 'mdi:volume-off'" />
       </button>
@@ -99,7 +103,7 @@ const brains = useAssistantBrains({
   onPush: () => { void nextTick(() => { feedEl.value?.scrollTo({ top: feedEl.value.scrollHeight }) }) },
   autoOpenDoors: true,
 })
-const { brain, status, busy, msgs, caps, brainLabel, brainNote, byoKey, saveByoKey, openDoor } = brains
+const { brain, status, busy, msgs, caps, brainLabel, brainNote, byoKey, saveByoKey, openDoor, clearConversation } = brains
 const handle = brains.handle
 
 function submit() { const u = draft.value; draft.value = ''; void handle(u) }
@@ -138,6 +142,7 @@ onMounted(async () => {
 .pa-wrap { max-width: 560px; margin: 0 auto; padding: 1rem 1rem 5.5rem; box-sizing: border-box; display: flex; flex-direction: column; min-height: calc(100dvh - 140px); }
 .pa-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
 .pa-title { font-size: 1.15rem; margin: 0; display: flex; align-items: center; gap: 0.4rem; flex: 1 1 auto; }
+.pa-clear { min-height: 36px; padding: 0 0.8rem; border-radius: 999px; border: 1px solid var(--border-color, rgba(128,128,128,.3)); background: none; color: inherit; font-size: 0.8rem; cursor: pointer; }
 .pa-title :deep(svg) { width: 1.1rem; height: 1.1rem; color: var(--nc-primary, #00d4ff); }
 .pa-tts { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; color: #e6edf3; width: 44px; height: 44px; display: grid; place-items: center; cursor: pointer; }
 .pa-tts.off { opacity: 0.45; }

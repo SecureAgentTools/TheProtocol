@@ -17,6 +17,10 @@
         @click="voice.setReplies(!voice.voiceReplies.value)">
         <Icon :name="voice.voiceReplies.value ? 'mdi:volume-high' : 'mdi:volume-off'" />
       </button>
+      <!-- V0654 (ar): the conversation Pocket's panel keeps too, for this browser session; Clear empties it -->
+      <button v-if="msgs.length" type="button" class="ad-clear" data-testid="ad-clear"
+        :title="t('pocket.assistant.clearTitle', 'Clear this conversation. It is kept only in this browser tab, until you sign out.')"
+        @click="clearConversation">{{ t('pocket.assistant.clear', 'Clear') }}</button>
       <button v-if="voice.supported" class="ad-mic" :class="{ live: voice.listening.value }" data-testid="ad-mic"
         :aria-label="t('pocket.shell.holdToTalk', 'Hold to talk')" @pointerdown.prevent="micDown" @pointerup.prevent="micUp" @pointerleave="micUp" @pointercancel="micUp">
         <Icon name="mdi:microphone" />
@@ -63,7 +67,7 @@ const brains = useAssistantBrains({
   onPush: () => { void nextTick(() => { feedEl.value?.scrollTo({ top: feedEl.value.scrollHeight }) }) },
   autoOpenDoors: false, // desktop: render the door, never yank the shell
 })
-const { brain, status, busy, msgs, brainNote, byoKey, saveByoKey, openDoor } = brains
+const { brain, status, busy, msgs, brainNote, byoKey, saveByoKey, openDoor, clearConversation } = brains
 function submit() { const u = draft.value; draft.value = ''; void brains.handle(u) }
 let held = false
 function micDown() { if (held) return; held = true; voice.start((heard) => { void brains.handle(heard) }) }
@@ -81,6 +85,9 @@ onMounted(() => { void brains.loadCtx(); void brains.loadStatus() })
 .ad-tts.off { opacity: 0.45; }
 .ad-tts :deep(svg) { width: 0.9rem; height: 0.9rem; }
 .ad-tts + .ad-mic { margin-left: 0; }
+/* V0654 (ar): Clear sits with the voice switches on the right of the brains row */
+.ad-clear { margin-left: auto; height: 30px; padding: 0 0.6rem; border-radius: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); color: #e6edf3; font-size: 0.68rem; font-weight: 700; cursor: pointer; }
+.ad-tts + .ad-clear, .ad-clear + .ad-mic { margin-left: 0; }
 .ad-mic { margin-left: auto; width: 30px; height: 30px; border-radius: 8px; background: rgba(0,212,255,0.08); border: 1px solid rgba(0,212,255,0.3); color: var(--nc-primary, #00d4ff); display: grid; place-items: center; cursor: pointer; touch-action: none; }
 .ad-mic.live { color: #ff8a8a; border-color: rgba(255,138,138,0.5); }
 .ad-mic :deep(svg) { width: 0.9rem; height: 0.9rem; }

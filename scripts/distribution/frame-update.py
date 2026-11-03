@@ -9,7 +9,7 @@ Test-verified development (a sandbox, unreleased code):
   ./frame-update.py --name <frame> --rollback                  back to the images it ran before the last update (any
                                                                frame: a release from the channel is rolled back too)
 
-The signed release channel (§RELEASECHANNEL, 2026-09-21; any frame, production included):
+The signed release channel (any frame, production included):
 
   ./frame-update.py --name <frame> --check                     what the channel lists, verified, against what the
                                                                frame runs; changes nothing

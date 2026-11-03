@@ -382,7 +382,12 @@ jobs:
           #   FileNotFoundError class the console-source stage closed, so this gate never reached them (agentvault2-09).
           #   test_moira_template_words_db.py and test_webhook_delete_race_db.py  1 each  V0643's two new files that need a
           #                                              REAL Postgres (MEMBERSHIP_TEST_DB): test_membership_db.py's class
-          ALLOW="test_spawn_anchor.py:1 test_api_tests_no_tier_literals.py:3 test_fund_origin_allowlist.py:1 test_admin_sweep_honours_skip_reason.py:2 test_sovereign_owners_are_frame_data.py:1 test_operator_runner_branch.py:7 test_operator_host_work_phases.py:9 test_release_channel.py:1 test_membership_db.py:1 test_commons_db.py:1 test_federation_ballot_db.py:1 test_card_key_migration_db.py:1 test_authz_role_add_db.py:1 test_operator_opa.py:1 test_operator_push.py:1 test_moira_template_words_db.py:1 test_webhook_delete_race_db.py:1"
+          #   test_chat_named_sender_v0653.py and test_chat_read_floor_race_v0654.py  1 each  V0653's recut's two tests that
+          #                                              need a REAL Postgres (MEMBERSHIP_TEST_DB): their skips refused this step on
+          #                                              v0653/cut and kit/beta32 until V0654's cut named them here
+          #   test_chat_assistant_v0654.py and test_chat_wake_modes_v0654.py  1 each  V0654's (ap) stored line and (aq) setter on
+          #                                              a REAL Postgres (MEMBERSHIP_TEST_DB): test_membership_db.py's class
+          ALLOW="test_spawn_anchor.py:1 test_api_tests_no_tier_literals.py:3 test_fund_origin_allowlist.py:1 test_admin_sweep_honours_skip_reason.py:2 test_sovereign_owners_are_frame_data.py:1 test_operator_runner_branch.py:7 test_operator_host_work_phases.py:9 test_release_channel.py:1 test_membership_db.py:1 test_commons_db.py:1 test_federation_ballot_db.py:1 test_card_key_migration_db.py:1 test_authz_role_add_db.py:1 test_operator_opa.py:1 test_operator_push.py:1 test_moira_template_words_db.py:1 test_webhook_delete_race_db.py:1 test_chat_named_sender_v0653.py:1 test_chat_read_floor_race_v0654.py:1 test_chat_assistant_v0654.py:1 test_chat_wake_modes_v0654.py:1"
           SKIPS=$(awk '/^SKIPPED \[[0-9]+\] tests\// { n = $2; gsub(/[][]/, "", n); f = $3; sub(/^tests\//, "", f); sub(/:.*/, "", f); c[f] += n } END { for (k in c) print k ":" c[k] }' /tmp/registry-tests.log | sort)
           echo "registry unit tests skipped, by file: $(echo $SKIPS)"
           BAD=0

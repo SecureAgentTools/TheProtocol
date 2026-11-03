@@ -74,6 +74,11 @@ def _drive(monkeypatch) -> Dict[str, bool]:
     async def balance(rig, label, jwt):
         return 0.0
 
+    async def rest(rig, method, endpoint, label, body=None, jwt=None):
+        # V0654 (at), item 21: the origin's read of the defendant's mirror (mirrored_on), an active card
+        assert (method, endpoint, label) == ("GET", "/api/v1/agent-cards/did:theprotocol:d", flow._ADMIN[flow._A])
+        return 200, {"agent_did": "did:theprotocol:d", "is_active": True}
+
     async def until(fn, sec):
         return await fn()
 
@@ -84,6 +89,7 @@ def _drive(monkeypatch) -> Dict[str, bool]:
         return legs
 
     monkeypatch.setattr(flow, "_call", call)
+    monkeypatch.setattr(flow, "_rest", rest)
     monkeypatch.setattr(flow, "_balance", balance)
     monkeypatch.setattr(flow, "_until", until)
     monkeypatch.setattr(flow, "_run", run)
@@ -95,7 +101,8 @@ def _drive(monkeypatch) -> Dict[str, bool]:
 def test_every_leg_passes_on_the_routes_real_shape(monkeypatch):
     seen = _drive(monkeypatch)
     assert seen == {
-        "the_amount_is_over_every_threshold_the_home_holds": True, "the_origin_takes_the_dispute": True,
+        "the_amount_is_over_every_threshold_the_home_holds": True, "the_origin_mirrors_the_defendant": True,
+        "the_origin_takes_the_dispute": True,
         "the_evidence_names_the_amount": True, "the_origin_rules_for_the_complainant": True,
         "the_home_holds_it_for_an_administrator": True, "getFederationDisputeSettlement_reads_it": True,
         "rejectDisputeSettlement_rejects_it": True, "nothing_moved_on_the_home": True, "the_origin_hears_failed": True,

@@ -33,8 +33,12 @@ GUILD_TERMINAL = frozenset({"settled", "cancelled", "expired"})
 GUILD_EVENTS_MAX = 20
 
 # Who may update each card type in place: its author ("author") or only the rail that posted it ("rail").
-UPDATABLE = {"progress": "author", "guild.order.live": "rail", "approval.decided": "rail"}
-UPDATE_RAILS = {"guild.order.live": "the Guild rail", "approval.decided": "the chat approval rail"}
+# V0654 (aq), item 18: a request card (approval or choice) takes one update, by its rail: it reads withdrawn when the agent
+# that asked takes it back, and is closed from then on
+UPDATABLE = {"progress": "author", "guild.order.live": "rail", "approval.decided": "rail",
+             "approval.request": "rail", "choice.request": "rail"}
+UPDATE_RAILS = {"guild.order.live": "the Guild rail", "approval.decided": "the chat approval rail",
+                "approval.request": "the chat approval rail", "choice.request": "the chat approval rail"}
 
 # A card takes at most this many updates (a progress card of a long roll stays far below it).
 CARD_REV_MAX = 200
@@ -103,6 +107,8 @@ def closed_reason(card: Any) -> Optional[str]:
         return f"the order is {data.get('status')}"
     if ctype == "approval.decided" and data.get("used"):
         return "the approval was used"
+    if ctype in ("approval.request", "choice.request") and data.get("withdrawn"):   # V0654 (aq), item 18
+        return "the request was withdrawn"
     return None
 
 

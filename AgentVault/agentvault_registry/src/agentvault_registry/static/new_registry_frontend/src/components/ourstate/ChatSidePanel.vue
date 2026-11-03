@@ -41,6 +41,14 @@
               <span class="csp-status">{{ a.status ? a.status.text : t('ourstate.side.noStatus', 'no live status') }}</span>
               <span v-if="a.last_active_at" class="csp-ago" :title="absolute(a.last_active_at)">
                 {{ tp('ourstate.side.active', 'active {ago} ago', { ago: agoShort(a.last_active_at) }) }}</span>
+              <!-- V0654 (aq): what of this room wakes it (a member of the room); the room's owner, signed in, switches it -->
+              <template v-if="wakeOf(a.did)">
+                <WakeModeSwitch v-if="canSetWake" class="csp-wake" :mode="wakeOf(a.did) as WakeMode"
+                                :who="a.name || shortDid(a.did)" :testid="a.did" :busy="wakeBusy === agentKey(a.did)"
+                                @set="(m) => emit('set-wake', agentKey(a.did), m)" />
+                <span v-else-if="wakeOf(a.did) !== 'listen'" class="csp-wake-chip" :data-testid="`csp-wake-${a.did}`">
+                  {{ wakeOf(a.did) === 'off' ? t('ourstate.wake.off', 'Off') : t('ourstate.wake.onCall', 'On call') }}</span>
+              </template>
             </span>
           </li>
         </ul>
@@ -53,6 +61,8 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, useSlots, watch } from 'vue'
 import Icon from '@/components/Icon.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
+import WakeModeSwitch from '@/components/ourstate/WakeModeSwitch.vue'
+import type { WakeMode } from '@/services/api/chat'
 import { organizationService, type OrgPresence } from '@/services/api/organizationService'
 import { agoShort } from '@/services/cockpit/when'
 import { appLocale } from '@/services/appLocale'
@@ -67,7 +77,16 @@ const props = withDefaults(defineProps<{
   approvalsCount?: number | null
   /** A link opened one request (?approval=): the approvals section opens to show it. */
   focusApprovals?: boolean
-}>(), { approvalsCount: null, focusApprovals: false })
+  /** V0654 (aq): the room's members' wake modes, by key (agt:<did>), and whether the viewer (the room's owner, signed
+   *  in) switches them; the key being switched now. */
+  wakeModes?: Record<string, string> | null
+  canSetWake?: boolean
+  wakeBusy?: string | null
+}>(), { approvalsCount: null, focusApprovals: false, wakeModes: null, canSetWake: false, wakeBusy: null })
+const emit = defineEmits<{ (e: 'set-wake', key: string, mode: WakeMode): void }>()
+const agentKey = (did: string) => `agt:${String(did || '').toLowerCase()}`
+/** A member's wake mode here, or '' for an agent of the organization that is not a member of this room. */
+const wakeOf = (did: string): string => props.wakeModes?.[agentKey(did)] || ''
 const { t, tp } = useI18n()
 const slots = useSlots()
 const uid = `csp-${Math.random().toString(36).slice(2, 8)}`
@@ -157,4 +176,8 @@ onBeforeUnmount(() => { window.removeEventListener('focus', onFocus); if (timer)
 .csp-status { font-size: .78rem; line-height: 1.4; color: #c4ccd6; overflow-wrap: anywhere; }
 .csp-agent[data-live='0'] .csp-status { color: #8b96a5; }
 .csp-ago { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .62rem; letter-spacing: .04em; color: #8b96a5; }
+/* V0654 (aq): a session's wake mode in this room */
+.csp-wake { margin-top: 4px; align-self: flex-start; }
+.csp-wake-chip { align-self: flex-start; margin-top: 2px; font-size: .62rem; padding: 0 7px; border-radius: 999px;
+  border: 1px solid var(--border-color, rgba(128,128,128,.3)); color: #8b96a5; }
 </style>

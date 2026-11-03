@@ -365,6 +365,9 @@ export const useAuthStore = defineStore('auth', () => {
       // §FEFRAME W4: the assistant's bring-your-own provider key (composables/useAssistantBrains.ts) is a secret of the
       // person who typed it; it outlived every logout and answered for the next person in this browser
       try { localStorage.removeItem('tp_byok') } catch { /* storage blocked */ }
+      // V0654 (ar): and the assistant's conversation, kept for the browser session (useAssistantBrains' CONVERSATION_KEY)
+      try { sessionStorage.removeItem('tp_assistant_conv'); sessionStorage.removeItem('tp_assistant_brain') } catch {
+        /* storage blocked */ }
       try {
         const { credentialVault } = await import('@/services/credentialVault')
         if (credentialVault.kdf() === 'webauthn-prf') credentialVault.relock()

@@ -47,6 +47,7 @@ import sys
 # V0653 (am) item 1: the slug the registry sends is checked where the paths and containers are built from it (a leaf:
 # operator_names imports the standard library only, so this keeps the empty-environment import this file needs)
 from agentvault_registry.core.operator_names import checked_slug
+from agentvault_registry.core import first_boot
 from typing import Any, Dict, List, Optional
 
 # A spec carrying either of these is refused: they are the credentials this seam exists to keep on the other side.
@@ -1081,21 +1082,35 @@ def _fix_redis_acl_owner(acl_path: str, notes: List[str], host_dir: Optional[str
     return {"redis_acl_path": acl_path, "redis_acl_uid": 999, "redis_acl_chown_needed": False}
 
 def _first_boot_admin(container: str, notes: List[str]) -> Dict[str, Any]:
-    """The operator's own first-boot admin password, read from its log where it is printed once.
+    """The operator's own first-boot admin password, from the 0600 file its log's banner names (V0654 on: operator_seed
+    names the file, never the password, CodeQL #381), or as an older image printed it in the log.
 
     It crosses back in the result for the same reason the pull token crossed forward: it is the OPERATOR'S
     credential, useless anywhere else, and the human who owns that operator has to receive it. The registry stores
-    it; this container never keeps it. tail is generous because the banner is printed very early in boot and the
-    registry produces thousands of lines before it is healthy (§pass65 learned that at tail=200).
+    it; this container never keeps it, and the file is removed once read. tail is generous because the banner is
+    printed very early in boot and the registry produces thousands of lines before it is healthy (§pass65 learned
+    that at tail=200). V0654 recut: the printed-password pattern also matched the file line and took the word "in"
+    for the password (V0654's first pair proof): core/first_boot.banner asks the file form first.
     """
     proc = subprocess.run(["docker", "logs", "--tail", "5000", container], capture_output=True, text=True,
                           timeout=120)
-    match = re.search(r"FIRST-BOOT ADMIN PASSWORD:\s*(\S+)", (proc.stdout or "") + (proc.stderr or ""))
-    if not match:
+    found = first_boot.banner((proc.stdout or "") + (proc.stderr or ""))
+    if found is None:
         notes.append("first-boot admin password: not in the log (the operator may already have been booted)")
         return {"admin_password": ""}
-    notes.append("first-boot admin password: captured")
-    return {"admin_password": match.group(1)}
+    kind, value = found
+    if kind == "printed":
+        notes.append("first-boot admin password: captured (printed in the log by an image older than V0654)")
+        return {"admin_password": value}
+    got = subprocess.run(["docker", "exec", container, "cat", value], capture_output=True, text=True, timeout=60)
+    password = (got.stdout or "").strip()
+    if got.returncode != 0 or not password:
+        notes.append(f"first-boot admin password: the log names {value}, which could not be read in the container")
+        return {"admin_password": ""}
+    gone = subprocess.run(["docker", "exec", container, "rm", "-f", value], capture_output=True, text=True, timeout=60)
+    notes.append("first-boot admin password: read from its 0600 file in the container" + (
+        "; the file removed" if gone.returncode == 0 else "; the file could NOT be removed: remove it by hand"))
+    return {"admin_password": password}
 
 
 _SQL_SAFE = re.compile(r"^[A-Za-z0-9 ._:/@+-]{1,200}$")

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""frame-down: remove a frame this host runs, completely (§HELLOFRAME 2026-09-18).
+"""frame-down: remove a frame this host runs, completely.
 
     ./frame-down.py --name myframe [--stack-root /opt/theprotocol/stack] [--keep-secrets] [--with-sandbox] [--yes]
 
 Brings the edge project and the frame's stack down with their volumes, removes the frame's cloud operators it finds
 under the stack root (their SPIRE agent names this frame's trust domain) with their sites on the edge, removes the stack
 directory and, unless --keep-secrets, the secrets directory. DNS records and the firewall are yours: it prints what it
-did not touch. A frame with SANDBOXES (frame-up --sandbox-of, §TESTBED) is refused until they are gone; --with-sandbox
+did not touch. A frame with SANDBOXES (frame-up --sandbox-of) is refused until they are gone; --with-sandbox
 removes them first. A sandbox's own removal also takes its site off the parent's edge and its record out of the
 parent's frame runner.
 """
@@ -86,7 +86,7 @@ def main():
     ap.add_argument("--yes", action="store_true", help="do not ask")
     ap.add_argument("--with-runner", action="store_true",
                     help="after the frame is gone, take off the frame runner it installed (frame-runner-install.py --remove: "
-                         "its unit, policy, the protected list and the group it created); refused while the runner holds another frame")
+                         "its unit, policy, sockets, the protected list and the group it created); refused while the runner holds another frame")
     a = ap.parse_args()
     runner_rec = (frame_record(a.stack_root, a.name) or {}).get("runner") or {}   # read now: down() removes the record
     sbx = sandboxes_of(a.stack_root, a.name)

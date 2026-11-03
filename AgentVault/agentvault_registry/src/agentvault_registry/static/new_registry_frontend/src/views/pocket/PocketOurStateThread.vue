@@ -288,6 +288,13 @@
           <span v-if="m.sent_with === 'api_key' && !m.deleted" class="ost-by-key" :data-testid="`ost-by-key-${m.seq}`"
                 :title="t('ourstate.thread.sentWithKeyTitle', 'Sent with an API key (a connector, a bridge or a script), not typed in a signed-in console or Pocket')">
             {{ t('ourstate.thread.sentWithKey', 'sent with a key') }}</span>
+          <!-- V0654 (ap): a line its owner's assistant wrote, posted by the registry at the owner's request: not a hand -->
+          <span v-if="m.sent_with === 'assistant' && !m.deleted" class="ost-by-key ost-by-assistant"
+                :data-testid="`ost-by-assistant-${m.seq}`"
+                :title="t('ourstate.thread.byAssistantTitle', 'Written by the owner’s personal assistant and posted by the registry at the owner’s request, not typed by hand')">
+            <Icon name="mdi:creation" class="ost-by-assistant-mark" />{{ isMine(m)
+              ? t('ourstate.thread.byYourAssistant', 'written by your assistant')
+              : t('ourstate.thread.byAssistant', 'written by the assistant') }}</span>
           <!-- V0652 (ac): answer this message; the reply folds under it -->
           <button v-if="canReplyTo(m)" type="button" class="ost-reply-btn" :data-testid="`ost-reply-${m.seq}`"
                   :aria-label="t('ourstate.thread.replyTo', 'Reply to this message')" @click="startReply(m)">
@@ -306,7 +313,12 @@
             who: speakerName(bars[m.id].last), when: bars[m.id].last?.created_at ? timeLabel(String(bars[m.id].last?.created_at), Date.now(), appLocale()) : '' }) }}</span>
           <span class="ost-thread-act"><span class="sr-only">, </span>{{ bars[m.id].expanded ? t('ourstate.thread.threadHide', 'Hide') : t('ourstate.thread.threadShow', 'Show') }}</span>
         </button>
+        <!-- V0654 (ap): what you asked your assistant after this line: only you see it, and its answer comes below -->
+        <ChatAssistAsk v-for="a in asksAfter(m.seq)" :key="a.ref" :ask="a"
+                       @retry="retryAsk" @edit="editAsk" @dismiss="dismissAsk" />
       </template>
+      <ChatAssistAsk v-for="a in asksUnanchored" :key="a.ref" :ask="a"
+                     @retry="retryAsk" @edit="editAsk" @dismiss="dismissAsk" />
       <div v-if="serviceBusy || serviceInflight" class="ost-calling" data-testid="ost-calling">
         <Icon name="mdi:refresh" class="pk-ptr-spin" /> {{ t('ourstate.thread.calling', 'Calling — one call at a time in this thread.') }}</div>
     </div>
@@ -381,19 +393,25 @@
       </div>
       <!-- The speaker chip: who says the next message, beside the button that sends it (V0652 (aj): it is always
            shown, and it says "you" unless an agent was chosen for this thread). Tap = choose who speaks here. -->
-      <button class="ost-speaker" data-testid="ost-speaker" data-tour="ourchat-speaker" :title="speakerTitle"
-              :data-speaker="speakerDid ? 'agent' : 'you'" @click="onSpeakerTap">
+      <!-- V0654 (ap): amber, with the assistant's mark, while the assistant writes for this identity here -->
+      <button class="ost-speaker" :class="{ assist: assistOn }" data-testid="ost-speaker" data-tour="ourchat-speaker"
+              :title="assistOn ? tp('ourstate.assist.chipTitle', 'Your assistant writes as {who}: what you type goes to it, not to the room', { who: assistWhoName }) : speakerTitle"
+              :data-speaker="speakerDid ? 'agent' : 'you'" :data-assist="assistOn ? 'on' : 'off'" @click="onSpeakerTap">
         <Icon :name="speakerIsAgent ? 'mdi:robot' : 'mdi:account'" />
+        <Icon v-if="assistOn" name="mdi:creation" class="ost-speaker-assist" data-testid="ost-speaker-assist" />
         <span class="ost-speaker-as">{{ t('ourstate.thread.speakerAs', 'as') }}</span>
         <span class="ost-speaker-name">{{ speakerLabel }}</span>
       </button>
       <button class="ost-send" data-testid="ost-send" :disabled="sendDisabled"
-              :aria-label="tp('ourstate.thread.sendAs', 'Send as {who}', { who: speakerLabel })"
+              :aria-label="assistOn ? tp('ourstate.assist.sendAs', 'Ask your assistant to write as {who}', { who: assistWhoName })
+                : tp('ourstate.thread.sendAs', 'Send as {who}', { who: speakerLabel })"
               @click="send"><Icon name="mdi:send" /></button>
     </footer>
     </div><!-- .ost-col -->
     <ChatSidePanel v-if="sideOn" :org-id="String(room?.org_id || '')" :viewer-key="myKey || 'me'"
-                   :approvals-count="approvalsCount" :focus-approvals="!!focusApprovalId">
+                   :approvals-count="approvalsCount" :focus-approvals="!!focusApprovalId"
+                   :wake-modes="room?.wake_modes || null" :can-set-wake="!!room?.can_set_wake" :wake-busy="wakeBusy"
+                   @set-wake="(key, m) => setWake(key, m)">
       <!-- V0653 (al): WAITING ON YOU keeps its count; the requests themselves are pinned above the history, and this
            section opens their whole list there -->
       <template #approvals>
@@ -677,6 +695,12 @@
                     :class="{ danger: op.destructive }" :data-testid="`ost-op-${op.key}`"
                     @click="onMemberOp(op, mb)">{{ t('ourstate.rooms.op.' + op.key, op.label) }}</button>
           </span>
+          <!-- V0654 (aq): what of the room wakes this member; the room's owner, signed in, switches a session's -->
+          <WakeModeSwitch v-if="membersCanSetWake && mb.ptype === 'agent' && !mb.is_me" class="ost-member-wake"
+                          :mode="mb.wake_mode || 'listen'" :who="mb.name || mb.agent_did" :testid="mb.agent_did"
+                          :busy="wakeBusy === mb.key" @set="(m) => setMemberWake(mb, m)" />
+          <span v-else-if="mb.wake_mode && mb.wake_mode !== 'listen'" class="ost-wake-chip"
+                :data-testid="`ost-wake-${mb.developer_id || mb.agent_did}`">{{ wakeWord(mb.wake_mode) }}</span>
         </div>
         <button class="ost-btn" @click="membersOpen = false">{{ t('common.close', 'Close') }}</button>
       </div>
@@ -752,6 +776,16 @@
       <div class="ost-sheet" role="dialog" :aria-label="t('ourstate.speaker.title', 'Speak as')" data-testid="ost-speaker-picker">
         <h3>{{ t('ourstate.speaker.title', 'Speak as') }}</h3>
         <p class="ost-audit-note">{{ t('ourstate.speaker.note', 'Every message keeps the author it was sent with. Switching changes only what comes next.') }}</p>
+        <!-- V0654 (ap): your assistant for the identity this thread sends with, switched per identity and per room, here -->
+        <div v-if="assistOffered" class="ost-assist-row" data-testid="ost-assist-row">
+          <button type="button" role="switch" class="ost-assist-switch" :class="{ on: assistOn }"
+                  :aria-checked="assistOn ? 'true' : 'false'" data-testid="ost-assist-switch" @click="toggleAssist">
+            <Icon name="mdi:creation" class="ost-assist-switch-mark" />
+            <span class="ost-assist-switch-label">{{ tp('ourstate.assist.switch', 'AI assistant for {who}', { who: assistWhoName }) }}</span>
+            <span class="ost-assist-switch-state">{{ assistOn ? t('ourstate.assist.on', 'on') : t('ourstate.assist.off', 'off') }}</span>
+          </button>
+          <p class="ost-audit-note">{{ tp('ourstate.assist.note', 'While it is on, what you type in this room goes to your assistant, not to the room. Only you see your request; the answer is posted as {who}, marked as written by the assistant.', { who: assistWhoName }) }}</p>
+        </div>
         <!-- §OURSTATE-6 — THE SAME LIST THE HEADER USES. It used to be a bare
              v-for with no search and no scroll container, holding a SECOND
              selection that could disagree with "Acting as" in the header. With
@@ -874,6 +908,8 @@ import UserAvatar from '@/components/common/UserAvatar.vue'
 import AgentSwitchList from '@/components/pocket/AgentSwitchList.vue'
 import OurStateCard from '@/components/ourstate/OurStateCard.vue'
 import ChatMessageBody from '@/components/ourstate/ChatMessageBody.vue'
+import ChatAssistAsk from '@/components/ourstate/ChatAssistAsk.vue'
+import WakeModeSwitch from '@/components/ourstate/WakeModeSwitch.vue'
 import ChatSettingsMenu from '@/components/ourstate/ChatSettingsMenu.vue'
 import ChatBurnConfirm from '@/components/ourstate/ChatBurnConfirm.vue'
 import ChatNotifySheet from '@/components/ourstate/ChatNotifySheet.vue'
@@ -893,7 +929,7 @@ import { liveApprovalStatus, touchesApprovals } from '@/services/chat/approvals'
 import TrustLinesRow from '@/components/ourstate/TrustLinesRow.vue'
 import ActingContextNotice from '@/components/common/ActingContextNotice.vue'
 import PocketSend from '@/views/pocket/PocketSend.vue'
-import { chatApi } from '@/services/api/chat'
+import { chatApi, type WakeMode } from '@/services/api/chat'
 import { getThread, putThread, dropThread, cacheAvailable, burnDeviceNote } from '@/services/chat/localCache'
 import { parseComposer, completions, commandGroups, argCompletions } from '@/services/chat/composerIntent'
 import { composerCan, memberOps, roomOps, systemRowText,
@@ -911,6 +947,7 @@ import { contractsV2Api } from '@/services/api/contractsV2'
 import { useAuthStore } from '@/stores/auth'
 import { usePocketAgent } from '@/composables/usePocketAgent'
 import { rememberedSpeaker, rememberSpeaker, resolveSpeaker } from '@/services/chat/speakAs'
+import { YOU, assistantIds, rememberAssistant, readAsks, writeAsks, type AssistAsk } from '@/services/chat/assistOn'
 import { useUIStore } from '@/stores/ui'
 import { usePocketLock } from '@/composables/usePocketLock'
 import { useActingContext } from '@/composables/useActingContext'
@@ -1083,6 +1120,8 @@ async function loadOlder() {
 function applyUpdate(u: CardUpdate | null | undefined) {
   const r = applyCardUpdate(messages.value as any, u)
   if (r.changed) messages.value = r.messages as any
+  // V0654 (aq), item 18: a request card that changed (withdrawn) leaves the pinned list: it reads the list again
+  if (r.changed && touchesApprovals({ kind: 'card', card: (u as any)?.card })) void approvalsPanel.value?.refresh()
 }
 const cardHistoryFor = ref<{ id: string; title: string } | null>(null)
 function openCardHistory(m: any) {
@@ -1337,6 +1376,7 @@ async function loadServicePrice() {
 /** The composer says what it will DO with what you type. */
 const composerPlaceholder = computed(() => {
   if (isSupportThread.value) return t('ourstate.support.placeholder', 'Reply to support…')
+  if (assistOn.value) return t('ourstate.assist.placeholder', 'Ask your assistant…')   // the amber chip names who
   if (!isAgentThread.value) return t('ourstate.thread.placeholder', 'Message — / for commands')
   const who = counterparty.value?.name || t('ourstate.thread.thisAgent', 'this agent')
   const price = servicePrice.value
@@ -2219,6 +2259,28 @@ async function sendSupportReply(text: string) {
   } catch (e: any) { hint.value = e?.detail || String(e) } finally { sending.value = false }
 }
 
+/* ── V0654 (aq): wake modes (what of the room wakes a member). The room's owner, signed in, sets a session's here and in
+   the side panel; the registry posts one line in the room, to that member alone, and refuses anyone else. ── */
+const wakeBusy = ref<string | null>(null)
+const membersCanSetWake = ref(false)
+function wakeWord(m: string): string {
+  return m === 'on-call' ? t('ourstate.wake.onCall', 'On call') : m === 'off' ? t('ourstate.wake.off', 'Off')
+    : t('ourstate.wake.listen', 'Listen')
+}
+async function setWake(key: string, mode: WakeMode): Promise<boolean> {
+  if (!key || wakeBusy.value) return false
+  wakeBusy.value = key
+  try {
+    const r = await chatApi.setWakeMode(token.value, convId.value, mode, key)
+    if (room.value) room.value = { ...room.value, wake_modes: { ...(room.value.wake_modes || {}), [key]: r?.wake_mode || mode } }
+    if (r?.system_message) ingest(r.system_message)
+    return true
+  } catch (e: any) { hint.value = e?.detail || String(e); return false } finally { wakeBusy.value = null }
+}
+async function setMemberWake(mb: any, mode: WakeMode) {
+  if (await setWake(String(mb.key || ''), mode)) members.value = members.value.map((x: any) => (x.key === mb.key ? { ...x, wake_mode: mode } : x))
+}
+
 /* members sheet */
 const membersOpen = ref(false)
 const members = ref<any[]>([])
@@ -2227,6 +2289,7 @@ async function openMembers() {
   try {
     const r = await chatApi.roomMembers(token.value, convId.value)
     members.value = r.members || []
+    membersCanSetWake.value = !!r.can_set_wake      // V0654 (aq)
   } catch (e: any) { hint.value = e?.detail || String(e); membersOpen.value = false }
 }
 function memberOffers(mb: any): RoomActionOffer[] {
@@ -2388,6 +2451,90 @@ async function pickSpeaker(did: string | null) {
  *  the agent's own identity forever — that is the point of the chip. */
 const speakingToken = computed(() =>
   speakerDid.value ? ((auth as any).agentToken || token.value) : token.value)
+
+/* ── V0654 (ap), order gwo_03a846cb91b37628c3c6710a: the assistant in OurChat ──
+   His words (the sessions' room seq 1091): pickable per identity in the "send as" choice, the chip amber while it is on,
+   his request shown to himself and the answer below it, on the phone and the desktop. Only where his personal assistant
+   is enabled for him (GET /assistant/status: the bridge, admin-only), never in an agent's service thread (the rail fixes
+   who speaks there) or a support thread (the desk writes it). The registry posts the answer as the identity this thread
+   sends with (POST /chat/conversations/{id}/assist); the request is never posted, and stays on this device. */
+const assistAvailable = ref(false)
+async function loadAssistAvailable() {
+  try { assistAvailable.value = !!(await apiClient.get('/assistant/status'))?.data?.bridge?.enabled }
+  catch { assistAvailable.value = false }
+}
+const assistOffered = computed(() => assistAvailable.value && !isAgentThread.value && !isSupportThread.value)
+const assistWho = computed(() => speakerDid.value || YOU)
+/** the identity in the assistant's sentences: the agent's name, or "you" */
+const assistWhoName = computed(() => (speakerDid.value ? speakerLabel.value : t('ourstate.assist.you', 'you')))
+const assistOnIds = ref<string[]>(assistantIds(convId.value))
+watch(convId, (id) => { assistOnIds.value = assistantIds(id) })
+const assistOn = computed(() => assistOffered.value && assistOnIds.value.includes(assistWho.value))
+function toggleAssist() {
+  assistOnIds.value = rememberAssistant(convId.value, assistWho.value, !assistOn.value)
+}
+const assistReloaded = () => t('ourstate.assist.reloaded',
+  'This page reloaded while the assistant was writing. Ask again: an answer already posted comes back, and nothing is asked twice.')
+const asks = ref<AssistAsk[]>(readAsks(convId.value, assistReloaded()))
+watch(convId, (id) => { asks.value = readAsks(id, assistReloaded()) })
+const roomAsks = computed(() => asks.value.filter(a => a.conversationId === convId.value))
+const shownSeqs = computed(() => new Set(shownMessages.value.map((m: any) => Number(m.seq))))
+function asksAfter(seq: number): AssistAsk[] { return roomAsks.value.filter(a => a.afterSeq === Number(seq)) }
+const asksUnanchored = computed(() => roomAsks.value.filter(a => !shownSeqs.value.has(a.afterSeq)))
+function patchAsk(a: AssistAsk, p: Partial<AssistAsk>) {
+  const inView = asks.value.some(x => x.ref === a.ref)
+  const list = inView ? asks.value : readAsks(a.conversationId, assistReloaded())   // the room was left meanwhile
+  const next = list.map(x => (x.ref === a.ref ? { ...x, ...p } : x))
+  if (inView) asks.value = next
+  writeAsks(a.conversationId, next)
+}
+async function askAssistant(prompt: string, again?: AssistAsk) {
+  const conv = convId.value
+  const reply = again ? null : replyTo.value
+  const ask: AssistAsk = again ? { ...again, state: 'waiting', error: undefined } : {
+    ref: uuid(), conversationId: conv, prompt, who: speakerDid.value ? speakerLabel.value : '', whoKey: assistWho.value, state: 'waiting',
+    afterSeq: Number(messages.value[messages.value.length - 1]?.seq || 0), replyTo: reply?.id }
+  if (again) patchAsk(again, { state: 'waiting', error: undefined })
+  else {
+    asks.value = [...asks.value, ask]
+    writeAsks(conv, asks.value)
+    input.value = ''
+    replyTo.value = null
+    void nextTick().then(scrollBottom)
+  }
+  sending.value = true
+  try {
+    const r = await chatApi.assist(speakingToken.value, conv,
+      { prompt: ask.prompt, client_ref: ask.ref, ...(ask.replyTo ? { reply_to: ask.replyTo } : {}) })
+    if (conv === convId.value) {
+      if (r?.my_state) myState.value = r.my_state
+      if (r?.message) ingest(r.message)
+    }
+    patchAsk(ask, { state: 'answered', answerSeq: Number(r?.message?.seq || 0) || undefined })
+  } catch (e: any) {
+    patchAsk(ask, { state: 'failed', error: e?.status ? (e?.detail || String(e)) : t('ourstate.assist.offline',
+      'No answer reached this device (the connection dropped). Ask again: an answer already posted comes back, and nothing is asked twice.') })
+  } finally { sending.value = false }
+}
+function dropAsk(a: AssistAsk) {
+  asks.value = asks.value.filter(x => x.ref !== a.ref)
+  writeAsks(a.conversationId, asks.value)
+}
+function retryAsk(a: AssistAsk) {
+  if (sending.value) return
+  // asking again goes out as the identity it was asked for, or not at all (another identity would answer for it)
+  if (a.whoKey && a.whoKey !== assistWho.value) {
+    hint.value = tp('ourstate.assist.retryWho', 'Speak as {who} again to ask again.', { who: a.who || t('ourstate.assist.yourself', 'yourself') })
+    return
+  }
+  void askAssistant(a.prompt, a)
+}
+function editAsk(a: AssistAsk) {
+  input.value = a.prompt
+  dropAsk(a)
+  void nextTick().then(() => inputEl.value?.focus())
+}
+function dismissAsk(a: AssistAsk) { dropAsk(a) }
 
 /* ── §OURSTATE-2 batch 2b: WORK pointers, /ledger, away kill switch ── */
 const pageBound = ref(40)
@@ -2610,6 +2757,7 @@ async function send() {
     case 'text':
       if (isSupportThread.value) return sendSupportReply(raw)
       if (isAgentThread.value) return stageServiceCall(raw)
+      if (assistOn.value) return askAssistant(raw)
       return postText(raw)
     case 'me':
       return postText(`/me ${intent.action}`)
@@ -3030,6 +3178,7 @@ function closeTopSheet() {
 }
 
 onMounted(() => {
+  void loadAssistAvailable()   // V0654 (ap)
   window.addEventListener('keydown', onKey)
   wideMq?.addEventListener?.('change', onWide)
   measurePane()
@@ -3176,6 +3325,8 @@ watch(convId, () => { endAnchor(); messages.value = []; openThreads.value = new 
   .ost-scroll > .ost-thread-bar { width: auto; max-width: var(--ost-col); }
   .ost-scroll > .ost-thread-bar.mine { margin-left: auto; margin-right: max(0px, calc((100% - var(--ost-col)) / 2)); }
   .ost-scroll > .ost-thread-bar:not(.mine) { margin-right: auto; margin-left: max(0px, calc((100% - var(--ost-col)) / 2)); }
+  /* V0654 (ap): your request to your assistant hugs its words on your side of the column, like your own lines */
+  .ost-scroll > .caa { width: auto; max-width: var(--ost-msg); margin-left: auto; margin-right: max(0px, calc((100% - var(--ost-col)) / 2)); }
   .ost-composer { max-width: calc(var(--ost-col) + 24px); margin: 0 auto; width: 100%; }
   .ost-hosting { justify-content: center; }
 }
@@ -3231,6 +3382,19 @@ watch(convId, () => { endAnchor(); messages.value = []; openThreads.value = new 
   flex-basis: 100%; margin: 0 6px; font-size: .68rem; font-style: italic; color: #8b96a5;
 }
 .ost-msg.mine .ost-by-key { text-align: right; }
+/* V0654 (ap): the assistant's amber: its line's mark, the chip while it is on, the switch */
+.ost-by-assistant { color: var(--warning-color, #f59e0b); font-style: normal; }
+.ost-by-assistant-mark { width: 12px; height: 12px; margin-right: 4px; vertical-align: -2px; }
+.ost-speaker.assist { border-color: var(--warning-color, #f59e0b); background: rgba(245, 158, 11, .14); color: var(--warning-color, #f59e0b); }
+.ost-speaker-assist { width: 15px; height: 15px; flex: none; }
+.ost-assist-row { margin: 8px 0 4px; }
+.ost-assist-switch { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 0 12px; border-radius: 10px;
+  border: 1px solid var(--border-color, rgba(128,128,128,.3)); background: none; color: inherit; cursor: pointer; text-align: left; }
+.ost-assist-switch.on { border-color: var(--warning-color, #f59e0b); background: rgba(245, 158, 11, .12); }
+.ost-assist-switch-mark { width: 16px; height: 16px; flex: none; color: var(--warning-color, #f59e0b); }
+.ost-assist-switch-label { flex: 1; min-width: 0; font-weight: 600; font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ost-assist-switch-state { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; opacity: .8; }
+.ost-assist-switch.on .ost-assist-switch-state { color: var(--warning-color, #f59e0b); opacity: 1; }
 .ost-msg.for-me .ost-bubble, .ost-msg.ask { box-shadow: inset 3px 0 0 var(--primary-color, #4fd8c4); }
 .ost-msg.for-me .ost-bubble { background: rgba(79, 216, 196, .1); }
 .ost-forme-toggle {
@@ -3251,6 +3415,9 @@ watch(convId, () => { endAnchor(); messages.value = []; openThreads.value = new 
 .ost--narrow .ost-speaker { gap: 4px; padding: 0 8px; max-width: 104px; }
 .ost--narrow .ost-speaker-as { display: none; }
 .ost-by-owner { font-size: .68rem; opacity: .7; margin-left: 6px; font-style: italic; }
+/* V0654 (aq): a member's wake mode in the member sheet */
+.ost-member-wake { margin-top: 4px; }
+.ost-wake-chip { font-size: .68rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border-color, rgba(128,128,128,.3)); opacity: .85; }
 .ost-input-wrap { flex: 1; min-width: 0; position: relative; }
 .ost-hint { font-size: .78rem; opacity: .85; padding: 4px 2px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ost-hint-send { min-height: 32px; border: none; background: none; color: var(--primary-color, #4fd8c4); font-weight: 600; cursor: pointer; }

@@ -444,7 +444,8 @@ cd scripts/distribution
 # edit .env.operator: MAIL_*, BASE_URL, TRUST_DOMAIN (your DNS name),
 # and add REGISTRY_HTTP_PORT=<port> if 8000 is taken on this host
 docker compose -f docker-compose.standalone.yml --env-file .env.operator up -d
-docker logs my-registry-registry 2>&1 | grep -A3 "FIRST-BOOT ADMIN PASSWORD"
+docker exec my-registry-registry cat /app/data/first-boot-admin-password   # the first admin's password
+docker exec my-registry-registry rm /app/data/first-boot-admin-password    # once you have it
 ```
 
 Two steps remain before the registry is useful:

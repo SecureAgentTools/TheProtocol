@@ -145,6 +145,16 @@ export function systemRowText(body: string, card: any):
     case 'assistant_on': return mk('assistantOn',
       '{by} added @assistant to this room — it answers when addressed, reading only this organization\'s records', { by })
     case 'assistant_off': return mk('assistantOff', '{by} removed @assistant from this room', { by })
+    // V0654 (aq): a wake mode change, the member's own or set by the room's owner (it reaches that member alone)
+    case 'wake': {
+      const self = !!card?.by && card.by === card?.target
+      if (value === 'on-call') return self ? mk('wakeOnCallSelf', '{target} is on call: it wakes when named', { target })
+        : mk('wakeOnCall', '{by} put {target} on call: it wakes when named', { by, target })
+      if (value === 'off') return self ? mk('wakeOffSelf', '{target} is off: nothing in this room wakes it', { target })
+        : mk('wakeOff', '{by} switched {target} off: nothing in this room wakes it', { by, target })
+      return self ? mk('wakeListenSelf', '{target} listens to the room again', { target })
+        : mk('wakeListen', '{by} set {target} to listen to the room again', { by, target })
+    }
     default: return mk('unknown', '{by} performed a room action', { by })
   }
 }

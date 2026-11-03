@@ -130,3 +130,16 @@ describe('isOperator', () => {
     expect(isOperator(null)).toBe(false)
   })
 })
+
+describe('V0654 (aq): a wake mode change in the room', () => {
+  const owner = { by: 'dev:6', by_name: 'maintainer', action: 'wake', target_name: 'session-tester', target: 'agt:did:x' }
+  const self = { by: 'agt:did:x', by_name: 'session-tester', action: 'wake', target_name: 'session-tester', target: 'agt:did:x' }
+  it('says who set what for whom, or that a member set its own', () => {
+    // BASE (V0653): "maintainer performed a room action"
+    expect(systemRowText('room.wake', { ...owner, value: 'on-call' }).text).toBe('maintainer put session-tester on call: it wakes when named')
+    expect(systemRowText('room.wake', { ...owner, value: 'off' }).text).toBe('maintainer switched session-tester off: nothing in this room wakes it')
+    expect(systemRowText('room.wake', { ...owner, value: 'listen' }).text).toBe('maintainer set session-tester to listen to the room again')
+    expect(systemRowText('room.wake', { ...self, value: 'on-call' }).text).toBe('session-tester is on call: it wakes when named')
+    expect(systemRowText('room.wake', { ...self, value: 'listen' }).key).toBe('wakeListenSelf')
+  })
+})

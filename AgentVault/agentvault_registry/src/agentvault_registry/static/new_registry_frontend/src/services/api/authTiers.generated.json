@@ -2,8 +2,8 @@
  "version": 2,
  "source": "agentvault_registry/core/auth_tiers.py (the FastAPI dependency tree, registration order)",
  "counts": {
-  "a": 155,
-  "e": 70,
+  "a": 156,
+  "e": 72,
   "d": 6
  },
  "routes": [
@@ -898,6 +898,11 @@
    "e"
   ],
   [
+   "POST",
+   "/api/v1/chat/conversations/{conversation_id}/assist",
+   "e"
+  ],
+  [
    "PUT",
    "/api/v1/chat/conversations/{conversation_id}/messages/{message_id}/card",
    "e"
@@ -1015,6 +1020,11 @@
   [
    "GET",
    "/api/v1/chat/conversations/{conversation_id}/members",
+   "e"
+  ],
+  [
+   "PUT",
+   "/api/v1/chat/conversations/{conversation_id}/wake",
    "e"
   ],
   [
@@ -1156,6 +1166,11 @@
    "GET",
    "/api/v1/chat/approvals/{approval_id}",
    "e"
+  ],
+  [
+   "POST",
+   "/api/v1/chat/approvals/{approval_id}/withdraw",
+   "a"
   ],
   [
    "POST",

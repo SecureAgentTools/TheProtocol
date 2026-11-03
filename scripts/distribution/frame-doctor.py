@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""frame-doctor: is this host ready to run a federated TheProtocol frame? (§HELLOFRAME 2026-09-18)
+"""frame-doctor: is this host ready to run a federated TheProtocol frame?
 
 Every check answers with one sentence a person can act on. Nothing is written. Exit 0 = ready, 1 = not ready,
 2 = usage. `frame-up` runs the same checks before it touches anything.

@@ -1,4 +1,4 @@
-# §FRAMEPROV P2 (2026-09-13): the frame runner. Install:
+# The frame runner of TheProtocol. Install:
 #   install -m 0644 tools/frame-runner/theprotocol-frame-runner.service /etc/systemd/system/
 #   systemctl daemon-reload && systemctl enable --now theprotocol-frame-runner
 # Policy (image allowlist, uids, gates) lives in /etc/theprotocol/frame-runner.json; the protected frames in

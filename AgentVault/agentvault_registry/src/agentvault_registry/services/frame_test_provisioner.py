@@ -1130,19 +1130,19 @@ def provision_frame_test(ctx: FrameTestContext, timeout_seconds: int = 240) -> F
     # operator_seed module in the registry container emits its own random
     # password and an email computed from REGISTRY_NAME slug — our
     # .env ADMIN_EMAIL/PASSWORD values are NOT honored by operator_seed.
-    # Mirror of cloud_provisioner.py:570-585's capture pattern.
-    import re as _re
+    # Mirror of cloud_provisioner.py's capture (core/first_boot since the V0654 recut).
     admin_email = f"admin@{ctx.registry_name}.dev"   # slug(frame-test) → admin@frame-test.dev
     parsed_password = ""
     try:
         reg = client.containers.get(reg_name)
-        raw_logs = reg.logs(tail=400).decode(errors="replace")
-        m = _re.search(r'FIRST-BOOT ADMIN PASSWORD:\s*(\S+)', raw_logs)
-        if m:
-            parsed_password = m.group(1)
-            logger.info(f"[FRAME-TEST] Captured admin password (len={len(parsed_password)})")
+        # V0654 recut: prod_seed's banner names the 0600 file the password is in since V0653 (am) item 4; the old
+        # printed-password pattern took the word "in" for it (core/first_boot asks the file form first)
+        from ..core import first_boot as _first_boot
+        parsed_password, _how = _first_boot.from_sdk_container(reg, tail=400)
+        if parsed_password:
+            logger.info(f"[FRAME-TEST] Captured admin password ({_how}; len={len(parsed_password)})")
         else:
-            logger.warning(f"[FRAME-TEST] Could not parse FIRST-BOOT ADMIN PASSWORD from logs")
+            logger.warning(f"[FRAME-TEST] Could not capture the first-boot password: {_how}")
     except Exception as e:
         logger.warning(f"[FRAME-TEST] admin password capture failed: {e}")
 

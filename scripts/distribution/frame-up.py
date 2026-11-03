@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""frame-up: a federated TheProtocol frame on this host, from this export, in one command (§HELLOFRAME 2026-09-18).
+"""frame-up: a federated TheProtocol frame on this host, from this export, in one command.
 
     ./frame-up.py --name myframe --public-name frame.example.org --ticker MYF --currency-name "My Unit" \\
                   --admin-email ops@example.org [--mail-server smtp.example.org --mail-port 587 \\
@@ -14,7 +14,7 @@ What it does, in order: frame-doctor's checks; the same standup driver a network
 own-host mode (no host nginx, no host certificate, no other stack read); the public edge (Caddy, this host's ports 80 and
 443 by default, a Let's Encrypt certificate for --public-name); a health read through the edge; a summary with the four
 public addresses, where the admin's first password was written, and the next command (`frame-federate.py`). With
---sandbox-of <frame> it stands up that frame's SANDBOX instead (§TESTBED): posture sandbox, the MCP/API tester run against
+--sandbox-of <frame> it stands up that frame's SANDBOX instead: posture sandbox, the MCP/API tester run against
 itself (the docker socket in its registry, the fixture accounts seeded), no edge of its own (its console is a site on
 the parent's edge, sandboxes/sandbox-<name>.caddy), its operators named under the parent's public name, and the parent's
 frame runner adopting it so its console can provision them. Re-running
@@ -457,7 +457,7 @@ def sandbox_edge_and_record(a, parent, stack_dir, ports, runner, t0, terms=None)
     os.makedirs(os.path.dirname(path), mode=0o755, exist_ok=True)
     prior = open(path).read() if os.path.isfile(path) else None
     with open(path, "w") as f:
-        f.write(f"# {a.name}: the SANDBOX of {a.sandbox_of} (frame-up --sandbox-of, §TESTBED); removed by frame-down --name {a.name}\n")
+        f.write(f"# {a.name}: the SANDBOX of {a.sandbox_of} (frame-up --sandbox-of); removed by frame-down --name {a.name}\n")
         f.write(site_block(a.public_name, tls_line, ports["registry"], ports["es"]))
     os.chmod(path, 0o644)
     rc, tail = caddy(pe["container"], "validate")
@@ -596,7 +596,7 @@ def main():
                     help="--with-runner: install the runner as a named INSTANCE (its own unit, policy, sockets and state beside a runner "
                          "this host already runs); unset = the host's single runner")
     ap.add_argument("--sandbox-of", default=None,
-                    help="stand this frame up as the SANDBOX of the named frame on this host (§TESTBED): posture sandbox, the "
+                    help="stand this frame up as the SANDBOX of the named frame on this host: posture sandbox, the "
                          "tester against itself, its console a site on the parent's edge, the parent's runner adopting it")
     ap.add_argument("--tester-fixture-secrets", default=None,
                     help="--sandbox-of: the fixture secrets a sandbox pair shares (frame-sandbox.py writes the file)")

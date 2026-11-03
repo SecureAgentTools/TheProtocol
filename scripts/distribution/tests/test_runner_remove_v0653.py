@@ -37,8 +37,10 @@ def host(tmp_path, monkeypatch):
     etc, units, state = tmp_path / "etc", tmp_path / "units", tmp_path / "state"
     for d in (etc, units, state / "frames"):
         d.mkdir(parents=True)
+    # V0654 (au): scratch socket paths: --remove now deletes the runner's sockets, and this host's /run/theprotocol is real
+    run = tmp_path / "run" / "theprotocol"
     paths = {"unit": "theprotocol-frame-runner", "config": str(etc / "frame-runner.json"), "state": str(state),
-             "socket": "/run/theprotocol/frame-runner.sock", "operator_socket": "/run/theprotocol/operator/frame-runner.sock",
+             "socket": str(run / "frame-runner.sock"), "operator_socket": str(run / "operator" / "frame-runner.sock"),
              "instance": ""}
     monkeypatch.setattr(fri, "runner_paths", lambda root, instance: dict(paths))
     monkeypatch.setattr(fri.os, "geteuid", lambda: 0)

@@ -8031,7 +8031,8 @@
       "choiceWhere": "Chosen in the panel pinned above this thread.",
       "choiceChose": "Chose “{label}”",
       "choiceNone": "None of the options",
-      "choiceChosen": "Chosen"
+      "choiceChosen": "Chosen",
+      "approvalWithdrawn": "withdrawn by the agent that asked"
     },
     "help": {
       "audit": "local background check — public data only, posts nothing",
@@ -8216,7 +8217,10 @@
       "pushOnNeeds": "On. Mentions, direct messages and approvals to decide reach this device.",
       "lastReplyAt": "last reply {time}",
       "sentWithKey": "sent with a key",
-      "sentWithKeyTitle": "Sent with an API key (a connector, a bridge or a script), not typed in a signed-in console or Pocket"
+      "sentWithKeyTitle": "Sent with an API key (a connector, a bridge or a script), not typed in a signed-in console or Pocket",
+      "byYourAssistant": "written by your assistant",
+      "byAssistant": "written by the assistant",
+      "byAssistantTitle": "Written by the owner’s personal assistant and posted by the registry at the owner’s request, not typed by hand"
     },
     "trust": {
       "cross": "{n} cross-registry",
@@ -8271,7 +8275,15 @@
       "assistantAdd": "Add @assistant",
       "assistantRemove": "Remove @assistant",
       "assistantScope": "The assistant answers only when addressed with @assistant, and reads only records this organization already holds: room receipts, the roster, the treasury balance. It never reads other rooms and never volunteers. Everyone sees a system row when it is added or removed.",
-      "assistantOffAsk": "The assistant stops answering from the next message. A system row records the removal."
+      "assistantOffAsk": "The assistant stops answering from the next message. A system row records the removal.",
+      "row": {
+        "wakeOnCall": "{by} put {target} on call: it wakes when named",
+        "wakeOnCallSelf": "{target} is on call: it wakes when named",
+        "wakeOff": "{by} switched {target} off: nothing in this room wakes it",
+        "wakeOffSelf": "{target} is off: nothing in this room wakes it",
+        "wakeListen": "{by} set {target} to listen to the room again",
+        "wakeListenSelf": "{target} listens to the room again"
+      }
     },
     "here": {
       "titleRoom": "Everyone who opened this room",
@@ -8532,6 +8544,37 @@
       "noCandidates": "Nobody else is in the room yet.",
       "editorsSave": "Save",
       "conflict": "Someone else changed the board while you edited. It shows their version now; your text is still here to merge."
+    },
+    "assist": {
+      "switch": "AI assistant for {who}",
+      "on": "on",
+      "off": "off",
+      "note": "While it is on, what you type in this room goes to your assistant, not to the room. Only you see your request; the answer is posted as {who}, marked as written by the assistant.",
+      "chipTitle": "Your assistant writes as {who}: what you type goes to it, not to the room",
+      "sendAs": "Ask your assistant to write as {who}",
+      "placeholder": "Ask your assistant…",
+      "askHead": "You asked your assistant, as {who}",
+      "onlyYou": "only you see this",
+      "waiting": "Writing. The answer appears below when it is posted.",
+      "failed": "The assistant did not answer; nothing was posted.",
+      "retry": "Ask again",
+      "edit": "Edit",
+      "dismiss": "Remove",
+      "retryWho": "Speak as {who} again to ask again.",
+      "reloaded": "This page reloaded while the assistant was writing. Ask again: an answer already posted comes back, and nothing is asked twice.",
+      "offline": "No answer reached this device (the connection dropped). Ask again: an answer already posted comes back, and nothing is asked twice.",
+      "you": "you",
+      "yourself": "yourself",
+      "askHeadYou": "You asked your assistant"
+    },
+    "wake": {
+      "aria": "What wakes {who} in this room",
+      "listen": "Listen",
+      "listenHelp": "Wakes for every line meant for it, as before",
+      "onCall": "On call",
+      "onCallHelp": "Wakes only when named, for a direct message, a decision on its own request, or your @all",
+      "off": "Off",
+      "offHelp": "Nothing in this room wakes it, until it is set back"
     }
   },
   "ourstate.away.digestHead": "While you were away",
@@ -8786,7 +8829,9 @@
       "send": "Send",
       "title": "Assistant",
       "ttsOff": "Voice replies off",
-      "ttsOn": "Voice replies on"
+      "ttsOn": "Voice replies on",
+      "clear": "Clear",
+      "clearTitle": "Clear this conversation. It is kept only in this browser tab, until you sign out."
     },
     "caps": {
       "balances": "spoken balances",

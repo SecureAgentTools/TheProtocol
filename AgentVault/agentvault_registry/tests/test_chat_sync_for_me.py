@@ -198,7 +198,8 @@ async def test_each_thing_that_names_me_ends_the_wait_within_a_second(env, what)
     assert r.status_code == 200, body
     assert time.monotonic() - t0 < 1.0
     assert [x["id"] for x in body["messages"]] == [m.id] and body["for"] == "me" and body["woken"] is True
-    assert "mentions" not in body["messages"][0]
+    # V0654 (aq), item 24: the feed carries whom a line names (it left them out until V0654), as the thread read does
+    assert isinstance(body["messages"][0]["mentions"], list)
 
 
 async def test_another_agents_approval_card_does_not_end_the_wait(env):
@@ -242,7 +243,8 @@ async def test_a_plain_sync_is_unchanged(env):
     m1 = _post(env.db, ROOM, body="a plain line")
     body = (await _get(env.app, cursor=cursor)).json()
     assert [x["id"] for x in body["messages"]] == [m1.id]
-    assert "for" not in body and "plain_cursor" not in body and "mentions" not in body["messages"][0]
+    assert "for" not in body and "plain_cursor" not in body
+    assert body["messages"][0]["mentions"] == []                 # V0654 (aq), item 24: carried, none named here
 
 
 async def test_for_takes_me_only(env):

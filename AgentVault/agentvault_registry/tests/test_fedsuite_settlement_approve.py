@@ -31,10 +31,17 @@ class _Legs:
         return bool(ok)
 
 
-def _drive(monkeypatch, *, insufficient=False, unpaid=False) -> Dict[str, bool]:
+def _drive(monkeypatch, *, insufficient=False, unpaid=False, mirror_after=0, polls=1) -> Dict[str, bool]:
+    """mirror_after: how many of the origin's reads go by before the defendant's mirror is there (-1: never); polls:
+    how many times the patched _until asks before its budget is out (1: once, as before V0654)."""
     st = {"home": "PENDING_ADMIN_APPROVAL", "origin": "PENDING_SLASH"}
     bal = {"d": 0.0, "c": 3.0}
     amount = 6       # one over the home's highest threshold, 5
+    reads = {"n": 0}
+    filed = []
+
+    def mirrored():
+        return mirror_after >= 0 and reads["n"] > mirror_after
 
     def row(where):
         return {"id": SID, "status": st[where], "requested_amount": f"{amount}.000000", "defendant_did": "did:theprotocol:d",
@@ -55,6 +62,10 @@ def _drive(monkeypatch, *, insufficient=False, unpaid=False) -> Dict[str, bool]:
             bal["d"] += amount
             return {"status_code": 200, "ok": True}, None
         if tool == "submitDispute":
+            filed.append(mirrored())
+            if not mirrored():
+                # what V0653's recut pair nt261102x2 answered while the mirror was on its way (12:45:46Z)
+                return None, "Dispute filing request timed out"
             return {"id": 276}, None
         if tool == "submitDisputeEvidence":
             return {"ok": True}, None
@@ -82,7 +93,18 @@ def _drive(monkeypatch, *, insufficient=False, unpaid=False) -> Dict[str, bool]:
         return bal["d"] if jwt == "jwt-d" else bal["c"]
 
     async def until(fn, sec):
-        return await fn()
+        for _ in range(polls):
+            last = await fn()
+            if last:
+                return last
+        return last
+
+    async def rest(rig, method, endpoint, label, body=None, jwt=None):
+        assert (method, endpoint, label) == ("GET", "/api/v1/agent-cards/did:theprotocol:d", reject._ADMIN[reject._A])
+        reads["n"] += 1
+        if not mirrored():
+            return 404, {"detail": "Agent Card not found"}
+        return 200, {"agent_did": "did:theprotocol:d", "is_active": True}
 
     legs = _Legs()
 
@@ -92,23 +114,43 @@ def _drive(monkeypatch, *, insufficient=False, unpaid=False) -> Dict[str, bool]:
 
     for mod in (flow, reject):
         monkeypatch.setattr(mod, "_call", call)
+    monkeypatch.setattr(reject, "_rest", rest, raising=False)   # raising=False: V0653's module has no _rest
     monkeypatch.setattr(flow, "_balance", balance)
     monkeypatch.setattr(flow, "_until", until)
     monkeypatch.setattr(flow, "_run", run)
     monkeypatch.setattr(reject.throwaways, "made", lambda label, did: None)
     monkeypatch.setenv(flow.EPHEMERAL_ENV, "true")
     asyncio.run(flow.test_xframe_settlement_approve(None))
+    legs.seen["_filed_before_the_mirror"] = any(not m for m in filed)
     return legs.seen
 
 
 def test_on_a_pair_the_home_slashes_and_the_origin_pays(monkeypatch):
     seen = _drive(monkeypatch)
+    assert not seen.pop("_filed_before_the_mirror")
     assert seen and all(seen.values()), seen
     assert set(seen) == {"the_amount_is_over_every_threshold_the_home_holds", "the_home_funds_the_defendant_the_amount",
+                         "the_origin_mirrors_the_defendant",
                          "the_origin_takes_the_dispute", "the_evidence_names_the_amount",
                          "the_origin_rules_for_the_complainant", "the_home_holds_it_for_an_administrator",
                          "approveDisputeSettlement_slashes_it_in_full", "the_defendant_lost_the_amount",
                          "the_origin_settles", "the_complainant_was_paid_the_amount"}
+
+
+def test_a_late_mirror_is_waited_for_and_the_dispute_filed_once(monkeypatch):
+    """V0654 (at), item 21 (Guild order gwo_a4be529fdaa3e5f38143606e): the origin knows the defendant only after a few
+    reads (the mirror arrived about 21 s after the defendant on nt261102x2). The flow waits for the mirror, then files
+    once, and every leg holds. RED on V0653's flow: it filed at once, took "Dispute filing request timed out" for the
+    answer and stopped at the_origin_takes_the_dispute."""
+    seen = _drive(monkeypatch, mirror_after=3, polls=10)
+    assert not seen.pop("_filed_before_the_mirror"), "it filed before the origin held the defendant's mirror"
+    assert seen and all(seen.values()), seen
+
+
+def test_a_mirror_that_never_arrives_is_red_and_nothing_is_filed(monkeypatch):
+    seen = _drive(monkeypatch, mirror_after=-1, polls=4)
+    assert seen["the_origin_mirrors_the_defendant"] is False
+    assert "the_origin_takes_the_dispute" not in seen and not seen.pop("_filed_before_the_mirror")
 
 
 def test_a_slash_that_takes_nothing_is_red(monkeypatch):

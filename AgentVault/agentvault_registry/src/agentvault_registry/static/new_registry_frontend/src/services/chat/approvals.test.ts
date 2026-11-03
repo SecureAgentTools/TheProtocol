@@ -76,3 +76,22 @@ describe('V0652 (y): a press on a request decided before it', () => {
     expect(decidedElsewhere(null, 6)).toBeNull()
   })
 })
+
+describe('V0654 (aq), item 18: a request its asker withdrew', () => {
+  const req = (id: string, extra: Record<string, unknown> = {}, ex = '2026-10-31T05:00:00Z') =>
+    ({ kind: 'card', card: { v: 1, type: 'approval.request', data: { approval_id: id, expires_at: ex, ...extra } } })
+  const choice = (id: string, extra: Record<string, unknown> = {}) =>
+    ({ kind: 'card', card: { v: 1, type: 'choice.request', data: { approval_id: id, expires_at: '2026-10-31T05:00:00Z', ...extra } } })
+  const w = { withdrawn: { at: '2026-10-31T03:58:00Z', by_agent_did: 'did:x' } }
+
+  it('reads withdrawn from its card (updated in place), past its expiry too', () => {
+    // BASE (V0653): pending and expired, the withdrawal unseen
+    const live = liveApprovalStatus([req('w', w), choice('c', w), req('late', w, '2026-10-31T03:00:00Z'), req('p')], NOW)
+    expect(live).toEqual({ w: 'withdrawn', c: 'withdrawn', late: 'withdrawn', p: 'pending' })
+  })
+
+  it('a request card that changed reaches the pinned panel, which reads its list again', () => {
+    expect(touchesApprovals(req('w', w))).toBe(true)
+    expect(touchesApprovals(choice('c', w))).toBe(true)
+  })
+})

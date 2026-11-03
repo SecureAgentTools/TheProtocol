@@ -108,11 +108,14 @@ that line, and its store refuses every event the registry writes (`403 mtls_requ
 
 ```bash
 docker compose -f docker-compose.standalone.yml --env-file .env.operator up -d
-docker logs my-registry-registry 2>&1 | grep -A3 "FIRST-BOOT ADMIN PASSWORD"
+docker exec my-registry-registry cat /app/data/first-boot-admin-password   # the first admin's password
+docker exec my-registry-registry rm /app/data/first-boot-admin-password    # once you have it
 ```
 
 The first start creates the databases and runs the migrations. The registry then creates its first admin,
-`admin@<registry-name>.dev`, and prints a random password to its log, once. To choose them yourself, set
+`admin@<registry-name>.dev`, with a random password it writes to `/app/data/first-boot-admin-password` inside its
+container (mode 600): its log names that file, never the password. Read it once, then delete the file. To choose
+them yourself, set
 `FIRST_ADMIN_EMAIL` and `FIRST_ADMIN_PASSWORD` in `.env.operator` before the first start. Change the password before the
 registry is reachable from outside, and put your own TLS reverse proxy in front of it: the registry serves plain HTTP
 on port 8000.
@@ -246,8 +249,9 @@ delivers once its admin approves. It waits up to 20 minutes (`--timeout-min`) an
 invitation is pending; run it again later and it resumes. *Federating a Frame* (chapter 15) walks every call.
 `frame-down.py --name myframe` removes the frame. Add `--with-runner` and, once the frame is gone, it also takes off
 the frame runner `frame-up.py --with-runner` installed for it: its systemd unit, its policy
-(`/etc/theprotocol/frame-runner.json` and the installer's backups of it), the protected-frames list and the socket group
-the installer created (a group your host had before stays). `frame-runner-install.py --remove --export-root <export>
+(`/etc/theprotocol/frame-runner.json` and the installer's backups of it), its sockets under `/run/theprotocol` (and
+the directories they leave empty), the protected-frames list and the socket group the installer created (a group your
+host had before stays). `frame-runner-install.py --remove --export-root <export>
 --stack-root <stack root>` does the same on its own, `--dry-run` says what it would remove, and `--purge-state` also
 removes the runner's jobs and audit (`/var/lib/theprotocol/frame-runner`, otherwise kept). Both refuse while the runner
 still holds a frame that runs.

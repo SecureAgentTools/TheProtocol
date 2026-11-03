@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Review a suggested change from its evidence archive: the maintainer's half of test-verified development (§REVIEWLANE).
+"""Review a suggested change from its evidence archive: the maintainer's half of test-verified development.
 
   ./frame-review.py contribution-<time>.tar.gz [--pristine <the release kit tarball>] [--cla-file <acceptances>]
                     [--own-after <your own after report, once per flow>] [--design-issue <id or url>]
@@ -12,7 +12,7 @@ reading the diff. It never trusts the archive's own comparison: it recomputes it
 own rule.
 
 A change to the test suite (anything under api_tests/, the tree frame-test's suite hash covers) carries a THIRD report
-per flow, the control: the new suite run on the unmodified release. The rules (§REVIEWLANE-2, frame-contribute's own):
+per flow, the control: the new suite run on the unmodified release. The rules (frame-contribute's own):
 the control turns no existing tool red against the baseline; the tools the suite change adds may be red there (the
 change's own tests, failing before the change exists), and those are the expected reds; the after report holds no new
 red against the control, and every expected red is green in it. Red then green, in one archive.

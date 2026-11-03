@@ -43,6 +43,9 @@ class _Client:
             return {"settlement": {"id": "bcc7ae9e", "status": "PENDING_SLASH", "origin_registry_url": self.rig.origin}}
         if tool == "getFederationDisputeSettlements":
             return {"settlements": []}
+        if tool == "adminRequest" and args.get("method") == "GET" and args["endpoint"].startswith("/api/v1/agent-cards/"):
+            # V0654 (at), item 21: the origin holds the defendant's mirror (mirrored_on reads an active card)
+            return {"status_code": 200, "response": {"agent_did": args["endpoint"].rsplit("/", 1)[-1], "is_active": True}}
         return {"ok": True}
 
 

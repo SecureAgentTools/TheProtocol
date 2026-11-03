@@ -25,7 +25,7 @@ from agentvault_registry.api_tests.federation_suite.decorator import federation_
 from agentvault_registry.api_tests.federation_suite.rig import AssertionResult, FederationTestRig, PreconditionUnmet
 from agentvault_registry.api_tests.federation_suite.tests.test_cross_registry_settlement_reject import (
     _A, _ADMIN, _B, _MIRROR_SEC, _PENDING, _REQUIRES, _SETTLE_SEC, _agent, _num, _settlements,
-    amount_over_every_threshold, ours, settlement_of,
+    amount_over_every_threshold, mirrored_on, ours, settlement_of,
 )
 from agentvault_registry.api_tests.federation_suite.tests.test_twoagent_contract_xframe import (
     _balance, _call, _run, _until,
@@ -53,8 +53,9 @@ async def test_xframe_settlement_approve(rig: FederationTestRig) -> AssertionRes
     if not on_a_pair():
         raise PreconditionUnmet(f"NOT MEASURED: {PAIR_ONLY}")
     planned = ["the_amount_is_over_every_threshold_the_home_holds", "the_home_funds_the_defendant_the_amount",
-               "the_origin_takes_the_dispute", "the_evidence_names_the_amount", "the_origin_rules_for_the_complainant",
-               "the_home_holds_it_for_an_administrator", "approveDisputeSettlement_slashes_it_in_full",
+               "the_origin_mirrors_the_defendant", "the_origin_takes_the_dispute", "the_evidence_names_the_amount",
+               "the_origin_rules_for_the_complainant", "the_home_holds_it_for_an_administrator",
+               "approveDisputeSettlement_slashes_it_in_full",
                "the_defendant_lost_the_amount", "the_origin_settles", "the_complainant_was_paid_the_amount"]
 
     async def body(legs, made, hooks):
@@ -76,6 +77,10 @@ async def test_xframe_settlement_approve(rig: FederationTestRig) -> AssertionRes
                           {"refused": why, "balance": d0}):
             return
         c0 = await _balance(rig, _A, complainant["jwt"])
+        # V0654 (at), item 21: file once the origin holds the defendant's mirror (mirrored_on), never against the clock
+        seen = await _until(lambda: mirrored_on(rig, _ADMIN[_A], defendant["did"]), _MIRROR_SEC)
+        if not legs.check("the_origin_mirrors_the_defendant", bool(seen), {"within_sec": _MIRROR_SEC}):
+            return
 
         async def _file():
             r, w = await _call(rig, _A, "submitDispute", {
