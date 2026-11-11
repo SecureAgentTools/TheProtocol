@@ -204,11 +204,11 @@ jobs:
           python-version: ${{ matrix.py }}
       - name: SDK tests
         run: |
-          pip install --quiet -e '.[test,server,keyring,anp]'
+          pip install --quiet -e '.[test,server,keyring,anp,proxy,proxy-mqtt,proxy-sftp]'
           RC=0; python -m pytest -q -p no:cacheprovider -rs > "$RUNNER_TEMP/sdk.log" 2>&1 || RC=$?
           cat "$RUNNER_TEMP/sdk.log"
           [ "$RC" -eq 0 ] || { echo "FATAL: SDK tests exited $RC"; exit 1; }
           PASSED=$(grep -oE '[0-9]+ passed' "$RUNNER_TEMP/sdk.log" | tail -1 | cut -d' ' -f1 || true); PASSED=${PASSED:-0}
           SKIPPED=$(grep -oE '[0-9]+ skipped' "$RUNNER_TEMP/sdk.log" | tail -1 | cut -d' ' -f1 || true); SKIPPED=${SKIPPED:-0}
-          echo "SDK tests passed=$PASSED skipped=$SKIPPED (floor 240, skip ceiling 0)"
-          [ "$PASSED" -ge 240 ] && [ "$SKIPPED" -eq 0 ] || { echo "FATAL: the suite collapsed"; exit 1; }
+          echo "SDK tests passed=$PASSED skipped=$SKIPPED (floor 880, skip ceiling 89: the Proxy's database, SFTP and MQTT tests need servers this job does not run)"
+          [ "$PASSED" -ge 880 ] && [ "$SKIPPED" -le 89 ] || { echo "FATAL: the suite collapsed"; exit 1; }
