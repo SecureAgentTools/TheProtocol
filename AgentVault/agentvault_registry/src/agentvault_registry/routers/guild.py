@@ -23,7 +23,7 @@ import httpx
 import time
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Security, status
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentvault_registry import models
@@ -34,6 +34,7 @@ from agentvault_registry.services import guild_escrow, guild_reputation
 from agentvault_registry.services import payout_outcome as _po  # §DOCSFIX D6-776: the stage-failure reading
 from agentvault_registry.services.ledger_unavailable import refusal_from_error  # §LEDGERGATE (V0598)
 from agentvault_registry.services import guild_contract_mirror  # P3a mirror (flag-gated, never raises)
+from agentvault_registry.services import owner_reads  # V0658 (q): reading follows ownership
 from agentvault_registry.core.federation_auth import get_federation_identity, require_peer_registry_identity
 from agentvault_registry.identity import svid_client
 from agentvault_registry.services import reputation_bond as _rb
@@ -112,6 +113,14 @@ class OrderPostIn(BaseModel):
         None, max_length=36,
         description="A conversation your agent takes part in and may post in (an organization's room): the order "
                     "shows there as one card that follows its lifecycle.")
+
+
+class OrderRoomIn(BaseModel):
+    """V0659 (n): the room an order posted without one shows in from now on, named by its poster."""
+    room_id: str = Field(
+        ..., min_length=1, max_length=36,
+        description="A conversation your agent takes part in and may post in (an organization's room): the order "
+                    "shows there as one card, posted with its state now and kept current at each later step.")
 
 
 class BidIn(BaseModel):
@@ -297,6 +306,15 @@ async def _notice_first_time(host: str, oid: str, kind: str) -> bool:
         return True
 
 
+async def _room_refusal(db: AsyncSession, room: str, agent) -> Optional[str]:
+    """Why the poster's agent may not show its order in this room, or None (services/guild_live_card.room_refusal). ONE
+    check for both doors (V0659 (n)): the room named when the order is posted (`room_id`) and the room named later
+    (POST /guild/orders/{oid}/room)."""
+    from agentvault_registry.services import chat_service as _cs, guild_live_card
+    poster = _cs.Actor("agent", agent_did=agent.did, display_name=getattr(agent, "name", None) or agent.did)
+    return await guild_live_card.room_refusal(db, room, poster)
+
+
 # ── post ─────────────────────────────────────────────────────────────────────
 @router.post("/api/v1/guild/orders", summary="Post a task with an escrowed bounty")
 async def post_order(body: OrderPostIn, agent: models.Agent = Depends(get_current_agent), db: AsyncSession = Depends(get_db)):
@@ -317,9 +335,7 @@ async def post_order(body: OrderPostIn, agent: models.Agent = Depends(get_curren
     # V0652 (aa): the room the order shows in. Refused here, before any escrow moves.
     room = (body.room_id or "").strip() or None
     if room is not None:
-        from agentvault_registry.services import chat_service as _cs, guild_live_card
-        poster = _cs.Actor("agent", agent_did=agent.did, display_name=getattr(agent, "name", None) or agent.did)
-        why = await guild_live_card.room_refusal(db, room, poster)
+        why = await _room_refusal(db, room, agent)
         if why:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"room_id: {why}")
     currency = body.currency or os.getenv("FRAME_CURRENCY", "AVT")
@@ -356,6 +372,82 @@ async def post_order(body: OrderPostIn, agent: models.Agent = Depends(get_curren
             "intended_worker_did": intended, "room_id": room}
 
 
+# ── the room, named after posting ────────────────────────────────────────────
+def _order_ended(order_status: Optional[str]) -> bool:
+    """V0659 (n): an order that ended takes no room. The statuses are the ones its card treats as closed."""
+    from agentvault_registry.services import chat_live_cards as _lc
+    return str(order_status or "") in _lc.GUILD_TERMINAL
+
+
+async def _claim_room(db: AsyncSession, oid: str, room: str, o: dict) -> dict:
+    """V0659 (n): the room claimed for an order that has none, by a guarded UPDATE (no room yet, not ended), and the
+    order as the answer reads it. The card's message id is cleared with the claim: an order whose room was deleted (the
+    room column is ON DELETE SET NULL, the card's id is not) keeps the old card's id, which names no card in the new
+    room. Another room claimed first, or an order that ended in the same moment, is refused (409) and left as it is;
+    the same room claimed first is this naming's twin (the poster's retry), and the order is answered as it stands."""
+    from agentvault_registry.services import chat_live_cards as _lc
+    claimed = await db.execute(text(
+        "UPDATE guild_work_orders SET announce_conversation_id = :room, announce_message_id = NULL "
+        "WHERE id = :o AND announce_conversation_id IS NULL AND status NOT IN :ended"
+    ).bindparams(bindparam("ended", expanding=True)), {"room": room, "o": oid, "ended": sorted(_lc.GUILD_TERMINAL)})
+    if getattr(claimed, "rowcount", 0):
+        await db.commit()
+        return {**o, "announce_conversation_id": room, "announce_message_id": None}
+    await db.rollback()
+    now = await _load(db, oid)
+    await db.rollback()                        # end the read: the card is written in its own session
+    if _order_ended(now["status"]):
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Order is {now['status']}: an order that ended takes no room")
+    if now.get("announce_conversation_id") != room:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="The order already has a room: an order shows in one room only")
+    return now
+
+
+@router.post("/api/v1/guild/orders/{oid}/room", summary="Name the room an order shows in (poster)")
+async def name_order_room(oid: str, body: OrderRoomIn, agent: models.Agent = Depends(get_current_agent),
+                          db: AsyncSession = Depends(get_db)):
+    """
+    Name the room your order shows in, for an order posted without one: the Guild posts the order's card there with
+    its state now (its status, its bids, its worker and its steps so far) and keeps it current at each later step, as
+    for an order posted with `room_id`. Poster only. One room per order: another room for an order that has one is
+    refused, and naming its room again answers its card (and posts it if it was not posted then), so a retry is safe.
+    Not for an order that ended (settled, cancelled or expired). The room passes the same checks as at posting, each
+    time: one your agent takes part in and may post in now, hosted on this registry, not a support or system thread.
+    Moves no money.
+
+    \f
+    V0659 (n) gwo_54d9e9b56ff69609f5e8fbbe: the orders posted through MCP while guildPostOrder took no `room_id` get
+    their cards this way. The room is claimed by a guarded UPDATE (_claim_room), so a naming of another room racing this
+    one, or an order that ends in the same moment, is refused and never written twice; the card is posted after the
+    commit, in its own session, by the rail's one renderer (services/guild_live_card.post_now), whose card is posted
+    once per room whatever the retries (its client_ref).
+    """
+    _require_enabled()
+    o = await _load(db, oid)
+    if o["poster_did"] != agent.did:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Only the poster can name the order's room")
+    if _order_ended(o["status"]):
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Order is {o['status']}: an order that ended takes no room")
+    room = body.room_id.strip()
+    named = o.get("announce_conversation_id") or None
+    if named is not None and named != room:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="The order already has a room: an order shows in one room only")
+    why = await _room_refusal(db, room, agent) if room else "room_id names no conversation on this registry"
+    if why:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"room_id: {why}")
+    if named is None:
+        o = await _claim_room(db, oid, room, o)
+    else:
+        await db.commit()        # its own room named again: what the room check wrote is kept, as a claim keeps it
+    from agentvault_registry.services import guild_live_card
+    mid = o.get("announce_message_id") or await guild_live_card.post_now(oid)
+    logger.info("[GUILD] order %s shows in room %s (card %s)", oid, room, mid or "not posted yet")
+    out = {"ok": True, "order_id": oid, "room_id": room, "status": o["status"], "card_message_id": mid}
+    if not mid:
+        out["card"] = "not posted now: naming the room again posts it, as does the order's next step"
+    return out
+
+
 # ── discover ─────────────────────────────────────────────────────────────────
 @router.get("/api/v1/guild/orders", summary="Discover open tasks")
 async def list_orders(status_filter: str = "open", limit: int = 50, db: AsyncSession = Depends(get_db)):
@@ -378,8 +470,11 @@ async def list_orders(status_filter: str = "open", limit: int = 50, db: AsyncSes
 async def _may_see_deliverable(db: AsyncSession, o: dict, dev: Optional[models.Developer],
                                agent_did: Optional[str] = None) -> bool:
     """Who reads delivered work: the poster agent and the worker agent themselves (V0651 (s): the poster agent is the
-    one that verifies, so it read blind before), the developer behind either of them, an active member of the poster's
-    organization when an org treasury posted, and an admin (who resolves disputes over it). Nobody else."""
+    one that verifies, so it read blind before), the developer behind either of them, the owner of the organization the
+    work was done for (V0658 (q): a firm award, `payee_org_id`, whoever its agents are now), an active member of the
+    poster's organization when an org treasury posted, and an admin (who resolves disputes over it). Nobody else: the
+    owner of an organization a member's agent works in reads the order and its parties (services/owner_reads), not
+    the work that agent did on its own account."""
     if agent_did:
         own = {str(d).lower() for d in (o.get("poster_did"), o.get("worker_did")) if d}
         if str(agent_did).lower() in own:
@@ -389,9 +484,9 @@ async def _may_see_deliverable(db: AsyncSession, o: dict, dev: Optional[models.D
     if admin_credential(dev):   # D6-821: an admin on this request's credential
         return True
     dids = [d for d in (o.get("poster_did"), o.get("worker_did")) if d]
-    if dids and (await db.execute(text(
-            "SELECT 1 FROM agents WHERE did = ANY(:d) AND creator_developer_id = :dev LIMIT 1"),
-            {"d": dids, "dev": dev.id})).first():
+    if await owner_reads.created_a_party(db, dev.id, dids):
+        return True
+    if await owner_reads.owns_an_organization(db, dev.id, (o.get("payee_org_id"), o.get("poster_org_id"))):
         return True
     org_id = o.get("poster_org_id")
     return bool(org_id) and (await db.execute(text(
@@ -427,6 +522,10 @@ async def order_detail(oid: str, db: AsyncSession = Depends(get_db),
         d = o["deliverable"]
         o["deliverable_keys"] = sorted(d.keys()) if isinstance(d, dict) else []
         o["deliverable"], o["deliverable_withheld"] = None, True
+    if dev is not None:
+        # V0658 (q): which parties are this developer's (his agents, his organizations'), so the console shows the
+        # order to its owner whichever agent is selected, and names the agent that may act on it
+        o["my_parties"] = (await owner_reads.owned_parties(db, dev.id, [o], owner_reads.GUILD_ROLES))[0]
     bids = (await db.execute(text(
         "SELECT id, bidder_did, price, eta_seconds, pitch, reputation, status, on_behalf_of_org_id, "
         "stake_amount, stake_status, home_registry_url, created_at "
@@ -698,7 +797,7 @@ async def award(oid: str, body: AwardIn, agent: models.Agent = Depends(get_curre
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Only the poster can award")
     if o["status"] != "open":
         raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Order is {o['status']}")
-    bid = (await db.execute(text("SELECT id, bidder_did, status, on_behalf_of_org_id, home_registry_url, payee_did_hint FROM guild_bids WHERE id=:b AND order_id=:o"),
+    bid = (await db.execute(text("SELECT id, bidder_did, status, on_behalf_of_org_id, home_registry_url, payee_did_hint, eta_seconds FROM guild_bids WHERE id=:b AND order_id=:o"),
                             {"b": body.bid_id, "o": oid})).mappings().first()
     if not bid or bid["status"] != "open":
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Bid not found or not open")
@@ -724,13 +823,23 @@ async def award(oid: str, body: AwardIn, agent: models.Agent = Depends(get_curre
             payee_did = await _validate_firm_bid(db, bid["bidder_did"], payee_org)  # re-check at award time
     # Guard open→awarded (2026-07-23): only one actor awards (kills a concurrent double-award and,
     # with the reaper's claim-first expiry, the award↔reaper race that would otherwise double-spend).
+    # V0658 (e), polish 17: the work is due at the later of the order's deadline and the award + the winning bid's
+    # ETA (the posting deadline alone made a bid due before its own estimate); a bid with no ETA keeps the deadline.
+    # GREATEST skips a NULL, so an order with no deadline gets award + ETA, and one with neither keeps none.
     claimed = await db.execute(text(
         "UPDATE guild_work_orders SET status='awarded', worker_did=:w, payee_did=:pd, payee_org_id=:po, "
-        "worker_home_registry=:hr, awarded_bid_id=:b, awarded_at=now() WHERE id=:o AND status='open'"
+        "worker_home_registry=:hr, awarded_bid_id=:b, awarded_at=now(), "
+        "deadline=CASE WHEN CAST(:eta AS INTEGER) IS NULL THEN deadline "
+        "ELSE GREATEST(deadline, now() + make_interval(secs => CAST(:eta AS INTEGER))) END "
+        "WHERE id=:o AND status='open' RETURNING deadline"
     ), {"w": bid["bidder_did"], "pd": payee_did, "po": payee_org, "hr": bid["home_registry_url"],
-        "b": bid["id"], "o": oid})
+        "b": bid["id"], "o": oid, "eta": bid.get("eta_seconds")})
     if getattr(claimed, "rowcount", 0) == 0:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Order is no longer open")
+    _due_row = claimed.mappings().first() if hasattr(claimed, "mappings") else None
+    work_deadline = (_due_row or {}).get("deadline")
+    work_deadline_iso = work_deadline.isoformat() if hasattr(work_deadline, "isoformat") else None
+    due_words = (f", due {work_deadline.strftime('%Y-%m-%d %H:%M UTC')}" if hasattr(work_deadline, "strftime") else "")
     await db.execute(text("UPDATE guild_bids SET status='awarded' WHERE id=:b"), {"b": bid["id"]})
     # V0652 (af): the losing bids are named by the UPDATE that releases them (once: the award's claim above happens once)
     declined = (await db.execute(text(
@@ -739,7 +848,8 @@ async def award(oid: str, body: AwardIn, agent: models.Agent = Depends(get_curre
     # STAKED WORK: refund the losing bidders' stakes; the winner's stays held until settle/dispute.
     await _refund_all_stakes(db, oid, exclude_bidder=bid["bidder_did"])
     await _audit(db, oid, await _next_seq(db, oid), "awarded", agent.did,
-                 {"bid_id": bid["id"], "worker": bid["bidder_did"], "payee": payee_did or bid["bidder_did"], "firm": payee_org})
+                 {"bid_id": bid["id"], "worker": bid["bidder_did"], "payee": payee_did or bid["bidder_did"], "firm": payee_org,
+                  "work_deadline": work_deadline_iso})
     await db.commit()
     _emit("GuildOrderAwarded", oid, {"worker": bid["bidder_did"], "bid_id": bid["id"], "firm": payee_org})
     # §NOTIFV2 — you won a job. Post-commit, fire-and-forget, never blocks the award.
@@ -749,7 +859,7 @@ async def award(oid: str, body: AwardIn, agent: models.Agent = Depends(get_curre
         _aio.create_task(notify_agent_owners(
             "guild.awarded", [bid["bidder_did"]],
             title="Guild: you won the job",
-            message=f"Order {oid[:20]} awarded to {bid['bidder_did']}",
+            message=f"Order {oid[:20]} awarded to {bid['bidder_did']}{due_words}",
             tags="trophy", click="/ui/#/guild"))
     except Exception:  # noqa: BLE001
         logger.debug("[GUILD] award notify skipped", exc_info=True)
@@ -759,16 +869,16 @@ async def award(oid: str, body: AwardIn, agent: models.Agent = Depends(get_curre
                    message=f"\u201c{(o.get('title') or oid)[:80]}\u201d went to another bid; any stake you put up was returned.")
     _award_data = {"order_id": oid, "title": o.get("title"), "bid_id": bid["id"], "worker_did": bid["bidder_did"],
                    "payee": payee_did or bid["bidder_did"], "firm": payee_org, "bounty": str(o.get("bounty")),
-                   "currency": o.get("currency")}
+                   "currency": o.get("currency"), "work_deadline": work_deadline_iso}
     if bid["home_registry_url"]:
         _ship_guild_notice({**o, "worker_did": bid["bidder_did"], "worker_home_registry": bid["home_registry_url"]},
-                           "awarded", {"bid_id": bid["id"]})
+                           "awarded", {"bid_id": bid["id"], "work_deadline": work_deadline_iso})
     else:
         _guild_webhook("guild.awarded", [bid["bidder_did"]], {
             **_award_data, "via": "local", "submit_with": f"POST /api/v1/guild/orders/{oid}/submit"})
     await guild_contract_mirror.sync_from_order(db, oid)  # P3a mirror
     return {"ok": True, "order_id": oid, "worker": bid["bidder_did"], "payee": payee_did or bid["bidder_did"],
-            "firm": payee_org, "status": "awarded"}
+            "firm": payee_org, "status": "awarded", "work_deadline": work_deadline_iso}
 
 
 # ── submit ───────────────────────────────────────────────────────────────────
@@ -861,12 +971,25 @@ async def submit(oid: str, body: SubmitIn, agent: models.Agent = Depends(get_cur
 
 
 # ── DDR linkage: file a real Dispute row for the evidence/audit trail ─────────
-async def _file_ddr_dispute(db: AsyncSession, complainant_did: str, defendant_did: str) -> Optional[str]:
-    """File a DDR dispute (the audit-grade record contracts also files). GUILD still does its own
-    money split (DDR moves no funds) — this links the two. Never blocks the guild flow."""
+async def _file_ddr_dispute(db: AsyncSession, complainant_did: str, defendant_did: str, *, oid: Optional[str] = None,
+                            reason: Optional[str] = None, filed_by: Optional[str] = None,
+                            statement: Optional[str] = None) -> Optional[str]:
+    """File a DDR dispute (the audit-grade record contracts also files). Never blocks the guild flow.
+    V0657 (a): the record knows its order (guild_order_id), why it opened and who filed it, so a ruling on it settles
+    the order's escrow and the Guild's resolve closes it (one settlement authority, services/dispute_settlement.py).
+    A complainant's `statement` (the poster's reject reason) is the record's first evidence."""
     try:
         from agentvault_registry.crud import crud_disputes
-        d = await crud_disputes.create_dispute(db, complainant_did=complainant_did, defendant_did=defendant_did)
+        d = await crud_disputes.create_dispute(db, complainant_did=complainant_did, defendant_did=defendant_did,
+                                               guild_order_id=oid, reason=reason, filed_by=filed_by)
+        statement = (statement or "").strip()
+        if statement:
+            try:
+                await crud_disputes.add_evidence_to_dispute(
+                    db, d.id, complainant_did, {"type": "statement", "content": statement[:2000],
+                                                "description": "The poster's reason for rejecting the work"})
+            except Exception as e:  # noqa: BLE001 — the record stands without it
+                logger.warning("[GUILD] the reject reason was not added to dispute %s: %s", d.id, e)
         return str(d.dispute_id if hasattr(d, "dispute_id") else d.id)
     except Exception as e:  # noqa: BLE001
         logger.warning("[GUILD] DDR dispute filing failed (%s vs %s): %s", complainant_did, defendant_did, e)
@@ -1075,7 +1198,8 @@ async def verify(oid: str, body: VerifyIn, request: Request, agent: models.Agent
             raise HTTPException(status.HTTP_409_CONFLICT, detail="Order is no longer submitted")
         await db.commit()
         # File a DDR dispute (its crud commits internally), then attach it to the claimed order.
-        ddr_id = await _file_ddr_dispute(db, o["poster_did"], o["worker_did"])
+        ddr_id = await _file_ddr_dispute(db, o["poster_did"], o["worker_did"], oid=oid, reason="rejected_by_poster",
+                                         filed_by="party", statement=body.feedback)
         await db.execute(text("UPDATE guild_work_orders SET dispute_id=:d WHERE id=:o"), {"d": ddr_id, "o": oid})
         await _audit(db, oid, await _next_seq(db, oid), "disputed", agent.did, {"reason": body.feedback or "rejected", "ddr_dispute": ddr_id})
         await db.commit()
@@ -1088,6 +1212,10 @@ async def verify(oid: str, body: VerifyIn, request: Request, agent: models.Agent
                 "order_id": oid, "title": o.get("title"), "worker_did": o["worker_did"], "via": "local", **_verdict})
         await guild_contract_mirror.sync_from_order(db, oid)  # P3a mirror
         return {"ok": True, "order_id": oid, "status": "disputed", "ddr_dispute_id": ddr_id}
+    # V0660 (b): an order with an acceptance test settles on its passing verdict (on refuses, shadow reports; under off
+    # nothing is read). Before the claim, so a refusal leaves the order submitted; the reject branch above is untouched.
+    from agentvault_registry.services import quantum_acceptance as _qacc
+    await _qacc.settlement_gate(db, "guild_work_order", oid)
     # SETTLE: the PAYEE gets bounty - fee. Payee = the org treasury (firm) if set, else the worker.
     # A member delivered the work (worker_did); the firm gets paid (payee_did). Fee retained in treasury. Δ=0.
     # CLAIM submitted→settling FIRST (guarded+committed): only ONE actor settles, so a concurrent or
@@ -1396,6 +1524,31 @@ async def mine(agent: models.Agent = Depends(get_current_agent), db: AsyncSessio
     return {"orders": [dict(r) for r in rows], "total": len(rows)}
 
 
+@router.get("/api/v1/guild/owned", summary="The orders of my agents and of my organizations (developer)")
+async def owned_orders(limit: int = 100, dev: models.Developer = Depends(get_current_developer),
+                       db: AsyncSession = Depends(get_db)):
+    """
+    The orders on which an agent you created, or an agent a member brought into an organization you own, is the poster
+    or the worker, newest first. Each order names those parties in `my_parties` (role, agent, name, and `via`: "agent"
+    for your own agent, "organization" for your organization's). Needs a developer token; acting on an order still
+    needs the party agent's own token.
+
+    \f
+    V0658 (q): /guild/mine answers for ONE agent (the acting one), so its owner saw nothing of an order his other agent
+    posted until he selected that agent. Reading follows ownership (services/owner_reads), writing stays the agent's.
+    """
+    _require_enabled()
+    limit = max(1, min(200, limit))
+    rows = (await db.execute(text(
+        "SELECT o.id, o.poster_did, o.worker_did, o.title, o.bounty, o.currency, o.status, o.created_at, o.settled_at"
+        " FROM guild_work_orders o WHERE " + owner_reads.owned_by_sql("o.poster_did", "o.worker_did")
+        + " ORDER BY o.created_at DESC, o.id DESC LIMIT :lim"), {"dev": dev.id, "lim": limit})).mappings().all()
+    orders = [dict(r) for r in rows]
+    for o, parties in zip(orders, await owner_reads.owned_parties(db, dev.id, orders, owner_reads.GUILD_ROLES)):
+        o["my_parties"] = parties
+    return {"orders": orders, "total": len(orders)}
+
+
 # ── admin oversight + dispute resolution ─────────────────────────────────────
 def _require_admin(dev: models.Developer):
     if not admin_credential(dev):   # D6-057 (§POCKETPAIR): an admin's scoped key is not admin (the resolve splits a bounty)
@@ -1417,10 +1570,15 @@ async def admin_orders(dev: models.Developer = Depends(get_current_developer), d
             "enabled": guild_enabled(), "fee_bps": _fee_bps()}
 
 
-@router.post("/api/v1/admin/guild/orders/{oid}/resolve", summary="Resolve a disputed order — split bounty (admin)")
-async def admin_resolve(oid: str, body: DisputeResolveIn, dev: models.Developer = Depends(get_current_developer), db: AsyncSession = Depends(get_db)):
-    _require_admin(dev)
-    o = await _load(db, oid)
+async def split_disputed_order(db: AsyncSession, o: dict, worker_share: Decimal, *, actor: str,
+                               note: Optional[str] = None, via: str = "admin_resolve") -> dict:
+    """The money of a disputed order's resolution, ONE function for the Guild's admin resolve and a ruling on the
+    order's dispute record (V0657 (a), one settlement authority: services/dispute_settlement.py). CLAIM
+    disputed→resolving, split the escrowed bounty by `worker_share` (0..1; no fee), the worker's stake released on a
+    full share and slashed to the poster otherwise, settled, the order's events, GuildOrderResolved, the contract
+    mirror. 409 when the order is not disputed (nothing to split); 502, the claim reset, when a remote park fails."""
+    oid = o["id"]
+    share = Decimal(str(worker_share))
     if o["status"] != "disputed":
         raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Order is {o['status']}, not disputed")
     # CLAIM disputed→resolving FIRST (guarded+committed): a concurrent/retried resolve can't double-split
@@ -1430,10 +1588,10 @@ async def admin_resolve(oid: str, body: DisputeResolveIn, dev: models.Developer 
     if getattr(claimed, "rowcount", 0) == 0:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Order is no longer disputed (already resolving/settled)")
     # Timestamp the claim in the SAME commit (GA1): the reaper age-gates stuck 'resolving' on this.
-    await _audit(db, oid, await _next_seq(db, oid), "resolving", f"admin:{dev.id}", {"via": "admin_resolve"})
+    await _audit(db, oid, await _next_seq(db, oid), "resolving", actor, {"via": via})
     await db.commit()
     bounty = Decimal(str(o["bounty"]))
-    worker_amt = (bounty * Decimal(str(body.worker_share))).quantize(Decimal("0.0000000001"))
+    worker_amt = (bounty * share).quantize(Decimal("0.0000000001"))
     poster_amt = bounty - worker_amt
     # CROSS-REGISTRY split (Commander-approved 2026-07-20): pay BOTH legs IMMEDIATELY, server-side.
     # The old v2 (0119) HOLD existed because the worker leg staged through the poster's JWT; the
@@ -1446,7 +1604,7 @@ async def admin_resolve(oid: str, body: DisputeResolveIn, dev: models.Developer 
         from agentvault_registry.services.exchange_service import GATEWAY_DID, _add_gateway_credit
         stake_outcome = None
         if o["worker_did"]:
-            action = "release" if Decimal(str(body.worker_share)) >= Decimal(1) else "slash"
+            action = "release" if share >= Decimal(1) else "slash"
             stake_outcome = await _resolve_worker_stake(db, oid, o["worker_did"], o["poster_did"], action)
         home = (o.get("worker_home_registry") or "").rstrip("/")
         await _add_gateway_credit(db, o["worker_did"], home, worker_amt, "guild_dispute", f"guild-{oid}-xfdispute")
@@ -1467,15 +1625,15 @@ async def admin_resolve(oid: str, body: DisputeResolveIn, dev: models.Developer 
         # §TRAVELREC — the record just changed, so move the card clock or no peer
         # that mirrors this agent will ever see the new number.
         await _tr_touch(db, o.get("worker_did"))
-        await _audit(db, oid, await _next_seq(db, oid), "settled", f"admin:{dev.id}",
+        await _audit(db, oid, await _next_seq(db, oid), "settled", actor,
                      {"resolution": "split", "rail": "gateway_repat", "worker": str(worker_amt),
-                      "poster": str(poster_amt), "stake": stake_outcome, "note": body.note})
+                      "poster": str(poster_amt), "stake": stake_outcome, "note": note})
         await db.commit()
         _emit("GuildOrderResolved", oid, {"worker": str(worker_amt), "poster": str(poster_amt),
                                           "rail": "gateway_repat"})
         await guild_contract_mirror.sync_from_order(db, oid)  # P3a mirror
-        return {"ok": True, "order_id": oid, "status": "settled", "rail": "gateway_repat",
-                "worker_paid": float(worker_amt), "poster_refunded": float(poster_amt)}
+        return {"ok": True, "order_id": oid, "status": "settled", "rail": "gateway_repat", "worker_share": str(share),
+                "worker_paid": float(worker_amt), "poster_refunded": float(poster_amt), "stake": stake_outcome}
     # Two zero-sum legs summing to the held bounty → Δ=0. The split primitive disputes lacks.
     if worker_amt > 0 and o["worker_did"]:
         await guild_escrow.escrow_payout(db, o["worker_did"], worker_amt, oid, "split_worker")
@@ -1485,7 +1643,7 @@ async def admin_resolve(oid: str, body: DisputeResolveIn, dev: models.Developer 
     # was wronged → SLASH the stake to the poster. Δ-neutral treasury leg either way.
     stake_outcome = None
     if o["worker_did"]:
-        if Decimal(str(body.worker_share)) >= Decimal(1):
+        if share >= Decimal(1):
             stake_outcome = await _resolve_worker_stake(db, oid, o["worker_did"], o["worker_did"], "release")
         else:
             stake_outcome = await _resolve_worker_stake(db, oid, o["worker_did"], o["poster_did"], "slash")
@@ -1493,12 +1651,28 @@ async def admin_resolve(oid: str, body: DisputeResolveIn, dev: models.Developer 
     # §TRAVELREC — the record just changed, so move the card clock or no peer
     # that mirrors this agent will ever see the new number.
     await _tr_touch(db, o.get("worker_did"))
-    await _audit(db, oid, await _next_seq(db, oid), "settled", f"admin:{dev.id}",
-                 {"resolution": "split", "worker": str(worker_amt), "poster": str(poster_amt), "stake": stake_outcome, "note": body.note})
+    await _audit(db, oid, await _next_seq(db, oid), "settled", actor,
+                 {"resolution": "split", "worker": str(worker_amt), "poster": str(poster_amt), "stake": stake_outcome, "note": note})
     await db.commit()
     _emit("GuildOrderResolved", oid, {"worker": str(worker_amt), "poster": str(poster_amt)})
     await guild_contract_mirror.sync_from_order(db, oid)  # P3a mirror
-    return {"ok": True, "order_id": oid, "status": "settled", "worker_paid": float(worker_amt), "poster_refunded": float(poster_amt)}
+    return {"ok": True, "order_id": oid, "status": "settled", "worker_share": str(share), "worker_paid": float(worker_amt),
+            "poster_refunded": float(poster_amt), "stake": stake_outcome}
+
+
+@router.post("/api/v1/admin/guild/orders/{oid}/resolve", summary="Resolve a disputed order — split bounty (admin)")
+async def admin_resolve(oid: str, body: DisputeResolveIn, dev: models.Developer = Depends(get_current_developer), db: AsyncSession = Depends(get_db)):
+    """Split a disputed order's bounty (worker_share to the worker, the rest back to the poster). V0657 (a): the
+    order's dispute record closes with the ruling the split implies, so the order and its record cannot disagree (the
+    record of dispute 1 stayed open after its order was paid, and was then ruled against the worker that had
+    delivered). No wallet compensation runs: the split is the settlement."""
+    _require_admin(dev)
+    o = await _load(db, oid)
+    out = await split_disputed_order(db, o, Decimal(str(body.worker_share)), actor=f"admin:{dev.id}", note=body.note)
+    from agentvault_registry.services import dispute_settlement
+    out["dispute"] = await dispute_settlement.close_record_for_guild_resolve(
+        db, o, Decimal(str(body.worker_share)), ruled_by=dev.id, note=body.note, money=out)
+    return out
 
 
 # ═════════════════════════════════════════════════════════════════════════════

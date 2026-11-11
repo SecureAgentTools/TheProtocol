@@ -121,6 +121,16 @@ ORG_SETTING_CATALOG = [
     # serve on a public read-only feed; free-text member messages and DMs are
     # excluded BY CONSTRUCTION (the feed query never selects them). Opting out
     # stops the feed immediately — the endpoint re-reads this setting per request.
+    # V0657 (b), item 2 (privacy first): the organization's consent to be named in public. While on, its name, logo,
+    # description and website are in the federation's list of organizations, and its mark rides its agents' cards (on
+    # every peer's copy too), each agent able to hide it ("show my org", agents.show_org). Off by default: nothing
+    # about an organization leaves its registry until it says so. Turning it off removes the mark from its agents'
+    # cards at the next sync, here and on every peer.
+    {"key": "public_listing", "type": "bool",
+     "label": "List this organization publicly", "tighten_only": False,
+     "help": "Show this organization's name, logo, description and website in the list of organizations across "
+             "the federation, and its mark on its agents' cards (an agent can still hide it). Off by default; "
+             "turning it off removes the mark at the next sync, here and on every peer."},
     {"key": "public_transparency_opt_in", "type": "bool",
      "label": "Public work-record transparency", "tighten_only": False,
      "help": "Publish this organization's work records (treasury/distribution/guild receipt cards, "
@@ -158,6 +168,31 @@ def transparency_public(org_settings) -> bool:
     if not isinstance(org_settings, dict):
         return False
     return org_settings.get("public_transparency_opt_in") is True
+
+
+def listed_public(org_settings) -> bool:
+    """V0657 (b), item 2: True only when the organization has said it may be named in public (`public_listing`).
+    Fail-closed, read live: the mark leaves with the next sync after it is turned off."""
+    if not isinstance(org_settings, dict):
+        return False
+    return org_settings.get("public_listing") is True
+
+
+def _sql_bool_setting(alias: str, key: str) -> str:
+    # `settings` is plain json (not jsonb): `->` and a text cast keep the JSON form, so this matches the boolean true
+    # and never the string "true", the same test as the Python readers (`is True`)
+    return f"(({alias}.settings->'{key}')::text = 'true')"
+
+
+def sql_listed_public(alias: str = "o") -> str:
+    """listed_public() in SQL, over `<alias>.settings`."""
+    return _sql_bool_setting(alias, "public_listing")
+
+
+def sql_transparency_public(alias: str = "o") -> str:
+    """transparency_public() in SQL (polish 10: the two public listings asked it two ways, one of them matching the
+    string "true" too)."""
+    return _sql_bool_setting(alias, "public_transparency_opt_in")
 
 
 def assistant_present(org_settings) -> bool:
@@ -394,6 +429,9 @@ def validate_org_settings_patch(patch: Dict[str, Any]) -> Tuple[bool, str]:
     pub = patch.get("public_transparency_opt_in")
     if pub is not None and not isinstance(pub, bool):
         return False, "public_transparency_opt_in must be true or false"
+    listing = patch.get("public_listing")
+    if listing is not None and not isinstance(listing, bool):
+        return False, "public_listing must be true or false"
     pld = patch.get("procurement_limit_default")
     if pld is not None and pld != "":
         if isinstance(pld, bool) or _decimal_or_none(pld) is None or _decimal_or_none(pld) < 0:

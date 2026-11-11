@@ -18,7 +18,6 @@ Entry points:
       Execute a single EnforcementAction that is in pending_approval state
       (after admin approval) or immediately when no review is required.
 """
-import copy
 import logging
 import uuid
 from decimal import Decimal
@@ -52,54 +51,9 @@ try:
 except Exception:  # noqa: BLE001 — metrics never break enforcement
     ENFORCEMENT_CACHE_ONLY_SLASH = None
 
-try:
-    from prometheus_client import Counter as _WfCounter
-    ENFORCEMENT_SLASH_WATERFALL = _WfCounter(
-        "registry_enforcement_slash_waterfall_total",
-        "Slash waterfall steps that absorbed value (shadow = would have; enforce = did)",
-        ["mode", "source"],
-    )
-except Exception:  # noqa: BLE001
-    ENFORCEMENT_SLASH_WATERFALL = None
-
-try:
-    from prometheus_client import Counter as _WfDefaultCounter
-    ENFORCEMENT_SLASH_WATERFALL_DEFAULTED = _WfDefaultCounter(
-        "registry_enforcement_slash_waterfall_defaulted_total",
-        "Slashes that drained in the factory-default order because the resolved policy carried no waterfall",
-        ["reason"],
-    )
-except Exception:  # noqa: BLE001
-    ENFORCEMENT_SLASH_WATERFALL_DEFAULTED = None
-
-
-def _waterfall_or_the_default(policy: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """The ORDER a slash drains from: the frame's resolved `slash_waterfall`, else THE factory default.
-
-    §BATCH0911 (2026-09-11) — this was a second inline literal of the default, named at §FRAMEPOLICY
-    and left because it sits on a money path. Measured before removing it: the literal equalled
-    `DEFAULT_POLICY_JSON["slash_waterfall"]` byte for byte, and it was still REACHABLE — admission
-    skips a stored `null` (`validate_policy_json` checks only a present value), `frame_policy.resolve`
-    lets that null replace the default, and in exactly that state `explain()` reports the frame as
-    running the default. The readout and the engine agreed only because two copies were equal.
-
-    The fallback stays: a row written around the validator must not silently switch off the money
-    half of enforcement. But it is now the same object the readout reports, and it says when it fires.
-    Falsy-only, exactly the `or` it replaces, so every state behaves as it did.
-    """
-    wf = policy.get("slash_waterfall") if isinstance(policy, dict) else None
-    if wf:
-        return wf
-    reason = "null" if wf is None else ("empty" if isinstance(wf, list) else type(wf).__name__)
-    logger.warning(
-        "[EnforcementEngine] the resolved policy carries no slash_waterfall (%s): draining in the "
-        "factory-default order, the order the policy readout reports for this frame", reason)
-    if ENFORCEMENT_SLASH_WATERFALL_DEFAULTED is not None:
-        try:
-            ENFORCEMENT_SLASH_WATERFALL_DEFAULTED.labels(reason=reason).inc()
-        except Exception:  # noqa: BLE001 — metrics never break enforcement
-            pass
-    return copy.deepcopy(DEFAULT_POLICY_JSON["slash_waterfall"])
+# V0658 (k): the order a slash drains from (the one default included), its counters and the drain itself live in
+# services/slash_order, the one path every slash takes (a local ruling here, a peer's slash request, an
+# administrator's approval of one).
 
 
 class EnforcementEngine:
@@ -112,20 +66,16 @@ class EnforcementEngine:
     # Public entry points
     # ------------------------------------------------------------------
 
-    async def evaluate_dispute_outcome(
+    async def plan_dispute_outcome(
         self,
         db: AsyncSession,
         defendant_did: str,
-        dispute_id: str,
         disputed_amount: int = 0,
-    ) -> Optional[EnforcementAction]:
-        """
-        Called by crud_disputes.update_dispute_ruling() when the ruling
-        goes against the defendant.
-
-        Returns the created EnforcementAction (status may be
-        'pending_approval' or 'executed').
-        """
+    ) -> Dict[str, Any]:
+        """V0657 (a): what evaluate_dispute_outcome would do, read only (the ruling preview shows it before the click;
+        evaluate_dispute_outcome acts on the same plan, so the two cannot disagree): the offense count and the
+        escalation level it reaches, the volume tier and the correlation multiplier, the actions, the slash percent and
+        amount, the rewards pause, whether the level suspends, and whether an administrator must approve."""
         policy = await self._load_policy(db)
 
         # Step 1 — count recent offenses
@@ -162,6 +112,52 @@ class EnforcementEngine:
         # Apply correlation multiplier
         slash_percent = min(100.0, slash_percent * corr_multi)
 
+        # Step 8 (planned) — the slash amount and the primary action
+        slash_amount: Optional[Decimal] = None
+        primary_action = "warn"
+        if disputed_amount > 0 and slash_percent > 0:
+            # §DOCSFIX D6-439: the correlation multiplier is already in slash_percent (step 4, capped at 100%); it was
+            # applied here a second time, which squared a correlated slash and took it past the disputed amount
+            slash_amount = max(Decimal("1"), Decimal(str(disputed_amount)) * Decimal(str(slash_percent)) / Decimal("100"))
+            if "slash_stake" in action_types:
+                primary_action = "slash_stake"
+            elif "slash_liquid" in action_types:
+                primary_action = "slash_liquid"
+        return {
+            "offense_count_before": offense_count,
+            "escalation_level": escalation_level,
+            "correlation_count": corr_count,
+            "correlation_multiplier": corr_multi,
+            "action_types": list(action_types),
+            "slash_percent": slash_percent,
+            "slash_amount": slash_amount,
+            "action": primary_action,
+            "pause_days": pause_days,
+            "suspends": escalation_level >= 4 and "suspend" in action_types,
+            "admin_review_required": admin_required,
+        }
+
+    async def evaluate_dispute_outcome(
+        self,
+        db: AsyncSession,
+        defendant_did: str,
+        dispute_id: str,
+        disputed_amount: int = 0,
+    ) -> Optional[EnforcementAction]:
+        """
+        Called by crud_disputes.update_dispute_ruling() when the ruling
+        goes against the defendant.
+
+        Returns the created EnforcementAction (status may be
+        'pending_approval' or 'executed').
+        """
+        plan = await self.plan_dispute_outcome(db, defendant_did, disputed_amount)
+        escalation_level = plan["escalation_level"]
+        corr_count, corr_multi = plan["correlation_count"], plan["correlation_multiplier"]
+        action_types: List[str] = plan["action_types"]
+        pause_days: int = plan["pause_days"]
+        admin_required: bool = plan["admin_review_required"]
+
         # Step 5 — update agent offense tracking
         agent = await self._get_agent(db, defendant_did)
         if not agent:
@@ -182,18 +178,9 @@ class EnforcementEngine:
                 agent.enforcement_status = "suspended"
                 agent.status = "suspended"
 
-        # Step 8 — determine slash amount
-        slash_amount: Optional[int] = None
-        primary_action = "warn"
-
-        if disputed_amount > 0 and slash_percent > 0:
-            # §DOCSFIX D6-439: the correlation multiplier is already in slash_percent (step 4, capped at 100%); it was
-            # applied here a second time, which squared a correlated slash and took it past the disputed amount
-            slash_amount = max(Decimal("1"), Decimal(str(disputed_amount)) * Decimal(str(slash_percent)) / Decimal("100"))
-            if "slash_stake" in action_types:
-                primary_action = "slash_stake"
-            elif "slash_liquid" in action_types:
-                primary_action = "slash_liquid"
+        # Step 8 — the slash amount and the primary action (the plan's)
+        slash_amount = plan["slash_amount"]
+        primary_action = plan["action"]
 
         # Step 9 — create EnforcementAction record
         action_status = "pending_approval"
@@ -464,81 +451,21 @@ class EnforcementEngine:
         """§REPBOND — drain the requested slash in the registry's configured ORDER, each
         source capped at `max_percent` of the request. shadow: compute + log the plan,
         return False so today's cache-only write still runs. enforce: forfeit from the
-        bond (bookkeeping — the treasury already holds it), force-unstake from the stake
-        (real), and move liquid agent → treasury through the escrow deposit rail (real,
-        fee-free, Δ=0); return True. A shortfall is logged and counted, never invented."""
-        from .reputation_bond import (policy_json as _rb_policy, load_bond as _rb_load_bond,
-                                      forfeit as _rb_forfeit, BONDED as _RB_BONDED)
-        policy = await _rb_policy(db)
-        waterfall = _waterfall_or_the_default(policy)
-        requested = Decimal(str(action.amount))
-        remaining = requested
-        plan: List[Dict[str, Any]] = []
-        for step in waterfall:
-            if remaining <= 0:
-                break
-            src = step.get("source")
-            try:
-                cap = (requested * Decimal(str(step.get("max_percent", 100))) / Decimal(100))
-            except Exception:  # noqa: BLE001
-                cap = requested
-            take = min(remaining, cap)
-            if take <= 0:
-                continue
-            absorbed = Decimal(0)
-            note = None
-            if src == "bond":
-                bond = await _rb_load_bond(db, agent.did)
-                held = Decimal(str(bond.amount or 0)) if (bond is not None and bond.status in _RB_BONDED) else Decimal(0)
-                take = min(take, held)
-                if take > 0:
-                    if mode == "enforce":
-                        absorbed = await _rb_forfeit(db, agent, amount=take,
-                                                     reason=f"enforcement {action.action_type} L{action.escalation_level}",
-                                                     ref=f"slash-{action.id}-bond", actor="enforcement_engine")
-                    else:
-                        absorbed = take
-            elif src == "stake":
-                staked = Decimal(str(agent.staked_balance or 0))
-                take = min(take, staked)
-                if take > 0:
-                    if mode == "enforce":
-                        from .force_unstake import get_force_unstake_service, ForceUnstakeError
-                        try:
-                            await get_force_unstake_service().force_unstake_for_slash(
-                                db=db, agent_did=agent.did, required_amount=take,
-                                enforcement_action_id=action.id,
-                                reason=f"Enforcement level {action.escalation_level} slash (waterfall)")
-                            absorbed = take
-                        except ForceUnstakeError as e:
-                            note = f"force_unstake refused: {e}"
-                    else:
-                        absorbed = take
-            elif src == "liquid":
-                if mode == "enforce":
-                    from .escrow import escrow_deposit, EscrowError
-                    try:
-                        await escrow_deposit(agent.did, take, f"slash-{action.id}-liquid",
-                                             reason="enforcement_slash")
-                        absorbed = take
-                        agent.liquid_balance = (agent.liquid_balance or 0) - take  # cache mirror of the TEG move
-                    except EscrowError as e:
-                        note = f"escrow deposit refused: {e.message}"
-                else:
-                    absorbed = min(take, Decimal(str(agent.liquid_balance or 0)))
-            else:
-                note = f"unknown source {src!r}"
-            entry = {"source": src, "requested": str(take), "absorbed": str(absorbed)}
-            if note:
-                entry["note"] = note
-            plan.append(entry)
-            remaining -= absorbed
-            if ENFORCEMENT_SLASH_WATERFALL is not None and absorbed > 0:
-                try:
-                    ENFORCEMENT_SLASH_WATERFALL.labels(mode=mode, source=str(src)).inc()
-                except Exception:  # noqa: BLE001
-                    pass
-        shortfall = remaining if remaining > 0 else Decimal(0)
+        bond (bookkeeping — the treasury already holds it), release the locks and move the
+        slashed units to the treasury (real), and move liquid agent → treasury (real,
+        fee-free, Δ=0); return True. A shortfall is logged and counted, never invented.
+
+        V0658 (k): through services/slash_order.drain, the one path every slash takes (a peer's
+        slash request and an administrator's approval of one drain the same order): what each
+        step can take is read from the TEG, the lock step moves the slashed units (D6-460), and
+        a cascade step, where the order lists one, drains the same developer's other agents."""
+        from . import slash_order
+        drained = await slash_order.drain(
+            db, agent, action.amount, ref=f"slash-{action.id}", reason="enforcement_slash",
+            reference_id=f"slash-{action.id}", actor="enforcement_engine",
+            why=f"enforcement {action.action_type} L{action.escalation_level}", mode=mode,
+            enforcement_action_id=action.id)
+        requested, shortfall, plan = drained.requested, drained.shortfall, drained.plan()
         verb = "TOOK" if mode == "enforce" else "WOULD TAKE"
         logger.log(
             logging.INFO if mode == "enforce" else logging.WARNING,
@@ -550,6 +477,8 @@ class EnforcementEngine:
             _wf_data = {"action_id": action.id, "agent_did": action.agent_did, "mode": mode,
                         "requested": str(requested), "absorbed": str(requested - shortfall),
                         "shortfall": str(shortfall), "plan": plan,
+                        "cascade": {"on": drained.cascade_on, "refused": drained.cascade_refused,
+                                    "agents_asked": drained.cascade_asked},
                         "action_type": action.action_type, "escalation_level": action.escalation_level}
             if emitter is not None and mode == "enforce":
                 await emitter.emit(  # §EMITKEY: emit(), not emit_event() — only emit() takes the key

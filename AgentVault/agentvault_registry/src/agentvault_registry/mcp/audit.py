@@ -234,6 +234,7 @@ _TIER_2_TOOLS = {
     "theprotocol_guildCancelOrder",
     "theprotocol_guildMyWork",
     "theprotocol_guildCrossRegistryBid",
+    "theprotocol_guildSetOrderRoom",  # V0659 (n): the room an order posted without one shows in
     "theprotocol_smartSend",
     "theprotocol_lockUnits",
     "theprotocol_unlockUnits",
@@ -298,6 +299,7 @@ _TIER_2_TOOLS = {
     # Sprint 13 (Tier 2 — 5 new)
     "theprotocol_tegSystemTransfer",
     "theprotocol_logTegDispute",
+    "theprotocol_withdrawTegDispute",
     "theprotocol_crossTegBalanceSync",
     "theprotocol_applyReputationSignal",
     # Sprint 17 (Tier 2 — 8 new)
@@ -472,6 +474,7 @@ _TIER_3_TOOLS = {
     "theprotocol_getFederationDisputeSettlement",
     "theprotocol_approveDisputeSettlement",
     "theprotocol_rejectDisputeSettlement",
+    "theprotocol_closeDisputeSettlement",
     "theprotocol_getPeerSlashConfig",
     "theprotocol_updatePeerSlashConfig",
     "theprotocol_getFederationPeerByID",
@@ -860,6 +863,13 @@ _TIER_2_TOOLS.update({
 _TIER_3_TOOLS.update({
     "theprotocol_getMyMembership",
     "theprotocol_getMyCommonsSeason",
+})
+
+# V0660 (a) (2026-11-08): the quantum workload extension's public reads (mcp/tools_quantum.py).
+_TIER_1_TOOLS.update({
+    "theprotocol_discoverQuantumAgents",
+    "theprotocol_getQuantumWorkload",
+    "theprotocol_getQuantumWorkloadSchema",
 })
 
 # V0650 (l) (2026-10-31) — approvals in the chat (mcp/tools_chat_approvals.py).

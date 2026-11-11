@@ -31,15 +31,6 @@
       </div>
 
       <div class="da-metric-card">
-        <div class="da-metric-card__accent" style="background:rgb(59,130,246)"></div>
-        <div class="da-metric-card__top">
-          <span v-if="listKnown" class="da-metric-card__delta da-neutral">{{ escalationRate.toFixed(1) }}%</span>
-        </div>
-        <div class="da-metric-card__value">{{ listKnown ? escalatedCount : '—' }}</div>
-        <div class="da-metric-card__label">Escalated Cases</div>
-      </div>
-
-      <div class="da-metric-card">
         <div class="da-metric-card__accent" style="background:rgb(249,115,22)"></div>
         <div class="da-metric-card__top">
           <span v-if="listKnown" class="da-metric-card__delta da-neutral">{{ repeatOffenders }} repeat</span>
@@ -120,17 +111,12 @@
             <div class="da-ruling-stat__value">{{ listKnown ? dismissedCount : '—' }}</div>
             <div class="da-ruling-stat__label">Dismissed</div>
           </div>
-          <div class="da-ruling-stat da-ruling-stat--investigating">
-            <div class="da-ruling-stat__value">{{ listKnown ? investigatingCount : '—' }}</div>
-            <div class="da-ruling-stat__label">Investigating</div>
-          </div>
         </div>
         <!-- Resolution bar -->
         <div v-if="stats.total_disputes > 0" class="da-res-bar-wrap">
           <div class="da-res-bar">
             <div class="da-res-seg da-res-seg--resolved"  :style="{ width: resolvedPct + '%'  }" :title="`Resolved: ${resolvedCount}`"></div>
             <div class="da-res-seg da-res-seg--dismissed" :style="{ width: dismissedPct + '%' }" :title="`Dismissed: ${dismissedCount}`"></div>
-            <div class="da-res-seg da-res-seg--investigating" :style="{ width: investigatingPct + '%' }" :title="`Investigating: ${investigatingCount}`"></div>
             <div class="da-res-seg da-res-seg--open"      :style="{ width: openPct + '%'     }" :title="`Open: ${openCount}`"></div>
           </div>
           <div class="da-res-bar-legend">
@@ -181,11 +167,6 @@ function retry() { return disputesStore.fetchDisputes() }
 
 // ── Metric deltas ─────────────────────────────────────────────────────────
 
-const escalatedCount = computed(() => disputes.value.filter(d => d.status === 'investigating').length)
-const escalationRate = computed(() => {
-  if (!disputes.value.length) return 0
-  return (escalatedCount.value / disputes.value.length) * 100
-})
 const uniqueParties = computed(() => {
   const s = new Set<string>()
   disputes.value.forEach(d => { s.add(d.claimant_did); s.add(d.respondent_did) })
@@ -204,12 +185,10 @@ const repeatOffenders = computed(() => {
 const openCount         = computed(() => disputes.value.filter(d => d.status === 'open').length)
 const resolvedCount     = computed(() => disputes.value.filter(d => d.status === 'resolved').length)
 const dismissedCount    = computed(() => disputes.value.filter(d => d.status === 'dismissed').length)
-const investigatingCount = computed(() => disputes.value.filter(d => d.status === 'investigating').length)
 
 const total = computed(() => disputes.value.length || 1)
 const resolvedPct     = computed(() => (resolvedCount.value     / total.value) * 100)
 const dismissedPct    = computed(() => (dismissedCount.value    / total.value) * 100)
-const investigatingPct = computed(() => (investigatingCount.value / total.value) * 100)
 const openPct         = computed(() => (openCount.value         / total.value) * 100)
 
 // ── Timeline bars — 14-day window for readable bar widths ─────────────────
@@ -387,7 +366,6 @@ function truncate(s: string, n: number) { return s.length > n ? s.slice(0, n) + 
 .da-ruling-stat--open        { border-color: rgba(239,68,68,0.2); }
 .da-ruling-stat--resolved    { border-color: rgba(34,197,94,0.2); }
 .da-ruling-stat--dismissed   { border-color: rgba(107,114,128,0.2); }
-.da-ruling-stat--investigating { border-color: rgba(245,158,11,0.2); }
 
 .da-ruling-stat__value {
   font-family: 'IBM Plex Mono', monospace; font-size: 1.4rem; font-weight: 700; line-height: 1;
@@ -395,7 +373,6 @@ function truncate(s: string, n: number) { return s.length > n ? s.slice(0, n) + 
 .da-ruling-stat--open .da-ruling-stat__value        { color: rgb(239,68,68); }
 .da-ruling-stat--resolved .da-ruling-stat__value    { color: rgb(34,197,94); }
 .da-ruling-stat--dismissed .da-ruling-stat__value   { color: #9ca3af; }
-.da-ruling-stat--investigating .da-ruling-stat__value { color: #f59e0b; }
 
 .da-ruling-stat__label {
   font-size: 0.65rem; color: #7b91b2; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 0.25rem;
@@ -409,7 +386,6 @@ function truncate(s: string, n: number) { return s.length > n ? s.slice(0, n) + 
 .da-res-seg { height: 100%; transition: width 0.5s ease; }
 .da-res-seg--resolved    { background: rgb(34,197,94); }
 .da-res-seg--dismissed   { background: #6b7280; }
-.da-res-seg--investigating { background: #f59e0b; }
 .da-res-seg--open        { background: rgb(239,68,68); }
 
 .da-res-bar-legend {
@@ -435,7 +411,6 @@ function truncate(s: string, n: number) { return s.length > n ? s.slice(0, n) + 
   padding: 0.15rem 0.5rem; border-radius: 9999px; text-transform: uppercase; flex-shrink: 0;
 }
 .da-activity-pill--open          { background: rgba(239,68,68,0.12);  color: rgb(239,68,68); }
-.da-activity-pill--investigating  { background: rgba(245,158,11,0.12); color: #f59e0b; }
 .da-activity-pill--resolved      { background: rgba(34,197,94,0.12);  color: rgb(34,197,94); }
 .da-activity-pill--dismissed     { background: rgba(107,114,128,0.15); color: #9ca3af; }
 .da-activity-desc {

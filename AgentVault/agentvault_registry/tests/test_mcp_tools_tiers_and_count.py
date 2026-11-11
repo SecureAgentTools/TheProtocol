@@ -37,7 +37,9 @@ def test_initialize_names_the_number_of_tools_the_full_listing_holds():
 
 def test_the_tiers_are_the_ones_tools_call_enforces():
     tiers = asyncio.run(S.list_tools_http(_get()))["tiers"]
-    names = [t["name"] for t in S.ALL_TOOL_SCHEMAS]
+    # the LISTED catalog: a switch may leave a tool out of every listing (mcp/tool_switches.py; V0660 (a)'s quantum
+    # reads under QUANTUM_WORKLOADS_MODE=off, the source default)
+    names = [t["name"] for t in S.filter_listed(S.ALL_TOOL_SCHEMAS)]
     flat = [n for group in tiers.values() for n in group]
     assert sorted(flat) == sorted(names), "every listed tool in exactly one tier"
     assert tiers["tier0_utility"] == ["theprotocol_getAgentToken"]

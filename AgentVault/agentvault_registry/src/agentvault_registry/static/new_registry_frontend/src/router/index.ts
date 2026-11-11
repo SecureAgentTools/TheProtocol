@@ -3,7 +3,7 @@ import { replayLocationMissedBeforeReady } from './missedFirstNavigation'
 import { loadRegistryConfig } from '@/composables/useRegistryConfig'
 import { whenFrameManifest, currentFrameManifest } from '@/composables/useFrameManifest'
 import { pocketLockEngaged } from '@/composables/usePocketLock'
-import { homeRoute } from '@/services/uiMode'
+import { homeRoute, bindDoorRouter } from '@/services/uiMode'
 import type { RouteRecordRaw, Router } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { cannotActReason } from '@/services/agentActable'
@@ -291,7 +291,8 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/pocket',
     component: () => import('@/views/pocket/PocketShell.vue'),
-    meta: { ownsMain: true, requiresAuth: true },
+    // V0658 (v): every route below renders in Pocket, so a door pressed there stays in Pocket (services/uiMode.ts)
+    meta: { ownsMain: true, requiresAuth: true, shell: 'pocket' },
     children: [
       { path: '', redirect: '/pocket/home' },
       { path: 'home', name: 'pocket-home', component: () => import('@/views/pocket/PocketHome.vue'), meta: { requiresAuth: true, title: 'Pocket · Home' } },
@@ -359,7 +360,9 @@ const routes: RouteRecordRaw[] = [
     path: '/',
     component: DashboardLayout,
     // §LANDINGTRUTH (28): the layout renders its own <main id="main-content"> (signed-in and visitor branches)
-    meta: { ownsMain: true },
+    // V0658 (v): every route below renders in the desktop console, so a door pressed there stays in it
+    // (services/uiMode.ts)
+    meta: { ownsMain: true, shell: 'desktop' },
     children: [
       // Public Reputation Leaderboard (originally Build #11, relocated 2026-05-08
       // from top-level to here so it gets DashboardLayout's sidebar + header).
@@ -603,7 +606,8 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Disputes.vue'),
         meta: {
           requiresAuth: true,
-          requiresAgent: true,
+          // V0657 (a), item 21: requiresAgent DROPPED (the Contracts precedent above): a ruler rules as a developer, and
+          // the developer's read lists its agents' disputes (an administrator's, every dispute) with no agent picked
           title: 'Dispute Resolution',
           viewAmbientTone: 'default'
         }
@@ -1369,6 +1373,9 @@ const router = createRouter({
 // §FESUITE: a URL changed while the first navigation waits on the session restore (Back, a typed hash, a raw "#/"
 // link) is carried out once the router listens; vue-router alone drops it (./missedFirstNavigation.ts)
 replayLocationMissedBeforeReady(router)
+// V0658 (v): the doors (services/uiMode.ts resolveDoor) read the shell of the route on screen from this router, so a
+// press inside the desktop console or Pocket stays there and no caller passes the route by hand
+bindDoorRouter(router)
 
 // Navigation guards
 router.beforeEach(async (to, from, next) => {

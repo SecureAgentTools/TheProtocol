@@ -30,6 +30,13 @@ logger = logging.getLogger(__name__)
 # authenticatorData flag bits (WebAuthn §6.1)
 FLAG_UP = 0x01   # user present
 FLAG_UV = 0x04   # user VERIFIED — biometric or device PIN actually happened
+FLAG_AT = 0x40   # attested credential data included (a registration carries the new key)
+
+_LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1")
+
+
+class RegistrationRefused(ValueError):
+    """A registration response this server does not bind; the message is a short reason a caller may show."""
 
 
 def b64u_decode(data: str) -> bytes:
@@ -101,6 +108,12 @@ def parse_attestation_public_key(attestation_object_b64u: str) -> Tuple[str, str
     binding a key the user just created on a device they control. Claiming otherwise would be
     the sort of overstatement this whole feature exists to avoid.
     """
+    cred_id, cose_key, rp_hash, _flags = parse_attestation(attestation_object_b64u)
+    return cred_id, cose_key, rp_hash
+
+
+def parse_attestation(attestation_object_b64u: str) -> Tuple[str, str, bytes, int]:
+    """parse_attestation_public_key plus the authenticatorData flags byte (what verify_registration checks)."""
     raw = b64u_decode(attestation_object_b64u)
     # authData sits inside the CBOR map under key "authData"; locate it by its label bytes.
     marker = b"authData"
@@ -125,7 +138,70 @@ def parse_attestation_public_key(attestation_object_b64u: str) -> Tuple[str, str
     _cose_to_public_key(cose_key)  # fail fast on anything we cannot verify later
     # The rp hash comes back too so the caller can refuse to store a credential minted for an
     # origin we do not serve — otherwise it would enrol cleanly and fail every signature later.
-    return b64u_encode(cred_id), b64u_encode(cose_key), auth_data[:32]
+    return b64u_encode(cred_id), b64u_encode(cose_key), auth_data[:32], auth_data[32]
+
+
+def client_data_challenge(client_data_json_b64u: str) -> Optional[str]:
+    """The challenge the browser echoed in clientDataJSON (base64url, unpadded), or None when unreadable."""
+    try:
+        cd = json.loads(b64u_decode(client_data_json_b64u))
+    except Exception:
+        return None
+    ch = cd.get("challenge") if isinstance(cd, dict) else None
+    return ch.rstrip("=") if isinstance(ch, str) and ch else None
+
+
+def origin_on_rp(origin: Any, rp_id: str) -> bool:
+    """Is `origin` (clientDataJSON's) a page of the RP ID the credential was made for: https on that host or one of
+    its subdomains, or plain http on loopback (a local browser, the E2E harness)."""
+    from urllib.parse import urlparse
+    try:
+        u = urlparse(str(origin or ""))
+    except Exception:
+        return False
+    host = (u.hostname or "").lower()
+    rp = (rp_id or "").lower()
+    if not host or not rp or not (host == rp or host.endswith("." + rp)):
+        return False
+    return u.scheme == "https" or (u.scheme == "http" and host in _LOOPBACK_HOSTS)
+
+
+def verify_registration(*, attestation_object_b64u: str, client_data_json_b64u: str,
+                        expected_challenge_b64u: str, expected_rp_ids) -> Tuple[str, str, str]:
+    """Verify one registration response (attestation "none") and return (credential_id_b64u, cose_public_key_b64u,
+    rp_id). Raises RegistrationRefused naming what failed.
+
+    WebAuthn §7.1, the parts that matter without attestation: the ceremony is a create, the challenge is the one this
+    server issued, the page was ours and not framed cross-origin, the key was made for an RP ID we serve, and the
+    authenticator says a person was present AND verified (the same UV bit every later assertion must carry).
+    """
+    try:
+        cd = json.loads(b64u_decode(client_data_json_b64u))
+    except Exception:
+        raise RegistrationRefused("client_data_unparseable")
+    if not isinstance(cd, dict) or cd.get("type") != "webauthn.create":
+        raise RegistrationRefused("wrong_ceremony_type")
+    got = cd.get("challenge")
+    if not isinstance(got, str) or not got or got.rstrip("=") != (expected_challenge_b64u or "").rstrip("="):
+        raise RegistrationRefused("challenge_mismatch")
+    if cd.get("crossOrigin") is True:
+        raise RegistrationRefused("cross_origin")
+    try:
+        cred_id, cose_key, rp_hash, flags = parse_attestation(attestation_object_b64u)
+    except Exception as exc:
+        raise RegistrationRefused(f"unsupported_credential: {exc}")
+    rp_id = match_rp_id(rp_hash, expected_rp_ids)
+    if rp_id is None:
+        raise RegistrationRefused("rp_id_mismatch")
+    if not origin_on_rp(cd.get("origin"), rp_id):
+        raise RegistrationRefused("origin_mismatch")
+    if not (flags & FLAG_UP):
+        raise RegistrationRefused("user_not_present")
+    if not (flags & FLAG_UV):
+        raise RegistrationRefused("user_verification_missing")
+    if not (flags & FLAG_AT):
+        raise RegistrationRefused("no_attested_credential")
+    return cred_id, cose_key, rp_id
 
 
 def verify_assertion(*, cose_public_key_b64u: str, client_data_json_b64u: str,

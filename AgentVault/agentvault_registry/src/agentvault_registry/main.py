@@ -1244,6 +1244,15 @@ def create_app() -> FastAPI:
     # §MEMBERSHIP phase D2 (2026-10-02): federal ballots, one per registry (services/federation_ballot.py)
     from agentvault_registry.routers import federation_ballots as _federation_ballots_router
     app.include_router(_federation_ballots_router.router)
+    # V0660 (a): the quantum workload extension's public reads; documented only where QUANTUM_WORKLOADS_MODE serves it
+    # (shadow or on), and under off every route answers 403 with the switch's sentence (routers/quantum_agent_cards.py)
+    from agentvault_registry.routers import quantum_agent_cards as _quantum_agent_cards_router
+    from agentvault_registry.services.quantum_agent_card import served as _quantum_served
+    app.include_router(_quantum_agent_cards_router.router, include_in_schema=_quantum_served())
+    # V0660 (b): acceptance tests on Guild work orders and contracts v2 milestones (the agreement, the verdict and its
+    # read), under the same switch and documented only where it serves (routers/quantum_acceptance.py)
+    from agentvault_registry.routers import quantum_acceptance as _quantum_acceptance_router
+    app.include_router(_quantum_acceptance_router.router, include_in_schema=_quantum_served())
     logger.info("Enforcement agent endpoints enabled")
 
     # ANP (Agent Network Protocol) discovery endpoints
@@ -3927,7 +3936,11 @@ def create_app() -> FastAPI:
         ],
     ).instrument(app)
     if metrics_enabled():
-        _instrumentator.expose(app, endpoint="/metrics", include_in_schema=False)
+        # V0657 (c): our own /metrics in place of the instrumentator's expose(), which builds a MultiProcessCollector we
+        # cannot reach: this one reads the worker files under the lock the arbiter's fold takes (a dead worker's values
+        # are never counted twice or not at all) and adds the directory's fill (core/metrics_multiproc.py).
+        from agentvault_registry.core.metrics_multiproc import metrics_endpoint
+        app.add_api_route("/metrics", metrics_endpoint, methods=["GET"], include_in_schema=False)
         # §SECFIX D6-823: through a proxy (a console vhost), /metrics carries no system balance (core/metrics_public.py)
         from agentvault_registry.core.metrics_public import PublicMetricsMiddleware
         app.add_middleware(PublicMetricsMiddleware)
@@ -4551,6 +4564,7 @@ def create_app() -> FastAPI:
         from agentvault_registry.routers.sandbox_proxy import configured_sandboxes as _sandbox_proxies
         from agentvault_registry.core.phone_fabric_gate import phone_fabric_enabled as _phone_fabric_enabled
         from agentvault_registry.core.registry_environment import registry_environment as _registry_environment
+        from agentvault_registry.services.quantum_workloads import registry_config_fields as _quantum_workloads_fields
         is_federated_operator = _os.environ.get("MINTING_AUTHORITY") == "disabled"
         return {
             "is_federated_operator": is_federated_operator,
@@ -4673,6 +4687,9 @@ def create_app() -> FastAPI:
             # The frame's settlement currency, so a price can be rendered without a
             # second round trip (same source of truth as the FX desk: FRAME_CURRENCY).
             "local_currency": (_os.environ.get("FRAME_CURRENCY", "AVT") or "AVT").strip().upper() or "AVT",
+            # V0660 (d): `quantum_workloads`, the registry card's own derived block (services/quantum_workloads.py), so
+            # the console offers quantum surfaces where the frame hosts them; nothing at all while the switch is off
+            **_quantum_workloads_fields(),
             # §FEFRAME W2 (2026-10-01) — THE FRAME MANIFEST: who this registry is (`self`) and who its federation peers
             # are (`peers`), from one resolver over the ACTIVE peer rows and their verified cards
             # (core/federation_view.py). The console reads identity, peers, currencies and ledger sockets from here,

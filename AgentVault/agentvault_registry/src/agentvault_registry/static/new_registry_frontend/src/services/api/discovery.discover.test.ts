@@ -24,11 +24,13 @@ describe('§FESUITE discover(): every filter the page sets reaches the registry,
     const every: Required<DiscoverParams> = {
       q: ' a ', origins: ['local', 'peer'], pricing: 'paid', tag: ' t ', verified_only: true, active_24h: true,
       encircled_only: true, foreign_only: true, answerable_only: true, bonded_only: true, include_unbonded: true,
+      quantum: { quantum_modality: 'superconducting' },
       sort: 'newest', limit: 5, offset: 10,
     }
     answer({ items: [] })
     await discoveryService.discover(every)
-    const missing = Object.keys(every).filter((k) => !(k in sent()))
+    // V0660 (e): `quantum` carries the quantum filters, each sent as its own quantum_* parameter
+    const missing = Object.keys(every).filter((k) => !(k === 'quantum' ? 'quantum_modality' in sent() : k in sent()))
     expect(missing).toEqual([])
     expect(sent()).toMatchObject({ q: 'a', origins: 'local,peer', tag: 't', limit: 5, offset: 10, sort: 'newest' })
   })

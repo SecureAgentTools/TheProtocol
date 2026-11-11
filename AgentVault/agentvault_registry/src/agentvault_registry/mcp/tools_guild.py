@@ -1,8 +1,9 @@
 """MCP tools — THE GUILD (agent work exchange). 2026-07-08.
 
-11 tools over routers/guild.py: 3 public reads (board / order / network board) + 8 agent actions
-(post, bid, award, submit, verify, cancel, mine, cross-registry proxy). Wired via the AGORA
-late-block pattern in server.py. All money legs ride the guild's existing Δ=0 rails.
+12 tools over routers/guild.py: 3 public reads (board / order / network board) + 9 agent actions
+(post, bid, award, submit, verify, cancel, mine, cross-registry proxy, and since V0659 (n) the room an
+order shows in). Wired via the AGORA late-block pattern in server.py. All money legs ride the guild's
+existing Δ=0 rails.
 """
 import json
 import logging
@@ -102,11 +103,35 @@ def _number(name: str, value: Any) -> Tuple[Optional[float], Optional[Dict[str, 
     return number, None
 
 
+def _skill_list(value: Any) -> Tuple[Optional[List[Any]], Optional[Dict[str, Any]]]:
+    """V0659 (n): the skills an order asks for, or (None, refusal). None, '' or [] mean none. A list goes to the route as
+    given (the route takes a list of strings and answers anything else with its own 422); text that opens with [ or { is
+    read as JSON and must be a list; other text is a comma-separated list. Anything else is refused here, before any
+    request."""
+    if value is None or value == "" or value == []:
+        return None, None
+    if isinstance(value, str):
+        text = value.strip()
+        if text[:1] in ("[", "{"):
+            try:
+                value = json.loads(text)
+            except ValueError:
+                return None, {"error": "required_skills must be a list of skills (got text that is not a JSON list)"}
+        else:
+            value = [part.strip() for part in text.split(",") if part.strip()]
+    if not isinstance(value, list):
+        return None, {"error": f"required_skills must be a list of skills (got {type(value).__name__})"}
+    return (value or None), None
+
+
 # ── Tier 2 (agent actions) ───────────────────────────────────────────────────
 async def guild_post_order(auth: MCPAuthContext, title: str, bounty: str, spec: str = "",
                            deadline_seconds: int = 86400, stake_required: str = "",
-                           min_reputation: str = "", intended_worker_did: str = "") -> Dict[str, Any]:
-    """Post a task — the bounty is ESCROWED from your balance immediately (Δ=0 treasury hold)."""
+                           min_reputation: str = "", intended_worker_did: str = "", room_id: str = "",
+                           currency: str = "", required_skills: Any = None) -> Dict[str, Any]:
+    """Post a task — the bounty is ESCROWED from your balance immediately (Δ=0 treasury hold). V0659 (n): every field
+    POST /guild/orders takes (tests/test_guild_room_cards_v0659.py holds the two equal); a `room_id` shows the order in
+    that room as one card the Guild keeps current, checked by the route before any escrow moves."""
     require_agent_auth(auth)
     if not title or not bounty:
         return {"error": "title and bounty are required"}
@@ -123,7 +148,27 @@ async def guild_post_order(auth: MCPAuthContext, title: str, bounty: str, spec: 
     intended = str(intended_worker_did or "").strip()   # V0650 (f): the route checks it (an agent DID, not you)
     if intended:
         payload["intended_worker_did"] = intended
+    skills, refused = _skill_list(required_skills)
+    if refused:
+        return refused
+    if skills:
+        payload["required_skills"] = skills
+    for name, value in (("room_id", room_id), ("currency", currency)):   # V0659 (n): the route checks both
+        value = str(value or "").strip()
+        if value:
+            payload[name] = value
     return await _guild_post("/api/v1/guild/orders", payload, auth.raw_token)
+
+
+async def guild_set_order_room(auth: MCPAuthContext, order_id: str, room_id: str) -> Dict[str, Any]:
+    """V0659 (n): name the room YOUR order shows in, for an order posted without one (poster only, one room per order,
+    while it has not ended; naming its room again answers its card, so a retry is safe): the Guild posts the order's
+    live card there with its state now and keeps it current."""
+    require_agent_auth(auth)
+    order, room = str(order_id or "").strip(), str(room_id or "").strip()
+    if not order or not room:
+        return {"error": "order_id and room_id are required"}
+    return await _guild_post(f"/api/v1/guild/orders/{seg(order)}/room", {"room_id": room}, auth.raw_token)
 
 
 async def guild_bid(auth: MCPAuthContext, order_id: str, price: str, eta_seconds: int = 3600,
@@ -268,19 +313,46 @@ GUILD_TOOL_SCHEMAS: List[Dict[str, Any]] = [
     {"name": "theprotocol_guildNetworkBoard",
      "description": "THE GUILD: open tasks across ALL trusted peer registries (federated fan-out).",
      "inputSchema": {"type": "object", "properties": {}}},
+    # V0659 (n): every field POST /api/v1/guild/orders takes, with the route model's bounds (OrderPostIn; the test
+    # tests/test_guild_room_cards_v0659.py holds the two equal, so they cannot drift apart again)
     {"name": "theprotocol_guildPostOrder",
-     "description": "THE GUILD: post a task; the bounty is escrowed from your balance immediately. Requires agent JWT.",
+     "description": "THE GUILD: post a task; the bounty is escrowed from your balance immediately. Name a room_id and "
+                    "the order shows there as one card the Guild keeps current. Requires agent JWT.",
      "inputSchema": {"type": "object", "properties": {
-         "title": {"type": "string"}, "bounty": {"type": "string", "description": "numeric string, escrowed on post"},
-         "spec": {"type": "string", "description": "what does 'done' look like?", "default": ""},
-         "deadline_seconds": {"type": "integer", "default": 86400},
+         "title": {"type": "string", "maxLength": 200},
+         "bounty": {"type": "string", "description": "numeric string, escrowed on post"},
+         "spec": {"type": "string", "maxLength": 8000, "description": "what does 'done' look like?", "default": ""},
+         "deadline_seconds": {"type": "integer", "minimum": 60, "maximum": 2592000, "default": 86400},
          "stake_required": {"type": "string", "description": "optional collateral each bidder must lock", "default": ""},
          "min_reputation": {"type": "string", "default": ""},
          "intended_worker_did": {"type": "string", "maxLength": 120, "default": "",
                                  "description": "optional: the DID of the agent this task is meant for. Anyone may "
                                                 "still bid; a bid from another agent is marked not_intended_worker"},
+         "room_id": {"type": "string", "maxLength": 36, "default": "",
+                     "description": "optional: a conversation your agent takes part in and may post in (an "
+                                    "organization's room): the order shows there as one card that follows its "
+                                    "lifecycle. Checked before anything is escrowed"},
+         "currency": {"type": "string", "maxLength": 12, "default": "",
+                      "description": "optional, a label only: recorded with the order and shown on its card and its "
+                                     "records (default: this registry's unit). The bounty is escrowed in this "
+                                     "registry's unit whatever it says, so leave it empty"},
+         "required_skills": {"type": "array", "items": {"type": "string"}, "default": [],
+                             "description": "optional: the skills the task asks for (a list, a JSON list or a "
+                                            "comma-separated text); an entry for-org:<organization id> addresses the "
+                                            "task to one firm"},
          **_JWT},
       "required": ["title", "bounty"]}},
+    {"name": "theprotocol_guildSetOrderRoom",
+     "description": "THE GUILD: name the room YOUR order shows in, for an order posted without one: the order's live "
+                    "card is posted there with its state now and kept current at each step. Poster only, one room per "
+                    "order (naming its room again answers its card and posts it if it was not posted, so a retry is "
+                    "safe), not for an order that ended (settled, cancelled or expired). Requires agent JWT.",
+     "inputSchema": {"type": "object", "properties": {
+         "order_id": {"type": "string", "description": "your order (gwo_...)"},
+         "room_id": {"type": "string", "minLength": 1, "maxLength": 36,
+                     "description": "a conversation your agent takes part in and may post in (an organization's room)"},
+         **_JWT},
+      "required": ["order_id", "room_id"]}},
     {"name": "theprotocol_guildBid",
      "description": "THE GUILD: bid on an open task (locks the task's bid deposit if required; on_behalf_of_org_id bids as your AGORA-listed firm). Requires agent JWT.",
      "inputSchema": {"type": "object", "properties": {

@@ -40,6 +40,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agentvault_registry.core.outbound_guard import guarded_client
 from agentvault_registry import models
 from agentvault_registry.config import settings
 from agentvault_registry.database import get_db
@@ -350,7 +351,9 @@ async def instruct_agent(did: str, body: InstructIn, request: Request,
     started = time.monotonic()
     outcome, detail, agent_reply = "delivered", None, None
     try:
-        async with httpx.AsyncClient(timeout=INSTRUCT_TIMEOUT_SEC) as client:
+        # V0660 (l): the owner publishes this endpoint on the card, so a stranger's address reaches
+        # here; the guard refuses a non-public one and pins the address it checked.
+        async with guarded_client("agent_instruct", timeout=INSTRUCT_TIMEOUT_SEC) as client:
             resp = await client.post(endpoint, json=payload,
                                      headers={"Content-Type": "application/json"})
         if 200 <= resp.status_code < 300:

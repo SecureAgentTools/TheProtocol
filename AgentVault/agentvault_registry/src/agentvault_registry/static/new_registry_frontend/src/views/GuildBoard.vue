@@ -66,6 +66,11 @@
               <span v-if="o.bid_count != null"><Icon name="mdi:gavel" /> {{ o.bid_count }} bid{{ o.bid_count === 1 ? '' : 's' }}</span>
               <span v-if="o.worker_did" :class="{ me: isMe(o.worker_did) }"><Icon name="mdi:hammer-wrench" /> {{ isMe(o.worker_did) ? 'you' : shortDid(o.worker_did) }}</span>
             </div>
+            <!-- V0658 (q): My work lists the orders of all your agents and organizations; each names which is yours -->
+            <div v-if="tab === 'mine' && myParties(o).length" class="gld-card-mine" data-testid="gld-mine-parties">
+              <span v-for="p in myParties(o)" :key="p.role + p.agent_did" class="gld-mine-chip">
+                <Icon name="mdi:account-check" /> {{ partyWord(p) }}</span>
+            </div>
           </li>
           <li v-if="!shownOrders.length && listState === 'failed'" class="gld-empty" data-testid="gld-list-failed">
             <ReadFailedNotice :retry="retryList" />
@@ -75,7 +80,7 @@
           </li>
           <li v-else-if="!shownOrders.length" class="gld-empty">
             <Icon name="mdi:briefcase" class="gld-empty-ico" />
-            <p>{{ tab === 'mine' ? 'No orders for your active agent yet.' : tab === 'network' ? (netLoading ? 'Polling peer registries…' : 'No open tasks on peer registries right now.') : tab === 'open' ? 'No open tasks. Post one, or check back.' : 'Nothing in this view.' }}</p>
+            <p>{{ tab === 'mine' ? t('guild.mine.none', 'None of your agents or organizations has posted or won an order yet.') : tab === 'network' ? (netLoading ? 'Polling peer registries…' : 'No open tasks on peer registries right now.') : tab === 'open' ? 'No open tasks. Post one, or check back.' : 'Nothing in this view.' }}</p>
           </li>
         </ul>
       </section>
@@ -108,6 +113,9 @@
           </div>
           <div class="gld-d-bounty">{{ fmt(detail.order.bounty) }} <small>{{ detail.order.currency }}</small>
             <span v-if="detail.order.fee_charged" class="gld-d-fee">fee {{ fmt(detail.order.fee_charged) }}</span></div>
+          <!-- V0658 (q): reading follows ownership: an order of your agent (or your organization's) shows here whichever
+               agent is selected, and says which agent may act on it -->
+          <p v-if="ownerOf" class="gld-owner" data-testid="gld-owner-line"><Icon name="mdi:account-check" /> {{ ownerLine }}</p>
           <div v-if="detail.order.payee_org_id" class="gld-firm-payee"><Icon name="mdi:domain" /> Firm order: payout goes to the organization's treasury (then distributions to holders)</div>
           <div v-if="Number(detail.order.stake_required) > 0" class="gld-stake-pill"><Icon name="mdi:shield-lock" /> Bond required: {{ fmt(detail.order.stake_required) }} {{ detail.order.currency }}</div>
           <p class="gld-d-spec" v-if="detail.order.spec">{{ detail.order.spec }}</p>
@@ -154,9 +162,26 @@
                           :aria-label="tp('guild.ratingStars', '{n} of 5 stars', { n: s })" @click="verifyStars = s">★</button>
                 </div>
                 <button class="gld-btn gld-btn-primary" :disabled="busy" @click="doVerify(true)"><Icon name="mdi:cash-check" /> Accept &amp; pay</button>
-                <button class="gld-btn gld-btn-ghost" :disabled="busy" @click="doVerify(false)"><Icon name="mdi:alert" /> Reject → dispute</button>
+                <button v-if="!rejecting" class="gld-btn gld-btn-ghost" :disabled="busy" @click="rejecting = true"><Icon name="mdi:alert" /> Reject → dispute</button>
+              </div>
+              <!-- V0658 (d): the reason becomes the complainant's first statement in the dispute -->
+              <div v-if="rejecting" class="gld-reject" data-testid="gld-reject-reason">
+                <label class="gld-act-title" for="gld-reject-text">{{ t('guild.rejectWhy', 'Why do you reject it? Your words open the dispute.') }}</label>
+                <textarea id="gld-reject-text" v-model="rejectReason" class="gld-in" rows="3" :maxlength="REJECT_REASON_MAX"
+                          :placeholder="t('guild.rejectPlaceholder', 'What is missing or wrong in the delivery')"></textarea>
+                <div class="gld-act-row">
+                  <button class="gld-btn gld-btn-ghost" :disabled="busy || !rejectReasonReady(rejectReason)" @click="doVerify(false)"><Icon name="mdi:alert" /> {{ t('guild.rejectSend', 'Send to dispute') }}</button>
+                  <button class="gld-btn gld-btn-ghost" :disabled="busy" @click="rejecting = false; rejectReason = ''">{{ t('guild.rejectBack', 'Back') }}</button>
+                </div>
               </div>
             </div>
+          </div>
+
+          <!-- V0658 (q): the delivered work, to whoever the registry shows it (the parties, their owners, an admin), read
+               only; the poster's review below the actions keeps its own copy -->
+          <div v-if="detail.order.deliverable && !offers('verify')" class="gld-deliv-read" data-testid="gld-deliverable">
+            <div class="gld-act-title"><Icon name="mdi:check-decagram" /> {{ t('guild.delivered', 'Delivered') }}</div>
+            <div class="gld-deliv">{{ JSON.stringify(detail.order.deliverable) }}</div>
           </div>
 
           <h3><Icon name="mdi:gavel" /> Bids <span class="gld-count">{{ detail.bids.length }}</span></h3>
@@ -234,8 +259,8 @@
 import { useEscapeClose } from '@/composables/useEscapeClose'
 import { useI18n } from '@/composables/useI18n'
 import { appLocale } from '@/services/appLocale'
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import Icon from '@/components/Icon.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import { guildApi, type GuildOrder } from '@/services/api/guild'
@@ -243,12 +268,17 @@ import { useAuthStore } from '@/stores/auth'
 import { useUIStore } from '@/stores/ui'
 import { useCurrency } from '@/composables/useCurrency'
 import { actionsFor } from '@/services/guildActions'
+import { myParties, ownerParty, partyName } from '@/services/ownerParties'
+import type { MyParty } from '@/services/api/guild'
+import { useGuildLabels } from '@/composables/useGuildLabels'
 import { typedAmount } from '@/services/money/typedAmount'
 import { useFocusTrap } from '@/composables/useFocusTrap'
+import { REJECT_REASON_MAX, rejectReasonReady, verifyFeedback } from '@/services/guild/rejectReason'
 
 const { t, tp } = useI18n()
 
 const auth = useAuthStore(); const ui = useUIStore()
+const route = useRoute(); const router = useRouter()
 const isAdmin = computed(() => !!(auth as any).user?.is_admin || (auth as any).isAdmin)
 const hasAgent = computed(() => !!(auth as any).agentToken && !!(auth as any).activeAgent)
 const activeDid = computed(() => (auth as any).activeAgent?.did || '')
@@ -306,6 +336,7 @@ function isFirmReserved(o: any): boolean {
 }
 
 const workerShare = ref(0.5); const verifyStars = ref(5); const showPost = ref(false)
+const rejecting = ref(false); const rejectReason = ref('')
 const postForm = ref({ title: '', spec: '', bounty: 10 as number, deadlineHours: 24 as number, stake: 0 as number, forOrg: '' })
 /* §FESUITE — what the page refuses before anything leaves it: `!bounty` let -5 through, a collateral of -1 too, and a bid
    above the bounty went to the registry to be refused there. One sentence per refusal, the button disabled with it. */
@@ -349,6 +380,21 @@ const offer = computed(() => actionsFor(detail.value?.order
   ? { ...detail.value.order, bid_count: (detail.value.bids || []).filter((b: any) => b.status === 'open').length }
   : null, activeDid.value || null))
 const offers = (k: 'award' | 'submit' | 'verify' | 'cancel' | 'bid') => offer.value.actions.some(a => a.key === k)
+/* V0658 (q): reading follows ownership. A developer reads his agents' (and his organizations') orders whichever agent
+   is selected; the order's detail names the agent that may act on it when the acting agent is not a party. */
+const { roleLabel: roleWord } = useGuildLabels()
+const partyWord = (p: MyParty) => tp('guild.mine.party', '{name} · {role}', { name: partyName(p), role: roleWord(p.role) })
+const ownerOf = computed(() => ownerParty(detail.value?.order, activeDid.value || null))
+const ownerLine = computed(() => {
+  const p = ownerOf.value
+  if (!p) return ''
+  if (p.via === 'organization') {
+    return tp('guild.owner.orgParty', '{name}, an agent of your organization {org}, is the {role} on this order. Acting on it needs that agent.',
+      { name: partyName(p), org: p.organization_name || '', role: roleWord(p.role) })
+  }
+  return tp('guild.owner.agentParty', 'Your agent {name} is the {role} on this order. Select it in the agent switcher (top right) to act on it.',
+    { name: partyName(p), role: roleWord(p.role) })
+})
 const shortDid = (d?: string | null) => !d ? '—' : d.length > 26 ? d.slice(0, 15) + '…' + d.slice(-5) : d
 const fmt = (v: any) => { const n = Number(v); return isNaN(n) ? String(v ?? '0') : n.toLocaleString(appLocale(), { maximumFractionDigits: 4 }) }
 const when = (t: string) => { try { return new Date(t).toLocaleString(appLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) } catch { return t } }
@@ -378,7 +424,7 @@ async function loadBoard() {
 }
 const listState = computed<ListState>(() => {
   const k = tab.value
-  if (k === 'mine') return hasAgent.value ? mineRead.value : 'ok'
+  if (k === 'mine') return signedIn.value ? mineRead.value : 'ok'
   if (k === 'network') return netRead.value
   if (k === 'all') return adminRead.value
   return boardFor.value === k ? 'ok' : boardFailed.value ? 'failed' : 'loading'
@@ -390,16 +436,19 @@ function retryList() {
 }
 function switchTab(k: string) {
   tab.value = k
-  if (k === 'mine' && hasAgent.value) loadMine()
+  if (k === 'mine' && signedIn.value) loadMine()
   if (k === 'network') { netSel.value = null; loadNetwork() }
   if (TAB_STATUSES[k]) void loadBoard()
 }
 async function loadMine() {
+  // V0658 (q): My work is the developer's (every agent he owns, every organization he owns), read with his own token,
+  // whichever agent is acting; the travel credentials are the acting agent's own
   try {
-    myOrders.value = (await guildApi.mine()).orders; mineRead.value = 'ok'
+    myOrders.value = (await guildApi.owned()).orders; mineRead.value = 'ok'
   } catch {
     if (mineRead.value !== 'ok') { myOrders.value = []; mineRead.value = 'failed' }
   }
+  if (!hasAgent.value) { creds.value = []; return }
   try { creds.value = (await guildApi.myCredentials()).credentials || [] } catch { creds.value = [] }
 }
 const creds = ref<any[]>([])
@@ -416,7 +465,10 @@ async function loadAll() {
         allOrders.value = a.orders; adminRead.value = 'ok'
       } catch { if (adminRead.value !== 'ok') adminRead.value = 'failed' }
     }
-    if (hasAgent.value) { loadMine(); loadFirm() }
+    // V0658 (q): My work (the owner read, every agent and organization of his) is asked while its tab is open, never
+    // on every poll of every tab; switching to it reads it at once
+    if (signedIn.value && tab.value === 'mine') loadMine()
+    if (hasAgent.value) loadFirm()
   } catch {} finally { loading.value = false; hasLoaded.value = true; refreshing.value = false }
   if (selected.value) loadDetail(selected.value)
 }
@@ -426,6 +478,7 @@ async function open(id: string) {
   netSel.value = null
   // §FESUITE (2026-10-05): another order's detail is never shown under this one while it loads
   if (detail.value?.order?.id !== id) { detail.value = null; detailFailed.value = false }
+  rejecting.value = false; rejectReason.value = ''
   selected.value = id; await loadDetail(id)
 }
 // §FESUITE (2026-10-05): a failed detail read blanked the panel, and every failed poll blanked an open order; a failed read
@@ -467,12 +520,30 @@ async function doBid() {
 }
 async function doAward(bidId: number) { await act(() => guildApi.award(detail.value.order.id, bidId), 'Bid awarded') }
 async function doSubmit() { await act(() => guildApi.submitWork(detail.value.order.id, { text: submitForm.value.text }), 'Work submitted'); submitForm.value = { text: '' } }
-async function doVerify(accept: boolean) { await act(() => guildApi.verify(detail.value.order.id, accept, verifyStars.value), accept ? 'Accepted — worker paid' : 'Sent to dispute') }
+async function doVerify(accept: boolean) {
+  await act(() => guildApi.verify(detail.value.order.id, accept, verifyStars.value, verifyFeedback(accept, rejectReason.value)), accept ? 'Accepted — worker paid' : 'Sent to dispute')
+  rejecting.value = false; rejectReason.value = ''
+}
 async function doCancel() { await act(() => guildApi.cancel(detail.value.order.id), 'Cancelled + refunded') }
 async function doResolve() { await act(() => guildApi.resolve(detail.value.order.id, workerShare.value), 'Dispute resolved') }
 
+/* V0658 (q): ?order=<id> opens that order (the chat's order card on a desktop, any door naming one): on arrival and
+   while the board is open, since a query-only navigation does not remount the view. The address is then cleared, so a
+   second door to the same order opens it again. */
+async function openFromQuery() {
+  const oid = typeof route.query.order === 'string' ? route.query.order.trim() : ''
+  if (!oid) return
+  const rest: Record<string, any> = { ...route.query }
+  delete rest.order
+  router.replace({ query: rest }).catch(() => { /* an aborted navigation leaves the address as it was */ })
+  if (tab.value === 'network') switchTab('open')
+  await open(oid)
+}
+watch(() => route.query.order, () => { void openFromQuery() })
+
 onMounted(() => {
   loadAll(); timer = setInterval(loadAll, 10000)
+  void openFromQuery()
   // §AGENTDISC #195 — the Discovery hire loop lands here: ?post=1 opens the EXISTING
   // post form (no second copy) with optional title/spec prefill from the agent card.
   const q = useRoute().query
@@ -561,6 +632,7 @@ useEscapeClose(showPost, () => { showPost.value = false })
 .gld-act-title :deep(svg) { width: 0.9rem; height: 0.9rem; }
 .gld-act-row { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
 .gld-act-inline { margin-bottom: 0.5rem; }
+.gld-reject { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.6rem; }
 .gld-in { flex: 1 1 auto; min-width: 0; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.14); border-radius: 7px; padding: 0.45rem 0.6rem; color: #e6edf3; font-size: 0.82rem; box-sizing: border-box; }
 .gld-in-sm { flex: 0 0 5.5rem; } .gld-ta { width: 100%; resize: vertical; }
 .gld-deliv { font-size: 0.75rem; opacity: 0.8; background: rgba(0,0,0,0.2); border-radius: 6px; padding: 0.45rem; margin-bottom: 0.5rem; word-break: break-all; }
@@ -592,6 +664,13 @@ useEscapeClose(showPost, () => { showPost.value = false })
 .gld-firm-badge :deep(svg) { width: 0.7rem; height: 0.7rem; }
 .gld-firm-payee { font-size: 0.74rem; color: #c4b5fd; background: rgba(167,139,250,0.08); border: 1px solid rgba(167,139,250,0.22); border-radius: 8px; padding: 0.45rem 0.6rem; margin: 0.3rem 0 0.5rem; display: flex; align-items: center; gap: 0.4rem; }
 .gld-firm-payee :deep(svg) { width: 0.9rem; height: 0.9rem; }
+/* V0658 (q): the owner's line and parties; solid text colours (no opacity), at least 4.5:1 on the dark panel */
+.gld-owner { font-size: 0.76rem; color: #6ee7b7; background: rgba(16,185,129,0.07); border: 1px solid rgba(16,185,129,0.25); border-radius: 8px; padding: 0.45rem 0.6rem; margin: 0.3rem 0 0.5rem; display: flex; align-items: center; gap: 0.4rem; }
+.gld-owner :deep(svg) { width: 0.9rem; height: 0.9rem; flex-shrink: 0; }
+.gld-card-mine { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.35rem; }
+.gld-mine-chip { font-size: 0.66rem; color: #6ee7b7; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.28); padding: 0.05rem 0.4rem; border-radius: 5px; display: inline-flex; align-items: center; gap: 0.2rem; }
+.gld-mine-chip :deep(svg) { width: 0.7rem; height: 0.7rem; }
+.gld-deliv-read { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.09); border-radius: 10px; padding: 0.6rem 0.7rem; margin-bottom: 0.5rem; }
 .gld-stake-warn { font-size: 0.72rem; color: #fbbf24; background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.25); border-radius: 8px; padding: 0.4rem 0.55rem; margin: 0.4rem 0; display: flex; align-items: center; gap: 0.35rem; line-height: 1.35; }
 .gld-stake-warn :deep(svg) { width: 0.9rem; height: 0.9rem; flex-shrink: 0; }
 .gld-stake-pill { font-size: 0.74rem; color: #fbbf24; background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.22); border-radius: 8px; padding: 0.4rem 0.6rem; margin: 0.3rem 0 0.5rem; display: flex; align-items: center; gap: 0.4rem; }

@@ -12,14 +12,14 @@ import logging
 from typing import Any, Dict, List, Optional
 
 import json
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Security, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentvault_registry import models
 from agentvault_registry.database import get_db
-from agentvault_registry.security import get_current_developer, require_admin_flag, admin_credential
+from agentvault_registry.security import get_current_agent, get_current_developer, require_admin_flag, admin_credential
 from agentvault_registry.agent_authz import (
     ROLE_PERMISSIONS, ALL_PERMISSIONS, BASE_PERMISSIONS, DEV_DELEGATABLE_PERMISSIONS,
     agent_rbac_mode, resolve_agent_permissions, resolve_agent_roles,
@@ -221,6 +221,28 @@ async def authz_catalog(current: models.Developer = Depends(get_current_develope
 
 
 # ── per-agent read/update (owner/admin) ──────────────────────────────────────
+# V0659 (c): registered before /agents/{did}/authz (FastAPI matches in registration order: "me" would be read as a DID)
+@router.get("/agents/me/authz", summary="The calling agent's own roles, permissions and spend cap")
+async def get_my_authz(
+    current_agent: models.Agent = Security(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    What the calling agent may do and spend, read with its own token: its roles, its effective permissions and its
+    spend cap (`max_per_tx`, `max_per_day`, the currencies and counterparties it may pay). Read-only and only the
+    caller's own. TheProtocol Proxy reads it before a payment action starts: an agent without a spend cap, or with one
+    above the mandate it pays under, does not pay.
+    """
+    did = current_agent.did
+    return {
+        "agent_did": did,
+        "mode": agent_rbac_mode(),
+        "roles": await resolve_agent_roles(db, did),
+        "effective_permissions": sorted(await resolve_agent_permissions(db, did)),
+        "spend_policy": await _spend_policy(db, did),
+    }
+
+
 @router.get("/agents/{did}/authz", summary="Agent roles + spend policy + effective permissions")
 async def get_agent_authz(
     did: str,

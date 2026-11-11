@@ -78,6 +78,11 @@ def rig(tmp_path, monkeypatch):
                 {"id": "opteg1", "name": f"cloud-op-{OP}-teg", "service": "teg-layer", "state": "running", "status": "Up 1 hour", "image": "teg:v1"},
                 {"id": "opdb1", "name": f"cloud-op-{OP}-db", "service": "db", "state": "exited", "status": "Exited (0)", "image": "pg:16"}],
         },
+        # V0660 (j): the runner finds an operator's container by the labels compose stamped, including
+        # project.working_dir, so the recorder resolves that filter too.
+        "workdirs": {str(wd): f"cloud-op-{OP}"},
+        "updates": [], "update_rc": 0,
+        "policies": {f"cloud-op-{OP}-spire-agent": "unless-stopped"},
         "inspect": {
             "opreg1": {"Config": {"Labels": {"com.docker.compose.project": f"cloud-op-{OP}",
                                              "com.docker.compose.project.working_dir": str(wd),
@@ -91,8 +96,22 @@ def rig(tmp_path, monkeypatch):
     }
 
     def fake_run(cmd, **kw):
+        # V0660 (j): one source of truth for a container's restart policy in this rig — `docker update` writes it,
+        # the narrow `docker inspect --format` read below reads it. Narrow on purpose: every other docker inspect
+        # in the runner goes through _docker_inspect, which the fixture patches.
+        if cmd[:2] == ["docker", "inspect"] and "{{.HostConfig.RestartPolicy.Name}}" in cmd:
+            return subprocess.CompletedProcess(cmd, 0, world["policies"].get(cmd[2], "") + "\n", "")
+        if cmd[:2] == ["docker", "update"]:
+            world["updates"].append(cmd)
+            if world["update_rc"] == 0 and cmd[-1] in world["policies"]:
+                world["policies"][cmd[-1]] = cmd[cmd.index("--restart") + 1]
+            return subprocess.CompletedProcess(cmd, world["update_rc"], "", "" if world["update_rc"] == 0 else "no such container")
         if cmd[:2] == ["docker", "ps"]:
             project = next((a[len("label=com.docker.compose.project="):] for a in cmd if a.startswith("label=com.docker.compose.project=")), None)
+            if project is None:
+                wdf = next((a[len("label=com.docker.compose.project.working_dir="):] for a in cmd
+                            if a.startswith("label=com.docker.compose.project.working_dir=")), None)
+                project = world["workdirs"].get(wdf) if wdf else None
             service = next((a[len("label=com.docker.compose.service="):] for a in cmd if a.startswith("label=com.docker.compose.service=")), None)
             fmt = cmd[cmd.index("--format") + 1] if "--format" in cmd else None
             rows = [r for r in world["projects"].get(project, []) if service is None or r["service"] == service]
@@ -202,6 +221,51 @@ def test_revoke_with_the_node_bans_it_deletes_its_entries_and_never_evicts(rig):
     assert not any(w[:2] == ["agent", "evict"] for w in writes(world))
     assert out["banned"] and out["evicted"] is False and out["node_listed"] and out["entries_deleted"] == 3
     assert out["agent_entries"] == 0 and not out["errors"]
+
+
+def test_v0657f_the_operators_agent_is_stopped_before_its_node_is_banned(rig, monkeypatch):
+    # V0657 (f): a banned agent exits 1 ("Agent is banned") and unless-stopped restarted it 9-10 times on every nightly
+    # pair (the ContainerRestartLoop warning); a stopped container is not restarted, so the stop comes first
+    runner, world, wd, *_ = rig
+    with_agent(world)        # V0660 (j): an operator being revoked has a spire-agent container, so the rig has one
+    seen = {}
+    real = runner._spire_exec
+
+    def spire(spire_name, argv, stdin=None, timeout=30):
+        if argv[:2] == ["agent", "ban"]:
+            seen["stops_before_ban"] = [c for c in world["compose"] if "stop" in c]
+        return real(spire_name, argv, stdin=stdin, timeout=timeout)
+    monkeypatch.setattr(runner, "_spire_exec", spire)
+    out = call(runner, "operator_revoke_spire", operator=OP, fingerprint=FP_OP)
+    stops = seen["stops_before_ban"]
+    assert len(stops) == 1 and stops[0][-2:] == ["stop", "spire-agent"], stops
+    assert stops[0][:4] == ["docker", "compose", "-p", f"cloud-op-{OP}"]
+    assert str(wd / "docker-compose.operator.yml") in stops[0]
+    assert out["agent_stopped"] is True and "agent_stop_note" not in out and out["banned"] and not out["errors"]
+    assert out["agent_returns"].startswith("only by a re-provision")    # session-lead's condition (seq 1551)
+
+
+def test_v0657f_an_operator_whose_stack_is_not_here_is_banned_as_before(rig):
+    runner, world, *_ = rig
+    world["projects"].pop(f"cloud-op-{OP}")
+    out = call(runner, "operator_revoke_spire", operator=OP, fingerprint=FP_OP)
+    assert world["compose"] == [] and out["agent_stopped"] is None and "no stack of sbxop" in out["agent_stop_note"]
+    assert "agent_returns" not in out
+    assert out["banned"] and out["entries_deleted"] == 3 and not out["errors"]
+
+
+def test_v0657f_a_stop_that_fails_is_said_and_the_ban_goes_ahead(rig, monkeypatch):
+    runner, world, *_ = rig
+    monkeypatch.setattr(runner, "_operator_compose", lambda op, args, timeout: (1, b"no such service: spire-agent", 5))
+    out = call(runner, "operator_revoke_spire", operator=OP, fingerprint=FP_OP)
+    assert out["agent_stopped"] is False and "rc=1" in out["agent_stop_note"] and "spire-agent" in out["agent_stop_note"]
+    assert out["banned"] and ["agent", "ban", "-spiffeID", NODE_OP] in writes(world)
+
+
+def test_v0657f_without_a_node_nothing_is_stopped(rig):
+    runner, world, *_ = rig
+    out = call(runner, "operator_revoke_spire", operator=OP)
+    assert world["compose"] == [] and out["agent_stopped"] is None
 
 
 def test_the_operators_ironhand_agent_entries_go_with_it_and_a_service_entry_still_refuses(rig):
@@ -639,3 +703,113 @@ def test_one_containers_stats_failure_is_reported_the_rest_still_answer(rig, mon
     out = call(runner, "container_stats", operator=OP)
     bad = [c for c in out["containers"] if c.get("error")]
     assert len(bad) == 1 and bad[0]["id"] == "opteg1" and bad[0]["stats"] is None
+
+
+# ── V0660 (j): a revoke RECORDS the stop it makes ───────────────────────────────────────────────────────────────────
+# session-watch, room seq 2329: since V0657 (f) the revoke stops the operator's spire-agent and the container keeps
+# restart policy unless-stopped, while monitoring/scripts/docker-health-textfile.sh skips a stopped container only
+# when its policy is "no" (§LEGACYSTOP's recorded-stop convention). So the revoke's own deliberate stop reported
+# docker_container_health 0 and ContainerUnhealthy fired on every nightly pair. Measured here, 2026-11-08, with a
+# throwaway compose project: `docker compose up -d` on an existing stopped container STARTS IT AND KEEPS policy "no"
+# (running, policy=no), so the restore has to be explicit — it is not a thing compose does for us.
+AGENT = f"cloud-op-{OP}-spire-agent"
+
+
+def with_agent(world):
+    """Give this operator a spire-agent container, for this test only.
+
+    Deliberately NOT in the shared rig: the census and stats tests count what the fixture holds, and a fixture that
+    grows under them would be my change breaking their measurement (§COCKPITSHOW's "a count compared against a
+    population that can grow is not a wait", one layer over).
+    """
+    world["projects"][f"cloud-op-{OP}"].append(
+        {"id": "opagent1", "name": AGENT, "service": "spire-agent", "state": "running",
+         "status": "Up 1 hour", "image": "spire:v1"})
+    return world
+
+
+def updates(world):
+    return [c for c in world["updates"] if c[:2] == ["docker", "update"]]
+
+
+def test_v0660j_the_revoke_records_the_stop_it_makes(rig):
+    runner, world, *_ = rig
+    with_agent(world)
+    out = call(runner, "operator_revoke_spire", operator=OP, fingerprint=FP_OP)
+    assert out["agent_stopped"] is True and out["agent_stop_recorded"] is True
+    assert updates(world) == [["docker", "update", "--restart", "no", AGENT]]
+    assert world["policies"][AGENT] == "no"          # what the collector keys on
+    assert out["banned"] and not out["errors"]
+
+
+def test_v0660j_the_stop_is_recorded_after_the_stop_and_before_the_ban(rig, monkeypatch):
+    # the order matters: policy "no" on a RUNNING container would stop docker restarting a crash, so it is
+    # recorded only once the stop succeeded, and still before the ban that makes the agent exit.
+    runner, world, *_ = rig
+    with_agent(world)
+    seen = {}
+    real = runner._spire_exec
+
+    def spire(spire_name, argv, stdin=None, timeout=30):
+        if argv[:2] == ["agent", "ban"]:
+            seen["before_ban"] = (list(world["compose"]), list(world["updates"]))
+        return real(spire_name, argv, stdin=stdin, timeout=timeout)
+    monkeypatch.setattr(runner, "_spire_exec", spire)
+    call(runner, "operator_revoke_spire", operator=OP, fingerprint=FP_OP)
+    composes, ups = seen["before_ban"]
+    assert [c for c in composes if "stop" in c], "the stop ran before the ban"
+    assert ups == [["docker", "update", "--restart", "no", AGENT]], ups
+
+
+def test_v0660j_a_stop_that_failed_records_nothing(rig, monkeypatch):
+    # nothing was stopped, so there is nothing to record: a policy of "no" on a container still running would be
+    # a lie about the state AND would disarm docker's restart of a real crash.
+    runner, world, *_ = rig
+    with_agent(world)
+    monkeypatch.setattr(runner, "_operator_compose", lambda op, args, timeout: (1, b"no such service: spire-agent", 5))
+    out = call(runner, "operator_revoke_spire", operator=OP, fingerprint=FP_OP)
+    assert out["agent_stopped"] is False and out.get("agent_stop_recorded") is None
+    assert updates(world) == [] and world["policies"][AGENT] == "unless-stopped"
+    assert out["banned"]
+
+
+def test_v0660j_a_record_that_fails_is_said_and_the_revoke_goes_ahead(rig):
+    runner, world, *_ = rig
+    with_agent(world)
+    world["update_rc"] = 1
+    out = call(runner, "operator_revoke_spire", operator=OP, fingerprint=FP_OP)
+    assert out["agent_stopped"] is True and out["agent_stop_recorded"] is False
+    assert "no such container" in out["agent_stop_note"] or "rc=1" in out["agent_stop_note"]
+    assert out["banned"] and not out["errors"], "a record that failed is not an error of the revoke"
+
+
+def test_v0660j_no_agent_container_here_is_said_not_assumed(rig):
+    runner, world, *_ = rig
+    # no with_agent here: this operator has no agent container at all
+    out = call(runner, "operator_revoke_spire", operator=OP, fingerprint=FP_OP)
+    assert out["agent_stopped"] is True and out["agent_stop_recorded"] is None
+    assert "no spire-agent container" in out["agent_stop_note"]
+    assert updates(world) == []
+
+
+def test_v0660j_a_restart_restores_the_policy_before_it_starts_the_agent(rig):
+    # (2) in the order: the path that starts that agent again restores unless-stopped BEFORE the start, so no
+    # running agent carries restart "no" — measured above: compose up alone does not restore it.
+    runner, world, *_ = rig
+    with_agent(world)
+    world["policies"][AGENT] = "no"
+    out = call(runner, "operator_restart", operator=OP, service="spire-agent")
+    assert out["restarted"] and out["agent_policy_restored"] is True
+    assert updates(world) == [["docker", "update", "--restart", "unless-stopped", AGENT]]
+    assert world["policies"][AGENT] == "unless-stopped"
+    starts = [c for c in world["compose"] if "restart" in c]
+    assert starts, "the restart still ran"
+    assert world["updates"].index(updates(world)[0]) == 0 and world["compose"].index(starts[0]) == 0
+
+
+def test_v0660j_a_restart_of_an_agent_already_on_unless_stopped_changes_nothing(rig):
+    runner, world, *_ = rig
+    with_agent(world)
+    out = call(runner, "operator_restart", operator=OP, service="spire-agent")
+    assert out["restarted"] and out.get("agent_policy_restored") is None
+    assert updates(world) == [], "nothing to restore, so nothing is written"

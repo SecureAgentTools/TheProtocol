@@ -380,6 +380,9 @@ ROUTE_CONSTRAINTS: Dict[str, Dict[str, Dict[str, Any]]] = {
     'theprotocol_verify2FA': {
         'code': {"pattern": "^[0-9]{6}$"},
     },
+    'theprotocol_withdrawTegDispute': {
+        'reason': {"maxLength": 500},
+    },
 }
 
 # what apply_route_constraints() added, by tool and argument: the census reads a schema's own keys without them

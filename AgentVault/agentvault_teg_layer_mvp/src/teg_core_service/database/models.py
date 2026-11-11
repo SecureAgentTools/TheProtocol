@@ -66,6 +66,9 @@ class DisputeStatus(str, enum.Enum):
     RESOLVED_FAVOR_INITIATOR = "RESOLVED_FAVOR_INITIATOR"
     RESOLVED_FAVOR_RESPONDENT = "RESOLVED_FAVOR_RESPONDENT"
     REJECTED = "REJECTED"
+    # D6-825 (V0658): the claimant withdrew its own OPEN dispute (no ruling, no penalty); migration 0009 adds the label
+    # to the column's enum type (dispute_status_enum)
+    WITHDRAWN = "WITHDRAWN"
     # Legacy statuses for backward compatibility
     LOGGED_MANUAL_REVIEW = "logged_manual_review"
     RESOLVED_NO_ACTION = "resolved_no_action"

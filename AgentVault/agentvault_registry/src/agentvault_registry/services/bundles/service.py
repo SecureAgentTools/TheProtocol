@@ -208,6 +208,64 @@ def _redact_email(email: Optional[str]) -> str:
 
 # ── Agent payload assembly (read from DB) ──────────────────────────────────
 
+def _restored_card_data(captured, new_did: str, name) -> dict:
+    """The card a restored copy is written, with the five fields a fail-closed peer REQUIRES as defaults.
+
+    A bundle made before the capture fix carries no card at all, and this used to write exactly
+    {did, humanReadableId, name} — four keys once the flare sidecar lands. §VENUEGW already learned what that costs:
+    "the control was right; our own card was wrong", because a registry running FEDERATION_INGEST_FAIL_CLOSED
+    quarantines a stub, so the copy exists locally and is invisible to every peer. Measured on production
+    2026-11-07: a fork's copy was refused by the peer naming protocolVersion, agentVersion, description, provider
+    and capabilities.
+
+    Those five are supplied, and NOTHING else is: no `url`, because a restored copy has no host and the refusal
+    never asked for one — an invented address is a fact nobody can retract (§LOCTRUTH) — and no capability beyond
+    the registry's own stub default. A captured card overrides every default; the new identity overrides the
+    captured one, because the copy is not the original.
+    """
+    from agentvault_registry.core.card_stub import STUB_CARD_DESCRIPTION
+    base = {
+        "protocolVersion": "1.0",
+        "agentVersion": "1.0.0",
+        "description": STUB_CARD_DESCRIPTION,
+        "provider": {"name": "Pending"},
+        "capabilities": {"streaming": False},
+    }
+    card = captured if isinstance(captured, dict) else {}
+    return {
+        **base,
+        **card,
+        "did": new_did,
+        "humanReadableId": new_did,
+        "name": name or "Imported Agent",
+    }
+
+
+def _pick_agent_card(rows, agent_did: str):
+    """(name, card_data) for THIS agent from its own card rows, or (None, None) — never another agent's row.
+
+    Pure, so the rule is testable without a database. A row whose card_data declares a DIFFERENT DID is refused
+    outright: substituting it is what wrote a stranger's name into a bundle. A row that declares no DID of its own is
+    this agent's row, because the query filtered on the agent_did column; its card_data is taken as it stands. No
+    match means (None, None), and the payload's own "Unnamed Agent" default — an honest blank beats a wrong fact.
+    """
+    import json as _json
+    fallback = None
+    for r in rows:
+        raw = r[2]
+        cd = raw if isinstance(raw, dict) else (_json.loads(raw) if raw else {})
+        cd = cd or {}
+        if cd.get("did") == agent_did or cd.get("humanReadableId") == agent_did:
+            return r[0], cd                      # an explicit content match wins outright
+        declared = cd.get("did")
+        hri = cd.get("humanReadableId")
+        if declared is not None or (isinstance(hri, str) and hri.startswith("did:")):
+            continue                             # this row names a DIFFERENT agent: never substitute it
+        if fallback is None:
+            fallback = (r[0], cd)
+    return fallback if fallback is not None else (None, None)
+
+
 async def _fetch_agent_full(db: AsyncSession, agent_did: str,
                             owner_developer_id: int) -> Optional[dict]:
     """Reads agent + card + capabilities + endpoints + tags from DB.
@@ -226,23 +284,21 @@ async def _fetch_agent_full(db: AsyncSession, agent_did: str,
     if row[6] != owner_developer_id:
         return None  # ownership check
 
-    # Resolve agent_card via developer_id + DID match in card_data
+    # Resolve THIS agent's card by the agent_did COLUMN. It used to load every card of the developer and match on
+    # card_data['did'] / humanReadableId, falling back to card_row[0][0] — the developer's FIRST card, under a query
+    # with no ORDER BY — when nothing matched. A freshly-minted card carries NEITHER key (no 'did' in card_data at
+    # all, and humanReadableId is a slug like "api-theprotocol-cloud"), so for every fresh mint the match failed and
+    # the bundle recorded a STRANGER's name while capturing NO card. Measured on production 2026-11-07: a bundle of
+    # "Forge Starter Seed" was named "AGORA Deposit Gateway" on EU and "Canary eu 1 receiver" on ASIA, and the fork's
+    # restored copy got a 4-key card that a fail-closed peer quarantines (§VENUEGW's stub shape, via the fork path).
+    # It survived because a RESTORED card does carry card_data['did'] with humanReadableId == did: the only agents
+    # that bundled correctly were ones that came from a previous restore.
     card_row = (await db.execute(text("""
         SELECT name, description, card_data
         FROM agent_cards
-        WHERE developer_id = :dev_id
-    """), {"dev_id": owner_developer_id})).fetchall()
-
-    name = None
-    card_data = None
-    for r in card_row:
-        cd = r[2] if isinstance(r[2], dict) else (json.loads(r[2]) if r[2] else {})
-        if cd.get("did") == agent_did or cd.get("humanReadableId") == agent_did:
-            name = r[0]
-            card_data = cd
-            break
-    if not name and card_row:
-        name = card_row[0][0]
+        WHERE agent_did = :did AND developer_id = :dev_id
+    """), {"did": agent_did, "dev_id": owner_developer_id})).fetchall()
+    name, card_data = _pick_agent_card(card_row, agent_did)
 
     caps = (await db.execute(text("""
         SELECT name, description, category, version, parameters, is_active
@@ -675,13 +731,7 @@ async def restore_bundle(*,
         # reader that joins on agent_did sees an agent with no card and a card with no agent, and the agent's deletion
         # leaves the card active. agent_did is unique (uix_agent_cards_agent_did): an overwrite (the agent row deleted
         # above, its card kept) takes over the agent's own card in place, so its mirrors follow the update.
-        card = ap.get("agent_card") or {}
-        card_data = {
-            **(card if isinstance(card, dict) else {}),
-            "did": new_did,
-            "humanReadableId": new_did,
-            "name": ap.get("name") or "Imported Agent",
-        }
+        card_data = _restored_card_data(ap.get("agent_card"), new_did, ap.get("name"))
         await db.execute(text("""
             INSERT INTO agent_cards (id, developer_id, agent_did, name, description, card_data, is_active, created_at,
                                      updated_at)
@@ -693,7 +743,9 @@ async def restore_bundle(*,
             "dev_id": installer_dev_id,
             "did": new_did,
             "name": ap.get("name") or "Imported Agent",
-            "desc": (card.get("description") if isinstance(card, dict) else None) or "",
+            # the CARD is the one source: it now always carries a description (the captured one, else the stub
+            # sentence), so the column cannot disagree with the card the way an independent read could
+            "desc": card_data.get("description") or "",
             "cd": json.dumps(card_data),
         })
 

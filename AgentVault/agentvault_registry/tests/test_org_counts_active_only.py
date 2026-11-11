@@ -102,9 +102,13 @@ def test_the_organization_read_counts_active_members_and_teams(monkeypatch):
     async def _with_relations(db, org_id, include_members=False, include_teams=False):
         return SimpleNamespace(members=members, teams=teams)
 
-    monkeypatch.setattr(ORG, "get_organization_with_permission", _allowed)
+    async def _authority(db, org_id, actor, people, agents=None, *, people_only=False):   # V0657 (b): a person or an agent
+        return await _allowed(org_id, actor["developer"], db), SimpleNamespace(kind="developer", ref="1")
+
+    monkeypatch.setattr(ORG, "_authority", _authority)
     monkeypatch.setattr(ORG.OrganizationService, "get_organization", _with_relations)
-    out = _run(ORG.get_organization(org_id="org-1", current_developer=SimpleNamespace(id=1), db=None))
+    out = _run(ORG.get_organization(org_id="org-1", actor={"kind": "developer", "developer": SimpleNamespace(id=1)},
+                                    db=None))
     assert (out.member_count, out.team_count) == (2, 1)
 
 

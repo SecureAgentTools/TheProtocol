@@ -22,6 +22,15 @@ describe('the status board', () => {
   beforeEach(() => { m.chat = {}; m.presence.mockReset(); localStorage.clear() })
   afterEach(() => { document.body.innerHTML = '' })
 
+  it('V0657 (h): in the side panel (capped) a long board scrolls inside itself; the strip and an uncapped board do not', async () => {
+    const w = mount(ChatBoard, opts({ board: board({ text: 'line\n\n'.repeat(80) }), capped: true }))
+    expect(w.find('[data-testid="ost-board"]').classes()).toContain('cbd--capped')
+    expect(w.find('[data-testid="ost-board-history"]').exists()).toBe(true)          // its buttons stay outside the scroll
+    expect(w.find('.cbd-text [data-testid="ost-board-history"]').exists()).toBe(false)
+    const plain = mount(ChatBoard, opts({ board: board() }))
+    expect(plain.find('[data-testid="ost-board"]').classes()).not.toContain('cbd--capped')
+  })
+
   it('reads as markdown, says who edited it last, and a member gets no Edit', async () => {
     const w = mount(ChatBoard, opts({ board: board() }))
     expect(w.find('[data-testid="ost-board-text"] strong').text()).toBe('Release:')

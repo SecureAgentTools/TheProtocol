@@ -3,9 +3,13 @@ OWL25 Phase 2: Settlement Reconciliation Background Task
 =========================================================
 Periodic task that:
 1. Checks PENDING_SLASH settlements against EventStore for DisputeSlash events
-   → Auto-mints if slash evidence found but callback was lost
+   → pays the complainant from the payout funding if slash evidence is found but the callback was lost (a transfer,
+     never an issuance: _compensate_from_slash_evidence)
 2. Expires settlements that have been PENDING_SLASH for >24h
-3. Retries failed slash requests for PENDING_SLASH settlements (up to 3 attempts)
+3. Retries failed slash requests for PENDING_SLASH settlements (up to 3 attempts). V0660 (k): a retry every peer
+   refuses (a 4xx other than 408, 425 or 429) ends the settlement as REFUSED; with CROSS_REGISTRY_SETTLEMENT_DELIVERY
+   now off (or no dialable address) nothing is sent and a settlement no peer holds ends as NOT_DELIVERED, retries
+   spent or not (core/settlement_origin); nothing goes to an https peer without this registry's client certificate
 
 Runs every 60 seconds via asyncio background task started at app startup.
 """
@@ -32,14 +36,20 @@ RECONCILIATION_INTERVAL_SECONDS = 60
 SETTLEMENT_EXPIRY_HOURS = 24
 MAX_RETRY_ATTEMPTS = 3
 
+# V0660 (k), session-lead's seq 2452: what _reconcile_single_settlement answers for a settlement it could not verify (the
+# event store did not answer): nothing about it was decided this round. "Could not verify" is not "nothing found".
+UNVERIFIED = "unverified"
+_unverified_last_round = 0     # the round's count, so an outage warns once (when it starts or changes), not every cycle
+
 
 async def reconcile_pending_settlements():
     """
     Main reconciliation loop. Checks all PENDING_SLASH settlements.
     
     For each:
+    0. The EventStore is read first; a store that does not answer decides nothing this round (counted, said once)
     1. If older than SETTLEMENT_EXPIRY_HOURS → mark EXPIRED
-    2. If DisputeSlash event found on EventStore → auto-mint (lost callback recovery)
+    2. If DisputeSlash event found on EventStore → pay from the payout funding (lost callback recovery; never a mint)
     3. If not expired and no slash found → retry slash request (up to MAX_RETRY_ATTEMPTS)
     """
     async with AsyncSessionLocal() as db:
@@ -56,10 +66,12 @@ async def reconcile_pending_settlements():
             
             logger.info(f"Settlement reconciliation: {len(pending)} pending settlements")
             
-            failed = 0
+            failed, unverified, why = 0, 0, ""
             for settlement in pending:
                 try:
-                    await _reconcile_single_settlement(db, settlement)
+                    if await _reconcile_single_settlement(db, settlement) == UNVERIFIED:
+                        unverified += 1
+                        why = why or getattr(settlement, "_unverified_reason", "")
                 except Exception as e:
                     # A per-ITEM failure is not a cycle failure. Counted and
                     # returned so the §VITALS stamp can carry it, not swallowed.
@@ -68,7 +80,8 @@ async def reconcile_pending_settlements():
                         f"Error reconciling settlement {settlement.id}: {e}",
                         exc_info=True
                     )
-            return {"pending": len(pending), "failed": failed}
+            _say_unverified(unverified, why)
+            return {"pending": len(pending), "failed": failed, "unverified": unverified}
 
         except Exception as e:
             # §VITALS: the WHOLE cycle failed (the query, the session). Re-raised so
@@ -79,9 +92,36 @@ async def reconcile_pending_settlements():
             raise
 
 
+def _say_unverified(count: int, why: str) -> None:
+    """V0660 (k): the round's settlements that were not decided because the event store did not answer, said once: a
+    WARNING when an outage starts or its count changes, DEBUG while it stands, INFO when the store answers again."""
+    global _unverified_last_round
+    if count and count != _unverified_last_round:
+        logger.warning(f"Settlement reconciliation: {count} settlement(s) not decided this round: the event store could "
+                       f"not be read ({why or 'no answer'}). Nothing was changed; they are checked again next round.")
+    elif count:
+        logger.debug(f"Settlement reconciliation: still {count} settlement(s) waiting for the event store")
+    elif _unverified_last_round:
+        logger.info("Settlement reconciliation: the event store answers again; every pending settlement was checked")
+    _unverified_last_round = count
+
+
 async def _reconcile_single_settlement(db: AsyncSession, settlement: CrossRegistrySettlement):
-    """Reconcile a single pending settlement."""
-    
+    """Reconcile a single pending settlement.
+
+    V0660 (k), session-lead's seq 2452: the event store is read FIRST, and a store that does not answer decides
+    nothing: no expiry, no NOT_DELIVERED, no retry, no write. The settlement waits for a round whose read answered, and
+    the answer is UNVERIFIED for the round's count. Then the checks run in their order, on the read that answered."""
+    try:
+        slash_found = await _check_eventstore_for_slash(settlement)
+    except EventStoreUnreadable as e:
+        try:
+            settlement._unverified_reason = str(e)
+        except Exception:   # a row object that takes no attribute still counts
+            pass
+        logger.debug(f"Settlement {settlement.id}: not decided this round, the event store could not be read ({e})")
+        return UNVERIFIED
+
     age = datetime.now(timezone.utc) - (settlement.requested_at or datetime.now(timezone.utc))
     
     # Check 1: Expiry
@@ -98,9 +138,7 @@ async def _reconcile_single_settlement(db: AsyncSession, settlement: CrossRegist
         )
         return
     
-    # Check 2: Look for DisputeSlash on EventStore (lost callback recovery)
-    slash_found = await _check_eventstore_for_slash(settlement)
-    
+    # Check 2: the DisputeSlash read above (lost callback recovery)
     if slash_found:
         logger.info(
             f"Found DisputeSlash on EventStore for settlement {settlement.id} "
@@ -109,6 +147,15 @@ async def _reconcile_single_settlement(db: AsyncSession, settlement: CrossRegist
         await _compensate_from_slash_evidence(db, settlement, slash_found)
         return
     
+    # V0660 (k) review: where no request can go out now (CROSS_REGISTRY_SETTLEMENT_DELIVERY off, or no address a peer
+    # can dial), a settlement no peer holds ends NOT_DELIVERED here, before the retry gate, so one whose retries are
+    # spent ends too (it waited for its expiry before). One a home holds waits for that home's confirmation.
+    from agentvault_registry.core import settlement_origin
+    why = settlement_origin.why_not_delivered()
+    if why and not (getattr(settlement, "defendant_registry_url", "") or "").strip():
+        await _end_not_delivered(db, settlement, why)
+        return
+
     # Check 3: Count retries via error_message field (no retry_count column)
     # Parse retry count from error_message or default to 0
     retry_count = 0
@@ -139,7 +186,24 @@ async def _reconcile_single_settlement(db: AsyncSession, settlement: CrossRegist
         logger.debug(f"Settlement {settlement.id}: retries spent, still awaiting EventStore evidence or resolution")
 
 
+class EventStoreUnreadable(Exception):
+    """The event store could not be asked (an answer other than 200, or no answer): whether a slash is recorded there
+    is not known. Its text names the status or the exception's type, never a key or a body."""
+
+
 async def _check_eventstore_for_slash(settlement: CrossRegistrySettlement) -> Optional[dict]:
+    """The reconciliation's lost-callback check: find_slash_on_eventstore. V0660 (k), seq 2452: a store that cannot be
+    read, or an answer the finder could not read, raises EventStoreUnreadable ("could not verify"), never None ("nothing
+    found"): the caller decides nothing on it."""
+    try:
+        return await find_slash_on_eventstore(settlement)
+    except EventStoreUnreadable:
+        raise
+    except Exception as e:
+        raise EventStoreUnreadable(f"the event store's answer could not be read ({type(e).__name__})") from e
+
+
+async def find_slash_on_eventstore(settlement: CrossRegistrySettlement) -> Optional[dict]:
     """
     Query EventStore for the DisputeSlash event of THIS settlement: the defendant registry's slash names the
     dispute (aggregate dispute:<id>, in this registry's numbering), the origin registry and the defendant.
@@ -150,41 +214,45 @@ async def _check_eventstore_for_slash(settlement: CrossRegistrySettlement) -> Op
     paid this settlement's complainant from this registry's treasury, and on a busy store this settlement's own slash
     could fall outside the 50. The query now asks the dispute's aggregate, and the event must name this settlement's
     origin registry and defendant.
+
+    V0660 (k) review: an event store that cannot be asked raises EventStoreUnreadable instead of reading as nothing
+    found, so close_settlement (routers/federation_disputes) can refuse to close blind, and the reconciliation decides
+    nothing on it (seq 2452). A settlement that records no origin finds nothing.
     """
+    event_store_url = str(settings.EVENT_STORE_URL).rstrip('/')
+    es_key = settings.EVENT_STORE_API_KEY
+    origin = (settlement.origin_registry_url or "").rstrip("/")
+    if not origin:
+        return None
+
+    url = (f"{event_store_url}/api/v1/events/aggregate/dispute:{int(settlement.dispute_id)}"
+           f"?event_types=DisputeSlash&limit=50&sort_order=desc")
+
     try:
-        event_store_url = str(settings.EVENT_STORE_URL).rstrip('/')
-        es_key = settings.EVENT_STORE_API_KEY
-        origin = (settlement.origin_registry_url or "").rstrip("/")
-        if not origin:
-            return None
-
-        url = (f"{event_store_url}/api/v1/events/aggregate/dispute:{int(settlement.dispute_id)}"
-               f"?event_types=DisputeSlash&limit=50&sort_order=desc")
-
         async with httpx.AsyncClient(timeout=10.0, verify=get_httpx_verify()) as client:
             resp = await client.get(url, headers={"X-Internal-Key": es_key})
             if resp.status_code != 200:
-                logger.warning(f"EventStore query failed: {resp.status_code}")
-                return None
-            
+                raise EventStoreUnreadable(f"the event store answered {resp.status_code}")
             events = resp.json()
-            if isinstance(events, dict):
-                events = events.get("events", events.get("items", []))
-            
-            for event in events:
-                data = event.get("data", {}) or {}
-                if (data.get("dispute_id") == settlement.dispute_id
-                        and (data.get("origin_registry_url") or "").rstrip("/") == origin
-                        and data.get("defendant_did") == settlement.defendant_did):
-                    return {
-                        "event_id": event.get("id", ""),
-                        "amount": data.get("amount", 0),
-                        "slash_tx_id": data.get("slash_tx_id", ""),
-                        "defendant_did": data.get("defendant_did", ""),
-                    }
+    except EventStoreUnreadable:
+        raise
     except Exception as e:
-        logger.error(f"Error checking EventStore for slash evidence: {e}")
-    
+        raise EventStoreUnreadable(f"the event store could not be reached ({type(e).__name__})") from e
+
+    if isinstance(events, dict):
+        events = events.get("events", events.get("items", []))
+
+    for event in events or []:
+        data = event.get("data", {}) or {}
+        if (data.get("dispute_id") == settlement.dispute_id
+                and (data.get("origin_registry_url") or "").rstrip("/") == origin
+                and data.get("defendant_did") == settlement.defendant_did):
+            return {
+                "event_id": event.get("id", ""),
+                "amount": data.get("amount", 0),
+                "slash_tx_id": data.get("slash_tx_id", ""),
+                "defendant_did": data.get("defendant_did", ""),
+            }
     return None
 
 
@@ -277,36 +345,75 @@ async def _retry_slash_request(
     settlement: CrossRegistrySettlement,
     retry_count: int
 ):
-    """Retry sending a slash request to peer registries."""
-    # Update retry count in error_message (no dedicated column)
-    new_count = retry_count + 1
-    settlement.error_message = f"retry_count={new_count}, last_retry={datetime.now(timezone.utc).isoformat()}"
-    await db.commit()
-    
+    """Retry sending a slash request to peer registries.
+
+    V0660 (k), Guild order gwo_9230be3d156cc3ce58699aaf: where no request can go out now (CROSS_REGISTRY_SETTLEMENT_
+    DELIVERY turned off, or no address a peer can dial) nothing is sent: a settlement no peer holds ends as
+    NOT_DELIVERED, one a home holds waits for its confirmation (or its expiry). The registry asked is recorded before
+    each request goes out, as the first send does (the home confirms while it is still answering). When every peer
+    refuses (a 4xx) the settlement ends as REFUSED with each answer; a transport error or a 5xx keeps it for the next
+    cycle."""
+    from agentvault_registry.core import settlement_origin
+    from agentvault_registry.crud.crud_disputes import record_registry_asked
+
+    why = settlement_origin.why_not_delivered()
+    if why:
+        if (settlement.defendant_registry_url or "").strip():
+            # a home holds the request: it may still slash and confirm, so the settlement waits; nothing is sent
+            logger.info(f"Settlement {settlement.id}: not sent again ({why}); "
+                        f"{settlement.defendant_registry_url} holds it")
+            return
+        await _end_not_delivered(db, settlement, why)
+        return
+
     # Get active peers
     peer_result = await db.execute(
         select(PeerRegistry).where(PeerRegistry.status == "ACTIVE")
     )
     peers = list(peer_result.scalars().all())
-    
+
+    # V0660 (k) review: no request goes to an https peer without this registry's mTLS client certificate (it went out
+    # without one); nothing is sent this cycle and no attempt is spent, since the peers were not asked
+    cert_config = None
+    if settlement_origin.needs_client_cert(p.base_url for p in peers):
+        cert_config = svid_client.get_client_cert_config()
+        if not cert_config:
+            settlement.error_message = (
+                f"retry_count={retry_count}, no_client_cert={datetime.now(timezone.utc).isoformat()}: not sent, "
+                f"because {settlement_origin.NO_CLIENT_CERT}. Nothing has moved.")
+            await db.commit()
+            logger.error(f"Settlement {settlement.id}: slash request not sent again, "
+                         f"{settlement_origin.NO_CLIENT_CERT}")
+            return
+
+    # Update retry count in error_message (no dedicated column)
+    new_count = retry_count + 1
+    settlement.error_message = f"retry_count={new_count}, last_retry={datetime.now(timezone.utc).isoformat()}"
+    await db.commit()
+
     if not peers:
         logger.warning("No active peers for slash retry")
         return
-    
+
     # §MCPTEST30 V0639: the retry names the origin its settlement recorded (the address its callback lies under), and a
     # settlement with none the address core/settlement_origin names now; it computed the internal proxy before.
-    from agentvault_registry.core import settlement_origin
     origin_url = ((settlement.origin_registry_url or "").rstrip('/') or settlement_origin.origin_url())
     client_config = {'timeout': 15.0}
     answers: list = []          # each peer's answer, kept on the settlement if none takes it (settlement_origin)
+    may_pass = False            # a transport error or a 5xx: the next cycle sends it again
+    held_before = (settlement.defendant_registry_url or "").strip()
 
     for peer in peers:
         peer_url = peer.base_url.rstrip('/')
-        if peer_url.startswith('https://'):
-            cert_config = svid_client.get_client_cert_config()
-            if cert_config:
-                client_config.update(cert_config)
-        
+        if peer_url.startswith('https://') and cert_config:
+            client_config.update(cert_config)
+
+        # V0660 (k): recorded before the request goes out, and only while the settlement still waits (a settlement a
+        # home already holds keeps that home: it is the registry a confirmation comes from)
+        if not held_before and not await record_registry_asked(db, settlement, peer_url):
+            logger.info(f"Settlement {settlement.id} no longer waits (closed meanwhile); nothing more is sent")
+            return
+
         slash_endpoint = f"{peer_url}/api/v1/federation/disputes/slash-request"
         payload = {
             "settlement_id": settlement.id,
@@ -320,7 +427,7 @@ async def _retry_slash_request(
                 f"{origin_url}/api/v1/federation/disputes/slash-confirmation"
             )
         }
-        
+
         try:
             async with httpx.AsyncClient(**client_config) as client:
                 resp = await client.post(
@@ -328,7 +435,9 @@ async def _retry_slash_request(
                     headers={"Content-Type": "application/json"}
                 )
                 if resp.status_code in (200, 201, 202):
-                    settlement.defendant_registry_url = peer_url
+                    # V0660 (k) review: a settlement a home already holds keeps that home (the registry a confirmation
+                    # is accepted from); another peer's answer never overwrites it
+                    settlement.defendant_registry_url = held_before or peer_url
                     settlement.error_message = (
                         f"retry_count={new_count}, "
                         f"slash_sent={datetime.now(timezone.utc).isoformat()}"
@@ -338,8 +447,9 @@ async def _retry_slash_request(
                     return
                 elif resp.status_code == 409 and "already received" in resp.text:
                     # §MCPTEST30 V0639: the home claimed this settlement id on an earlier delivery whose answer was
-                    # lost (it slashes once: the claim comes before any money moves): delivered, never a failure
-                    settlement.defendant_registry_url = peer_url
+                    # lost (it slashes once: the claim comes before any money moves): delivered, never a failure.
+                    # V0660 (k) review: the home that already holds it stays the one recorded
+                    settlement.defendant_registry_url = held_before or peer_url
                     settlement.error_message = (
                         f"retry_count={new_count}, already_held={datetime.now(timezone.utc).isoformat()}"
                     )
@@ -352,15 +462,42 @@ async def _retry_slash_request(
                 else:
                     logger.warning(f"Slash retry to {peer.name}: {resp.status_code}")
                     answers.append(settlement_origin.peer_answer(peer.name, resp.status_code, resp.text))
+                    may_pass = may_pass or not settlement_origin.is_definite_refusal(resp.status_code)
         except Exception as e:
             logger.warning(f"Slash retry to {peer.name} failed: {e}")
             answers.append(f"{peer.name}: {type(e).__name__}")
+            may_pass = True
 
+    # no peer took it this time: none may confirm it, unless a home held it before
+    settlement.defendant_registry_url = held_before
+    refused = False
     if answers:
         # §MCPTEST30 V0640: why no peer took it, beside the count the next cycle parses (retry_count= first)
         settlement.error_message = (f"{settlement.error_message}, refused: {settlement_origin.answers_note(answers)}")
-        await db.commit()
-    logger.warning(f"Slash retry #{new_count} failed for settlement {settlement.id}")
+        refused = not may_pass and not held_before
+        if refused:
+            # V0660 (k): every peer refused (a 4xx) and none holds it: sending again cannot change that
+            settlement.status = settlement_origin.REFUSED
+            settlement.error_message += ". Refused by every peer registry. Nothing moved."
+            settlement.saga_state = "SLASH_FAILED"
+            settlement.saga_last_step_at = datetime.now(timezone.utc)
+    await db.commit()
+    if refused:
+        logger.warning(f"Settlement {settlement.id} REFUSED by every peer on retry #{new_count}")
+    else:
+        logger.warning(f"Slash retry #{new_count} failed for settlement {settlement.id}")
+
+
+async def _end_not_delivered(db: AsyncSession, settlement: CrossRegistrySettlement, why: str) -> None:
+    """A settlement no peer holds, where no request can go out now: it ends NOT_DELIVERED (V0660 (k))."""
+    from agentvault_registry.core import settlement_origin
+    settlement.status = settlement_origin.NOT_DELIVERED
+    settlement.error_message = (f"Not delivered: {why} now, so the slash request was not sent again and no peer "
+                                f"holds it. Nothing moved.")
+    settlement.saga_state = "SLASH_FAILED"
+    settlement.saga_last_step_at = datetime.now(timezone.utc)
+    await db.commit()
+    logger.warning(f"Settlement {settlement.id} NOT_DELIVERED: {why}")
 
 
 async def settlement_reconciliation_loop():

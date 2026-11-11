@@ -133,6 +133,26 @@ async def validate_agent_card(
         if not hri:
             _errors.append("'humanReadableId' is required. Use a URL-friendly slug like 'my-agent' or 'org/agent-name'.")
 
+        # Layer 3 (V0660 (a)): the quantum workload extension, where the frame serves it (QUANTUM_WORKLOADS_MODE shadow
+        # or on; off reads nothing). Checked on the card as a write would store it (canonicalized, which derives the
+        # payment extension from a legacy pricing block). under on a failure is invalid; under shadow it is named.
+        quantum_note = None
+        from agentvault_registry.core.quantum_mode import quantum_workloads_mode
+        from agentvault_registry.services import quantum_agent_card as _qac
+        if _qac.served():
+            import copy as _copy
+            from agentvault_registry.services.a2a_v1.compat import canonicalize_card_data
+            try:
+                _as_stored = canonicalize_card_data(_copy.deepcopy(validated_data))
+            except Exception:  # noqa: BLE001: the check reads the card as given when it cannot be canonicalized
+                _as_stored = validated_data
+            _qp = _qac.check(_as_stored)
+            if _qp and quantum_workloads_mode() == "on":
+                _errors.append(_qac.sentence(_qp))
+            elif _qp:
+                quantum_note = (_qac.sentence(_qp) + " Under QUANTUM_WORKLOADS_MODE=shadow a write is not refused for "
+                                "this; under on it is.")
+
         if _errors:
             detail = "Card schema is valid but fails strict field checks:\n" + "\n".join(f"  - {e}" for e in _errors)
             return schemas.AgentCardValidationResponse(
@@ -141,6 +161,12 @@ async def validate_agent_card(
                 validated_card_data=validated_data,
             )
 
+        if quantum_note:
+            return schemas.AgentCardValidationResponse(
+                is_valid=True,
+                detail=quantum_note,
+                validated_card_data=validated_data,
+            )
         return schemas.AgentCardValidationResponse(
             is_valid=True,
             validated_card_data=validated_data,

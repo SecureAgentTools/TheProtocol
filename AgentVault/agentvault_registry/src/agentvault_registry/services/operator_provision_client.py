@@ -49,7 +49,13 @@ SECRET_KEYS = ("TEG_PROXY_TRUST_SECRET", "REGISTRY_PROXY_TRUST_SECRET", "AUDITOR
 # host_work's own timeouts and refused at 2400 once V0389 added the bounded schema wait. A caller that gives up
 # while the far side is still working reports a failure for a job that succeeds, and the frame then carries an
 # operator no row describes.
-PROVISION_DEADLINE_S = 3000.0
+# V0660 (j): 3180, not 3000. The one-shot gained a step — before its `compose up` it clears a stop a revoke
+# recorded on the operator's spire-agent (host_work._clear_recorded_stop), whose own ceilings are 30 + 20 +
+# 120s. test_the_deadline_exceeds_the_far_sides_own_ceilings derives the far side's sum from host_work itself
+# exactly so that a new step MOVES this number instead of quietly outgrowing it, and a caller that gives up
+# while the far side is still working reports a failure for a job that succeeded. The previous 90s of slack
+# over that sum is kept.
+PROVISION_DEADLINE_S = 3180.0
 POLL_INTERVAL_S = 3.0
 
 

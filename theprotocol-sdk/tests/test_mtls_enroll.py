@@ -259,6 +259,42 @@ async def test_auto_rotate_survives_a_transient_error(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_auto_rotate_asks_a_token_callable_for_each_renewal(tmp_path):
+    """V0659 (a): a loop outlives an agent token. Given a callable, every renewal asks it for the current token (a
+    fixed string makes each renewal after the token's expiry a 401); it is not asked while the SVID is fresh."""
+    seen = []
+
+    def handler(request):
+        seen.append(request.headers.get("authorization"))
+        return httpx.Response(200, json={"status": "enrolled", "delivery": "inline",
+                                         "svid": _svid(ttl=600, expires_in=-10)})   # always due again
+
+    iron = IronhandClient("https://registry.example", cert_dir=str(tmp_path / "s"),
+                          transport=httpx.MockTransport(handler))
+    tokens = iter(f"tok-{i}" for i in range(1, 100))
+    asked = []
+
+    async def current():
+        asked.append(1)
+        return next(tokens)
+
+    task = iron.start_auto_rotate(current, check_interval=0.01)
+    await asyncio.sleep(0.1)
+    task.cancel()
+    assert len(seen) >= 2 and seen[:2] == ["Bearer tok-1", "Bearer tok-2"]
+    assert len(asked) == len(seen), "asked once per renewal"
+
+    fresh = IronhandClient("https://registry.example", cert_dir=str(tmp_path / "f"),
+                           transport=_transport({"status": "enrolled", "delivery": "inline", "svid": _svid()}))
+    await fresh.enroll("jwt")
+    calls = []
+    task = fresh.start_auto_rotate(lambda: calls.append(1) or "sync-token", check_interval=0.01)
+    await asyncio.sleep(0.05)
+    task.cancel()
+    assert calls == [], "a fresh SVID needs no token"
+
+
+@pytest.mark.asyncio
 async def test_paths_match_what_mtls_agent_client_reads(tmp_path):
     iron = IronhandClient("https://r.example", cert_dir=str(tmp_path / "svid"))
     assert iron.svid_path.endswith("/svid.pem")

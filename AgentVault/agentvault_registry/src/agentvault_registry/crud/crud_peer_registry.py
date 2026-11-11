@@ -911,7 +911,9 @@ def drop_export_derived(cd: Dict[str, Any]) -> None:
     from ..services.listing_propagation import LISTING_EXTENSION_URI
     from ..services.reputation_bond import BOND_EXTENSION_URI
     from ..services.track_record import TRACK_RECORD_EXTENSION_URI
-    derived = {BOND_EXTENSION_URI, ENFORCEMENT_EXTENSION_URI, LISTING_EXTENSION_URI, TRACK_RECORD_EXTENSION_URI}
+    from ..services.org_mark import ORG_EXTENSION_URI
+    derived = {BOND_EXTENSION_URI, ENFORCEMENT_EXTENSION_URI, LISTING_EXTENSION_URI, TRACK_RECORD_EXTENSION_URI,
+               ORG_EXTENSION_URI}
     kept = [e for e in exts if not (isinstance(e, dict) and e.get("uri") in derived)]
     if kept:
         cd["extensions"] = kept
@@ -1451,41 +1453,43 @@ async def upsert_agent_cards_from_peer(
             return "skipped"
 
         # Create new card
-        # First, check if we have the developer
+        # A MIRROR ALWAYS BELONGS TO THIS PEER'S SHADOW ACCOUNT — never to a local one.
+        #
+        # ⚠ WHAT THIS REPLACES, and why the comment below was already right: the code used to ask for a local
+        # Developer whose id EQUALLED the remote developer_id, and built the shadow only when that id happened to be
+        # free. Remote and local developer ids are independent sequences, so a collision is ordinary. When it
+        # happened, the mirror was inserted owned by whatever local account held that id — and the three
+        # owner-scoped writes in routers/agent_cards.py checked developer_id and nothing else, so that account could
+        # edit, unlist or delete another registry's card. Measured on production by session-lead (counts only): EU
+        # held 47 mirrors on 8 real accounts, ASIA 66 on 7, one of them an outsider's holding another frame's canary
+        # mirrors. The shadow is resolved by EMAIL, which is namespaced by the peer, so no local account can ever be
+        # the answer.
         developer_id = agent_card.get('developer_id')
-        stmt = select(models.Developer).filter(
-            models.Developer.id == developer_id
+        # SECURITY: Never force the remote developer_id (causes collisions).
+        # Never reuse a local developer by name (would grant cross-registry ownership).
+        # Name is namespaced by peer SVID — structurally impossible to collide with any real account.
+        peer_label = peer_svid.split('/')[-1]  # e.g. "registry-b"
+        fed_email = f"federated-{developer_id}@{peer_label}.federation"
+        # Get-or-create: check by email (unique constraint) to avoid duplicates
+        # when multiple cards from the same remote developer arrive in one batch
+        email_check = await db.execute(
+            select(models.Developer).filter(models.Developer.email == fed_email)
         )
-        result = await db.execute(stmt)
-        developer = result.scalar_one_or_none()
-        
+        developer = email_check.scalar_one_or_none()
         if not developer:
-            # Create a placeholder developer for federated content.
-            # SECURITY: Never force the remote developer_id (causes collisions).
-            # Never reuse a local developer by name (would grant cross-registry ownership).
-            # Name is namespaced by peer SVID — structurally impossible to collide with any real account.
-            peer_label = peer_svid.split('/')[-1]  # e.g. "registry-b"
-            fed_email = f"federated-{developer_id}@{peer_label}.federation"
-            # Get-or-create: check by email (unique constraint) to avoid duplicates
-            # when multiple cards from the same remote developer arrive in one batch
-            email_check = await db.execute(
-                select(models.Developer).filter(models.Developer.email == fed_email)
+            developer = models.Developer(
+                name=f"fed:{peer_label}:dev-{developer_id}",
+                email=fed_email,
+                hashed_password="FEDERATED_ACCOUNT_NO_LOGIN",
+                is_verified=agent_card.get('developer_verified', False),
+                # §pass66.9 — Explicit shadow flag (replaces hashed_password
+                # literal-match filter in `list_developers`). Set at create
+                # time so the row never appears in human-facing developer
+                # listings even before any backfill ran.
+                is_federation_shadow=True,
             )
-            developer = email_check.scalar_one_or_none()
-            if not developer:
-                developer = models.Developer(
-                    name=f"fed:{peer_label}:dev-{developer_id}",
-                    email=fed_email,
-                    hashed_password="FEDERATED_ACCOUNT_NO_LOGIN",
-                    is_verified=agent_card.get('developer_verified', False),
-                    # §pass66.9 — Explicit shadow flag (replaces hashed_password
-                    # literal-match filter in `list_developers`). Set at create
-                    # time so the row never appears in human-facing developer
-                    # listings even before any backfill ran.
-                    is_federation_shadow=True,
-                )
-                db.add(developer)
-                await db.flush()  # Ensure developer is created before referencing
+            db.add(developer)
+            await db.flush()  # Ensure developer is created before referencing
         
         # Create the agent card
         card_data = agent_card.get('card_data', {})

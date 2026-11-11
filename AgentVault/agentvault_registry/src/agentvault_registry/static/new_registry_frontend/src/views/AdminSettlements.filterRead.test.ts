@@ -36,7 +36,8 @@ const badGateway = () => new AxiosError('Request failed with status code 502', '
 
 let w: VueWrapper | null = null
 async function desk() {
-  w = mount(AdminSettlements, { global: { stubs: { Icon: true, ConfirmActionModal: true } } })
+  // V0658 (k): the slash order and the per-peer settings are panels of their own, with their own reads; this test reads the list
+  w = mount(AdminSettlements, { global: { stubs: { Icon: true, ConfirmActionModal: true, SlashOrderPanel: true, PeerAutoSlashPanel: true } } })
   for (let i = 0; i < 4; i++) await flushPromises()
   return w
 }

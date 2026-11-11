@@ -111,6 +111,11 @@ DEFAULT_POLICY_JSON: Dict[str, Any] = {
     # security"). Executed by enforcement_engine under ENFORCEMENT_SLASH_MODE
     # (cache = today's cache-only write, shadow = plan + log, enforce = move).
     # max_percent caps each source at a share of the REQUESTED amount.
+    # V0658 (k): every slash drains it (a peer's accepted slash request too:
+    # services/slash_order), each step's capacity read from the TEG. A fourth
+    # source, "cascade" (the same developer's other agents on this registry, never
+    # a service account's), is off by default: it is not listed here, and a frame
+    # that lists it puts it last; any step may say "enabled": false.
     "slash_waterfall": [
         {"source": "bond", "max_percent": 100},
         {"source": "stake", "max_percent": 100},
@@ -235,7 +240,7 @@ async def get_policy_defaults() -> Dict[str, Any]:
     return copy.deepcopy(DEFAULT_POLICY_JSON)
 
 
-SLASH_WATERFALL_SOURCES = ("bond", "stake", "liquid")
+SLASH_WATERFALL_SOURCES = ("bond", "stake", "liquid", "cascade")
 
 
 def validate_policy_json(policy_json: Dict[str, Any]) -> List[str]:
@@ -251,6 +256,7 @@ def validate_policy_json(policy_json: Dict[str, Any]) -> List[str]:
             errs.append("slash_waterfall must be a non-empty list of {source, max_percent}")
         else:
             seen = set()
+            draining = 0
             for i, step in enumerate(wf):
                 if not isinstance(step, dict):
                     errs.append(f"slash_waterfall[{i}] must be an object"); continue
@@ -263,6 +269,18 @@ def validate_policy_json(policy_json: Dict[str, Any]) -> List[str]:
                 pct = step.get("max_percent", 100)
                 if not isinstance(pct, (int, float)) or isinstance(pct, bool) or pct < 0 or pct > 100:
                     errs.append(f"slash_waterfall[{i}].max_percent must be a number in 0..100")
+                # V0658 (k): a step can stay configured and switched off ("enabled": false; absent = on)
+                on = step.get("enabled", True)
+                if not isinstance(on, bool):
+                    errs.append(f"slash_waterfall[{i}].enabled must be a boolean")
+                # V0658 (k): the cascade (the owner's other agents) takes only what the agent's own steps could not,
+                # so it is the last step
+                if src == "cascade" and i != len(wf) - 1:
+                    errs.append("slash_waterfall: the cascade step must be the last step")
+                if src in ("bond", "stake", "liquid") and on is not False:
+                    draining += 1
+            if draining == 0 and not any(e.startswith("slash_waterfall[") for e in errs):
+                errs.append("slash_waterfall must keep at least one of bond, stake or liquid switched on")
     sr = policy_json.get("staking_reputation")
     if sr is not None:
         if not isinstance(sr, dict):

@@ -1082,7 +1082,7 @@ class AgentCICDService:
         transaction_id = None
         if template.price_teg and template.price_teg > 0:
             transaction_id = await self._pay_for_template(
-                buyer_agent, template_id, template.author_did, template.price_teg, template.name)
+                buyer_agent, template_id, template.author_did, template.price_teg, template.name, db=db)
         
         # Record purchase
         await db.execute(
@@ -1121,7 +1121,8 @@ class AgentCICDService:
     
     # ==================== Helper Methods ====================
     
-    async def _pay_for_template(self, buyer_agent, template_id: str, author_did, price, template_name: str) -> str:
+    async def _pay_for_template(self, buyer_agent, template_id: str, author_did, price, template_name: str,
+                                db: Optional[AsyncSession] = None) -> str:
         """Charge the buyer agent ``price`` in the FRAME's own currency for a paid template.
 
         Rule-13: all value rides existing TEG rails — no new money path.
@@ -1133,7 +1134,14 @@ class AgentCICDService:
         ``cicd-tpl-{template_id}-{buyer_did}`` in ``teg_idempotency_records`` inside the
         money transaction, so a crash-retry between payment and the purchase-row insert
         replays from cache instead of double-charging. Raises 402 on decline — the
-        purchase is never recorded unpaid."""
+        purchase is never recorded unpaid.
+
+        D6-844 (V0657 (e), session-lead's review, seq 1538): with the author now set, the author branch is live, and the
+        TEG's /token/transfer emits nothing to the event store (the TEG's TokensTransferred is policy-denied). So a sale
+        takes /teg/transfer's own steps around the move: the fee the registry computes before it (passed to the TEG so
+        the split is atomic), then the balance sync, TokensTransferred and TransactionFeeCollected (keyed xfer-/fee-<tx>,
+        so a replayed move re-emits nothing new), and the EigenTrust signal with the fee audit. The treasury branch
+        emits its TokensTransferred (xfer-<tx>) and syncs the buyer's cached balance the same way."""
         from decimal import Decimal as _D
         import httpx as _httpx
         from fastapi import HTTPException as _HTTPX_EX
@@ -1145,14 +1153,27 @@ class AgentCICDService:
             # The author "buying" their own template — nothing to move, still unlocks.
             return "self_purchase_no_charge"
         idem = f"cicd-tpl-{template_id}-{buyer_agent.did}"
+        fee_pre, fee_rate_pre, fee_svc = _D("0"), 0.0, None
+        if author_did and db is not None:   # /teg/transfer's fee, computed before the move and passed to the TEG
+            try:
+                from agentvault_registry.services.transaction_fee_service import get_transaction_fee_service
+                fee_svc = get_transaction_fee_service()
+                fee_pre, fee_rate_pre = await fee_svc.get_fee_for_transfer(
+                    db=db, sender_did=buyer_agent.did, transfer_amount=_D(str(price)))
+            except Exception as fee_err:  # noqa: BLE001 - /teg/transfer treats it the same: no fee, said
+                logger.warning(f"[CICD-PAY] fee calculation failed for template {template_id} (non-fatal): {fee_err}")
+                fee_pre, fee_rate_pre = _D("0"), 0.0
         try:
             async with _httpx.AsyncClient(verify=get_httpx_verify()) as client:
                 if author_did:
                     token = await get_teg_token_for_agent(buyer_agent.id, buyer_agent.did)
+                    body = {"receiver_agent_id": author_did, "amount": str(_D(price)),
+                            "message": f"cicd_template:{template_id}"}
+                    if fee_pre > 0:
+                        body["fee_amount"] = str(fee_pre)
                     resp = await client.post(
                         f"{TEG_API_BASE_URL}{TEG_API_V1_PREFIX}/token/transfer",
-                        json={"receiver_agent_id": author_did, "amount": str(_D(price)),
-                              "message": f"cicd_template:{template_id}"},
+                        json=body,
                         headers={"Authorization": f"Bearer {token}", "Idempotency-Key": idem},
                         timeout=15.0,
                     )
@@ -1164,6 +1185,9 @@ class AgentCICDService:
                         headers={"Authorization": f"Bearer {TEG_ADMIN_API_KEY}", "Idempotency-Key": idem},
                         timeout=15.0,
                     )
+                if resp.status_code in (200, 201):
+                    await self._record_template_sale(db, client, buyer_agent, author_did, price, resp.json(),
+                                                     fee_pre, fee_rate_pre, fee_svc)
         except _httpx.RequestError as e:
             logger.error(f"[CICD-PAY] TEG unreachable for template {template_id}: {e}")
             raise _HTTPX_EX(status_code=502, detail="Template payment failed: ledger unreachable — not charged, retry")
@@ -1186,6 +1210,59 @@ class AgentCICDService:
         logger.info(f"[CICD-PAY] {price} charged for template '{template_name}' ({template_id}): "
                     f"buyer={buyer_agent.did} → {'author ' + author_did if author_did else 'treasury'} tx={tx}")
         return tx
+
+    async def _record_template_sale(self, db, client, buyer_agent, author_did, price, data: dict,
+                                    fee_pre, fee_rate_pre: float, fee_svc) -> None:
+        """D6-844: what /teg/transfer does after its move, for a template sale (each step non-fatal and said, as there:
+        the units moved). Author sale: the balance sync, TokensTransferred and TransactionFeeCollected, the EigenTrust
+        signal and the fee audit. Treasury sale: TokensTransferred and the buyer's cached balance."""
+        from decimal import Decimal as _D
+        from agentvault_registry.routers import teg_integration as _ti
+        tx = data.get("transaction_id") or ""
+        if author_did:
+            if db is not None:
+                try:
+                    await _ti._sync_balances_after_transfer(db, buyer_agent, author_did, data, client)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"[CICD-PAY] balance sync after {tx} failed (non-fatal): {e}")
+            try:
+                await _ti._emit_transfer_events(buyer_agent.did, author_did, str(_D(str(price))), data, fee_rate_pre)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[CICD-PAY] TokensTransferred for {tx} not emitted (non-fatal): {e}")
+            if db is not None and tx:
+                try:
+                    await _ti._record_transfer_ancillary(db, buyer_agent.did, author_did, str(_D(str(price))), tx,
+                                                         fee_pre, fee_svc if fee_pre > 0 else None)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"[CICD-PAY] EigenTrust signal or fee audit for {tx} failed (non-fatal): {e}")
+            return
+        treasury_did = (data.get("treasury_did") or "").strip()
+        if not treasury_did:
+            # never an invented recipient in a ledger event (session-lead's review, seq 1543): the TEG's answer did not
+            # name its treasury, so the move is in the TEG's journal and this sale's event is not written
+            logger.warning(f"[CICD-PAY] treasury sale {tx or '(no transaction id)'}: the TEG's answer names no "
+                           f"treasury_did, so no TokensTransferred is emitted for it")
+        else:
+            try:
+                from agentvault_registry.event_emitter import get_event_emitter
+                em = get_event_emitter()
+                if em and tx:
+                    em.emit_background(
+                        event_type="TokensTransferred",
+                        aggregate_id=buyer_agent.did,
+                        data={"from": buyer_agent.did, "to": treasury_did,
+                              "amount": str(_D(str(price))), "transaction_id": tx, "memo": "cicd_template"},
+                        idempotency_key=f"xfer-{tx}",
+                    )
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[CICD-PAY] TokensTransferred for {tx} not emitted (non-fatal): {e}")
+        new_balance = data.get("new_source_balance")
+        if db is not None and new_balance is not None:
+            try:
+                buyer_agent.liquid_balance = _D(str(new_balance))
+                await db.commit()
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[CICD-PAY] buyer balance cache after {tx} not synced (non-fatal): {e}")
 
     async def _get_agent_with_permission(
         self,

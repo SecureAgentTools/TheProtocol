@@ -11,6 +11,7 @@ import { ref } from 'vue'
 import {
   credentialVault, vaultKeyFromPrf, deviceVaultKey, newVaultSalt, b64uToBuf as vB64uToBuf,
 } from '@/services/credentialVault'
+import { parseStepUp } from '@/services/membership/membership'
 
 const KEY = 'pk_biolock'          // { enabled: true, credId: <b64url>, prf?: boolean }
 const SESSION_KEY = 'pk_unlocked' // sessionStorage — unlocked for this browser session
@@ -21,6 +22,60 @@ const enabled = ref(false)
 const busy = ref(false)
 let hiddenAt = 0
 let wired = false
+
+/** Where this device's server-side registration stands: the lock itself is local and works either way. */
+export type ServerEnrolState = 'idle' | 'waiting_device' | 'registered' | 'timed_out' | 'needs_code' | 'refused' | 'skipped'
+const serverEnrol = ref<{ state: ServerEnrolState; note: string }>({ state: 'idle', note: '' })
+
+const CODE_TRIES = 3
+
+/**
+ * D6-850: register a new credential with the registry. Two answers ask for more than the credential:
+ * - once the account holds an enrolled device, 428 step_up_required with methods ['device']: one of those devices
+ *   approves the new one (Pocket, Approvals; both screens show the same code), and this device sends the SAME
+ *   registration again with the challenge the 428 named, until it is registered or `maxMs` passes;
+ * - the account's FIRST device with 2FA on, 428 with methods ['totp']: `askCode` gets a current authenticator code
+ *   (null: the person gave none) and the registration goes again with it, at most three tries.
+ * Any other refusal is thrown to the caller as it came (403 after a device declined it, 429 past the hourly cap).
+ */
+export async function registerDeviceCredential(
+  post: (body: Record<string, unknown>) => Promise<unknown>,
+  body: { attestation_object: string; client_data_json: string },
+  onWait: (reason: string, code: string | null) => void,
+  opts: {
+    intervalMs?: number; maxMs?: number; sleep?: (ms: number) => Promise<void>; now?: () => number
+    askCode?: (reason: string) => Promise<string | null>
+  } = {},
+): Promise<'registered' | 'timed_out' | 'needs_code'> {
+  const intervalMs = opts.intervalMs ?? 4000
+  const maxMs = opts.maxMs ?? 5 * 60 * 1000
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+  const now = opts.now ?? (() => Date.now())
+  const started = now()
+  let confirm: string | null = null
+  let totp: string | null = null
+  let codeTries = 0
+  for (;;) {
+    try {
+      await post({ ...body, ...(confirm ? { confirm_challenge_id: confirm } : {}), ...(totp ? { totp_code: totp } : {}) })
+      return 'registered'
+    } catch (e: any) {
+      const step = e?.response?.status === 428 ? parseStepUp(e?.response?.data) : null
+      if (!step) throw e
+      if (!step.methods.includes('device') && step.methods.includes('totp')) {
+        codeTries += 1
+        const code = codeTries <= CODE_TRIES && opts.askCode ? await opts.askCode(step.reason) : null
+        if (!code) return 'needs_code'
+        totp = code.trim()
+        continue
+      }
+      confirm = step.challengeId
+      onWait(step.reason, typeof step.facts?.code === 'string' ? step.facts.code : null)
+      if (now() - started >= maxMs) return 'timed_out'
+      await sleep(intervalMs)
+    }
+  }
+}
 
 function b64uToBuf(s: string): ArrayBuffer {
   const b = atob(s.replace(/-/g, '+').replace(/_/g, '/'))
@@ -126,10 +181,20 @@ export function usePocketLock() {
   /** Enroll the device biometric (creates a platform credential kept on-device). */
   async function enroll(): Promise<boolean> {
     busy.value = true
+    serverEnrol.value = { state: 'idle', note: '' }
     try {
+      // D6-850: the credential answers the registry's OWN challenge (used once, ten minutes), or the registry will not
+      // bind it. Without one (device keys dark on this registry, or the read failed) the lock still works on this
+      // device alone, as it always has, and nothing is sent to the server.
+      let serverChallenge: string | null = null
+      try {
+        const { liabilityApi } = await import('@/services/api/liability')
+        const opts = await liabilityApi.webauthnSelfOptions()
+        serverChallenge = typeof opts?.challenge === 'string' && opts.challenge ? opts.challenge : null
+      } catch { serverChallenge = null }
       const cred: any = await navigator.credentials.create({
         publicKey: {
-          challenge: rand(),
+          challenge: serverChallenge ? b64uToBuf(serverChallenge) : rand(),
           rp: { name: 'Pocket', id: location.hostname },
           user: { id: rand(16), name: 'pocket-lock', displayName: 'Pocket lock' },
           // ES256 ONLY. RS256 was accepted here before, but the server-side verifier speaks
@@ -154,13 +219,41 @@ export function usePocketLock() {
       // approvals. One enrolment, one credential, one prompt — instead of the lock and the
       // signer each minting their own. Best-effort: if the registry has the feature dark, the
       // local lock still works exactly as before.
+      if (!serverChallenge) {
+        serverEnrol.value = { state: 'skipped', note: '' }
+        return true
+      }
       try {
         const { apiClient } = await import('@/services/api/client')
-        await apiClient.post('/liability/webauthn/register', {
-          attestation_object: bufToB64u(cred.response.attestationObject),
-          client_data_json: bufToB64u(cred.response.clientDataJSON),
-        })
-      } catch (e) {
+        const out = await registerDeviceCredential(
+          (b) => apiClient.post('/liability/webauthn/register', b),
+          {
+            attestation_object: bufToB64u(cred.response.attestationObject),
+            client_data_json: bufToB64u(cred.response.clientDataJSON),
+          },
+          (_reason, code) => {
+            serverEnrol.value = {
+              state: 'waiting_device',
+              note: 'Approve this new device on one of your enrolled devices (Pocket, Approvals)'
+                + (code ? `; it shows the code ${code}, the same as here` : '') + '. This screen finishes by itself.',
+            }
+          },
+          {
+            // the account's first device, with 2FA on: a current code from the authenticator app
+            askCode: async (reason) => {
+              try {
+                return window.prompt(`Enter a current code from your authenticator app to add this device (${reason}).`)
+              } catch { return null }
+            },
+          },
+        )
+        serverEnrol.value = out === 'registered'
+          ? { state: 'registered', note: '' }
+          : out === 'needs_code'
+            ? { state: 'needs_code', note: 'A first device on an account with 2FA takes a current authenticator code. Enrol again to enter one.' }
+            : { state: 'timed_out', note: 'No enrolled device approved this one in time. Enrol again to ask once more.' }
+      } catch (e: any) {
+        serverEnrol.value = { state: 'refused', note: e?.response?.data?.detail || e?.message || 'The registry refused this device.' }
         console.warn('[pocket-lock] biometric enrolled locally but not registered server-side', e)
       }
       return true
@@ -339,7 +432,7 @@ export function usePocketLock() {
   }
 
   return {
-    locked, enabled, busy, available, enroll, disable, unlock, verify, arm,
+    locked, enabled, busy, available, enroll, disable, unlock, verify, arm, serverEnrol,
     vaultInfo, sealCredentials, sealCredentialsDeviceKey, unsealCredentialsToPlain,
   }
 }

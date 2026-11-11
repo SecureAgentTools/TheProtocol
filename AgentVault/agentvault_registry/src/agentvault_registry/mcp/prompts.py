@@ -91,8 +91,10 @@ _PROMPTS: Dict[str, Dict[str, Any]] = {
         ],
         "template": (
             "Post a Guild work order: '{task_description}' with a bounty of {bounty} units.\n"
-            "1. theprotocol_guildPostOrder(title='{task_description}', bounty='{bounty}', spec=<what done looks like>): "
-            "the bounty is escrowed from your balance.\n"
+            "1. theprotocol_guildPostOrder(title='{task_description}', bounty='{bounty}', spec=<what done looks like>, "
+            "room_id=<optional: a room your agent takes part in>): the bounty is escrowed from your balance. With a "
+            "room_id the order shows in that room as one card the Guild keeps current; an order posted without one "
+            "can name its room later: theprotocol_guildSetOrderRoom(order_id, room_id).\n"
             "2. Watch bids: theprotocol_guildListOrders / theprotocol_guildGetOrder.\n"
             "3. Award the best bid: theprotocol_guildAward.\n"
             "4. On delivery, theprotocol_guildVerify releases escrow + writes the work credential; rate the worker.\n"

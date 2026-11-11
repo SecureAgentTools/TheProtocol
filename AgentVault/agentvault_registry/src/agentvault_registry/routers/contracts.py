@@ -512,6 +512,10 @@ async def approve_contract_completion(
                                    "cancel and re-create it")
     auth_header = request.headers.get("Authorization", "") if request else ""
     if m1["status"] == "submitted":
+        # V0660 (b): a milestone with an acceptance test releases on its passing verdict, by this route too (on
+        # refuses, shadow reports; under off nothing is read). Before the claim, so a refusal leaves it submitted.
+        from agentvault_registry.services import quantum_acceptance as _qacc
+        await _qacc.settlement_gate(db, "contract_milestone", c["id"], 1)
         res = await db.execute(text(
             "UPDATE contract_milestones SET status='releasing' WHERE contract_id=:c AND seq=1 "
             "AND status='submitted'"), {"c": c["id"]})
@@ -815,7 +819,7 @@ async def create_malpractice_dispute(
         from ..crud import crud_disputes
         dispute = await crud_disputes.create_dispute(
             db=db, complainant_did=current_agent.did, defendant_did=defendant_did,
-            contract_id=c.get("legacy_ruc_id"))
+            contract_id=c.get("legacy_ruc_id"), contract_ref=c["id"], reason="filed_by_party", filed_by="party")
         await db.execute(text("UPDATE disputes SET contract_ref=:r WHERE id=:i"),
                          {"r": c["id"], "i": dispute.id})
         claimed = await db.execute(text(

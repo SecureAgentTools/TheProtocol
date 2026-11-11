@@ -294,7 +294,12 @@ def test_engine_waterfall_is_behind_its_knob():
     assert "async def _slash_waterfall(" in src
     assert 'if _mode in ("shadow", "enforce"):' in src
     assert "return mode == \"enforce\"" in src, "shadow must fall through to today's cache-only write"
-    assert "escrow_deposit(agent.did, take, f\"slash-{action.id}-liquid\"" in src
+    # V0658 (k): the waterfall drains through services/slash_order (the one path every slash takes); the liquid step
+    # still moves agent -> treasury on the TEG's treasury receive under slash-<action id>-liquid
+    assert 'ref=f"slash-{action.id}"' in src and "slash_order.drain(" in src
+    so_src = _read("services/slash_order.py")
+    assert "await move_to_treasury(agent.did, give, key=move.key" in so_src
+    assert "return move_key(self.ref, source)" in so_src and "/api/v1/admin/treasury/receive" in so_src
 
 
 def test_staking_payout_applies_the_multiplier():

@@ -142,6 +142,29 @@ def wires(monkeypatch):
 
     async def _no_operator(db, peer):
         return None
+
+    # V0658 (k): a slash drains the registry's slash order (services/slash_order), each step's capacity read from the
+    # TEG: it holds the defendant's 50 liquid units and nothing locked, no bond, the factory order
+    from agentvault_registry.services import reputation_bond as rb, slash_order as so
+
+    class _TegReads:
+        async def get_balances_admin(self, did):
+            return DEFENDANT.liquid_balance, Decimal(0)
+
+    class _Audit:   # each move's SlashMoved, recorded on its own (the router's events are emitter_calls)
+        async def emit(self, **k):
+            calls.setdefault("audit", []).append(k.get("event_type"))
+            return True
+
+    async def _no_bond(db, did):
+        return None
+
+    async def _factory_order(db):
+        return {}
+    monkeypatch.setattr(so, "get_teg_client", lambda: _TegReads())
+    monkeypatch.setattr(so, "get_event_emitter", lambda: _Audit())
+    monkeypatch.setattr(rb, "load_bond", _no_bond)
+    monkeypatch.setattr(rb, "policy_json", _factory_order)
     import agentvault_registry.input_validators as iv
     from agentvault_registry.services import reward_funding
     monkeypatch.setattr(iv, "validate_webhook_url", lambda url, **kw: url)
@@ -298,9 +321,13 @@ def _send(monkeypatch, answers):
         async def emit_dispute_compensation_request(self, **k):
             return True
     from agentvault_registry.identity import svid_client
+    # V0660 (k): a request goes out only where delivery is on and the card names a dialable address
+    monkeypatch.setenv("CROSS_REGISTRY_SETTLEMENT_DELIVERY", "on")
+    monkeypatch.setenv("BILATERAL_PEER_URL", OUR_URL)
     monkeypatch.setattr(crud_disputes.httpx, "AsyncClient", _Client)
     monkeypatch.setattr(crud_disputes, "get_event_emitter", lambda: _Emitter())
-    monkeypatch.setattr(svid_client, "get_client_cert_config", lambda *a, **k: None)
+    # V0660 (k) review: no request goes to an https peer without our client certificate
+    monkeypatch.setattr(svid_client, "get_client_cert_config", lambda *a, **k: {"cert": ("/c.pem", "/k.pem")})
     for p in PEERS:
         p.federation_access_token = None
     dispute = types.SimpleNamespace(id=9, complainant_did="did:theprotocol:complainant-9", defendant_did=DEFENDANT.did)

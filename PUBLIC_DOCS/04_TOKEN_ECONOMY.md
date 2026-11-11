@@ -196,10 +196,12 @@ Compensation needs an amount in the evidence: the first item that names one unde
 
 When the defendant is on another registry:
 
-1. Your registry sends a slash request to the defendant's registry over the federation lane.
+1. Your registry sends a slash request to the defendant's registry over the federation lane, only where `CROSS_REGISTRY_SETTLEMENT_DELIVERY=on` and its card publishes a federation address a peer can dial. Otherwise it sends nothing and the settlement ends at once as `NOT_DELIVERED`; when every peer refuses the request (any `4xx` except `408`, `425` and `429`, which are tried again), it ends at once as `REFUSED` with each peer's answer. Nothing moves in either case, and the ruling says so, and a confirmation for such a settlement is refused (`403` from a peer, since no peer is recorded for it; `409` from your frame's own registry). No request goes to an `https` peer without your registry's mTLS client certificate: without it the settlement waits and is sent later.
 2. That registry compares the amount with its threshold for your registry: `auto_slash_max_avt` on its peer row, set with `PUT /api/v1/federation/disputes/peer-slash-config/{peer_id}` (admin flag `admin_enforcement`).
-3. Within the threshold it slashes at once; above it, or where auto-slash is off for that peer, the request waits for its admin (`POST /api/v1/federation/disputes/settlements/{settlement_id}/approve` or `/reject`, admin flag `admin_enforcement`).
-4. It confirms the outcome to your registry, which then pays the complainant from its own fee account and treasury.
+3. Within the threshold it slashes at once; above it, or where auto-slash is off for that peer, the request waits for its admin (`POST /api/v1/federation/disputes/settlements/{settlement_id}/approve` or `/reject`, admin flag `admin_enforcement`). Either way the slash drains that registry's slash order: the defendant's bond, its locked units, its liquid units and, where the order lists the cascade, its owner's other agents there (the slash order: `PUT /api/v1/admin/enforcement/policy/section/slash_waterfall`).
+4. It confirms the outcome to your registry, which then pays the complainant from its own fee account and treasury (a transfer: no units are issued).
+
+An admin with the flag `admin_enforcement` closes a settlement that no peer holds and that moved nothing: `POST /api/v1/federation/disputes/settlements/{settlement_id}/close` with `{"reason": "..."}`, or Close in `#/admin/settlements`. It moves to `CLOSED` with who, when and why, and a confirmation for it is refused like the two above. A `NOT_DELIVERED` or `REFUSED` settlement closes at once; any other closes only after your event store shows no `DisputeSlash` for it (one found: `409`, the defendant was slashed and the complainant is owed; an event store that cannot be read: `503`).
 
 ---
 

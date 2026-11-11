@@ -11,7 +11,7 @@ TEG_ALWAYS_ALLOWED is the TEG's own allow that no row overrides (agentvault_teg_
 LedgerBalanceChanged whatever the table says). BALANCE_MOVING is event_emitter.BALANCE_MOVING_EVENT_TYPES, the event
 store's set: a type in it is counted by the balance projection and may never be marked skip_in_projection."""
 
-REGISTRY_EMITS = frozenset({   # 249 types the registry emits (V0651 (p): the token bridge's three left with it; their
+REGISTRY_EMITS = frozenset({   # 251 types the registry emits (V0658 (k): SlashMoved) (V0651 (p): the token bridge's three left with it; their
                                # policy rows stay as history, and BridgeTransferExpired stays: the expiry worker)
     "A2APaymentAuthorized", "AccountAnonymized", "AccountDeletionRequested", "AdminBroadcastEdited",
     "AdminBroadcastRetracted", "AdminBroadcastSent", "AdminBulkRefreshCards", "AdminDirectNoticeSent",
@@ -38,7 +38,7 @@ REGISTRY_EMITS = frozenset({   # 249 types the registry emits (V0651 (p): the to
     "DeploymentWebhookExhausted", "DeveloperAdminFlagsChanged", "DeveloperDeleted", "DeveloperDisable2FA",
     "DeveloperForceEmailVerify", "DeveloperForcePasswordReset", "DeveloperReinstated", "DeveloperRevokeApiKeys",
     "DeveloperSuspended", "DisputeCompensationApplied", "DisputeCompensationDeferred", "DisputeCompensationMinted",
-    "DisputeCompensationRequest", "DisputeFiled", "DisputeResolved", "DisputeSlash", "EigenTrustSignal",
+    "DisputeCompensationRequest", "DisputeFiled", "DisputeResolved", "DisputeRulingCorrected", "DisputeSlash", "EigenTrustSignal",
     "EnforcementActionCreated", "EnforcementSlashWaterfallApplied", "EnforcementSlashWaterfallPlanned",
     "EventEmissionPolicyUpdated", "EvidenceSubmitted", "ExchangeCircuitBreakerSet", "ExchangeDividendDeclared",
     "ExchangeDividendPaid", "ExchangeListingApproved", "ExchangeListingCreated", "ExchangeListingHalted",
@@ -70,7 +70,7 @@ REGISTRY_EMITS = frozenset({   # 249 types the registry emits (V0651 (p): the to
     "ReputationChanged", "RewardsAutoCompoundSkipped", "RewardsAutoCompounded", "RewardsDistributed",
     "SettlementCompensationMinted", "SettlementFinalized", "SettlementRolledBack", "SettlementSagaInitiated",
     "SettlementSagaTimedOut", "SettlementSlashConfirmed", "SettlementSlashFailed", "SettlementSlashRequested",
-    "SettlementTimeout", "SlashWaterfallChanged", "StakeForceUnstaked", "SupplyInvariantBreach",
+    "SettlementTimeout", "SlashMoved", "SlashWaterfallChanged", "StakeForceUnstaked", "SupplyInvariantBreach",
     "TokensIssued", "TokensStaked", "TokensTransferred", "TokensUnstaked",
     "TransactionFeeCollected", "TreasuryBankruptcyQuarantineTriggered", "TreasuryQuarantineLifted",
     "TreasurySlashReceived", "VersionActivated", "VersionCreated", "VersionRolledBack", "VoteCast",

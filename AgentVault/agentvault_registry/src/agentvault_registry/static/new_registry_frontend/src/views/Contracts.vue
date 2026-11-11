@@ -130,7 +130,7 @@
         <template v-if="homeRows.length">
           <div class="ctr-replica-head" data-testid="ctr-home-head">
             <Icon name="mdi:home" />
-            <span>{{ t('contractsView.railHereHead', 'Contracts on this registry for your acting agent') }}</span>
+            <span>{{ t('contractsView.railHereHeadOwned', 'Contracts on this registry for your agents') }}</span>
           </div>
           <div v-for="r in homeRows" :key="r.id" class="ctr-replica-row" data-testid="ctr-home-row">
             <button type="button" class="ctr-replica-btn" :data-testid="`ctr-home-open-${r.id}`"
@@ -148,7 +148,7 @@
         </template>
         <div v-if="replicaRows.length" class="ctr-replica-head">
           <Icon name="mdi:earth" />
-          <span>{{ t('contractsView.replicaStripAll', 'Cross-registry contracts for your acting agent') }}</span>
+          <span>{{ t('contractsView.replicaStripOwned', 'Cross-registry contracts for your agents') }}</span>
         </div>
         <div v-for="r in replicaRows" :key="r.id" class="ctr-replica-row" data-testid="ctr-replica-row">
           <button type="button" class="ctr-replica-btn" :data-testid="`ctr-replica-open-${r.id}`"
@@ -158,7 +158,10 @@
             <span class="ctr-replica-amt">{{ fmt(r.total_amount, 4) }} {{ r.currency }}</span>
             <span class="ctr-replica-st">{{ r.status }}</span>
           </button>
-          <ReplicaContractDoor v-if="replicaOpen === r.id" :contract="r" @acted="loadReplicas" />
+          <!-- V0658 (q): the rail lists every agent you own; the door acts as the acting agent, so it opens only on that
+               agent's own row, and another of your agents' rows says which agent acts on it -->
+          <ReplicaContractDoor v-if="replicaOpen === r.id && actingIsParty(r, activeAgentDid)" :contract="r" @acted="loadReplicas" />
+          <p v-else-if="replicaOpen === r.id" class="ctr-home-note" data-testid="ctr-replica-owner">{{ ownerNote(r) }}</p>
         </div>
       </div>
 
@@ -212,7 +215,7 @@
       <div v-else-if="!contractStore.loading && contractStore.legacyRetired && !replicaRows.length && !homeRows.length"
            class="empty-state" data-testid="ctr-rail-empty">
         <div class="empty-state__icon">⬡</div>
-        <p class="empty-state__msg">{{ t('contractsView.empty.railNone', 'Your acting agent has no contracts on the contract rail yet.') }}</p>
+        <p class="empty-state__msg">{{ t('contractsView.empty.railNoneOwned', 'None of your agents has a contract on the contract rail yet.') }}</p>
       </div>
       <div v-else-if="!contractStore.loading && !contractStore.legacyRetired && contractStore.filteredContracts.length === 0" class="empty-state">
         <div class="empty-state__icon">⬡</div>
@@ -554,6 +557,7 @@ import Icon from '@/components/Icon.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import ReplicaContractDoor from '@/components/contracts/ReplicaContractDoor.vue'  // §XHIREFE
 import { splitRailRows, railTileCounts, railRole } from '@/services/contracts/railRows'  // §TWOAGENT V0442
+import { actingIsParty, myParties, partyName } from '@/services/ownerParties'   // V0658 (q)
 import { contractsV2Api } from '@/services/api/contractsV2'
 
 // ─── i18n ────────────────────────────────────────────────────────────────────
@@ -834,16 +838,17 @@ watch(activeAgentDid, (now, before) => {
   void loadReplicas()
   if (now && now !== before) void reload()
 })
-// §COCKPITDESK (2026-10-15): the rail is read as the acting agent; an answer that arrives after the agent changed is
-// dropped (the latest read owns the strip), as the board's own fetch does
+// §COCKPITDESK (2026-10-15): an answer that arrives after a newer read started is dropped (the latest read owns the
+// strip), as the board's own fetch does
 let railSeq = 0
 async function loadReplicas() {
-  // the rail is the ACTING agent's: with none there is nothing to ask (asking anyway was a 401 on every visit)
+  // V0658 (q): the rail is the developer's, every agent he owns and every organization he owns, read with his own token
+  // whichever agent is acting (it was the acting agent's alone, so his other agents' contracts were invisible until he
+  // selected the right one); acting on a row still needs that row's agent
   const seq = ++railSeq
   railFailed.value = false
-  if (!activeAgentDid.value) { railItems.value = []; railRead.value = false; return }
   try {
-    const r = await contractsV2Api.mine({})
+    const r = await contractsV2Api.owned({})
     if (seq !== railSeq) return
     railItems.value = r.items || []
     railRead.value = true
@@ -852,9 +857,31 @@ async function loadReplicas() {
     railItems.value = []; railRead.value = false; railFailed.value = true
   }
 }
+function roleChipText(role: string): string {
+  return role === 'client' ? t('contractsView.roleChip.client') : role === 'provider' ? t('contractsView.roleChip.upgrader') : ''
+}
 function railRoleText(r: any): string {
   const role = railRole(r, activeAgentDid.value)
-  return role === 'client' ? t('contractsView.roleChip.client') : role === 'provider' ? t('contractsView.roleChip.upgrader') : ''
+  if (role) return roleChipText(role)
+  // V0658 (q): a row of another of your agents names it, and its side
+  const mine = myParties(r)
+  return mine.length ? mine.map((p) => `${partyName(p)} · ${roleChipText(p.role)}`).join(', ') : ''
+}
+/** A side of a contract inside a sentence (the chip words are capitalised). */
+function sideWord(role: string): string {
+  return role === 'client' ? t('contractsView.partyRole.client', 'client')
+    : role === 'provider' ? t('contractsView.partyRole.provider', 'provider') : role
+}
+/** V0658 (q): on a row the acting agent is no party to, which of your agents acts on it. */
+function ownerNote(r: any): string {
+  const p = myParties(r)[0]
+  if (!p) return t('contractsView.railNotParty', 'The acting agent is not a party to this contract.')
+  if (p.via === 'organization') {
+    return tp('contractsView.railOwnerOrgNote', '{name}, an agent of your organization {org}, is the {role} on this contract. Acting on it needs that agent.',
+      { name: partyName(p), org: p.organization_name || '', role: sideWord(p.role) })
+  }
+  return tp('contractsView.railOwnerNote', 'Your agent {name} is the {role} on this contract. Select it in the agent switcher (top right) to act on it.',
+    { name: partyName(p), role: sideWord(p.role) })
 }
 
 onMounted(async () => {

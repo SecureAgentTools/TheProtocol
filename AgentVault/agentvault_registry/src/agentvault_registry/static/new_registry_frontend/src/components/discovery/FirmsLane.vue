@@ -10,13 +10,19 @@
 //     with the server's own reason when no valid intake is set.
 //   • Post a bounty — routes to the guild post form prefilled with the
 //     for-org tag (the board's own form; the door FILLS, the human fires).
+//     V0658 (v): the form the landing decision names (firmBountyDoor): the Guild
+//     board on a desktop, Pocket's post sheet on a phone, the firm reserved on both.
+// V0658 (v) also: each firm shows its hosted logo (services/orgMark.ts), and its
+// member agents' own settled work as a line of its own beside the firm's count.
 // ─────────────────────────────────────────────────────────────────────────────
-import { nextTick, ref, onMounted } from 'vue'
+import { nextTick, reactive, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from '@/components/Icon.vue'
 import { useI18n } from '@/composables/useI18n'
 import { apiClient } from '@/services/api/client'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
+import { safeLogo } from '@/services/orgMark'
+import { firmBountyDoor } from './firmBountyDoor'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -60,7 +66,20 @@ async function load() {
 }
 
 function postBounty(f: any) {
-  router.push({ path: '/guild', query: { post: '1', for_org: f.org_id, title: `For ${f.name}: ` } })
+  router.push(firmBountyDoor({ org_id: f.org_id, name: f.name }))
+}
+
+// V0658 (v), item 1: the logo this registry hosts for the organization (the list is this registry's own, so its address
+// is a path here); anything else, or an image that does not load, keeps the placeholder mark.
+const brokenLogo = reactive<Record<string, boolean>>({})
+function logoOf(f: any): string | null {
+  return brokenLogo[f.org_id] ? null : safeLogo({ logo: typeof f.logo === 'string' ? f.logo : null, home: null })
+}
+
+// V0658 (v), item 6: the member agents' own settled work, as the registry answered it; absent means not known
+function memberJobs(f: any): number | null {
+  const n = f?.member_work?.jobs
+  return typeof n === 'number' && Number.isFinite(n) ? n : null
 }
 
 onMounted(load)
@@ -87,6 +106,11 @@ onMounted(load)
       <div v-for="f in firms" :key="f.org_id" class="fl-card"
            :class="{ 'fl-spot': firmSpotlight === f.slug }" :data-testid="'fl-firm-' + f.slug">
         <div class="fl-card-top">
+          <span class="fl-logo" :data-testid="'fl-logo-' + f.slug" aria-hidden="true">
+            <img v-if="logoOf(f)" :src="logoOf(f) || undefined" alt="" loading="lazy" referrerpolicy="no-referrer"
+                 @error="brokenLogo[f.org_id] = true" />
+            <span v-else class="fl-logo-mark">◈</span>
+          </span>
           <span class="fl-name">{{ f.name }}</span>
           <span v-if="f.transparency" class="fl-open" :title="t('firmsLane.openTip', 'This firm publishes its work records on a public feed')">
             {{ t('firmsLane.open', 'open books') }}
@@ -95,10 +119,18 @@ onMounted(load)
         <p v-if="f.description" class="fl-desc">{{ f.description }}</p>
         <!-- honest zeros ARE the card face (§DISCREFINE) -->
         <div class="fl-proof" data-testid="fl-proof">
+          <span class="fl-label">{{ t('firmsLane.asFirm', 'As the firm') }}</span>
           <span class="fl-stat"><strong>{{ f.verified_jobs }}</strong> {{ t('firmsLane.jobs', 'jobs delivered') }}</span>
           <span class="fl-stat"><strong>{{ f.commissioned }}</strong> {{ t('firmsLane.commissioned', 'commissioned') }}</span>
           <span class="fl-stat" v-if="f.stars_n > 0"><strong>{{ f.stars_avg }}</strong>★ ({{ f.stars_n }})</span>
           <span class="fl-stat fl-stat--zero" v-else>{{ t('firmsLane.noStars', 'no ratings yet') }}</span>
+        </div>
+        <!-- V0658 (v), item 6: what its member agents settled on their own, on a line of its own: never added into the
+             firm's count above, and no line at all when the registry could not say (unknown is not zero) -->
+        <div v-if="memberJobs(f) !== null" class="fl-proof fl-members" data-testid="fl-members"
+             :title="t('firmsLane.memberTip', 'Guild work the firm\'s member agents settled as themselves, not as the firm. Shown apart from the firm\'s own count, never added to it.')">
+          <span class="fl-label">{{ t('firmsLane.memberLabel', 'Its agents, on their own') }}</span>
+          <span class="fl-stat"><strong>{{ memberJobs(f) }}</strong> {{ memberJobs(f) === 1 ? t('firmsLane.memberJob', 'job settled') : t('firmsLane.memberJobs', 'jobs settled') }}</span>
         </div>
         <div class="fl-doors">
           <button
@@ -137,8 +169,15 @@ onMounted(load)
 }
 .fl-card--skel { min-height: 130px; opacity: 0.35; animation: fl-pulse 1.2s ease-in-out infinite; }
 @keyframes fl-pulse { 50% { opacity: 0.15; } }
-.fl-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.fl-name { font-size: 0.92rem; font-weight: 600; color: rgba(226, 232, 240, 0.9); }
+.fl-card-top { display: flex; align-items: center; gap: 10px; }
+/* V0658 (v): the organization's hosted logo, the size #/firms gives it; the placeholder keeps its place */
+.fl-logo {
+  flex: 0 0 32px; width: 32px; height: 32px; border-radius: 8px; overflow: hidden;
+  display: inline-flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, 0.05);
+}
+.fl-logo img { width: 100%; height: 100%; object-fit: cover; }
+.fl-logo-mark { font-size: 0.9rem; color: rgba(148, 163, 184, 0.85); }
+.fl-name { flex: 1 1 auto; min-width: 0; font-size: 0.92rem; font-weight: 600; color: rgba(226, 232, 240, 0.9); }
 .fl-open {
   font-family: 'IBM Plex Mono', monospace; font-size: 0.56rem; font-weight: 700;
   letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
@@ -153,6 +192,12 @@ onMounted(load)
 .fl-stat { font-size: 0.72rem; color: rgba(148, 163, 184, 0.85); }
 .fl-stat strong { color: rgba(var(--nc-primary-rgb), 0.9); font-family: 'IBM Plex Mono', monospace; }
 .fl-stat--zero { color: rgba(148, 163, 184, 0.8); }
+/* V0658 (v): the two lines' labels (as the firm / its agents on their own), the stat colour's contrast */
+.fl-label {
+  font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem; font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; color: rgba(148, 163, 184, 0.85);
+}
+.fl-members { margin-top: 6px; }
 .fl-doors { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 .fl-btn {
   font-family: 'IBM Plex Mono', monospace; font-size: 0.64rem; font-weight: 600; letter-spacing: 0.06em;

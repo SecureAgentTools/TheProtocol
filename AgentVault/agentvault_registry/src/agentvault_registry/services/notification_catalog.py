@@ -249,6 +249,12 @@ CATALOG: Tuple[NotificationType, ...] = (
     _t("dispute.resolved", "marketplace", "info",
        default_enabled={"push_desktop": True, "push_mobile": True},
        es_event_types=("DisputeResolved",)),
+    # V0657 (a): a dispute the system filed (the Guild's reaper) about your order: you accused nobody, so you are told
+    _t("dispute.opened", "marketplace", "warning",
+       default_enabled={"inapp": True, "push_desktop": True}),
+    # V0657 (a): the developers who rule hear that a dispute waits for a ruling (no admin heard of a new one before)
+    _t("dispute.desk", "ops", "info", audience="admin",
+       default_enabled={"inapp": True, "push_desktop": True}),
     _t("exchange.order_filled", "marketplace", "info",
        default_enabled={}, coalesce_window_s=300),
     # §POCKETBRIDGE3 (D3-4): a Pocket price alert crossed its threshold. Inapp
@@ -361,6 +367,9 @@ CATALOG: Tuple[NotificationType, ...] = (
     _t("org.member_joined", "organizations", "info",
        default_enabled={"inapp": True}, coalesce_window_s=300),
     _t("org.member_left", "organizations", "info",
+       default_enabled={"inapp": True, "push_desktop": True}),
+    # V0657 (b), polish 9: an agent asks to join (the owner and admins hear it), and its answer (the requester hears it)
+    _t("org.agent_request", "organizations", "info",
        default_enabled={"inapp": True, "push_desktop": True}),
 
     # ── legal (V0652 (af)) ─────────────────────────────────────────────────

@@ -146,6 +146,8 @@ ANNOTATION_OVERRIDES: Dict[str, Dict[str, bool]] = {
     # agent asked for, so a client should confirm it; a request repeats idempotently on its client_ref
     "decideChatApproval":  {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True, "openWorldHint": False},
     "requestChatApproval": {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+    # V0660 (k): closing a settlement is final (a second close answers 409), so a client should confirm it
+    "closeDisputeSettlement": {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": False},
     # invokeTool proxies ANY tool — flag conservatively (the inner tool's own
     # annotations are what a careful client should consult via describeTools).
     "invokeTool": {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": False},

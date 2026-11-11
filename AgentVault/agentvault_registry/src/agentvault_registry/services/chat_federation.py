@@ -35,6 +35,7 @@ WHAT DOES NOT FEDERATE, deliberately:
 """
 from __future__ import annotations
 
+import asyncio
 import datetime
 import logging
 import os
@@ -43,7 +44,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 import httpx
-from sqlalchemy import select, text as sa_text
+from sqlalchemy import func, select, text as sa_text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,7 +60,8 @@ logger = logging.getLogger(__name__)
 
 # Delivery backoff: fast enough that a blip is invisible, slow enough that a
 # dead peer costs nothing. Capped, and the queue is drained by ONE leader.
-BACKOFF_SECONDS = (5, 30, 120, 600, 1800, 3600)
+# V0659 (g): the first retry after 1 s (a peer's restart, a dropped keep-alive), then the old ladder
+BACKOFF_SECONDS = (1, 5, 30, 120, 600, 1800, 3600)
 MAX_ATTEMPTS = 12          # ~about a day of trying, then it waits for a human
 DELIVER_TIMEOUT_S = 15.0
 OUTBOX_BATCH = 50
@@ -324,7 +326,94 @@ async def enqueue_delivery(db: AsyncSession, conv: Conversation, msg: ChatMessag
             id=str(uuid.uuid4()), conversation_id=conv.id, seq=int(msg.seq),
             peer_base_url=base, payload=payload))
         n += 1
+    if n:
+        wake_after_commit(db)
     return n
+
+
+# ---------------------------------------------------------------------------
+# V0659 (g): delivery woken on commit, a pooled client per peer
+# ---------------------------------------------------------------------------
+
+WAKE_KEY = "chatfed:outbox:wake"
+#: a relay or a state the host could not take yet is tried again this much later, once
+RELAY_RETRY_S = 1.0
+
+
+async def wake_outbox() -> None:
+    """Tell the delivery leader a row is waiting (a list it blocks on: a wake pushed while it drains is not lost)."""
+    try:
+        from agentvault_registry.background_tasks.leader import get_redis
+        r = await get_redis()
+        if r is None:
+            return
+        await r.lpush(WAKE_KEY, "1")
+        await r.ltrim(WAKE_KEY, 0, 0)
+    except Exception as e:  # noqa: BLE001 - a wake that fails costs the leader's one-second look, nothing else
+        logger.debug("[CHATFED] could not wake the outbox: %s", e)
+
+
+def wake_after_commit(db: AsyncSession) -> None:
+    """Once the transaction that queued delivery rows commits, wake the leader. Every path that queues (a send, a
+    relay, a join) does it through enqueue_delivery, so none of them has to remember; a rollback wakes nobody."""
+    try:
+        from sqlalchemy import event
+        sync = getattr(db, "sync_session", None)
+        if sync is None:
+            return
+
+        def _fire(_session) -> None:
+            try:
+                asyncio.get_event_loop().call_soon(lambda: asyncio.ensure_future(wake_outbox()))
+            except RuntimeError:
+                pass
+        event.listen(sync, "after_commit", _fire, once=True)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[CHATFED] no wake after commit: %s", e)
+
+
+_POOL: Dict[str, Tuple[tuple, httpx.AsyncClient]] = {}
+
+
+def _tls_fingerprint(kwargs: Dict[str, Any]) -> tuple:
+    """What a pooled client was built with: the SVID pair (its files are new on every rotation) and the freshest trust
+    bundle with its time. A client built before a rotation would go on presenting the old certificate."""
+    cert = kwargs.get("cert")
+    bundle = mtime = None
+    try:
+        from agentvault_registry.identity import svid_client as _sc
+        bundle = _sc._freshest_bundle_path()
+        mtime = os.path.getmtime(bundle) if bundle and os.path.exists(bundle) else None
+    except Exception:  # noqa: BLE001 - no SVID client (a test, a node without one): the cert pair alone
+        pass
+    return (tuple(cert) if isinstance(cert, (list, tuple)) else cert, bundle, mtime)
+
+
+def peer_client(target: str, kwargs: Dict[str, Any]) -> httpx.AsyncClient:
+    """One keep-alive client per peer, rebuilt when the SVID or the trust bundle changes (the old one closes once its
+    calls finish). A fresh TLS handshake per message was most of a delivery's time."""
+    # the client class is part of what a pooled client was built with: the same in production, swapped by a test
+    fp = (_tls_fingerprint(kwargs), httpx.AsyncClient)
+    hit = _POOL.get(target)
+    if hit is not None and hit[0] == fp and not getattr(hit[1], "is_closed", False):
+        return hit[1]
+    client = httpx.AsyncClient(**kwargs, limits=httpx.Limits(max_keepalive_connections=4, keepalive_expiry=60.0))
+    _POOL[target] = (fp, client)
+    if hit is not None:
+        try:
+            asyncio.get_running_loop().create_task(hit[1].aclose())
+        except RuntimeError:
+            pass
+    return client
+
+
+async def close_pool() -> None:
+    for _fp, c in list(_POOL.values()):
+        try:
+            await c.aclose()
+        except Exception:  # noqa: BLE001
+            pass
+    _POOL.clear()
 
 
 async def federation_target(db: AsyncSession, base: str) -> Tuple[str, Dict[str, Any], Dict[str, str]]:
@@ -352,6 +441,18 @@ async def federation_target(db: AsyncSession, base: str) -> Tuple[str, Dict[str,
     return target, cfg, headers
 
 
+async def _post_envelope(target: str, kwargs: Dict[str, Any], headers: Dict[str, str],
+                         payload: dict) -> Tuple[bool, str]:
+    url = f"{target.rstrip('/')}/api/v1/federation/chat/deliver"
+    try:
+        r = await peer_client(target, kwargs).post(url, headers=headers, json=payload)
+        if r.status_code < 300 or r.status_code == 409:
+            return True, f"HTTP {r.status_code}"
+        return False, f"HTTP {r.status_code}: {r.text[:200]}"
+    except Exception as e:  # noqa: BLE001
+        return False, f"{type(e).__name__}: {str(e)[:200]}"
+
+
 async def deliver_one(row: ChatFederationOutbox, db: AsyncSession) -> Tuple[bool, str]:
     """POST one envelope to a peer. Returns (delivered, detail).
 
@@ -365,44 +466,97 @@ async def deliver_one(row: ChatFederationOutbox, db: AsyncSession) -> Tuple[bool
         target, kwargs, headers = await federation_target(db, row.peer_base_url)
     except cs.ChatError as e:
         return False, e.detail
-    url = f"{target.rstrip('/')}/api/v1/federation/chat/deliver"
-    try:
-        async with httpx.AsyncClient(**kwargs) as c:
-            r = await c.post(url, headers=headers, json=row.payload)
-        if r.status_code < 300 or r.status_code == 409:
-            return True, f"HTTP {r.status_code}"
-        return False, f"HTTP {r.status_code}: {r.text[:200]}"
-    except Exception as e:  # noqa: BLE001
-        return False, f"{type(e).__name__}: {str(e)[:200]}"
+    return await _post_envelope(target, kwargs, headers, row.payload)
+
+
+def _due_conditions() -> list:
+    """A row is due: not delivered, its time come, attempts left, and no earlier row of its thread to the same peer
+    backing off (it waits for that one, so the peer never receives the thread out of order). The drain and the
+    leader's look for due rows ask the same question, or a row held back would wake the leader over and over."""
+    held = sa_text("""NOT EXISTS (SELECT 1 FROM chat_federation_outbox e
+                       WHERE e.conversation_id = chat_federation_outbox.conversation_id
+                         AND e.peer_base_url = chat_federation_outbox.peer_base_url
+                         AND e.delivered_at IS NULL AND e.attempts < :max_attempts
+                         AND e.seq < chat_federation_outbox.seq AND e.next_attempt_at > now())""").bindparams(
+        max_attempts=MAX_ATTEMPTS)
+    return [ChatFederationOutbox.delivered_at.is_(None), ChatFederationOutbox.next_attempt_at <= sa_text("now()"),
+            ChatFederationOutbox.attempts < MAX_ATTEMPTS, held]
+
+
+def _due_batch(limit: int):
+    """One drain's batch, fair across rooms: each thread-and-peer pair ranked by its OLDEST due row, then the pair's
+    rows in seq order, under the LIMIT (lead's review, room seq 1957: ORDER BY conversation_id let the lowest ids win
+    every batch). Plain next_attempt_at order would not do: a head row that was retried sorts after its own later
+    rows, so the LIMIT could cut the head and send its successor alone."""
+    pair = (ChatFederationOutbox.conversation_id, ChatFederationOutbox.peer_base_url)
+    oldest = func.min(ChatFederationOutbox.next_attempt_at).over(partition_by=pair)
+    return (select(ChatFederationOutbox).where(*_due_conditions())
+            .order_by(oldest, ChatFederationOutbox.conversation_id, ChatFederationOutbox.peer_base_url,
+                      ChatFederationOutbox.seq)
+            .limit(limit))
+
+
+async def due_exists(db: AsyncSession) -> bool:
+    return (await db.execute(select(ChatFederationOutbox.id).where(*_due_conditions()).limit(1))).first() is not None
+
+
+async def _deliver_peer(target: Optional[Tuple[str, Dict[str, Any], Dict[str, str]]], refusal: str,
+                        rows: List[ChatFederationOutbox]) -> List[Tuple[ChatFederationOutbox, bool, str]]:
+    """One peer's rows, in order: a thread's rows go one after the other and stop at its first failure (the later ones
+    wait for it, so the peer never receives a thread out of order); another thread to the same peer goes on."""
+    out: List[Tuple[ChatFederationOutbox, bool, str]] = []
+    stopped: set = set()
+    for row in rows:
+        if row.conversation_id in stopped:
+            continue
+        if target is None:
+            okd, detail = False, refusal
+        else:
+            okd, detail = await _post_envelope(target[0], target[1], target[2], row.payload)
+        out.append((row, okd, detail))
+        if not okd:
+            stopped.add(row.conversation_id)
+    return out
 
 
 async def drain_outbox(db: AsyncSession, limit: int = OUTBOX_BATCH) -> dict:
     """One pass of the host's outbox. Bounded, and it REPORTS what it did —
     a delivery worker whose only signal is silence is indistinguishable from
-    one that never ran (the §BRIDGE R7-B lesson)."""
-    rows = (await db.execute(select(ChatFederationOutbox).where(
-        ChatFederationOutbox.delivered_at.is_(None),
-        ChatFederationOutbox.next_attempt_at <= sa_text("now()"),
-        ChatFederationOutbox.attempts < MAX_ATTEMPTS,
-    ).order_by(ChatFederationOutbox.next_attempt_at).limit(limit))).scalars().all()
+    one that never ran (the §BRIDGE R7-B lesson).
+
+    V0659 (g): every peer at once, so one slow or unreachable peer delays only itself; each thread in its order (a row
+    waits while an earlier row of its thread to the same peer is backing off)."""
+    rows = (await db.execute(_due_batch(limit))).scalars().all()
+    # each thread in seq order whatever order the store handed the batch back in (the order is what a peer may rely on)
+    rows = sorted(rows, key=lambda r: (str(r.peer_base_url), str(r.conversation_id), int(r.seq)))
+
+    by_peer: Dict[str, List[ChatFederationOutbox]] = {}
+    for row in rows:
+        by_peer.setdefault(row.peer_base_url, []).append(row)
+    targets: Dict[str, Tuple[Optional[tuple], str]] = {}
+    for base in by_peer:
+        try:
+            targets[base] = (await federation_target(db, base), "")
+        except cs.ChatError as e:
+            targets[base] = (None, e.detail)
+    results = await asyncio.gather(*[_deliver_peer(targets[b][0], targets[b][1], rs) for b, rs in by_peer.items()])
 
     delivered = failed = 0
-    for row in rows:
-        okd, detail = await deliver_one(row, db)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    for row, okd, detail in (x for group in results for x in group):
         row.attempts = int(row.attempts or 0) + 1
         if okd:
-            row.delivered_at = datetime.datetime.now(datetime.timezone.utc)
+            row.delivered_at = now
             row.last_error = None
             delivered += 1
         else:
             idx = min(row.attempts - 1, len(BACKOFF_SECONDS) - 1)
-            row.next_attempt_at = (datetime.datetime.now(datetime.timezone.utc)
-                                   + datetime.timedelta(seconds=BACKOFF_SECONDS[idx]))
+            row.next_attempt_at = now + datetime.timedelta(seconds=BACKOFF_SECONDS[idx])
             row.last_error = detail
             failed += 1
     await db.commit()
     return {"considered": len(rows), "delivered": delivered, "failed": failed,
-            "batch_limit": limit}
+            "batch_limit": limit, "peers": len(by_peer)}
 
 
 RELAY_RECORD_TTL_S = 7 * 24 * 3600
@@ -453,12 +607,24 @@ async def relay_to_host(db: AsyncSession, conv: Conversation, sender_key: str, s
     payload = {"conversation_ref": conv.remote_ref, "sender_key": sender_key, "sender_display": sender_display,
                "kind": kind, "body": body, "card": card, "client_ref": client_ref}
     await _record_relay(conv.host_registry, conv.remote_ref, client_ref, sender_key)
-    try:
-        async with httpx.AsyncClient(**kwargs) as c:
-            r = await c.post(f"{target.rstrip('/')}/api/v1/federation/chat/relay-send", headers=headers, json=payload)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[CHATFED] relay to %s failed: %s", conv.host_registry, type(e).__name__)
-        raise cs.ChatError(502, "the thread's host registry could not be reached; your message was NOT sent")
+    url = f"{target.rstrip('/')}/api/v1/federation/chat/relay-send"
+    r = None
+    for attempt in (1, 2):
+        try:
+            r = await peer_client(target, kwargs).post(url, headers=headers, json=payload)
+        except Exception as e:  # noqa: BLE001
+            if attempt == 1:
+                await asyncio.sleep(RELAY_RETRY_S)
+                continue
+            logger.warning("[CHATFED] relay to %s failed: %s", conv.host_registry, type(e).__name__)
+            raise cs.ChatError(502, "the thread's host registry could not be reached; your message was NOT sent")
+        # V0659 (g): the host has not seated this participant yet (its accept travels as a background task) or did
+        # not answer: one retry a second later, so a first message does not bounce while the host learns the thread.
+        # The relay is idempotent on client_ref at the host, so a retry never posts twice.
+        if attempt == 1 and (r.status_code >= 500 or (r.status_code == 403 and "not a participant" in r.text)):
+            await asyncio.sleep(RELAY_RETRY_S)
+            continue
+        break
     if r.status_code in (200, 201):
         try:
             return r.json()
@@ -485,6 +651,9 @@ FED_RL = {
     "relay_thread": (30, 60), "relay_peer": (300, 60), "relay_agent_thread": (12, 60),
     "deliver_thread": (60, 60), "deliver_peer": (600, 60),
     "create_actor": (20, 3600),
+    # V0659 (f): uninvited joins of an 'anyone' room, per joining registry (services/chat_rooms.seat_remote; session-lead's
+    # seq 2201, decision 5). Undeclared, the first such join raised KeyError on the host (500; 502 through the joiner's).
+    "room_join_peer": (30, 60),
 }
 
 
@@ -531,11 +700,19 @@ async def announce_state_to_host(host_registry: str, remote_ref: str, participan
         from agentvault_registry.database import get_db_context
         async with get_db_context() as db:
             target, kwargs, headers = await federation_target(db, host_registry)
-        async with httpx.AsyncClient(**kwargs) as c:
-            body = {"conversation_ref": remote_ref, "participant_key": participant_key, "state": state}
-            # §TWOAGENT G1 household seat: a join names the agent it goes through, the owner's display and its row's ref
-            body.update({k: v for k, v in join.items() if k in ("household_of", "participant_display", "client_ref") and v})
-            r = await c.post(f"{target.rstrip('/')}/api/v1/federation/chat/state", headers=headers, json=body)
+        body = {"conversation_ref": remote_ref, "participant_key": participant_key, "state": state}
+        # §TWOAGENT G1 household seat: a join names the agent it goes through, the owner's display and its row's ref
+        body.update({k: v for k, v in join.items() if k in ("household_of", "participant_display", "client_ref") and v})
+        url = f"{target.rstrip('/')}/api/v1/federation/chat/state"
+        try:
+            r = await peer_client(target, kwargs).post(url, headers=headers, json=body)
+        except httpx.HTTPError:
+            r = None
+        if r is None or r.status_code >= 500:
+            # V0659 (g): one retry a second later (the host restarting, a dropped keep-alive): a join that does not
+            # land is a first message that bounces. The host applies a state idempotently (its client_ref).
+            await asyncio.sleep(RELAY_RETRY_S)
+            r = await peer_client(target, kwargs).post(url, headers=headers, json=body)
         ok = r.status_code in (200, 201)
         if not ok:
             logger.warning("[CHATFED] state %s for %s at %s answered %s", state, remote_ref, host_registry,
@@ -679,6 +856,16 @@ async def apply_remote_state(db: AsyncSession, conversation_ref: str, participan
     conv = (await db.execute(select(Conversation).where(Conversation.id == conversation_ref))).scalars().first()
     if conv is None or conv.host_registry:
         raise cs.ChatError(404, "this registry does not host that thread")
+    if conv.kind == "room":
+        # V0659 (f): a room's seat is the room's to give. An accept (an invite taken) goes through the same checks as
+        # a join (the rule, the ban list, the caps; the binding rule ran above); an owner's household join has no
+        # meaning in a room. A leave is what it is anywhere.
+        if state == "join":
+            raise cs.ChatError(422, "a household join does not apply to rooms")
+        if state == "active":
+            from agentvault_registry.services import chat_rooms as _rooms
+            head = await _rooms.seat_remote(db, conv.id, participant_key, participant_display, peer_identity)
+            return {"state": head["state"], "changed": True, "room": head}
     if state == "join":
         return await _seat_remote_owner(db, conv, parsed, household_of, participant_display, client_ref, peer_identity)
     part = (await db.execute(select(ConversationParticipant).where(
@@ -775,10 +962,11 @@ async def receive_delivery(db: AsyncSession, envelope: dict, peer_identity: str)
     remote_seq = int(m_in.get("seq") or 0)
     if not remote_ref or remote_seq <= 0:
         raise cs.ChatError(422, "envelope is missing conversation id or seq")
-    if str(c_in.get("kind") or "dm") != "dm":
-        # Rooms do not federate in v1 — and refusing by name beats mirroring a
-        # membership model this registry cannot verify.
-        raise cs.ChatError(422, "only dm threads federate in this version")
+    conv_kind = str(c_in.get("kind") or "dm")
+    if conv_kind not in ("dm", "room"):
+        # Org rooms do not federate: their membership is one registry's roster, which this registry cannot verify.
+        # V0659 (f): a cross-frame room does, and its membership is the HOST's word (services/chat_rooms).
+        raise cs.ChatError(422, "only dm threads and rooms federate in this version")
 
     base = self_base_url()
     local_handles = _local_keys_from(c_in.get("participants") or [], base)
@@ -790,11 +978,24 @@ async def receive_delivery(db: AsyncSession, envelope: dict, peer_identity: str)
     # §TWOAGENT G1 step 2: an AGENT resident is addressed by its DID and must be a live native agent here.
     resident_ids: List[int] = []
     resident_agents: List[str] = []
+    # V0659 (f): in a room, each of our principals' seat is what the HOST says (pending for an invite, active once
+    # accepted, left once removed), never a seat this registry decides.
+    host_state: Dict[str, str] = {}
+    for p in c_in.get("participants") or []:
+        parsed_p = parse_remote_key(str(p.get("key") or ""))
+        if parsed_p and parsed_p[1] == origin(base):
+            host_state[parsed_p[0].lower()] = str(p.get("state") or "active")
+    handle_of: Dict[Any, str] = {}
+
+    def _room_seat(handle: Optional[str]) -> str:
+        st = host_state.get(str(handle or "").lower(), "active")
+        return st if st in ("active", "pending", "left") else "left"
     for h in local_handles:
         if h.lower().startswith("did:"):
             arow = (await db.execute(sa_text("SELECT did, status FROM agents WHERE did = :d"), {"d": h})).first()
             if arow and str(arow[1] or "").lower() not in ("revoked", "suspended"):
                 resident_agents.append(str(arow[0]))
+                handle_of[str(arow[0])] = h
             continue
         if h.startswith("dev:") and h[4:].isdigit():
             row = (await db.execute(sa_text(
@@ -806,6 +1007,7 @@ async def receive_delivery(db: AsyncSession, envelope: dict, peer_identity: str)
                 {"h": h})).first()
         if row:
             resident_ids.append(int(row[0]))
+            handle_of[int(row[0])] = h
     if not resident_ids and not resident_agents:
         raise cs.ChatError(404, "no local account matches the addressed participants")
     if not await fed_rate_ok("deliver_thread", host, remote_ref) or not await fed_rate_ok("deliver_peer", host):
@@ -821,7 +1023,8 @@ async def receive_delivery(db: AsyncSession, envelope: dict, peer_identity: str)
     created = False
     if conv is None:
         conv = Conversation(
-            kind="dm", title=c_in.get("title"),
+            # V0659 (f): a cross-frame room mirrors as a room (its host's kind); everything else as before, a dm
+            kind="room" if c_in.get("kind") == "room" else "dm", title=c_in.get("title"),
             # §TWOAGENT G1 step 2: the thread was started by the sender on the HOST, and that is who an accept here
             # answers (over the wire, never as a local notice).
             created_by_ptype="remote", created_by_id=first_sender_key,
@@ -842,14 +1045,26 @@ async def receive_delivery(db: AsyncSession, envelope: dict, peer_identity: str)
                 raise cs.ChatError(500, "mirror create raced and could not recover")
 
     # ── participants: ours as themselves, everyone else as remote ───────────
-    have = {(p.ptype, p.developer_id, p.agent_did, p.remote_key) for p in (await db.execute(
-        select(ConversationParticipant).where(
-            ConversationParticipant.conversation_id == conv.id))).scalars().all()}
+    rows_now = (await db.execute(select(ConversationParticipant).where(
+        ConversationParticipant.conversation_id == conv.id))).scalars().all()
+    have = {(p.ptype, p.developer_id, p.agent_did, p.remote_key) for p in rows_now}
+    if conv_kind == "room":
+        # an existing seat follows the host's word on every delivery (an invite accepted, a member removed)
+        for p in rows_now:
+            if p.ptype == "developer" and p.developer_id in handle_of:
+                p.state = _room_seat(handle_of[p.developer_id])
+            elif p.ptype == "agent" and p.agent_did in handle_of:
+                p.state = _room_seat(handle_of[p.agent_did])
+            elif p.ptype == "remote":
+                st = next((str(q.get("state") or "") for q in (c_in.get("participants") or [])
+                           if str(q.get("key") or "") == p.remote_key), "")
+                if st in ("active", "pending", "left"):
+                    p.state = st
     for did in resident_ids:
         if ("developer", did, None, None) not in have:
             db.add(ConversationParticipant(
                 conversation_id=conv.id, ptype="developer", developer_id=did,
-                role="member", state="active"))
+                role="member", state=_room_seat(handle_of.get(did)) if conv_kind == "room" else "active"))
     pending_agents: List[str] = []
     for ad in resident_agents:
         if ("agent", None, ad, None) not in have:
@@ -859,10 +1074,10 @@ async def receive_delivery(db: AsyncSession, envelope: dict, peer_identity: str)
             # the silence a local block gives.
             blocked = (await cs.blocks_between(db, cs.principal_key("agent", ad),
                                                cs.principal_key("remote", first_sender_key)))["a_blocks_b"]
+            seat = "left" if blocked else (_room_seat(handle_of.get(ad)) if conv_kind == "room" else "pending")
             db.add(ConversationParticipant(
-                conversation_id=conv.id, ptype="agent", agent_did=ad, role="member",
-                state="left" if blocked else "pending"))
-            if not blocked:
+                conversation_id=conv.id, ptype="agent", agent_did=ad, role="member", state=seat))
+            if seat == "pending":
                 pending_agents.append(ad)
     for p in (c_in.get("participants") or []):
         key = str(p.get("key") or "")
@@ -870,9 +1085,10 @@ async def receive_delivery(db: AsyncSession, envelope: dict, peer_identity: str)
         if not parsed or parsed[1] == origin(base):
             continue
         if ("remote", None, None, key) not in have:
+            st = str(p.get("state") or "active") if conv_kind == "room" else "active"
             db.add(ConversationParticipant(
                 conversation_id=conv.id, ptype="remote", remote_key=key,
-                role="member", state="active"))
+                role="member", state=st if st in ("active", "pending", "left") else "left"))
     await db.flush()
 
     # ── the message, exactly once ───────────────────────────────────────────

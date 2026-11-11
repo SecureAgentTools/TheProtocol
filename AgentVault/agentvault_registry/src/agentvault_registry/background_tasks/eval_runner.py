@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 from sqlalchemy import select, text as sa_text
 
+from ..core.outbound_guard import guarded_client
 from .. import models
 from ..config import settings
 from ..database import get_db_context
@@ -248,7 +249,9 @@ class EvalRunner:
         url = endpoint.rstrip("/") + (path if path.startswith("/") else "/" + path if path else "")
         started = None
         try:
-            async with httpx.AsyncClient(timeout=EVAL_TASK_TIMEOUT_SEC, verify=get_httpx_verify()) as client:
+            # V0660 (l): the endpoint comes from the agent's own card, so the guard decides it.
+            async with guarded_client("eval_task", timeout=EVAL_TASK_TIMEOUT_SEC,
+                                      verify=get_httpx_verify()) as client:
                 import time as _t
                 started = _t.perf_counter()
                 if suite.task_type == "a2a_message":

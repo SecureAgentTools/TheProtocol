@@ -1556,6 +1556,16 @@ async def log_teg_dispute(
     return await _agent_post(auth, "/api/v1/teg/disputes/log", json_body=body, op_name="logTegDispute")
 
 
+async def withdraw_teg_dispute(auth: MCPAuthContext, dispute_log_id: str, reason: Optional[str] = None) -> Dict[str, Any]:
+    """Withdraw a TEG dispute you filed while it is still OPEN (D6-825): its status becomes WITHDRAWN, no ruling, no
+    penalty, no money moved. Only the claimant may; audited. Requires agent JWT."""
+    if not dispute_log_id:
+        return {"error": "dispute_log_id is required"}
+    body: Dict[str, Any] = {"reason": reason} if reason else {}
+    return await _agent_post(auth, f"/api/v1/teg/disputes/{seg(dispute_log_id)}/withdraw", json_body=body,
+                             op_name="withdrawTegDispute", refusal_reason=True)
+
+
 async def cross_teg_balance_sync(auth: MCPAuthContext, notification: Dict[str, Any]) -> Dict[str, Any]:
     """Notify this registry that an agent received a cross-TEG credit. Typically called by another TEG; agents shouldn't normally call this directly."""
     if not isinstance(notification, dict):
@@ -2449,6 +2459,7 @@ AGENT_TOOL_SCHEMAS: List[Dict[str, Any]] = [
     {"name": "theprotocol_tegSystemTransfer", "description": "DESTRUCTIVE: pay units from your agent's balance to the frame's system treasury account (system fees and other payments to the system), with an optional purpose. Agent JWT.", "inputSchema": {"type": "object", "properties": {"amount": {"type": "string"}, "purpose": {"type": "string"}, "agent_jwt": {"type": "string"}}, "required": ["amount"]}},
     {"name": "theprotocol_claimTegPayouts", "description": "Claim the pending payouts on locked units of one of your agents from the TEG. A payout on locked units is a switch per registry (`staking_rewards_enabled`), off on the public network, where this answers 403. Developer JWT (the agent's owner).", "inputSchema": {"type": "object", "properties": {"agent_did": {"type": "string", "description": "the agent whose payouts to claim (yours)"}}, "required": ["agent_did"]}},
     {"name": "theprotocol_logTegDispute", "description": "DESTRUCTIVE: log a TEG-side dispute (distinct from registry-side logEnhancedDispute). Agent JWT.", "inputSchema": {"type": "object", "properties": {"defendant_agent_did": {"type": "string"}, "reason_code": {"type": "string"}, "brief_description": {"type": "string"}, "avtp_transaction_id": {"type": "string"}, "evidence_pointer": {"type": "string"}, "dispute_reason_category": {"type": "string"}, "related_transaction_id": {"type": "string"}, "evidence_description_or_url": {"type": "string"}, "agent_jwt": {"type": "string"}}, "required": ["defendant_agent_did", "reason_code", "brief_description"]}},
+    {"name": "theprotocol_withdrawTegDispute", "description": "Withdraw a TEG dispute you filed while it is still OPEN: it becomes WITHDRAWN, no ruling, no penalty, no money moved. Only the claimant may; audited. Agent JWT.", "inputSchema": {"type": "object", "properties": {"dispute_log_id": {"type": "string", "description": "The dispute's dispute_log_id (logTegDispute's answer)"}, "reason": {"type": "string", "description": "Why you withdraw it (optional)"}, "agent_jwt": {"type": "string"}}, "required": ["dispute_log_id"]}},
     {"name": "theprotocol_crossTegBalanceSync", "description": "Notify this registry of a cross-TEG credit (typically TEG-to-TEG). Agent JWT.", "inputSchema": {"type": "object", "properties": {"notification": {"type": "object"}, "agent_jwt": {"type": "string"}}, "required": ["notification"]}},
     {"name": "theprotocol_applyReputationSignal", "description": "Send a +1 or -1 signal about the receiver of a completed transfer you sent: it moves the receiver's reputation score in the TEG by one (the score getTegReputationRankings ranks by, never below 0), once per transaction. It does not enter the EigenTrust trust graph (getTrustScore). Agent JWT; only the transfer's sender may signal.", "inputSchema": {"type": "object", "properties": {"transaction_id": {"type": "string"}, "signal_value": {"type": "integer", "enum": [-1, 1]}, "agent_jwt": {"type": "string"}}, "required": ["transaction_id", "signal_value"]}},
     # ─── §pass70 Sprint 17 (Tier 2 — 8 new) ───────────────────────────────

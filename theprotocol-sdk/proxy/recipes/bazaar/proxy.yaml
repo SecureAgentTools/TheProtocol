@@ -1,0 +1,58 @@
+# BAZAAR (the marketplace blueprint): the shop's inventory changes become signed attestations on TheProtocol, and the
+# warehouse (WMS) is told to fulfil only when a buyer's payment has arrived: TheProtocol's own payment.received webhook,
+# signed by the registry, is forwarded to the WMS with the payer, the amount and the ledger transaction, and the WMS
+# matches it to its open order. A payment that never settles never reaches the WMS.
+#
+# The shop side: POST /in/shop, HMAC-signed with SHOP_HMAC (fake/fake_shop.py). TheProtocol's side: register this
+# proxy's /in/theprotocol as a webhook for payment.received in the console (Developer, Webhooks) and give its secret as
+# TP_WEBHOOK_SECRET. The WMS side: the sink's url, checking X-Signature-256 with WMS_HMAC (fake/mock_wms.py).
+version: 1
+name: bazaar-shop
+registry: https://api.theprotocol.cloud
+identity:
+  agent_did: env:AGENT_DID
+  client_id: env:CLIENT_ID
+  client_secret: env:CLIENT_SECRET
+state: /data/bazaar-state.db
+sources:
+  shop:
+    type: webhook
+    config: {listen: "0.0.0.0:8711", path: /in/shop, id_field: event_id, secret: env:SHOP_HMAC}
+  theprotocol:
+    type: theprotocol_events
+    config: {listen: "0.0.0.0:8712", path: /in/theprotocol, secret: env:TP_WEBHOOK_SECRET, events: [payment.received]}
+actions:
+  attest:
+    type: attestation
+    config: {attestation_type: bazaar.inventory_level}
+    limits: {per_minute: 300}
+sinks:
+  wms:
+    type: webhook
+    # your warehouse system's fulfilment endpoint (a URL, written here; its signing secret by reference)
+    config: {url: "https://wms.example.com/api/v1/fulfilment-releases", secret: env:WMS_HMAC, timeout_s: 15}
+mappings:
+  - name: inventory
+    version: 1
+    from: shop
+    to: attest
+    when: {path: $.payload.kind, equals: inventory}
+    fields:
+      sku: $.payload.sku
+      on_hand: $.payload.on_hand
+      warehouse: $.payload.warehouse
+      at: $.payload.at
+  - name: paid-release
+    version: 1
+    from: theprotocol
+    to: wms
+    # the owner's webhook carries the income of every agent the owner has: release goods for the shop's own (its DID)
+    when: {path: $.payload.agent_did, equals: "did:theprotocol:your-shop-agent"}
+    fields:
+      seller_agent: $.payload.agent_did
+      payer: $.payload.from_did
+      amount: $.payload.amount
+      currency: $.payload.currency
+      ledger_tx: $.payload.ledger_txid
+retry: {first_s: 2, max_s: 300, attempts: 8}
+service: {listen: "127.0.0.1:9108"}

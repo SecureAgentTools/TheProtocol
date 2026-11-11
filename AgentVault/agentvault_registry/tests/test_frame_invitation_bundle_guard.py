@@ -22,6 +22,13 @@ DNS = {"public.example.invalid": ["1.1.1.1"], "inside.example.invalid": ["10.0.0
        "mixed.example.invalid": ["1.1.1.1", "172.16.0.7"], "loop.example.invalid": ["127.0.0.1"]}
 
 
+def _asked(request):
+    """The name the request is FOR. V0658 (l), code-scanning #357: a checked hop is dialled at the address the
+    check approved, with the name kept in the Host header, so a mock routes on Host as a real server would and
+    not on the socket address."""
+    return (request.headers.get("host") or request.url.host or "").rsplit(":", 1)[0].strip("[]")
+
+
 @pytest.fixture(autouse=True)
 def fake_dns(monkeypatch):
     async def resolve(host, port):
@@ -63,13 +70,14 @@ async def test_a_name_is_internal_when_any_address_is_or_it_does_not_resolve(hos
 
 async def test_a_redirect_inward_is_refused_for_an_anonymous_dial_and_followed_for_an_admin(monkeypatch):
     def handler(request):
-        if request.url.host == "public.example.invalid":
+        if _asked(request) == "public.example.invalid":
             return httpx.Response(302, headers={"location": "https://inside.example.invalid/bundle"})
         return httpx.Response(200, text="{}")
     seen = _transport(monkeypatch, handler)
     async with ftm._bundle_client(5) as c:
         r, refusal = await ftm._dial_checked(c, "GET", "https://public.example.invalid/", allow_internal=False)
-    assert r is None and "internal" in refusal and seen == ["https://public.example.invalid/"]
+    # V0658 (l), #357: the dial goes to the checked address, so the recorded URL is the address, not the name
+    assert r is None and "internal" in refusal and seen == [f"https://{DNS['public.example.invalid'][0]}/"]
     async with ftm._bundle_client(5) as c:
         r, refusal = await ftm._dial_checked(c, "GET", "https://public.example.invalid/", allow_internal=True)
     assert refusal is None and r.status_code == 200
@@ -99,7 +107,7 @@ async def test_the_probe_dials_nothing_for_an_anonymous_internal_url(monkeypatch
 
 async def test_approve_never_follows_a_public_bundle_url_inward(monkeypatch):
     def handler(request):
-        if request.url.host == "public.example.invalid":
+        if _asked(request) == "public.example.invalid":
             return httpx.Response(302, headers={"location": "https://loop.example.invalid/secret"})
         return httpx.Response(200, text='{"keys": ["an internal answer"]}')
     seen = _transport(monkeypatch, handler)

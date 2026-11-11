@@ -555,6 +555,9 @@ async def get_agent_card_export(
     # propagation runs through the federation fan-out envelope alone.
     from ..services import listing_propagation as _lp
     stripped = _lp.inject_extension(stripped, await _lp.card_state(db, did))
+    # V0657 (b): and the agent's organization, while it is listed and the agent shows it (services/org_mark.py)
+    from ..services import org_mark as _om
+    stripped = _om.inject_extension(stripped, await _om.card_state(db, did))
 
     # §AGENTDISC #192 — A2A signatures[] (detached JWS, registry EdDSA key, JWKS
     # kid). Computed at serve time over the FINAL derived card; any stored/stale

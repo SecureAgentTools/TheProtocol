@@ -25,6 +25,7 @@
  */
 import { ref, computed, type Ref } from 'vue'
 import type { FrameEntry } from '@/services/frameManifest'
+import type { QuantumWorkloadsBlock } from '@/services/quantum/quantumCard'
 
 export interface RegistryConfig {
   is_federated_operator?: boolean
@@ -94,6 +95,10 @@ export interface RegistryConfig {
   /** §FESUITE — the sandbox registries this registry's /sandbox/{a,b} proxy reaches (an empty list: none, the proxy
    *  answers 503). Absent (an older registry) means unknown: ask as before. */
   sandbox_proxy?: string[]
+  /** V0660 (d): the frame's quantum workloads block (status shadow or on, the receipt schema, the acceptance rungs and
+   *  the rails that settle them). Absent while QUANTUM_WORKLOADS_MODE is off: read it through
+   *  composables/useQuantumWorkloads.ts, which reads absent as off. */
+  quantum_workloads?: QuantumWorkloadsBlock
 }
 
 const cfg: Ref<RegistryConfig> = ref({})
@@ -170,6 +175,16 @@ export function onRegistryConfigRead(cb: (c: RegistryConfig) => void): () => voi
   readListeners.add(cb)
   if (readOk.value) { try { cb(cfg.value) } catch { /* ignore */ } }
   return () => { readListeners.delete(cb) }
+}
+
+/** V0660 (e): the config as already read, WITHOUT starting a read. For a surface that must not add a request where its
+ *  host makes none (a chat card in a Pocket thread): until something else has read the config it is `{}`, every flag
+ *  reads its closed default, and a read that answers later updates it in place. */
+export function peekRegistryConfig() {
+  return {
+    config: computed(() => cfg.value),
+    readOk: computed(() => readOk.value),
+  }
 }
 
 export function useRegistryConfig() {

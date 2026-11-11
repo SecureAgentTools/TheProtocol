@@ -173,6 +173,7 @@ import { useFrames } from '@/composables/useFrames'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import ConfirmActionModal from '@/components/common/ConfirmActionModal.vue'
 import { devicePushApi, randomNtfyTopic, type PushDevice } from '@/services/api/devicePush'
+import { parseStepUp } from '@/services/membership/membership'
 import { developerApi } from '@/services/api/developer'
 import { appLocale } from '@/services/appLocale'
 
@@ -355,15 +356,28 @@ const removeMessage = computed(() => {
     ? `Stop sending notifications to ${name} and revoke the key this phone was paired with? It will need to be paired again.`
     : `Stop sending notifications to ${name}? You can re-register it any time.`
 })
+// D6-850: a device that holds a signing key goes with the account's second factor. The first press asks for it (the
+// registry answers 428 and names a challenge); once it is approved in Approvals on an enrolled device, the next press
+// sends that challenge along.
+const removeChallenge = ref<{ deviceId: number; challengeId: string } | null>(null)
 async function confirmRemove() {
   if (!removeTarget.value) return
   removing.value = true
+  const id = removeTarget.value.id
   try {
-    await devicePushApi.remove(removeTarget.value.id)
+    const held = removeChallenge.value?.deviceId === id ? removeChallenge.value.challengeId : null
+    await devicePushApi.remove(id, held ? { challenge_id: held } : undefined)
+    removeChallenge.value = null
     removeTarget.value = null
     await load()
   } catch (e: any) {
-    err.value = e?.response?.data?.detail || e?.message || 'Remove failed'
+    const step = e?.response?.status === 428 ? parseStepUp(e?.response?.data) : null
+    if (step) {
+      removeChallenge.value = { deviceId: id, challengeId: step.challengeId }
+      err.value = 'This device holds a signing key. Approve its removal in Approvals on an enrolled device, then press Remove again.'
+    } else {
+      err.value = e?.response?.data?.detail || e?.message || 'Remove failed'
+    }
   } finally {
     removing.value = false
   }

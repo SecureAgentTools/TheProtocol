@@ -196,6 +196,57 @@ def read_spec(path: str) -> Dict[str, Any]:
     return spec
 
 
+# ── V0660 (j): a re-provision must not start the operator's agent on a RECORDED stop ─────────────────────────────────
+# session-watch, sessions' room seq 2329; session-lead's reading of the danger, seq 2525. Since V0657 (f) the frame
+# runner stops a revoked operator's spire-agent, and V0660 (j) records that stop as restart policy "no" so the host's
+# health collector (monitoring/scripts/docker-health-textfile.sh) reads it as the deliberate stop it is
+# (§LEGACYSTOP's convention; an unrecorded stop stays visible, §CANARYFIX).
+#
+# ⚠ MEASURED, with a throwaway compose project: `docker compose up -d` on an existing STOPPED container starts it and
+# KEEPS policy "no". Compose does not re-apply its file's `restart:` to a container it merely starts. So without this
+# step a re-provisioned agent runs with docker's restart disarmed, and when it later dies it is EXITED with policy
+# "no" — which the collector SKIPS. A noisy alert would have become a SILENT outage, which is worse than the alert.
+#
+# The policy is not named here: the one service is force-recreated, so compose applies whatever its own file declares,
+# and there is no second literal to drift from the runner's. It runs only when the policy really reads "no", so an
+# ordinary provision recreates nothing — a provision that recreated the agent every time would be an outage of its
+# own. A policy that cannot be read, or anything other than exactly one container, acts on nothing and says so:
+# not-measured is not permission.
+AGENT_SERVICE = "spire-agent"
+RECORDED_STOP_POLICY = "no"
+POLICY_FORMAT = "{{.HostConfig.RestartPolicy.Name}}"
+
+
+def _clear_recorded_stop(compose_argv: List[str], notes: List[str]) -> bool:
+    """Force-recreate the operator's spire-agent when it carries a recorded stop. True when it was recreated."""
+    try:
+        ps = subprocess.run(compose_argv + ["ps", "-q", AGENT_SERVICE], capture_output=True, text=True, timeout=30)
+    except Exception as exc:                                  # noqa: BLE001 - a read that fails acts on nothing
+        notes.append(f"recorded-stop check: compose ps failed ({exc}); nothing recreated")
+        return False
+    ids = [i.strip() for i in (ps.stdout or "").splitlines() if i.strip()] if ps.returncode == 0 else []
+    if len(ids) != 1:
+        notes.append(f"recorded-stop check: compose named {len(ids)} {AGENT_SERVICE} containers; nothing recreated")
+        return False
+    try:
+        pol = subprocess.run(["docker", "inspect", ids[0], "--format", POLICY_FORMAT],
+                             capture_output=True, text=True, timeout=20)
+        policy = (pol.stdout or "").strip() if pol.returncode == 0 else ""
+    except Exception as exc:                                  # noqa: BLE001
+        notes.append(f"recorded-stop check: docker inspect failed ({exc}); nothing recreated")
+        return False
+    if policy != RECORDED_STOP_POLICY:
+        notes.append(f"recorded-stop check: {AGENT_SERVICE} restart policy is "
+                     f"{policy or 'unreadable'}; nothing to clear")
+        return False
+    # ⚠ --no-deps IS LOAD-BEARING. CLAUDE.md rule 17 calls `--force-recreate` without it the most repeated mistake
+    # in this project: compose would restart the whole dependency tree under this one service — redis, the db,
+    # pgbouncer, the registry — on a live operator stack, to fix a restart policy. Only this service.
+    _run(compose_argv + ["up", "-d", "--no-deps", "--force-recreate", AGENT_SERVICE],
+         f"recreate {AGENT_SERVICE} (a revoke had recorded its stop)", notes, timeout=120)
+    return True
+
+
 def _run(cmd: List[str], note: str, notes: List[str], timeout: int = 600,
          cwd: Optional[str] = None) -> subprocess.CompletedProcess:
     """A step whose failure is READ rather than logged: _run in the registry logs and returns, which is how a failed
@@ -927,8 +978,10 @@ def _stack_steps(spec: Dict[str, Any], bundle_path: str, notes: List[str]) -> Di
     # frame still running an older one.
     for _ovr in _extra:
         _files += ["-f", _ovr]
-    _run(["docker", "compose"] + _files + ["--env-file", env_path, "up", "-d"], "compose up", notes,
-         timeout=900)
+    _compose_argv = ["docker", "compose"] + _files + ["--env-file", env_path]
+    # V0660 (j): before anything starts the agent, clear a stop a revoke recorded on it (see _clear_recorded_stop).
+    _clear_recorded_stop(_compose_argv, notes)
+    _run(_compose_argv + ["up", "-d"], "compose up", notes, timeout=900)
     ps = subprocess.run(["docker", "compose"] + _files + ["--env-file", env_path, "ps", "-q"],
                         capture_output=True, text=True, timeout=120)
     count = len([l for l in (ps.stdout or "").splitlines() if l.strip()])

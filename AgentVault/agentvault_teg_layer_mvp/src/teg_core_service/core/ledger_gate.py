@@ -144,6 +144,7 @@ NO_VALUE: Tuple[Tuple[str, str], ...] = (
     ("POST", "/api/v1/cross-teg/config/remove-partner"),
     ("POST", "/api/v1/disputes/admin/disputes/{dispute_log_id}/update_status"),
     ("POST", "/api/v1/disputes/"),
+    ("POST", "/api/v1/disputes/{dispute_log_id}/withdraw"),   # D6-825: a status change, no penalty, no money
     ("POST", "/api/v1/governance/admin/policies"),
     ("POST", "/api/v1/governance/admin/rewards/config"),
     ("POST", "/api/v1/governance/staking/delegate"),

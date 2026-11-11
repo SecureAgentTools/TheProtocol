@@ -49,8 +49,29 @@ def _pending():
                            slashed_at=None, slash_tx_id=None)
 
 
-def _http(monkeypatch, teg_status=200):
-    """httpx.AsyncClient as the router sees it: the TEG's treasury/receive and the origin's callback both answer."""
+async def _audit(**kw):
+    return True
+
+
+def _http(monkeypatch, teg_status=200, teg_liquid="5"):
+    """httpx.AsyncClient as the router sees it: the TEG's treasury/receive and the origin's callback both answer.
+    V0658 (k): the slash drains the slash order (services/slash_order), its capacities read from the TEG: it holds
+    `teg_liquid` of the defendant's units, nothing locked, no bond, the factory order."""
+    from agentvault_registry.services import reputation_bond as rb, slash_order as so
+
+    class _TegReads:
+        async def get_balances_admin(self, did):
+            return Decimal(teg_liquid), Decimal(0)
+
+    async def _no_bond(db, did):
+        return None
+
+    async def _factory_order(db):
+        return {}
+    monkeypatch.setattr(so, "get_teg_client", lambda: _TegReads())
+    monkeypatch.setattr(so, "get_event_emitter", lambda: SimpleNamespace(emit=_audit))   # each move's audit record
+    monkeypatch.setattr(rb, "load_bond", _no_bond)
+    monkeypatch.setattr(rb, "policy_json", _factory_order)
     posted = []
 
     class _Client:
@@ -94,7 +115,7 @@ def test_a_rejection_moves_the_saga(monkeypatch):
 def test_an_approved_slash_moves_the_saga(monkeypatch):
     posted, received = _http(monkeypatch)
     s = _pending()
-    defendant = SimpleNamespace(liquid_balance=Decimal("5"))
+    defendant = SimpleNamespace(did="did:theprotocol:x:d", liquid_balance=Decimal("5"))
     out = asyncio.run(fd.approve_settlement("s1", None, current_admin=ADMIN, db=_Db(s, defendant)))
     assert any("/treasury/receive" in u for u in posted)
     assert len(received) == 1 and received[0]["amount"] == 2 and received[0]["slash_tx_id"] == s.slash_tx_id   # the slash event, once
@@ -103,9 +124,10 @@ def test_an_approved_slash_moves_the_saga(monkeypatch):
 
 
 def test_an_approval_with_nothing_to_slash_moves_the_saga_to_failed(monkeypatch):
-    _http(monkeypatch)
+    _http(monkeypatch, teg_liquid="0")
     s = _pending()
-    out = asyncio.run(fd.approve_settlement("s1", None, current_admin=ADMIN, db=_Db(s, SimpleNamespace(liquid_balance=0))))
+    out = asyncio.run(fd.approve_settlement("s1", None, current_admin=ADMIN,
+                                            db=_Db(s, SimpleNamespace(did="did:theprotocol:x:d", liquid_balance=0))))
     assert out["status"] == "FAILED" and s.saga_state == "SLASH_FAILED"
 
 
@@ -121,7 +143,8 @@ def test_a_teg_refusal_keeps_the_request_pending_and_the_saga_running(monkeypatc
     _http(monkeypatch, teg_status=503)
     s = _pending()
     with pytest.raises(HTTPException) as e:
-        asyncio.run(fd.approve_settlement("s1", None, current_admin=ADMIN, db=_Db(s, SimpleNamespace(liquid_balance=Decimal("5")))))
+        asyncio.run(fd.approve_settlement("s1", None, current_admin=ADMIN,
+                                          db=_Db(s, SimpleNamespace(did="did:theprotocol:x:d", liquid_balance=Decimal("5")))))
     assert e.value.status_code == 502
     assert s.status == "PENDING_ADMIN_APPROVAL" and s.saga_state == "INITIATED"   # retryable: the deadline still applies
 
@@ -134,7 +157,9 @@ def test_the_sweep_never_rewrites_a_decided_settlement():
     text = str(sql)
     assert "cross_registry_settlements.saga_state IN" in text and "cross_registry_settlements.status NOT IN" in text
     decided = [v for v in sql.params.values() if isinstance(v, (list, tuple))]
-    assert sorted(saga_mod.DECIDED_STATUSES) == ["EXPIRED", "FAILED", "REJECTED", "SETTLED", "SLASHED"]
+    # V0660 (k): with the three end states of a settlement no peer holds (core/settlement_origin.ENDED)
+    assert sorted(saga_mod.DECIDED_STATUSES) == ["CLOSED", "EXPIRED", "FAILED", "NOT_DELIVERED", "REFUSED", "REJECTED",
+                                                 "SETTLED", "SLASHED"]
     assert any(sorted(v) == sorted(saga_mod.DECIDED_STATUSES) for v in decided), sql.params
     # what the sweep may still expire: a request nobody decided
     for undecided in ("PENDING_ADMIN_APPROVAL", "SLASHING", "PENDING_SLASH"):

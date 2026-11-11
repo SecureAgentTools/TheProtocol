@@ -12,6 +12,7 @@ Usage:
     from theprotocol.registry import verify_registry_card  # Registry Card EdDSA check
     from theprotocol.mtls import IronhandClient        # mTLS enrollment + SVID rotation
     from theprotocol.messenger import MessengerClient  # OurChat threads (poll/ack inbox, cards)
+    from theprotocol.quantum import QuantumWorkload    # the quantum workload agent card extension (V0660)
 """
 
-__version__ = "0.7.6"
+__version__ = "0.8.0"

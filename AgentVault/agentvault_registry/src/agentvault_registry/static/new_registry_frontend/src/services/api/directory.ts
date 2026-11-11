@@ -63,6 +63,23 @@ export interface DirectoryListing {
   venue: { name: string; publicUrl: string | null; tier: string | null } | null
 }
 
+/** V0657 (b), item 6: one listed organization as the index read it from its home registry's public list */
+export interface DirectoryOrganization {
+  id: string
+  slug: string | null
+  name: string
+  description: string | null
+  website: string | null
+  logo: string | null
+  page: string | null
+  memberCount: number | null
+  agentCount: number | null
+  settledWork: number | null
+  /** the registry the index read it from (its home) */
+  source: string
+  home: { name: string | null; origin: string | null; console: string | null } | null
+}
+
 const AGENT_FIELDS = `
   cardId did name humanReadableId description issuer shape source verified reachable
   bond { status isBonded amount currency }
@@ -103,6 +120,26 @@ export const directoryService = {
       { n: first },
     )
     return { total: d?.listings?.total ?? d?.listings?.edges?.length ?? 0, edges: d?.listings?.edges || [] }
+  },
+
+  /** V0657 (b), item 6: the listed organizations of every registry the index reads. An index older than this answers
+   *  the query with an error naming the field; that is "not supported here", not "nobody is listed". */
+  async organizations(base: string, first = 200): Promise<{ supported: boolean; total: number; edges: DirectoryOrganization[] }> {
+    try {
+      const d = await gql<{ organizations: { total: number | null; edges: DirectoryOrganization[] } }>(
+        base,
+        `query($n: Int!) { organizations(first: $n) { total edges { id slug name description website logo page
+           memberCount agentCount settledWork source home { name origin console } } } }`,
+        { n: first },
+      )
+      return { supported: true, total: d?.organizations?.total ?? d?.organizations?.edges?.length ?? 0,
+        edges: d?.organizations?.edges || [] }
+    } catch (e: any) {
+      if (/cannot query field ["']?organizations/i.test(String(e?.message || ''))) {
+        return { supported: false, total: 0, edges: [] }
+      }
+      throw e
+    }
   },
 
   /** ONE call for everything the console needs from the index: its status, its agents and its venues.

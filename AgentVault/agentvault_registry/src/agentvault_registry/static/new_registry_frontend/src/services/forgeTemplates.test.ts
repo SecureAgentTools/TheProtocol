@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultTemplateId, isOffered, listedTemplateIds, offeredTemplates } from './forgeTemplates'
+import { defaultTemplateId, formHasProgress, FORGE_TEMPLATES, isOffered, listedTemplateIds, offeredTemplates } from './forgeTemplates'
 
 const catalogue = [{ id: 'full-capacity' }, { id: 'ppao' }, { id: 'minimal' }] as const
 
@@ -33,5 +33,26 @@ describe('the bundle templates Agent Forge offers', () => {
     expect(isOffered('minimal', ['minimal', 'ppao'])).toBe(true)
     expect(isOffered('full-capacity', null)).toBe(true)
     expect(isOffered(null, ['minimal'])).toBe(true)
+  })
+})
+
+describe('V0658 (b): the starter is Agent Forge\'s featured default', () => {
+  it('offers the starter first and featured, the PPAO orchestrator beside it, and no full-capacity', () => {
+    expect(FORGE_TEMPLATES.map(t => t.id)).toEqual(['minimal', 'ppao'])
+    expect(FORGE_TEMPLATES.filter(t => t.featured).map(t => t.id)).toEqual(['minimal'])
+    expect(FORGE_TEMPLATES[0].defaultPorts.agent).toBe(8055)   // the port the starter listens on
+  })
+
+  it('selects for a form without a pick what a download without a pick takes', () => {
+    expect(defaultTemplateId(null)).toBe(FORGE_TEMPLATES[0].id)
+    expect(defaultTemplateId(['minimal', 'ppao'])).toBe(FORGE_TEMPLATES[0].id)
+  })
+
+  it('counts the default the picker selected as no progress, and anything the person did as progress', () => {
+    expect(formHasProgress(0, '', 'minimal', 'minimal')).toBe(false)   // nothing done: leave without asking
+    expect(formHasProgress(0, '', null, 'minimal')).toBe(false)
+    expect(formHasProgress(0, '', 'ppao', 'minimal')).toBe(true)       // another template picked
+    expect(formHasProgress(0, 'Tally Clerk', 'minimal', 'minimal')).toBe(true)
+    expect(formHasProgress(1, '', 'minimal', 'minimal')).toBe(true)
   })
 })

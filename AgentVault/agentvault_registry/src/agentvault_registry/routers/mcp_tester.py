@@ -352,6 +352,50 @@ def _truncate_response_excerpt(raw: Any, max_bytes: int = 2048) -> Any:
         return {"_unparseable": True, "_repr": repr(raw)[:max_bytes]}
 
 
+# Tool/test label: mcp-lifecycle rows carry responseData.tool; federation rows carry the test name in `name` (no tool
+# key). Fall back to `name`. (Module level since V0658 (g): _slim_row reads it too.)
+def _row_label(rr: Dict[str, Any]) -> str:
+    return (rr.get("responseData") or {}).get("tool") or rr.get("name", "") or ""
+
+
+# V0658 (g), D6-826 2a: a failed row keeps its whole failure detail. Every stored row's error was cut to 300 characters
+# and its excerpt to about 2 KB, so a failed federation-suite leg kept the start of its evidence and lost the part that
+# would settle it (the chat_g1 delivery legs: 17 failures in 181 runs, none settled). A failed row now keeps its whole
+# error and an excerpt up to this guard, which says so when it fires; a passing or skipped row is stored as before.
+FAILED_ROW_EXCERPT_MAX = 256 * 1024
+
+
+def _slim_row(rr: dict) -> dict:
+    """One run row as the tester stores it (Redis, the history page, the nightly archive)."""
+    data = rr.get("responseData") or {}
+    failed = not rr.get("healthy") and not rr.get("expected_failure")
+    err = rr.get("error")
+    return {
+        # §pass73.3.19: use _row_label so federation-suite rows (which
+        # carry the test name in `name`, not responseData.tool) render
+        # in the FE "All tools" table instead of showing blank.
+        "tool":     _row_label(rr),
+        "tier":     (rr.get("authRequired") or ""),
+        "healthy":  bool(rr.get("healthy")),
+        "skipped":  bool(rr.get("expected_failure")),
+        "status":   rr.get("statusCode"),
+        "elapsed":  data.get("elapsed_ms", 0),
+        "error":    (str(err) if failed else str(err)[:300]) if err else None,
+        "skip_reason": (data.get("skip_reason") or "") or None,
+        # pass73.3.19 Pass 6 (2026-05-28) — actual call response so the FE can show real payload on click, about 2 KB
+        # for a row that did what it should (Redis stays small). Federation rows have no result_excerpt → fall back to
+        # the full outcome dict so the detail panel still shows the captured state (drift, etc.).
+        "response_excerpt": _truncate_response_excerpt(
+            data.get("result_excerpt") or rr.get("responseData"),
+            max_bytes=FAILED_ROW_EXCERPT_MAX if failed else 2048),
+        "has_explicit_contract": bool(data.get("has_explicit_contract")),
+        # §MCPTEST30 (V0550): the switch this row was held to, or None
+        "switched_off": data.get("switched_off"),
+        # §MCPTEST30 (V0643): a refusal-only row's by-design reason, from the target's flow (or None)
+        "declared_unmeasured": (rr.get("responseData") or {}).get("declared_unmeasured"),
+    }
+
+
 async def _redis_or_die():
     r = await get_redis()
     if r is None:
@@ -2240,11 +2284,6 @@ async def _execute_sweep_background(run_id: str, dev_jwt: str, dev_id: int,
                     "wall_s":     fv.get("wall_s", 0),
                 }
 
-            # Tool/test label: mcp-lifecycle rows carry responseData.tool; federation
-            # rows carry the test name in `name` (no tool key). Fall back to `name`.
-            def _row_label(rr: Dict[str, Any]) -> str:
-                return (rr.get("responseData") or {}).get("tool") or rr.get("name", "") or ""
-
             bug_finds = [
                 {"tool": _row_label(rr),
                  "error": (rr.get("error") or "")}
@@ -2332,38 +2371,7 @@ async def _execute_sweep_background(run_id: str, dev_jwt: str, dev_id: int,
 
             # Build slim_results FIRST so latency baseline can mutate
             # individual rows with regression flags before persistence.
-            slim_results = [
-                {
-                    # §pass73.3.19: use _row_label so federation-suite rows (which
-                    # carry the test name in `name`, not responseData.tool) render
-                    # in the FE "All tools" table instead of showing blank.
-                    "tool":     _row_label(rr),
-                    "tier":     (rr.get("authRequired") or ""),
-                    "healthy":  bool(rr.get("healthy")),
-                    "skipped":  bool(rr.get("expected_failure")),
-                    "status":   rr.get("statusCode"),
-                    "elapsed":  (rr.get("responseData") or {}).get("elapsed_ms", 0),
-                    "error":    (rr.get("error") or "")[:300] if rr.get("error") else None,
-                    "skip_reason": ((rr.get("responseData") or {}).get("skip_reason") or "") or None,
-                    # pass73.3.19 Pass 6 (2026-05-28) — actual call response
-                    # so the FE can show real payload on click. Truncate to
-                    # ~2KB to keep Redis payload small. Federation rows have no
-                    # result_excerpt → fall back to the full outcome dict so the
-                    # detail panel still shows the captured state (drift, etc.).
-                    "response_excerpt": _truncate_response_excerpt(
-                        (rr.get("responseData") or {}).get("result_excerpt")
-                        or rr.get("responseData")
-                    ),
-                    "has_explicit_contract": bool(
-                        (rr.get("responseData") or {}).get("has_explicit_contract")
-                    ),
-                    # §MCPTEST30 (V0550): the switch this row was held to, or None
-                    "switched_off": (rr.get("responseData") or {}).get("switched_off"),
-                    # §MCPTEST30 (V0643): a refusal-only row's by-design reason, from the target's flow (or None)
-                    "declared_unmeasured": (rr.get("responseData") or {}).get("declared_unmeasured"),
-                }
-                for rr in results
-            ]
+            slim_results = [_slim_row(rr) for rr in results]
 
             # §MCPTEST30 (V0636): a pass that was only a refusal counts as not measured (the MCP-family flows; the
             # federation suite has no tool rows), before pass_depth reads what passed

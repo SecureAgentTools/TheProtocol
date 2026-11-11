@@ -22,6 +22,17 @@ _stop = False
 _INTERVAL = int(os.getenv("GUILD_REAPER_INTERVAL_SECONDS", "60"))
 
 
+def _card_follows(oid: str, seq, event_type: str) -> None:
+    """V0659 (n): the order's room card follows the reaper's events as it follows the routes' (routers/guild._audit asks
+    the same after each event it writes): an order the reaper expired, disputed, re-drove or reverted kept its card at its
+    last state. Asked once the event is committed; best effort, never raises."""
+    try:
+        from agentvault_registry.services import guild_live_card
+        guild_live_card.refresh_soon(oid, int(seq or 1), event_type)
+    except Exception:  # noqa: BLE001 — the card is a display of the order; the event is written
+        logger.debug("[GUILD-REAPER] the room card of %s was not asked for", oid, exc_info=True)
+
+
 async def _sweep_once() -> int:
     n = 0
     async with AsyncSessionLocal() as db:
@@ -72,6 +83,7 @@ async def _sweep_once() -> int:
                     "VALUES (:o,:q,'expired','reaper', CAST(:p AS JSONB))"
                 ), {"o": o["id"], "q": int(seq or 1), "p": json.dumps({"auto_refund": True})})
                 await db.commit()  # claim durable BEFORE any money moves → refund can never re-run
+                _card_follows(o["id"], seq, "expired")
                 # 2) MONEY (exactly once, post-claim): refund the bounty + every held bidder stake.
                 await guild_escrow.escrow_payout(db, o["poster_did"], Decimal(str(o["bounty"])), o["id"], "refund")
                 held = (await db.execute(text(
@@ -85,24 +97,22 @@ async def _sweep_once() -> int:
             except Exception as e:  # noqa: BLE001
                 await db.rollback()
                 logger.warning("[GUILD-REAPER] expire/refund %s failed (order already 'expired' — no re-drain): %s", o["id"], e)
-        # AWARDED past ETA (deadline reused as a soft ceiling) with no submit → flag disputed
+        # AWARDED past its work deadline (V0658 (e): set at the award from the winning bid's ETA) and the grace (one rule
+        # with contracts, services/deadline_grace) with no submit → flag disputed
         # + file a DDR dispute for the audit trail (contracts precedent; DDR moves no money).
+        # V0657 (a): the order is CLAIMED first (a hand-in in that moment wins and no record is left without its order,
+        # item 19), its 'disputed' event says why (item 10: the sweep wrote none), and the record knows its order, why
+        # it opened and that the system filed it (a ruling on it settles the escrow; nobody accused anybody, item 11)
+        from agentvault_registry.services.deadline_grace import grace_hours
         overdue = (await db.execute(text(
             "SELECT id, poster_did, worker_did FROM guild_work_orders "
-            "WHERE status='awarded' AND deadline IS NOT NULL AND deadline <= now() - interval '1 hour' LIMIT 50"
-        ))).mappings().all()
+            "WHERE status='awarded' AND deadline IS NOT NULL AND deadline <= now() - make_interval(hours => :grace_h) "
+            "LIMIT 50"
+        ), {"grace_h": grace_hours()})).mappings().all()
         for o in overdue:
-            ddr_id = None
-            try:
-                from agentvault_registry.crud import crud_disputes
-                d = await crud_disputes.create_dispute(db, complainant_did=o["poster_did"], defendant_did=o["worker_did"])
-                ddr_id = str(getattr(d, "id", None))
-            except Exception as e:  # noqa: BLE001 — dispute filing must not block the flag
-                logger.warning("[GUILD-REAPER] DDR filing failed for %s: %s", o["id"], e)
-            await db.execute(text("UPDATE guild_work_orders SET status='disputed', dispute_id=:d WHERE id=:o AND status='awarded'"),
-                             {"d": ddr_id, "o": o["id"]})
-            await db.commit()
-            n += 1
+            if await _flag_disputed(db, o["id"], o["poster_did"], o["worker_did"],
+                                    {"reason": "deadline_missed"}, from_status="awarded"):
+                n += 1
         n += await _sweep_stuck_money_states(db)
         n += await _sweep_abandoned_submitted(db)
     return n
@@ -124,16 +134,33 @@ async def _flag_disputed(db, oid: str, poster_did: str, worker_did: str, note: d
         "VALUES (:o,:q,'disputed','reaper', CAST(:p AS JSONB))"
     ), {"o": oid, "q": int(seq or 1), "p": json.dumps(note)})
     await db.commit()
+    _card_follows(oid, seq, "disputed")
     try:
         from agentvault_registry.crud import crud_disputes
-        d = await crud_disputes.create_dispute(db, complainant_did=poster_did, defendant_did=worker_did or poster_did)
+        d = await crud_disputes.create_dispute(db, complainant_did=poster_did, defendant_did=worker_did or poster_did,
+                                               guild_order_id=oid, reason=_reason_of(note), filed_by="system")
         await db.execute(text("UPDATE guild_work_orders SET dispute_id=COALESCE(dispute_id, :d) WHERE id=:o"),
                          {"d": str(getattr(d, "id", None)), "o": oid})
         await db.commit()
     except Exception as e:  # noqa: BLE001 — dispute filing must not block the flag
         await db.rollback()
         logger.warning("[GUILD-REAPER] DDR filing failed for %s: %s", oid, e)
+    try:  # V0657 (a): the ledger hears of it too, as of a poster's reject (item 10), in the Guild's own emit
+        from agentvault_registry.routers.guild import _emit as _guild_emit
+        _guild_emit("GuildOrderDisputed", oid, {"by": "reaper", "reason": _reason_of(note)})
+    except Exception as e:  # noqa: BLE001 — the flag stands without it
+        logger.warning("[GUILD-REAPER] GuildOrderDisputed for %s not emitted: %s", oid, e)
     return True
+
+
+def _reason_of(note: dict) -> str:
+    """Why the reaper disputed an order, in the record's words (services/dispute_rules.REASONS)."""
+    note = note or {}
+    if note.get("reason") == "deadline_missed":
+        return "deadline_missed"
+    if note.get("reason") == "submitted_timeout":
+        return "poster_silent"
+    return "stuck_payout"
 
 
 async def _sweep_stuck_money_states(db) -> int:
@@ -185,6 +212,7 @@ async def _sweep_stuck_money_states(db) -> int:
                     "VALUES (:o,:q,'stuck_reverted','reaper', CAST(:p AS JSONB))"
                 ), {"o": oid, "q": int(seq or 1), "p": json.dumps({"from": "resolving", "to": back})})
                 await db.commit()
+                _card_follows(oid, seq, "stuck_reverted")
                 recovered += 1
                 logger.warning("[GUILD-REAPER] stuck 'resolving' %s reverted to '%s' (retry is rail-idempotent)", oid, back)
                 continue
@@ -218,6 +246,7 @@ async def _sweep_stuck_money_states(db) -> int:
             ), {"o": oid, "q": int(seq or 1),
                 "p": json.dumps({"recovered": "stuck_settling", "payout": str(payout), "fee": str(fee), "payee": payee})})
             await db.commit()
+            _card_follows(oid, seq, "settled")
             recovered += 1
             logger.warning("[GUILD-REAPER] stuck 'settling' %s RE-DRIVEN to settled (payout=%s payee=%s)", oid, payout, payee)
         except Exception as e:  # noqa: BLE001 — a 409 here = rail param-mismatch or in-flight; surface, never re-pay
@@ -260,12 +289,27 @@ async def _sweep_abandoned_submitted(db) -> int:
 DEADLINE_NOTICE_SECONDS = 24 * 3600
 
 
+async def _tell_the_agent(agent_did: str, oid: str, deadline, message: str) -> None:
+    """V0657 (a), polish item 13: the reminder in the agent's own Guild thread too (its waiting sync wakes on it), once
+    per order and deadline; best effort in its own session (the owners' push above stands either way)."""
+    try:
+        from agentvault_registry.database import get_db_context
+        from agentvault_registry.services import guild_thread
+        stamp = int(deadline.timestamp()) if hasattr(deadline, "timestamp") else str(deadline)
+        async with get_db_context() as db:
+            await guild_thread.post_notice(db, agent_did, f"Order {oid}: {message}", f"gdl-{oid}-{stamp}")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[GUILD-REAPER] the agent's own deadline notice for %s was not posted: %s", oid, exc)
+
+
 async def remind_deadlines() -> int:
     """V0652 (af): guild.deadline_soon, a day before an order's deadline: an OPEN order expires at it (its poster hears
-    it), an AWARDED order with no work submitted is disputed an hour after it (its worker hears it). Once per order,
+    it), an AWARDED order with no work submitted is disputed the grace after it (V0658 (e): one rule with contracts,
+    a day by default; its worker hears it). Once per order,
     status and deadline (claimed on all three: a moved deadline is a new occasion). Its own read and its own claims:
     it never touches the money sweeps. Returns how many it told."""
     from agentvault_registry.background_tasks import push_notify
+    from agentvault_registry.services.deadline_grace import grace_words
     told = 0
     try:
         async with AsyncSessionLocal() as db:
@@ -283,9 +327,10 @@ async def remind_deadlines() -> int:
             when = o["deadline"].strftime("%Y-%m-%d %H:%M UTC") if hasattr(o["deadline"], "strftime") else str(o["deadline"])
             message = (f"\u201c{title}\u201d expires at its deadline, {when}, unless you award it."
                        if o["status"] == "open" else
-                       f"\u201c{title}\u201d is due {when}: submit the work, or the order goes to a dispute an hour after.")
+                       f"\u201c{title}\u201d is due {when}: submit the work, or the order goes to a dispute {grace_words()} after.")
             await push_notify.notify_agent_owners("guild.deadline_soon", [who], title="Guild: a deadline is near",
                                                   message=message, tags="hourglass", click="/ui/#/guild")
+            await _tell_the_agent(who, o["id"], o["deadline"], message)
             told += 1
     except Exception as exc:  # noqa: BLE001 — a reminder never stops the reaper
         logger.debug("[GUILD-REAPER] deadline reminders skipped: %s", exc)

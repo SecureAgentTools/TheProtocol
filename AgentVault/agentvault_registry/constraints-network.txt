@@ -31,6 +31,7 @@ dnspython==2.9.1
 docker==7.2.0
 email-validator==2.3.0
 encutils==1.0.0
+execnet==2.1.2
 factory_boy==3.3.3
 Faker==40.40.0
 fastapi==0.141.1
@@ -92,6 +93,7 @@ pytest-cov==7.1.0
 pytest-json-report==1.5.0
 pytest-metadata==3.1.1
 pytest-mock==3.16.0
+pytest-xdist==3.8.0
 python-dotenv==1.2.3
 python-multipart==0.0.32
 pywebpush==2.5.0

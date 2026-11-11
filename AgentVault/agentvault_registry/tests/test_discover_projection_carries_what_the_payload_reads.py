@@ -41,8 +41,18 @@ def _payload_keys(src: str) -> set:
     return set(re.findall(r'r\["([a-z_0-9]+)"\]', m.group(1)))
 
 
+def _conditional_projection(src: str) -> str:
+    """V0660 (a): the columns the projection carries where a switch serves them. The page statement places them with
+    the `{_q_cols}` placeholder (routers/agent_cards._DISCOVER_QUANTUM_COLUMNS, empty under QUANTUM_WORKLOADS_MODE=off,
+    where the payload reads none of them); without the placeholder they count for nothing."""
+    if "{_q_cols}" not in _page_projection(src):
+        return ""
+    from agentvault_registry.routers import agent_cards as mod
+    return _strip_sql_comments(mod._DISCOVER_QUANTUM_COLUMNS)
+
+
 def _missing(src: str) -> set:
-    proj = _page_projection(src)
+    proj = _page_projection(src) + "\n" + _conditional_projection(src)
     return {k for k in _payload_keys(src)
             if not re.search(rf"\b{re.escape(k)}\b", proj)}
 
@@ -64,3 +74,6 @@ def test_the_check_can_fail():
         "the gate did not notice a column the payload reads being dropped from the projection, "
         "so it would not have caught the 500 it exists for"
     )
+    unplaced = SRC.replace("{_q_cols}COUNT(*) OVER () AS full_total", "COUNT(*) OVER () AS full_total", 1)
+    assert unplaced != SRC, "the quantum placeholder could not be removed: control not run"
+    assert "quantum_ext" in _missing(unplaced), "a conditional column that is never placed must count for nothing"

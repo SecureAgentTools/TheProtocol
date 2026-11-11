@@ -60,9 +60,16 @@ async def _developer_owns_agent(db: AsyncSession, agent_did: str, developer_id: 
         models.Agent.did == agent_did, models.Agent.creator_developer_id == developer_id).limit(1))).first()
     if hit is not None:
         return True
-    hit = (await db.execute(select(models.AgentCard.id).where(
+    # ⚠ AND THE CARD MUST BE NATIVE. A federated MIRROR also carries a server-set agent_did, and the federated
+    # insert could place one on a LOCAL account (a local developer id equal to the remote one), so this leg granted
+    # a local account read, delete and write over a FOREIGN agent's logs — the same shape the docstring above says
+    # was closed for card CONTENT, reappearing through a column the server does set. One rule, the shared predicate.
+    row = (await db.execute(select(models.AgentCard.card_data).where(
         models.AgentCard.agent_did == agent_did, models.AgentCard.developer_id == developer_id).limit(1))).first()
-    return hit is not None
+    if row is None:
+        return False
+    from ..services.home_extensions import is_native
+    return is_native(row[0])
 
 
 @router.get("/{agent_did}/logs", response_model=List[schemas.AgentLogRead])

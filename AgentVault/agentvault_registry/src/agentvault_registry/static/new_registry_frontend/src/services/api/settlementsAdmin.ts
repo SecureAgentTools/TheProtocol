@@ -19,6 +19,10 @@ export type SettlementStatus =
   | 'FAILED'
   | 'EXPIRED'
   | 'CANCELLED'
+  // V0660 (k): the end states of a settlement no peer holds (nothing moved on any of them)
+  | 'NOT_DELIVERED'
+  | 'REFUSED'
+  | 'CLOSED'
   | string
 
 // Backend returns Decimal fields as strings (Pydantic Numeric serialization).
@@ -48,6 +52,8 @@ export interface SettlementRow {
   error_message?: string | null
   saga_state?: string
   saga_timeout_at?: string | null
+  /** V0660 (k): whether the registry closes it (no peer holds it, nothing moved) */
+  closable?: boolean
 }
 
 export interface SettlementStats {
@@ -57,6 +63,10 @@ export interface SettlementStats {
   slashed: number
   failed: number
   expired: number
+  // V0660 (k)
+  not_delivered?: number
+  refused?: number
+  closed?: number
   total_requested_avt: Money
   total_slashed_avt: Money
   total_minted_avt: Money
@@ -114,6 +124,16 @@ class SettlementsAdminService {
     const url = `${this.base}/${encodeURIComponent(settlementId)}/reject`
     const body = reason ? { reason } : {}
     const resp = await apiClient.post(url, body)
+    return resp.data
+  }
+
+  /**
+   * V0660 (k): close a settlement no peer holds, with the administrator's reason (required). The registry refuses
+   * (409, in words) one a peer holds or one that moved money. Backend gated by `admin_enforcement`.
+   */
+  async close(settlementId: string, reason: string): Promise<Record<string, unknown>> {
+    const url = `${this.base}/${encodeURIComponent(settlementId)}/close`
+    const resp = await apiClient.post(url, { reason })
     return resp.data
   }
 }

@@ -459,7 +459,8 @@ async def get_breaches(frame: Optional[str] = None, kind: Optional[str] = None) 
         return out
 
 
-async def get_stats(frame: Optional[str] = None, frames: Optional[list] = None) -> dict:
+async def get_stats(frame: Optional[str] = None, frames: Optional[list] = None,
+                    with_streak: bool = True) -> dict:
     """Get aggregate statistics, optionally filtered by a single `frame` or a list
     of `frames`. The list form mode-scopes the header/stat panel to one environment
     (prod vs sandbox) so the audit count, uptime and max-Δ match the frames shown.
@@ -467,6 +468,16 @@ async def get_stats(frame: Optional[str] = None, frames: Optional[list] = None) 
     Uptime + the consecutive-OK streak key off the TRUTH status
     (`COALESCE(atomic_status, status)`), and treat maintenance-tagged rows as OK
     so deliberate, safe breaches during a maintenance window never ding the SLO.
+
+    `with_streak=False` SKIPS the streak and returns `consecutive_ok=None`.
+    The streak is read by walking rows backwards until a non-OK one appears, so
+    its cost is the LENGTH OF THE CLEAN STREAK — 274,906 rows on 2026-11-07, one
+    more every clean cycle. That is the part of this function that grows while
+    the invariant holds, and it is why /metrics went from 9-10 s in September
+    2026 to 42.5 s in November. A caller that maintains the streak itself (the
+    auditor's stats cache does: +1 on a clean row, 0 on any other) passes False
+    and the walk never happens. None means NOT COMPUTED HERE and must never be
+    read as a streak of zero.
     """
     # "Effective OK" predicate shared across queries: the module's rule (§LIVESTATS).
     OK = OK_SQL
@@ -511,16 +522,18 @@ async def get_stats(frame: Optional[str] = None, frames: Optional[list] = None) 
             }
 
         # Consecutive OK (truth-based) from the latest going back.
-        cursor = await db.execute(
-            f"SELECT status, atomic_status, maintenance FROM audit_history {where} ORDER BY id DESC",
-            params,
-        )
-        consecutive_ok = 0
-        async for row in cursor:
-            if counts_ok(row[0], row[1], row[2]):
-                consecutive_ok += 1
-            else:
-                break
+        consecutive_ok = None
+        if with_streak:
+            cursor = await db.execute(
+                f"SELECT status, atomic_status, maintenance FROM audit_history {where} ORDER BY id DESC",
+                params,
+            )
+            consecutive_ok = 0
+            async for row in cursor:
+                if counts_ok(row[0], row[1], row[2]):
+                    consecutive_ok += 1
+                else:
+                    break
 
         # Last breach (truth-based, excluding maintenance rows).
         cursor = await db.execute(

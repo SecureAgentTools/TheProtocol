@@ -1,0 +1,37 @@
+# TheProtocol Proxy, an example: a terminal operating system's gate-out events become attestations on TheProtocol.
+# In the container (compose.yaml) the credentials come from the starter's .env and .env.secret as environment
+# variables; on a host, name the file instead: client_secret: file:.env.secret#CLIENT_SECRET.
+version: 1
+name: gate-scanner
+registry: https://api.theprotocol.cloud
+identity:
+  agent_did: env:AGENT_DID
+  client_id: env:CLIENT_ID
+  client_secret: env:CLIENT_SECRET
+  mtls: {enabled: false, dir: /data/certs}
+state: /data/proxy-state.db
+sources:
+  gate:
+    type: webhook
+    # the TOS posts each gate event here, signed with GATE_HMAC (X-Signature-256: sha256=<hex of the body>)
+    config: {listen: "0.0.0.0:8711", path: /in/gate, id_field: event_id, secret: env:GATE_HMAC}
+actions:
+  attest:
+    type: attestation
+    config: {attestation_type: tos.gate_out}
+    limits: {per_minute: 120}
+sinks: {}
+mappings:
+  - name: gate-out
+    version: 1          # part of every record's key: a new version sends the records it maps again
+    from: gate
+    to: attest
+    when: {path: $.payload.status, equals: OUT}
+    fields:
+      container: $.payload.container_id
+      at: $.payload.timestamp
+      seal: {path: $.payload.seal, default: null}
+      terminal: HAM-CTA
+retry: {first_s: 2, max_s: 300, attempts: 8}
+breaker: {refusals: 5, failures: 10, cooldown_s: 30}
+service: {listen: "127.0.0.1:9108"}

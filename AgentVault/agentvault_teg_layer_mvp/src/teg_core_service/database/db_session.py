@@ -42,6 +42,11 @@ engine = create_engine(
     pool_recycle=300,
 )
 
+# D6-817 (V0658): every statement names the TEG's release (database/release_sql_tag.py), on this engine and the async one.
+from .release_sql_tag import tag_engine_statements  # noqa: E402
+
+_RELEASE_TAG_LISTENER = tag_engine_statements(engine)
+
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -112,6 +117,7 @@ if _ASYNC_URL.startswith("postgresql+asyncpg://"):
             # so this guard is fully active without needing to set it here.
         },
     )
+    _ASYNC_RELEASE_TAG_LISTENER = tag_engine_statements(async_engine)   # D6-817: the engine pgbouncer exposes
     AsyncSessionLocal = async_sessionmaker(
         async_engine,
         class_=AsyncSession,

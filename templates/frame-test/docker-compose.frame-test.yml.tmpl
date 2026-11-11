@@ -781,8 +781,10 @@ services:
     volumes:
       - {{VOL_PREFIX}}_es_certs_{{TS}}:/certs:ro
       - {{VOL_PREFIX}}_sock_event-store_{{TS}}:/sock/event-store
+    # V0657 (c): 128m, from 16m (contract R43). A full metrics tmpfs is a SIGBUS at every new worker's first write; a
+    # 16m one wedged sbx-alpha's registry for 11 h on 2026-11-06. tmpfs takes memory only for what is written.
     tmpfs:
-      - /tmp/prom_multiproc_es:size=16m,mode=1777
+      - /tmp/prom_multiproc_es:size=128m,mode=1777
     # §MTLSHOPS T2 (S4, 2026-09-15): the store listens on a unix socket shared with nginx-event-store (the in-frame mTLS
     # lane) and nginx-edge (the host's door) alone; a multi-worker parent refuses a socket file a killed run left, so the
     # command removes it first. Its health is asked over that socket.
@@ -895,8 +897,9 @@ services:
       TEG_BATCH_FLUSH_INTERVAL_MS: ${FT_TEG_TEG_BATCH_FLUSH_INTERVAL_MS}
       TEG_BATCH_MAX_SIZE: ${FT_TEG_TEG_BATCH_MAX_SIZE}
       PROMETHEUS_MULTIPROC_DIR: ${FT_TEG_PROMETHEUS_MULTIPROC_DIR}
+    # V0657 (c): 128m, from 16m (contract R43; the registry's reasons below). The TEG folds a dead worker's files too.
     tmpfs:
-      - /tmp/prom_multiproc_teg:size=16m,mode=1777
+      - /tmp/prom_multiproc_teg:size=128m,mode=1777
       - /run/pgtls:size=1m,mode=1777   # §MTLSHOPS T3: tls-client-sync's 0700 directory
     command: >
       sh -c "sh /opt/data-tls/tls-client-sync.sh & until [ -s /run/pgtls/client/bundle.0.pem ]; do sleep 1; done;
@@ -1184,8 +1187,12 @@ services:
       IRONHAND_SPIRE_MODE: ${FT_REG_IRONHAND_SPIRE_MODE}
       OPERATOR_LIFECYCLE_VIA: ${FT_REG_OPERATOR_LIFECYCLE_VIA}
       CONTAINER_OBSERVE_VIA: ${FT_REG_CONTAINER_OBSERVE_VIA}
+    # V0657 (c): 128m, from 16m (contract R43). A worker's death left its counter and histogram files here for good
+    # (212,109 files when sbx-alpha's registry wedged for 11 h, 2026-11-06: every new worker died of SIGBUS at its first
+    # write). The registry now folds a dead worker's files into one archive per kind and reports the fill
+    # (prometheus_multiproc_dir_fill_ratio, alerted on); the headroom is for what a live worker set really holds.
     tmpfs:
-      - /tmp/prom_multiproc_reg:size=16m,mode=1777
+      - /tmp/prom_multiproc_reg:size=128m,mode=1777
       - /run/pgtls:size=1m,mode=1777   # §MTLSHOPS T3: tls-client-sync's 0700 directory
     volumes:
       # §PEERKEYROT (2026-09-05) — durable signer identity, the §AGENTDISC/V0183 shape

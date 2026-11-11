@@ -1,4 +1,4 @@
-"""The three card extensions only a card's HOME registry may state (§TWOAGENT #10, 2026-09-23).
+"""The card extensions only a card's HOME registry may state (§TWOAGENT #10, 2026-09-23; the organization, V0657 (b)).
 
 The reputation bond (§REPBOND), the enforcement state (§ENFPROP) and the listing state (§LISTPROP) are each derived from
 this registry's own rows at the moment a card is served (`inject_extension` in their modules), and a MIRROR keeps the copy
@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import enforcement_propagation as _ep
 from . import listing_propagation as _lp
+from . import org_mark as _om
 from . import reputation_bond as _rb
 
 logger = logging.getLogger(__name__)
@@ -36,15 +37,24 @@ HOME_EXTENSION_URIS = frozenset({
     _rb.BOND_EXTENSION_URI,
     _ep.ENFORCEMENT_EXTENSION_URI,
     _lp.LISTING_EXTENSION_URI,
+    _om.ORG_EXTENSION_URI,           # V0657 (b): the agent's organization, only its home states it
 })
 
 
 def is_native(card_data: Any) -> bool:
-    """A card is native unless it names the registry it was mirrored from (the same signal every native filter reads)."""
+    """A card is native unless it names where it was mirrored FROM — by either key.
+
+    ⚠ IT USED TO READ ONLY `source_registry`, while agent_cards.py asked
+    `not (fm.get("source_registry") or fm.get("first_synced_from"))` inline, twice. One rule, three copies, two
+    meanings — and the narrow one was the rule that owner checks could have leaned on. The federated insert stamps
+    BOTH keys, so widening this only ever classifies MORE cards as mirrors, never fewer.
+    """
     if not isinstance(card_data, dict):
         return False
     fm = card_data.get("federation_metadata")
-    return not (isinstance(fm, dict) and fm.get("source_registry"))
+    if not isinstance(fm, dict):
+        return True
+    return not (fm.get("source_registry") or fm.get("first_synced_from"))
 
 
 def strip_home_extensions(card_data: Any) -> Any:
@@ -64,13 +74,15 @@ def strip_home_extensions(card_data: Any) -> Any:
 
 
 def _derived(card_data: Dict[str, Any], did: Optional[str], bond: Optional[Dict[str, Any]],
-             enforcement: Optional[Dict[str, Any]], listing: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+             enforcement: Optional[Dict[str, Any]], listing: Optional[Dict[str, Any]],
+             org: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     out = dict(strip_home_extensions(card_data))
     if not did:
         return out                      # no agent to state anything about: the owner's copies are dropped, nothing added
     out = _rb.inject_extension(out, bond)
     out = _ep.inject_extension(out, enforcement)
     out = _lp.inject_extension(out, listing)
+    out = _om.inject_extension(out, org)
     return out
 
 
@@ -88,10 +100,11 @@ async def derive_for_read(db: AsyncSession, card_data: Any, did: Optional[str]) 
         bond = await _rb.card_state(db, did)
         enforcement = await _ep.card_state(db, did)
         listing = await _lp.card_state(db, did)
+        org = await _om.card_state(db, did)
     except Exception as e:  # noqa: BLE001
         logger.warning("[HOMEEXT] %s: the home extensions could not be read (%s); served without them", did, e)
         return _derived(card_data, None, None, None, None)
-    return _derived(card_data, did, bond, enforcement, listing)
+    return _derived(card_data, did, bond, enforcement, listing, org)
 
 
 async def derive_for_read_batch(db: AsyncSession, items: List[Dict[str, Any]], dids: Sequence[Optional[str]]) -> None:
@@ -106,12 +119,14 @@ async def derive_for_read_batch(db: AsyncSession, items: List[Dict[str, Any]], d
     bonds: Dict[str, Dict[str, Any]] = {}
     enfs: Dict[str, Dict[str, Any]] = {}
     lsts: Dict[str, Dict[str, Any]] = {}
+    orgs: Dict[str, Dict[str, Any]] = {}
     failed = False
     if wanted:
         try:
             bonds = await _rb.card_states(db, wanted)
             enfs = await _ep.card_states(db, wanted)
             lsts = await _lp.card_states(db, wanted)
+            orgs = await _om.card_states(db, wanted)
         except Exception as e:  # noqa: BLE001
             failed = True
             logger.warning("[HOMEEXT] a page of %d native cards: the home extensions could not be read (%s); served without them",
@@ -119,7 +134,7 @@ async def derive_for_read_batch(db: AsyncSession, items: List[Dict[str, Any]], d
     for i in idxs:
         did = None if failed else dids[i]
         items[i]["card_data"] = _derived(items[i]["card_data"], did, bonds.get(did or ""), enfs.get(did or ""),
-                                         lsts.get(did or ""))
+                                         lsts.get(did or ""), orgs.get(did or ""))
 
 
 __all__ = ["HOME_EXTENSION_URIS", "is_native", "strip_home_extensions", "derive_for_read", "derive_for_read_batch"]

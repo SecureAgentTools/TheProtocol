@@ -1,0 +1,83 @@
+# TheProtocol Proxy — the QPU recipe (V0660 (c))
+#
+# A quantum backend's agent identity: OpenQASM 3 arrives as an event, the circuit runs, the shots are
+# metered as they run, and each finished job is reported with its counts and the metering claim.
+#
+# Asynchronous on purpose. A real QPU queues, so there is no "circuit in, counts out" call here: a sink
+# submits, a source reads what finished, and an action reports it. A job id is the stable record id, so
+# the core's exactly-once keys cover the whole path and a replayed event never re-runs paid work.
+#
+# Simulators only on our side (V0660's ground rules). The cloud adapters below are stubs that refuse to
+# run; a provider with its own account points `kind` at its own Backend class instead.
+#
+#   pip install "theprotocol-sdk[proxy-quantum]"
+#   tp-proxy validate proxy.quantum.example.yaml
+#   tp-proxy quantum-card proxy.quantum.example.yaml \
+#       --receipt-schema-version 1.0 --receipt-signing-algorithm Ed25519
+#   tp-proxy run proxy.quantum.example.yaml --dry-run
+#
+version: 1
+name: qpu-proxy
+registry: https://registry.theprotocol.cloud
+identity:
+  agent_did: did:theprotocol:eu.theprotocol.cloud:00000000-0000-0000-0000-000000000000
+  client_id: file:.env.secret#CLIENT_ID
+  client_secret: file:.env.secret#CLIENT_SECRET
+state: /data/qpu-proxy/state.db
+
+sources:
+  # what finished, read from the store the sink writes. Carries counts, shots and digests — never the
+  # circuit, because the ledger keeps hashes and verdicts (the card extension's own data rule).
+  results:
+    type: quantum_results
+    config:
+      dir: /data/qpu-proxy/jobs
+      backend: &backend
+        kind: simulator          # or "module:Class" for your own Backend; "qpu" is a stub that refuses
+        id: sim-1
+        qubits: 16
+        max_shots: 20000
+        location: {jurisdiction: EU}
+        operator: {name: Your Lab}
+
+sinks:
+  # a job arrives and runs. The meter commits to the shots AS THEY RUN: a commitment first published at
+  # report time would prove nothing, because the logged units could be chosen to match the report.
+  qpu:
+    type: quantum_submit
+    config:
+      dir: /data/qpu-proxy/jobs
+      meter_dir: /data/qpu-proxy/meter
+      backend: *backend
+      program_field: program     # where in the event's data the OpenQASM 3 text sits
+      shots_field: shots
+      max_shots: 20000           # this recipe's own ceiling, refused above it
+      seed: 0                    # a seed makes a run reproducible, so a receipt over counts means something
+
+actions:
+  # the counts and the receipt facts, on the attestation rail, with the metering claim beside them. The
+  # claim's log_commitment reads NOT_COMPUTED until a prover (nargo and bb) is installed: the pre-image
+  # is carried so one can compute it, and nothing is written under the circuit's name that we did not.
+  report:
+    type: quantum_report
+    config:
+      meter_dir: /data/qpu-proxy/meter
+      attestation_type: quantum.job.receipt
+    limits: {per_minute: 120}
+
+mappings:
+  - name: job-report
+    version: 1
+    from: results
+    to: report
+    fields:
+      job_id: $.payload.job_id
+      shots: $.payload.shots
+      counts: $.payload.counts
+      backend_id: $.payload.backend_id
+      circuit_digest: $.payload.circuit_digest
+      finished_at: $.payload.finished_at
+
+retry: {first_s: 2, max_s: 300, attempts: 8}
+breaker: {refusals: 5, failures: 10, cooldown_s: 30}
+service: {listen: "127.0.0.1:9109"}

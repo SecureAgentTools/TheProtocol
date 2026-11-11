@@ -13,6 +13,8 @@ import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import type { Organization, Team, OrganizationMember } from '@/services/api/organizationService'
 import { organizationService } from '@/services/api/organizationService'
 import { exchangeService } from '@/services/api/exchangeService'
+import { escapeHtml } from '@/utils/escapeHtml'
+import { leaveBody, organizationLeft, type LeftOrganization } from '@/services/orgMove'
 
 import CreateOrganizationModal from '@/components/organizations/CreateOrganizationModal.vue'
 import EditOrganizationModal from '@/components/organizations/EditOrganizationModal.vue'
@@ -25,6 +27,9 @@ import ChangeMemberRoleModal from '@/components/organizations/ChangeMemberRoleMo
 import AgentAuthorityPanel from '@/components/organizations/AgentAuthorityPanel.vue'
 import ConfirmActionModal from '@/components/common/ConfirmActionModal.vue'
 import OrgPolicySettings from '@/components/organizations/OrgPolicySettings.vue'
+import OrgPublicFace from '@/components/organizations/OrgPublicFace.vue'
+import OrgMarkWhy from '@/components/organizations/OrgMarkWhy.vue'
+import OrgAgentRequests from '@/components/organizations/OrgAgentRequests.vue'
 import OrgOwnershipCard from '@/components/organizations/OrgOwnershipCard.vue'
 import OrgRoomCard from '@/components/organizations/OrgRoomCard.vue'
 import OrgRoomModeration from '@/components/organizations/OrgRoomModeration.vue'
@@ -39,6 +44,8 @@ const { t, tp } = useI18n()
 
 // ── Stores ────────────────────────────────────────────────────────────────────
 const router = useRouter()
+// V0657 (b): ?org=<id> read off the router (its tests mock the router, not useRoute)
+const routeOrg = () => String((router as any)?.currentRoute?.value?.query?.org || '')
 const orgStore = useOrganizationStore()
 const authStore = useAuthStore()
 const agentStore = useAgentStore()
@@ -159,15 +166,57 @@ async function fetchOrgAgents() {
   finally { if (load.last()) orgAgentsLoading.value = false }
 }
 
-async function assignAgent(agentDid: string) {
+// V0658 (s) (the maintainer's report, room seq 2150): an agent belongs to one organization, so assigning one that is in
+// another takes it out of that one. The registry refuses that move unless the request names the organization it
+// leaves; the refusal names it, and the tab asks before it sends the assign that does.
+const moveAsk = ref<{ did: string; name: string; from: LeftOrganization } | null>(null)
+const moveBusy = ref(false)
+const moveMessage = computed(() => {
+  const ask = moveAsk.value
+  if (!ask) return ''
+  // the modal renders this as HTML: every name is escaped, only the markup around them is ours
+  return tp('organizationDashboardView.agents.moveBody',
+    '{agent} is in the organization {from}. An agent belongs to one organization: assigning it to {to} takes it out of that one.',
+    { agent: escapeHtml(ask.name),
+      from: `<strong data-testid="org-move-from">${escapeHtml(ask.from.name)}</strong>`,
+      to: `<strong>${escapeHtml(org.value?.name || '')}</strong>` })
+})
+
+async function assignAgent(agentDid: string, leaving?: LeftOrganization) {
   if (!selectedOrgId.value) return
   try {
     const { apiClient } = await import('@/services/api/client')
-    await apiClient.post(`/organizations/${selectedOrgId.value}/agents/${agentDid}/assign`)
-    uiStore.showSuccess('Agent Assigned', `${agentDid.slice(0, 24)}... assigned to organization`)
+    const url = `/organizations/${selectedOrgId.value}/agents/${agentDid}/assign`
+    // a 409 is an answer this tab handles (the move question, or its own notice for any other refusal), so the client
+    // raises no global error toast over the question
+    await apiClient.post(url, leaving ? leaveBody(leaving) : undefined, { expectedStatuses: [409] })
+    moveAsk.value = null
+    uiStore.showSuccess('Agent Assigned', leaving
+      ? tp('organizationDashboardView.agents.movedBody', '{agent} moved out of {from} and assigned to this organization',
+        { agent: `${agentDid.slice(0, 24)}...`, from: leaving.name })
+      : `${agentDid.slice(0, 24)}... assigned to organization`)
     await fetchOrgAgents()
   } catch (e: any) {
+    // a move out of another organization is a question, asked again naming the organization the agent is in now
+    const from = organizationLeft(e)
+    if (from) {
+      const mine = myAgents.value.find((a: any) => (a.did || a.agent_did) === agentDid)
+      moveAsk.value = { did: agentDid, name: mine?.name || agentDid, from }
+      return
+    }
+    moveAsk.value = null
     uiStore.showError('Assignment Failed', e?.response?.data?.detail || 'Could not assign agent')
+  }
+}
+
+async function confirmMove() {
+  const ask = moveAsk.value
+  if (!ask || moveBusy.value) return
+  moveBusy.value = true
+  try {
+    await assignAgent(ask.did, ask.from)
+  } finally {
+    moveBusy.value = false
   }
 }
 
@@ -184,6 +233,25 @@ async function unassignAgent(agentDid: string) {
 }
 
 // Agents that can be assigned (owned by me, not already in this org)
+// V0657 (b), item 2: "show my org" on an agent the viewer created
+const myDeveloperId = computed(() => (authStore.user as any)?.id ?? null)
+const markBusy = ref('')
+async function setMark(agent: any, show: boolean) {
+  if (!selectedOrgId.value) return
+  markBusy.value = agent.did
+  try {
+    const out = await organizationService.setAgentMark(selectedOrgId.value, agent.did, show)
+    agent.show_org = out.show_org
+    agent.org_mark_public = out.org_mark_public
+  } catch (e: any) {
+    uiStore.showError(t('organizationDashboardView.agents.markFailed', 'Not changed'),
+      e?.response?.data?.detail || e?.message || '')
+    await fetchOrgAgents()
+  } finally {
+    markBusy.value = ''
+  }
+}
+
 const assignableAgents = computed(() => {
   const orgDids = new Set(orgAgents.value.map((a: any) => a.did))
   return myAgents.value.filter(a => !orgDids.has(a.did || a.agent_did))
@@ -906,7 +974,12 @@ onMounted(async () => {
   }
   try {
     await orgStore.fetchOrganizations()
-    if (orgStore.currentOrganization) {
+    // V0657 (b): #/organization?org=<id> (the chat header's link) opens that organization, when it is one of mine
+    const asked = routeOrg()
+    if (asked && orgStore.organizations.some((o: any) => o.id === asked)) {
+      selectedOrgId.value = asked
+      await orgStore.selectOrganization(asked)
+    } else if (orgStore.currentOrganization) {
       selectedOrgId.value = orgStore.currentOrganization.id
     } else if (orgStore.organizations.length > 0) {
       selectedOrgId.value = orgStore.organizations[0].id
@@ -925,6 +998,15 @@ onMounted(async () => {
   if (selectedOrgId.value) fetchOrgAgents()
 })
 
+// V0657 (b): the same link followed while this view is already open (vue-router reuses the component)
+watch(routeOrg, async (v) => {
+  const asked = String(v || '')
+  if (asked && asked !== selectedOrgId.value && orgStore.organizations.some((o: any) => o.id === asked)) {
+    selectedOrgId.value = asked
+    await handleOrgSwitch()
+  }
+})
+
 // Sync settings form when org changes
 watch(org, (val) => {
   if (val) {
@@ -935,6 +1017,37 @@ watch(org, (val) => {
     }
   }
 }, { immediate: true })
+
+// V0658 (r): the organization's public face (its listing, its hosted logo, its old logo address) after a change made on
+// this page: the notice's controls, the logo panel, the policy form. selectOrganization reuses the list's cached row, so
+// a new logo or listing never showed; the row is updated IN PLACE, because a new object resets the details form (the
+// watcher above) and its unsaved edits. The policy form is told the listing (its `listed` prop): re-mounting it to read
+// its switch again threw away its own unsaved edits.
+function patchOrgFace(id: string, patch: Partial<Organization>) {
+  const rows = new Set<Organization>()
+  if (orgStore.currentOrganization?.id === id) rows.add(orgStore.currentOrganization)
+  for (const o of orgStore.organizations) if (o.id === id) rows.add(o)
+  for (const row of rows) Object.assign(row, patch)
+}
+async function refreshOrgFace() {
+  const id = org.value?.id
+  if (!id) return
+  try {
+    const fresh = await organizationService.getOrganization(id)
+    patchOrgFace(id, {
+      listed: !!fresh.listed, logo: fresh.logo ?? null, logo_url: fresh.logo_url ?? null,
+      ...(fresh.settings ? { settings: fresh.settings } : {}),
+    })
+  } catch {
+    // the face keeps what the change itself answered; the next read of the organization corrects it
+  }
+}
+async function onMarkChanged(patch: { listed?: boolean; logo?: string }) {
+  const id = org.value?.id
+  if (!id) return
+  patchOrgFace(id, patch)
+  await refreshOrgFace()
+}
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 async function handleOrgSwitch() {
@@ -1211,6 +1324,12 @@ async function executeDeleteOrg() {
               </button>
             </div>
           </div>
+
+          <!-- V0658 (r): to the owner and admins, why the organization's mark does not show, each reason with its control.
+               On the settings tab it stands in the settings instead (never two on one screen); a member sees nothing. -->
+          <OrgMarkWhy v-if="orgStore.canManageOrganization && activeTab !== 'settings'" :org-id="org.id"
+                      :listed="!!org.listed" :logo="org.logo || null" :logo-url="org.logo_url || null"
+                      :can-fix="orgStore.canManageOrganization" @changed="onMarkChanged" />
 
           <!-- Capacity Meters -->
           <div class="capacity-row">
@@ -1585,9 +1704,25 @@ async function executeDeleteOrg() {
                       ? t('organizationDashboardView.agents.authorityLive', 'Holds this org\'s authority')
                       : t('organizationDashboardView.agents.authorityRevoked', 'Org authority revoked') }}
                 </div>
+                <!-- V0657 (b), item 2: "show my org", set by the agent's creator (or the agent itself) -->
+                <label v-if="agent.creator_developer_id === myDeveloperId" class="ag-mark" data-testid="org-agent-mark"
+                       @click.stop>
+                  <input type="checkbox" :checked="agent.show_org !== false" :disabled="markBusy === agent.did"
+                         @change="setMark(agent, ($event.target as HTMLInputElement).checked)" />
+                  <span>{{ agent.show_org === false
+                    ? t('organizationDashboardView.agents.markHidden', 'Its card does not name the organization')
+                    : agent.org_mark_public
+                      ? t('organizationDashboardView.agents.markShown', 'Its card shows the organization')
+                      : t('organizationDashboardView.agents.markWaiting', 'Its card will show the organization once it is listed') }}</span>
+                </label>
                 <div class="agent-card-cta">Open CI/CD &rsaquo;</div>
               </div>
             </div>
+
+            <!-- V0657 (b), polish 9: agents that ask to join, and agents their creators propose -->
+            <OrgAgentRequests v-if="selectedOrgId" :key="'oar-' + selectedOrgId" :org-id="selectedOrgId"
+                              :my-agents="assignableAgents.map((a: any) => ({ did: a.did || a.agent_did, name: a.name }))"
+                              @joined="fetchOrgAgents()" />
 
             <!-- Assign agents section -->
             <div v-if="assignableAgents.length > 0 && (myRole === 'owner' || myRole === 'admin')" style="margin-top:10px;">
@@ -1624,8 +1759,10 @@ async function executeDeleteOrg() {
             <div class="tab-header">
               <h2 class="tab-title">{{ t('organizationDashboardView.tabs.authority', 'Agent Authority') }}</h2>
             </div>
+            <!-- V0658 (r): for the roles its tab is offered to. The tab body is v-show, so it mounted for everyone and read
+                 the admin-only GET /organizations/{id}/agents/authority on every member's visit (a 403 and a console error) -->
             <AgentAuthorityPanel
-              v-if="selectedOrgId && org"
+              v-if="selectedOrgId && org && (myRole === 'owner' || myRole === 'admin')"
               :key="selectedOrgId"
               :org-id="selectedOrgId"
               :org-slug="org.slug || ''"
@@ -2117,6 +2254,14 @@ async function executeDeleteOrg() {
             </div>
 
             <template v-else>
+              <!-- V0658 (r): the page's notice, here on this tab; the logo panel below carries the upload -->
+              <OrgMarkWhy v-if="org && activeTab === 'settings'" :org-id="org.id" :listed="!!org.listed"
+                          :logo="org.logo || null" :logo-url="org.logo_url || null"
+                          :can-fix="orgStore.canManageOrganization" :upload-here="false" @changed="onMarkChanged" />
+              <!-- V0657 (b), items 2 and 3: what the organization shows in public, and its hosted logo. V0658 (r): a change
+                   re-reads the organization (selectOrganization reused the cached row: a new logo never showed). -->
+              <OrgPublicFace v-if="org" :org-id="org.id" :logo="(org as any).logo || null" :listed="!!(org as any).listed"
+                             :can-edit="orgStore.canManageOrganization" @changed="refreshOrgFace()" />
               <!-- Inline Edit Form -->
               <div class="settings-section">
                 <h3 class="settings-section-title">{{ t('organizationDashboardView.settings.detailsTitle') }}</h3>
@@ -2155,7 +2300,10 @@ async function executeDeleteOrg() {
               </div>
 
               <!-- §ORGPOLICY — tighten-only organization policy over the registry -->
-              <OrgPolicySettings :org-id="org.id" :can-edit="orgStore.canManageOrganization" />
+              <!-- V0658 (r): its listing switch follows a listing made by the notice above (its unsaved edits stay), and
+                   a save re-reads the organization's face -->
+              <OrgPolicySettings :org-id="org.id" :can-edit="orgStore.canManageOrganization" :listed="!!org.listed"
+                                 @saved="refreshOrgFace()" />
 
               <!-- E1a — ownership handshake (offer / accept / withdraw) -->
               <OrgOwnershipCard :org-id="org.id" @ownership-changed="orgStore.selectOrganization(org.id)" />
@@ -2276,6 +2424,19 @@ async function executeDeleteOrg() {
       :busy="deleteTeamBusy"
       @close="showDeleteTeamModal = false; teamToDelete = null"
       @confirm="confirmDeleteTeam"
+    />
+
+    <!-- V0658 (s): moving an agent out of the organization it is in asks first, naming that organization -->
+    <ConfirmActionModal
+      :show="!!moveAsk"
+      :title="t('organizationDashboardView.agents.moveTitle', 'Move the agent to this organization?')"
+      :message="moveMessage"
+      tone="warn"
+      :confirm-text="t('organizationDashboardView.agents.moveConfirm', 'Move it')"
+      :busy-text="t('organizationDashboardView.agents.moveBusy', 'Moving…')"
+      :busy="moveBusy"
+      @close="moveAsk = null"
+      @confirm="confirmMove"
     />
 
     <ConfirmActionModal
@@ -3067,6 +3228,8 @@ async function executeDeleteOrg() {
    Quiet by construction: these sit under the DID on a card whose job is CI/CD, so they
    read as annotations, not as an alarm. (.ost-hosting shipped with markup and NO rule
    anywhere and rendered full-bleed body-size — every new class here is scanned.) */
+.ag-mark { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 10px; opacity: .85; cursor: pointer; }
+.ag-mark input { margin: 0; }
 .ag-orphan {
   display: flex; align-items: center; gap: 5px;
   margin-top: 6px; font-size: 9px; line-height: 1.35;

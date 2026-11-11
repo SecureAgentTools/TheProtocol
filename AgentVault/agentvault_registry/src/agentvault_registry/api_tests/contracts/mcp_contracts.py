@@ -990,6 +990,33 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
     "theprotocol_getPublicEventStoreStats": McpContract(tier="1"),
     "theprotocol_getPublicRegistryConfig": McpContract(tier="1"),
     "theprotocol_getRegistryCard": McpContract(tier="1"),
+    # ── V0660 (a): the quantum workload extension's three reads (mcp/tools_quantum.py) ──────────────────────────────
+    # Listed only where QUANTUM_WORKLOADS_MODE is shadow or on (mcp/tool_switches.py), and the walker reads the listed
+    # catalog, so it meets them only there. Called by name under off, each answers quantum_workloads_off (the two
+    # routes' 403; the search tool's own sentence, because discovery under off does not read the quantum filters).
+    "theprotocol_getQuantumWorkloadSchema": McpContract(
+        tier="1",
+        expect_keys=["uri", "version", "spec", "schema_sha256", "mode", "placement", "schema"],
+        notes="V0660 (a): the extension's URI, version, spec, JSON Schema and digest, and the frame's mode.",
+    ),
+    "theprotocol_discoverQuantumAgents": McpContract(
+        tier="1",
+        arguments={"limit": 3},
+        expect_keys=["agents", "total", "has_more", "facets", "filters", "limit", "offset"],
+        expect_types={"agents": list},
+        notes="V0660 (a): discovery with quantum_only; the answer exists only where the registry read the filters "
+              "(applied_filters.quantum_only), so a 200 here says the filters ran.",
+    ),
+    "theprotocol_getQuantumWorkload": McpContract(
+        tier="1",
+        requires_fixtures=["sentinel_did"],
+        arguments={"did": "${sentinel_did}"},
+        expect_status="error_4xx",
+        expect_error_message_contains=["no_quantum_workload", "agent_card_not_found"],
+        notes="V0660 (a): the sentinel's card states no quantum workload: the route's own 404 names it "
+              "(routers/quantum_agent_cards.py). The success path is the read route's test "
+              "(tests/test_quantum_agent_card_v0660.py), on a card that states one.",
+    ),
     "theprotocol_getRegistryFederationProposals": McpContract(
         tier="2",   # re-tiered to agent JWT in Sprint 8 per wrapper docstring
         requires_fixtures=["sentinel_jwt"],
@@ -3409,6 +3436,17 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         notes="EVTYPES2: probed on sbx-alpha; see the section header.",
         success_path_unmeasured="no run makes a settlement: one exists only for a ruled dispute against another registry's agent (V0641: NOT_DRIVEN)",
     ),
+    # V0660 (k), Guild order gwo_9230be3d156cc3ce58699aaf: closing a settlement no peer holds; its refusal is pinned
+    # (an id that names nothing, answered before anything is written), its success path NOT_DRIVEN like its siblings'
+    "theprotocol_closeDisputeSettlement": McpContract(
+        tier="3",
+        arguments={"settlement_id": "00000000-0000-4000-8000-000000000000",
+                   "reason": "federation suite probe: a settlement that does not exist"},
+        expect_status="error_4xx",
+        expect_error_message_contains=["Settlement not found"],
+        notes="V0660 (k): the refusal of an id that names nothing, as approve and reject.",
+        success_path_unmeasured="no run makes a settlement: one exists only for a ruled dispute against another registry's agent (V0660 (k): NOT_DRIVEN)",
+    ),
     "theprotocol_relayAction": McpContract(
         tier="3",
         # §MCPTEST30 V0538: Tier 3 (the route authenticates the agent's developer). This pinned "relayAction returned
@@ -3519,6 +3557,16 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         expect_status="error_4xx",
         expect_error_message_contains=["Not authorized to resolve disputes", "lacks required permission"],
         success_path_unmeasured="no caller resolves a TEG dispute through the registry: the route refuses every caller",
+    ),
+    "theprotocol_withdrawTegDispute": McpContract(
+        tier="2",
+        # V0658 (c), D6-825: a dispute nobody filed, so the call moves nothing; the success path is the dispute
+        # lifecycle's (earned_agent_public.lifecycle_earned_disputes: the run's own TEG dispute, withdrawn by its
+        # claimant, then read back WITHDRAWN).
+        arguments={"dispute_log_id": "00000000-0000-4000-8000-000000000000", "agent_jwt": "${sentinel_jwt}"},
+        requires_fixtures=["sentinel_jwt"],
+        expect_status="error_4xx",
+        expect_error_message_contains=["Dispute not found"],
     ),
     "theprotocol_restoreBundle": McpContract(
         tier="3",
@@ -4118,18 +4166,32 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
     "theprotocol_guildPostOrder": McpContract(
         tier="2",
         skip_reason=(
-            "EVTYPES3: takes title+bounty and names NO entity, so there is nothing "
-            "non-existent to aim at. READ FROM SOURCE rather than probed: "
-            "routers/guild.py::post_order escrows the bounty (guild_escrow."
-            "escrow_deposit, poster -> treasury) and INSERTs the work order before "
-            "any lookup that could refuse; its only refusal is 402 when the poster "
-            "is broke, which is a FIXTURE property, not the tool's behaviour. "
-            "Pinning that refusal would make the suite post a real bounty-bearing "
-            "order on any node with a funded agent - the tegLockDirect class. "
-            "Needs a deliberate success contract with a funded fixture and a "
+            "EVTYPES3, corrected by V0659 (n): READ FROM SOURCE rather than probed. "
+            "routers/guild.py::post_order refuses two fields with 422 before any "
+            "escrow: an intended_worker_did that is no agent DID or names the poster "
+            "(V0650 (f)) and a room_id its poster's agent cannot post in (V0652 (aa)). "
+            "Past those it escrows the bounty (guild_escrow.escrow_deposit, poster -> "
+            "treasury) and INSERTs the work order; its only refusal left is 402 when "
+            "the poster is broke, which is a FIXTURE property, not the tool's "
+            "behaviour. The suite's tier-2 agent is the sentinel, which phase 3 funds, "
+            "so a refusal contract on room_id would post a real bounty-bearing order "
+            "the moment that refusal stopped holding - the tegLockDirect class. Needs "
+            "a deliberate success contract with a funded fixture and a "
             "side_effect_assert."
         ),
         notes="EVTYPES3: destructive-with-no-target; source-read, not probed.",
+    ),
+    # V0659 (n) gwo_54d9e9b5: the room an order posted without one shows in. The tool is exactly its route, which looks
+    # the order up first: an order id that names nothing answers 404 "Order not found" to any agent, before the poster
+    # check and before any write (measured through the real guild router, tests/test_guild_room_cards_v0659.py).
+    "theprotocol_guildSetOrderRoom": McpContract(
+        tier="2",
+        arguments={"order_id": "gwo_000000000000000000000000", "room_id": "00000000-0000-4000-8000-000000000000",
+                   "agent_jwt": "${sentinel_jwt}"},
+        expect_status="error_4xx",
+        expect_error_message_contains=["Order not found"],
+        success_path_unmeasured="naming a room needs an order of the caller's own posted without one (phase 3's are) "
+                                "and a room its agent takes part in and may post in, which no tester run has",
     ),
 
     # ── §EVTYPES4 2026-09-06 — the last 14 `autogen-skip` tools ─────────────
@@ -4996,6 +5058,15 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         expect_error_message_contains=["unknown policy key 'phase6'"],
         override_coverage_fan=True,
         notes="V0550 pin (rule 2): a deliberately invalid value, refused by validation; refused on the frame and both operators in round 15.",
+    ),
+    "theprotocol_updateSlashOrder": McpContract(
+        tier="admin",
+        arguments={"order": [{"source": "cascade"}], "reason": "phase-6 path test"},
+        expect_status="error_4xx",
+        expect_error_message_contains=["slash_waterfall must keep at least one of bond, stake or liquid switched on"],
+        override_coverage_fan=True,
+        notes="V0658 (k): a deliberately invalid order (the cascade alone, none of the agent's own steps), refused by the "
+              "policy validator before anything is written.",
     ),
     "theprotocol_updateSupportTicketStatus": McpContract(
         tier="admin",

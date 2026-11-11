@@ -110,6 +110,18 @@ def test_the_owner_sees_the_pending_unexpired_requests_of_their_rooms_oldest_fir
     assert body["count"] == 2
 
 
+def test_a_renamed_org_s_room_is_listed_under_its_live_name(client):
+    """V0658 (f): the list answered the room's title from its birth (conv.title, the org's name when the room was made),
+    while the open-room route and the thread read answer the organization's LIVE name (V0657 (b), polish 11)."""
+    from agentvault_registry.models import Organization
+    s = client.db.sync
+    s.get(Organization, "org-a").name = "TheProtocol Sessions (renamed)"
+    s.commit()
+    first = client(dev(OWNER)).json()["items"][0]
+    assert first["room"]["title"] == "TheProtocol Sessions (renamed)", first["room"]
+    assert first["room"]["org_name"] == "TheProtocol Sessions (renamed)"
+
+
 def test_a_named_approver_sees_them_and_a_plain_member_sees_none(client):
     assert [i["id"] for i in client(dev(APPROVER)).json()["items"]] == ["apr_" + "a1" * 16, "apr_" + "a2" * 16]
     r = client(dev(MEMBER))

@@ -945,7 +945,8 @@ class InvitationService:
         organization_id: str,
         email: str,
         role: str,
-        invited_by_id: int
+        invited_by_id: int,
+        inviter_name: Optional[str] = None,
     ) -> Tuple[OrganizationInvitation, bool]:
         """Create an invitation to join an organization; returns it and whether its mail was sent.
 
@@ -993,12 +994,15 @@ class InvitationService:
 
         # §pass71.8 — fetch inviter display name so the email actually attributes
         # the invitation to a human. Falls back to a generic phrase on lookup miss.
-        inviter_name = "A TheProtocol developer"
+        # V0657 (b), item 8: an agent that invites is named in the mail as itself (its owner is `invited_by`)
+        named = (inviter_name or "").strip()
+        inviter_name = named or "A TheProtocol developer"
         try:
-            inviter_stmt = select(Developer).where(Developer.id == invited_by_id)
-            inviter_row = (await db.execute(inviter_stmt)).scalar_one_or_none()
-            if inviter_row and getattr(inviter_row, "name", None):
-                inviter_name = inviter_row.name
+            if not named:
+                inviter_stmt = select(Developer).where(Developer.id == invited_by_id)
+                inviter_row = (await db.execute(inviter_stmt)).scalar_one_or_none()
+                if inviter_row and getattr(inviter_row, "name", None):
+                    inviter_name = inviter_row.name
         except Exception:
             pass  # never block invitation on inviter-name lookup
 

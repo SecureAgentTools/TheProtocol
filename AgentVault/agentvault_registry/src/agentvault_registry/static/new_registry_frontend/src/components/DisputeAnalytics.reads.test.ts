@@ -31,7 +31,7 @@ describe('the Disputes analytics tab draws what its reads answered', () => {
     expect(text, 'said "none" about a list that never answered').not.toContain('No disputes on record')
     expect(text).not.toContain('No disputes in the last 14 days')
     expect(text).not.toMatch(/↓ 2h|\+5\.2%/)
-    expect(w.findAll('.da-ruling-stat__value').map(v => v.text())).toEqual(['—', '—', '—', '—'])
+    expect(w.findAll('.da-ruling-stat__value').map(v => v.text())).toEqual(['—', '—', '—'])   // open, resolved, dismissed (V0658 (f): no investigating)
     expect(w.find('[data-testid="da-read-failed"]').exists()).toBe(true)
   })
 
@@ -45,7 +45,7 @@ describe('the Disputes analytics tab draws what its reads answered', () => {
     expect(w.text(), 'drew a resolution trend nothing reads').not.toContain('+5.2%')
     expect(w.text(), 'drew a time trend nothing reads').not.toContain('↓ 2h')
     expect(w.find('[data-testid="da-resolution-rate"]').text()).toBe('66.7%')
-    expect(w.findAll('.da-ruling-stat__value').map(v => v.text())).toEqual(['1', '2', '0', '0'])
+    expect(w.findAll('.da-ruling-stat__value').map(v => v.text())).toEqual(['1', '2', '0'])
     expect(w.find('[data-read-failed]').exists()).toBe(false)
   })
 

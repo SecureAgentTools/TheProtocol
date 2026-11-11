@@ -29,7 +29,7 @@ services:
     logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
 
   directory:
-    image: theprotocol-directory:sovkit1
+    image: theprotocol-directory:board5
     container_name: directory-sandbox
     restart: unless-stopped
     env_file: .env.directory.sandbox

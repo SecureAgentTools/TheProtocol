@@ -14,7 +14,7 @@
 // Shows for org admins while setup is incomplete; dismissible per org; hides
 // itself once every required step is done.
 // ─────────────────────────────────────────────────────────────────────────────
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import Icon from '@/components/Icon.vue'
 import { useI18n } from '@/composables/useI18n'
 import { useUIStore } from '@/stores/ui'
@@ -136,8 +136,10 @@ function dismiss() {
   try { localStorage.setItem(DISMISS_KEY(), '1') } catch { /* view-state only */ }
 }
 
-onMounted(load)
-watch(() => props.orgId, load)
+// V0658 (r): it reads for the people it shows to. It read on every mount, a member's too, and the authority grants read
+// (GET /organizations/{id}/agents/authority) is admin-only: a 403 and a console error on every member's visit. The role
+// is read after the page mounts, so it reads when the page learns the person may manage, and again for another organization.
+watch([() => props.orgId, () => props.canManage], ([id, can]) => { if (id && can) load() }, { immediate: true })
 defineExpose({ load })
 </script>
 

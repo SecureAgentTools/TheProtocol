@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from agentvault_registry import models
 from agentvault_registry.database import get_db
 from agentvault_registry.routers import organizations as orgs
-from agentvault_registry.security import get_current_developer
+from agentvault_registry.security import get_current_actor_for_read_or_key, get_current_developer
 from tests._sqlite_db import sqlite_db
 
 OWNER, ADMIN, MEMBER = 1, 2, 3
@@ -60,6 +60,9 @@ def put():
 
     app.dependency_overrides[get_db] = _db
     app.dependency_overrides[get_current_developer] = lambda: db.devs[caller["id"]]
+    # V0657 (b), item 8: the organization's management routes take a person or an agent (the person here)
+    app.dependency_overrides[get_current_actor_for_read_or_key] = lambda: {"kind": "developer",
+                                                                            "developer": db.devs[caller["id"]]}
 
     async def call(body, path=f"/api/v1/organizations/{ORG}", as_dev=ADMIN):
         caller["id"] = as_dev

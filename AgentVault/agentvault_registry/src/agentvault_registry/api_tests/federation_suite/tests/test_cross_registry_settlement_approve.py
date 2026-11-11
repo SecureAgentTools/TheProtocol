@@ -25,7 +25,7 @@ from agentvault_registry.api_tests.federation_suite.decorator import federation_
 from agentvault_registry.api_tests.federation_suite.rig import AssertionResult, FederationTestRig, PreconditionUnmet
 from agentvault_registry.api_tests.federation_suite.tests.test_cross_registry_settlement_reject import (
     _A, _ADMIN, _B, _MIRROR_SEC, _PENDING, _REQUIRES, _SETTLE_SEC, _agent, _num, _settlements,
-    amount_over_every_threshold, mirrored_on, ours, settlement_of,
+    amount_over_every_threshold, mirrored_on, ours, settlement_of, undelivered,
 )
 from agentvault_registry.api_tests.federation_suite.tests.test_twoagent_contract_xframe import (
     _balance, _call, _run, _until,
@@ -85,6 +85,9 @@ async def test_xframe_settlement_approve(rig: FederationTestRig) -> AssertionRes
         async def _file():
             r, w = await _call(rig, _A, "submitDispute", {
                 "agent_jwt": complainant["jwt"], "defendant_did": defendant["did"],
+                # V0657 (a) item 2: the compensation is the complainant's explicit claim, made when filing; an amount in
+                # evidence is no longer read (the pair proof of 2026-11-07, room seq 1929)
+                "amount_claimed": str(amount),
                 "description": "federation suite: a cross-frame settlement the home approves (a pair only)"})
             if w and "not known to this registry" in w:
                 return None
@@ -103,8 +106,11 @@ async def test_xframe_settlement_approve(rig: FederationTestRig) -> AssertionRes
         ruled, why = await _call(rig, _ADMIN[_A], "updateDisputeRuling",
                                  {"dispute_id": dispute_id, "ruling": "IN_FAVOR_OF_COMPLAINANT"})
         comp = (ruled or {}).get("compensation") if isinstance(ruled, dict) else None
+        off = None if why else undelivered(comp)    # V0660 (k): the ruling frame sent nothing: NOT MEASURED
+        if off:
+            raise PreconditionUnmet(off)
         sent = isinstance(comp, dict) and comp.get("settlement_status") == "pending_remote_slash"
-        if not legs.check("the_origin_rules_for_the_complainant", not why and sent, {"refused": why}):
+        if not legs.check("the_origin_rules_for_the_complainant", not why and sent, {"refused": why, "compensation": comp}):
             return
         sid = str(comp.get("settlement_id") or "")
         own, _w = await _call(rig, _A, "getFederationDisputeSettlement", {"settlement_id": sid})

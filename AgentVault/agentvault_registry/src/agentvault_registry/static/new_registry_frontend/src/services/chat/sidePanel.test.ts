@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { COLUMN_KEEP_PX, NARROW_PANE_PX, SIDE_GUTTER_PX, SIDE_PANEL_MIN_PX, SIDE_PANEL_PX, chatSurfaceFor, narrowPane,
-  saveSidePanelOpen, showSidePanel, sidePanelOpen } from './sidePanel'
+  boardFirstLine, saveSidePanelOpen, showSidePanel, sidePanelOpen } from './sidePanel'
 
 /**
  * V0652 (ad) (order gwo_e5e9ad061d6e5be9605a3067): when an organization room's side panel shows on the console's chat,
@@ -51,8 +51,24 @@ describe("the composer's narrow pane (V0652 (aj))", () => {
 describe("each section's fold, kept per person on this device", () => {
   beforeEach(() => { localStorage.clear() })
 
-  it('every section opens until its person folds it', () => {
-    expect(sidePanelOpen('developer:6')).toEqual({ approvals: true, board: true, live: true, present: true })
+  it('every section opens until its person folds it, except the board: it starts folded to its first line', () => {
+    expect(sidePanelOpen('developer:6')).toEqual({ approvals: true, board: false, live: true, present: true })
+  })
+
+  it('V0657 (h): the board opens on demand and stays open for that person', () => {
+    saveSidePanelOpen('developer:6', { approvals: true, board: true, live: true, present: true })
+    expect(sidePanelOpen('developer:6').board).toBe(true)
+    expect(sidePanelOpen('developer:7').board).toBe(false)
+    saveSidePanelOpen('developer:6', { approvals: true, board: false, live: true, present: true })
+    expect(sidePanelOpen('developer:6').board).toBe(false)
+  })
+
+  it('V0657 (h): a v1 state carries its other folds over, and its board (open by default there) starts folded once', () => {
+    localStorage.setItem('ourchat.side.v1.developer:6', JSON.stringify({ approvals: true, board: true, live: false, present: false }))
+    expect(sidePanelOpen('developer:6')).toEqual({ approvals: true, board: false, live: false, present: false })
+    saveSidePanelOpen('developer:6', { ...sidePanelOpen('developer:6'), board: true })
+    expect(localStorage.getItem('ourchat.side.v2.developer:6')).toContain('"board":true')
+    expect(sidePanelOpen('developer:6')).toEqual({ approvals: true, board: true, live: false, present: false })
   })
 
   it('a fold is kept and read back, for that person only', () => {
@@ -62,10 +78,19 @@ describe("each section's fold, kept per person on this device", () => {
     expect(sidePanelOpen('developer:7').present).toBe(true)
   })
 
-  it('a value nobody can read is no state: every section open', () => {
-    localStorage.setItem('ourchat.side.v1.developer:6', '{not json')
-    expect(sidePanelOpen('developer:6')).toEqual({ approvals: true, board: true, live: true, present: true })
+  it('a value nobody can read is no state: every section open, the board folded', () => {
+    localStorage.setItem('ourchat.side.v2.developer:6', '{not json')
+    expect(sidePanelOpen('developer:6')).toEqual({ approvals: true, board: false, live: true, present: true })
     localStorage.setItem('ourchat.side.v1.developer:6', '"a string"')
     expect(sidePanelOpen('developer:6').present).toBe(true)
+  })
+})
+
+describe("V0657 (h): a folded board's one line", () => {
+  it('is the first line with text, as plain text', () => {
+    expect(boardFirstLine('\n\n## **V0657**: (e) to (j), see [the plan](https://x)\n- more')).toBe('V0657: (e) to (j), see the plan')
+    expect(boardFirstLine('- `item` one')).toBe('item one')
+    expect(boardFirstLine('')).toBe('')
+    expect(boardFirstLine(null)).toBe('')
   })
 })

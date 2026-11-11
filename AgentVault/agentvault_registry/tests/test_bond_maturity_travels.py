@@ -194,6 +194,11 @@ def test_the_registry_names_itself_from_the_variable_that_is_actually_set(monkey
     pydantic Settings singleton read the environment at import, so this test drives the env vars
     the function itself reads and asserts the ORDER, which is the contract that matters.
     """
+    # The helper reads federation_sync's five-minute cache of the DB-resolved name FIRST; another test that ran an export
+    # in this process leaves it warm ("AgentVault Registry", the settings default), which is what the sharded whole suite
+    # met on 2026-11-08 (V0658, the parallel runs). This test is about the environment road, so it starts cold.
+    from agentvault_registry.routers import federation_sync as _fs
+    monkeypatch.setattr(_fs, "_registry_display_name", None, raising=False)
     monkeypatch.setenv("REGISTRY_NAME", "EU")
     monkeypatch.delenv("REGISTRY_FEDERATION_NAME", raising=False)
     assert rb.registry_display_name() == "EU"

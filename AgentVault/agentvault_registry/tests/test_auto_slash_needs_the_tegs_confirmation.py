@@ -115,6 +115,23 @@ def _wire(monkeypatch, teg):
 
 def _slash(monkeypatch, teg, *, balance="50"):
     posted, emitter = _wire(monkeypatch, teg)
+    # V0658 (k): the slash drains the registry's slash order (services/slash_order), each step's capacity read from the
+    # TEG: the TEG holds the defendant's `balance` liquid and nothing locked, no bond, the factory order
+    from agentvault_registry.services import reputation_bond as rb, slash_order as so
+
+    class _TegReads:
+        async def get_balances_admin(self, did):
+            return Decimal(balance), Decimal(0)
+
+    async def _no_bond(db, did):
+        return None
+
+    async def _factory_order(db):
+        return {}
+    monkeypatch.setattr(so, "get_teg_client", lambda: _TegReads())
+    monkeypatch.setattr(so, "get_event_emitter", lambda: StrictEmitter())   # each move's audit record, not read here
+    monkeypatch.setattr(rb, "load_bond", _no_bond)
+    monkeypatch.setattr(rb, "policy_json", _factory_order)
     defendant = types.SimpleNamespace(did=DEFENDANT, liquid_balance=Decimal(balance))
     # the origin's peer row, the registry presenting the request (spiffe://peer/service/registry): a slash request
     # names its own registry as the origin (routers/federation_disputes._bind_slash_request_to_caller, 2026-10-17)

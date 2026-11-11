@@ -1,0 +1,747 @@
+{
+  "_note": "V0660 (e): fixtures shaped exactly like V0660 (a)'s read route (routers/quantum_agent_cards.py, the schema's own example as params), the discover item's quantum facets and facets.quantum (services/quantum_agent_card.facets / facets_block), and V0660 (d)'s quantum_workloads block (services/quantum_workloads.quantum_workloads_block).",
+  "did": "did:theprotocol:9f2c6a1e-5b7d-4c3a-8e21-6d4f0b9a7c13",
+  "extension": {
+    "uri": "https://theprotocol.cloud/extensions/v1/quantum/workload",
+    "description": "Quantum workload extension 1.0: roles, backends with device facts, evidence and data terms.",
+    "required": false,
+    "params": {
+      "version": "1.0",
+      "roles": [
+        "provider",
+        "meter"
+      ],
+      "backends": [
+        {
+          "id": "statevector-32",
+          "name": "Statevector simulator",
+          "kind": "simulator",
+          "modality": "simulator",
+          "as_of": "2026-11-07T12:00:00Z",
+          "operator": {
+            "name": "Example Lab"
+          },
+          "location": {
+            "label": "Frankfurt, Germany",
+            "country": "DE",
+            "region": "eu-central",
+            "jurisdiction": "DE"
+          },
+          "qubits": {
+            "physical": 32
+          },
+          "connectivity": {
+            "topology": "all-to-all"
+          },
+          "native_gates": [
+            "cx",
+            "h",
+            "rz",
+            "sx",
+            "x"
+          ],
+          "formats": [
+            "openqasm3"
+          ],
+          "limits": {
+            "max_shots": 100000,
+            "max_depth": 10000,
+            "max_width": 32,
+            "mid_circuit_measurement": true,
+            "dynamic_circuits": true
+          },
+          "queue": {
+            "as_of": "2026-11-07T12:00:00Z",
+            "status": "online",
+            "estimated_wait_seconds": 0
+          },
+          "availability": {
+            "as_of": "2026-11-07T12:00:00Z",
+            "windows": [
+              {
+                "days": "everyday",
+                "start_utc": "00:00",
+                "end_utc": "23:59"
+              }
+            ]
+          }
+        },
+        {
+          "id": "heavy-hex-27-noisy",
+          "name": "27-qubit heavy-hex emulator",
+          "kind": "emulator",
+          "modality": "superconducting",
+          "as_of": "2026-11-07T12:00:00Z",
+          "operator": {
+            "name": "Example Lab"
+          },
+          "location": {
+            "label": "Frankfurt, Germany",
+            "country": "DE",
+            "jurisdiction": "DE"
+          },
+          "qubits": {
+            "physical": 27
+          },
+          "connectivity": {
+            "topology": "heavy-hex",
+            "coupling_map": {
+              "digest": "sha256:5173ee745091c28a0ab35005f6bf560c89f264bc63c0bed892832343712a6a82",
+              "url": "https://provider.example/coupling/heavy-hex-27.json",
+              "edges": 28
+            }
+          },
+          "native_gates": [
+            "ecr",
+            "id",
+            "rz",
+            "sx",
+            "x"
+          ],
+          "formats": [
+            "openqasm3",
+            "qir"
+          ],
+          "limits": {
+            "max_shots": 20000,
+            "max_width": 27,
+            "mid_circuit_measurement": true,
+            "dynamic_circuits": false
+          },
+          "calibration": {
+            "as_of": "2026-11-07T11:30:00Z",
+            "median_1q_error": 0.0003,
+            "median_2q_error": 0.008,
+            "median_readout_error": 0.015,
+            "median_t1_us": 180,
+            "median_t2_us": 120,
+            "snapshot": {
+              "digest": "sha256:9a7fc04e552546030645dfe143b9f9808ca35433e6dd8c803171d34578da9183",
+              "url": "https://provider.example/calibration/2026-11-07T1130Z.json",
+              "signing_algorithm": "Ed25519"
+            }
+          },
+          "queue": {
+            "as_of": "2026-11-07T12:00:00Z",
+            "status": "online",
+            "estimated_wait_seconds": 30,
+            "pending_tasks": 2
+          }
+        }
+      ],
+      "pricing": {
+        "model": "per_shot",
+        "unit": "shot",
+        "payment_extension": "https://theprotocol.cloud/extensions/v1/auth/a2a-payment"
+      },
+      "evidence": {
+        "receipt": {
+          "schema_version": "1.0",
+          "signing_algorithm": "Ed25519"
+        },
+        "acceptance_tests": [
+          {
+            "template": "answer-check/v1.0",
+            "rung": 1,
+            "method": "answer_check"
+          },
+          {
+            "template": "test-circuits/v1.0",
+            "rung": 2,
+            "method": "test_circuits",
+            "false_accept_rate": 0.01,
+            "false_reject_rate": 0.05
+          }
+        ],
+        "metering_circuit": "accurateResourceUsagePolicy/v2.0.0",
+        "verification_rungs": [
+          1,
+          2,
+          3
+        ],
+        "rung_3_basis": "signed_claims"
+      },
+      "data": {
+        "retention": {
+          "circuits_days": 0,
+          "results_days": 30
+        },
+        "residency": [
+          "DE"
+        ],
+        "export_control": {
+          "self_declared": true,
+          "note": "Simulators and an emulator only; no controlled hardware is offered."
+        },
+        "ledger_keeps": [
+          "hashes",
+          "verdicts"
+        ]
+      }
+    }
+  },
+  "cardData": {
+    "name": "Lattice Works",
+    "did": "did:theprotocol:9f2c6a1e-5b7d-4c3a-8e21-6d4f0b9a7c13",
+    "description": "Statevector and heavy-hex emulator runs with signed receipts.",
+    "url": "https://provider.example/a2a",
+    "extensions": [
+      {
+        "uri": "https://theprotocol.cloud/extensions/v1/auth/a2a-payment",
+        "params": {
+          "base_rate": "0.002",
+          "currency": "ECU",
+          "pricing_model": "per_request"
+        }
+      },
+      {
+        "uri": "https://theprotocol.cloud/extensions/v1/quantum/workload",
+        "description": "Quantum workload extension 1.0: roles, backends with device facts, evidence and data terms.",
+        "required": false,
+        "params": {
+          "version": "1.0",
+          "roles": [
+            "provider",
+            "meter"
+          ],
+          "backends": [
+            {
+              "id": "statevector-32",
+              "name": "Statevector simulator",
+              "kind": "simulator",
+              "modality": "simulator",
+              "as_of": "2026-11-07T12:00:00Z",
+              "operator": {
+                "name": "Example Lab"
+              },
+              "location": {
+                "label": "Frankfurt, Germany",
+                "country": "DE",
+                "region": "eu-central",
+                "jurisdiction": "DE"
+              },
+              "qubits": {
+                "physical": 32
+              },
+              "connectivity": {
+                "topology": "all-to-all"
+              },
+              "native_gates": [
+                "cx",
+                "h",
+                "rz",
+                "sx",
+                "x"
+              ],
+              "formats": [
+                "openqasm3"
+              ],
+              "limits": {
+                "max_shots": 100000,
+                "max_depth": 10000,
+                "max_width": 32,
+                "mid_circuit_measurement": true,
+                "dynamic_circuits": true
+              },
+              "queue": {
+                "as_of": "2026-11-07T12:00:00Z",
+                "status": "online",
+                "estimated_wait_seconds": 0
+              },
+              "availability": {
+                "as_of": "2026-11-07T12:00:00Z",
+                "windows": [
+                  {
+                    "days": "everyday",
+                    "start_utc": "00:00",
+                    "end_utc": "23:59"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "heavy-hex-27-noisy",
+              "name": "27-qubit heavy-hex emulator",
+              "kind": "emulator",
+              "modality": "superconducting",
+              "as_of": "2026-11-07T12:00:00Z",
+              "operator": {
+                "name": "Example Lab"
+              },
+              "location": {
+                "label": "Frankfurt, Germany",
+                "country": "DE",
+                "jurisdiction": "DE"
+              },
+              "qubits": {
+                "physical": 27
+              },
+              "connectivity": {
+                "topology": "heavy-hex",
+                "coupling_map": {
+                  "digest": "sha256:5173ee745091c28a0ab35005f6bf560c89f264bc63c0bed892832343712a6a82",
+                  "url": "https://provider.example/coupling/heavy-hex-27.json",
+                  "edges": 28
+                }
+              },
+              "native_gates": [
+                "ecr",
+                "id",
+                "rz",
+                "sx",
+                "x"
+              ],
+              "formats": [
+                "openqasm3",
+                "qir"
+              ],
+              "limits": {
+                "max_shots": 20000,
+                "max_width": 27,
+                "mid_circuit_measurement": true,
+                "dynamic_circuits": false
+              },
+              "calibration": {
+                "as_of": "2026-11-07T11:30:00Z",
+                "median_1q_error": 0.0003,
+                "median_2q_error": 0.008,
+                "median_readout_error": 0.015,
+                "median_t1_us": 180,
+                "median_t2_us": 120,
+                "snapshot": {
+                  "digest": "sha256:9a7fc04e552546030645dfe143b9f9808ca35433e6dd8c803171d34578da9183",
+                  "url": "https://provider.example/calibration/2026-11-07T1130Z.json",
+                  "signing_algorithm": "Ed25519"
+                }
+              },
+              "queue": {
+                "as_of": "2026-11-07T12:00:00Z",
+                "status": "online",
+                "estimated_wait_seconds": 30,
+                "pending_tasks": 2
+              }
+            }
+          ],
+          "pricing": {
+            "model": "per_shot",
+            "unit": "shot",
+            "payment_extension": "https://theprotocol.cloud/extensions/v1/auth/a2a-payment"
+          },
+          "evidence": {
+            "receipt": {
+              "schema_version": "1.0",
+              "signing_algorithm": "Ed25519"
+            },
+            "acceptance_tests": [
+              {
+                "template": "answer-check/v1.0",
+                "rung": 1,
+                "method": "answer_check"
+              },
+              {
+                "template": "test-circuits/v1.0",
+                "rung": 2,
+                "method": "test_circuits",
+                "false_accept_rate": 0.01,
+                "false_reject_rate": 0.05
+              }
+            ],
+            "metering_circuit": "accurateResourceUsagePolicy/v2.0.0",
+            "verification_rungs": [
+              1,
+              2,
+              3
+            ],
+            "rung_3_basis": "signed_claims"
+          },
+          "data": {
+            "retention": {
+              "circuits_days": 0,
+              "results_days": 30
+            },
+            "residency": [
+              "DE"
+            ],
+            "export_control": {
+              "self_declared": true,
+              "note": "Simulators and an emulator only; no controlled hardware is offered."
+            },
+            "ledger_keeps": [
+              "hashes",
+              "verdicts"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "read": {
+    "agent_did": "did:theprotocol:9f2c6a1e-5b7d-4c3a-8e21-6d4f0b9a7c13",
+    "card_id": "5c0d3c52-1f0e-4f43-9a3e-7c3c8f6f2a10",
+    "name": "Lattice Works",
+    "is_local": true,
+    "origin": "Local",
+    "uri": "https://theprotocol.cloud/extensions/v1/quantum/workload",
+    "version": "1.0",
+    "spec": "Quantum_Agent_Card_Extension_v1.0",
+    "required": false,
+    "params": {
+      "version": "1.0",
+      "roles": [
+        "provider",
+        "meter"
+      ],
+      "backends": [
+        {
+          "id": "statevector-32",
+          "name": "Statevector simulator",
+          "kind": "simulator",
+          "modality": "simulator",
+          "as_of": "2026-11-07T12:00:00Z",
+          "operator": {
+            "name": "Example Lab"
+          },
+          "location": {
+            "label": "Frankfurt, Germany",
+            "country": "DE",
+            "region": "eu-central",
+            "jurisdiction": "DE"
+          },
+          "qubits": {
+            "physical": 32
+          },
+          "connectivity": {
+            "topology": "all-to-all"
+          },
+          "native_gates": [
+            "cx",
+            "h",
+            "rz",
+            "sx",
+            "x"
+          ],
+          "formats": [
+            "openqasm3"
+          ],
+          "limits": {
+            "max_shots": 100000,
+            "max_depth": 10000,
+            "max_width": 32,
+            "mid_circuit_measurement": true,
+            "dynamic_circuits": true
+          },
+          "queue": {
+            "as_of": "2026-11-07T12:00:00Z",
+            "status": "online",
+            "estimated_wait_seconds": 0
+          },
+          "availability": {
+            "as_of": "2026-11-07T12:00:00Z",
+            "windows": [
+              {
+                "days": "everyday",
+                "start_utc": "00:00",
+                "end_utc": "23:59"
+              }
+            ]
+          }
+        },
+        {
+          "id": "heavy-hex-27-noisy",
+          "name": "27-qubit heavy-hex emulator",
+          "kind": "emulator",
+          "modality": "superconducting",
+          "as_of": "2026-11-07T12:00:00Z",
+          "operator": {
+            "name": "Example Lab"
+          },
+          "location": {
+            "label": "Frankfurt, Germany",
+            "country": "DE",
+            "jurisdiction": "DE"
+          },
+          "qubits": {
+            "physical": 27
+          },
+          "connectivity": {
+            "topology": "heavy-hex",
+            "coupling_map": {
+              "digest": "sha256:5173ee745091c28a0ab35005f6bf560c89f264bc63c0bed892832343712a6a82",
+              "url": "https://provider.example/coupling/heavy-hex-27.json",
+              "edges": 28
+            }
+          },
+          "native_gates": [
+            "ecr",
+            "id",
+            "rz",
+            "sx",
+            "x"
+          ],
+          "formats": [
+            "openqasm3",
+            "qir"
+          ],
+          "limits": {
+            "max_shots": 20000,
+            "max_width": 27,
+            "mid_circuit_measurement": true,
+            "dynamic_circuits": false
+          },
+          "calibration": {
+            "as_of": "2026-11-07T11:30:00Z",
+            "median_1q_error": 0.0003,
+            "median_2q_error": 0.008,
+            "median_readout_error": 0.015,
+            "median_t1_us": 180,
+            "median_t2_us": 120,
+            "snapshot": {
+              "digest": "sha256:9a7fc04e552546030645dfe143b9f9808ca35433e6dd8c803171d34578da9183",
+              "url": "https://provider.example/calibration/2026-11-07T1130Z.json",
+              "signing_algorithm": "Ed25519"
+            }
+          },
+          "queue": {
+            "as_of": "2026-11-07T12:00:00Z",
+            "status": "online",
+            "estimated_wait_seconds": 30,
+            "pending_tasks": 2
+          }
+        }
+      ],
+      "pricing": {
+        "model": "per_shot",
+        "unit": "shot",
+        "payment_extension": "https://theprotocol.cloud/extensions/v1/auth/a2a-payment"
+      },
+      "evidence": {
+        "receipt": {
+          "schema_version": "1.0",
+          "signing_algorithm": "Ed25519"
+        },
+        "acceptance_tests": [
+          {
+            "template": "answer-check/v1.0",
+            "rung": 1,
+            "method": "answer_check"
+          },
+          {
+            "template": "test-circuits/v1.0",
+            "rung": 2,
+            "method": "test_circuits",
+            "false_accept_rate": 0.01,
+            "false_reject_rate": 0.05
+          }
+        ],
+        "metering_circuit": "accurateResourceUsagePolicy/v2.0.0",
+        "verification_rungs": [
+          1,
+          2,
+          3
+        ],
+        "rung_3_basis": "signed_claims"
+      },
+      "data": {
+        "retention": {
+          "circuits_days": 0,
+          "results_days": 30
+        },
+        "residency": [
+          "DE"
+        ],
+        "export_control": {
+          "self_declared": true,
+          "note": "Simulators and an emulator only; no controlled hardware is offered."
+        },
+        "ledger_keeps": [
+          "hashes",
+          "verdicts"
+        ]
+      }
+    },
+    "check": {
+      "valid": true,
+      "problems": [],
+      "mode": "on"
+    },
+    "index": {
+      "version": "1.0",
+      "roles": [
+        "meter",
+        "provider"
+      ],
+      "kinds": [
+        "emulator",
+        "simulator"
+      ],
+      "modalities": [
+        "simulator",
+        "superconducting"
+      ],
+      "backends": 2,
+      "max_qubits": 32,
+      "max_logical_qubits": null,
+      "formats": [
+        "openqasm3",
+        "qir"
+      ],
+      "jurisdictions": [
+        "DE"
+      ],
+      "rungs": [
+        1,
+        2,
+        3
+      ],
+      "pricing_model": "per_shot"
+    },
+    "freshness": {
+      "read_at": "2026-11-07T15:00:00Z",
+      "backends": [
+        {
+          "id": "statevector-32",
+          "as_of": {
+            "facts": "2026-11-07T12:00:00Z",
+            "queue": "2026-11-07T12:00:00Z",
+            "availability": "2026-11-07T12:00:00Z"
+          },
+          "age_seconds": {
+            "facts": 10800,
+            "queue": 10800,
+            "availability": 10800
+          },
+          "oldest_age_seconds": 10800
+        },
+        {
+          "id": "heavy-hex-27-noisy",
+          "as_of": {
+            "facts": "2026-11-07T12:00:00Z",
+            "calibration": "2026-11-07T11:30:00Z",
+            "queue": "2026-11-07T12:00:00Z"
+          },
+          "age_seconds": {
+            "facts": 10800,
+            "calibration": 12600,
+            "queue": 10800
+          },
+          "oldest_age_seconds": 12600
+        }
+      ]
+    }
+  },
+  "discoverItemFacets": {
+    "version": "1.0",
+    "roles": [
+      "meter",
+      "provider"
+    ],
+    "kinds": [
+      "emulator",
+      "simulator"
+    ],
+    "modalities": [
+      "simulator",
+      "superconducting"
+    ],
+    "backends": 2,
+    "max_qubits": 32,
+    "max_logical_qubits": null,
+    "formats": [
+      "openqasm3",
+      "qir"
+    ],
+    "jurisdictions": [
+      "DE"
+    ],
+    "rungs": [
+      1,
+      2,
+      3
+    ],
+    "pricing_model": "per_shot"
+  },
+  "discoverFacets": {
+    "total": 1,
+    "max_qubits": 32,
+    "roles": [
+      {
+        "name": "meter",
+        "count": 1
+      },
+      {
+        "name": "provider",
+        "count": 1
+      }
+    ],
+    "kinds": [
+      {
+        "name": "emulator",
+        "count": 1
+      },
+      {
+        "name": "simulator",
+        "count": 1
+      }
+    ],
+    "modalities": [
+      {
+        "name": "simulator",
+        "count": 1
+      },
+      {
+        "name": "superconducting",
+        "count": 1
+      }
+    ],
+    "formats": [
+      {
+        "name": "openqasm3",
+        "count": 1
+      },
+      {
+        "name": "qir",
+        "count": 1
+      }
+    ],
+    "jurisdictions": [
+      {
+        "name": "DE",
+        "count": 1
+      }
+    ],
+    "rungs": [
+      {
+        "name": 1,
+        "count": 1
+      },
+      {
+        "name": 2,
+        "count": 1
+      },
+      {
+        "name": 3,
+        "count": 1
+      }
+    ]
+  },
+  "registryBlock": {
+    "status": "on",
+    "receipt_schema": {
+      "version": "1.0",
+      "signature_algorithms": [
+        "EdDSA"
+      ]
+    },
+    "acceptance_tests": {
+      "rungs": [
+        1,
+        2
+      ],
+      "settled_through": [
+        "guild_work_order",
+        "contract_milestone"
+      ]
+    },
+    "metering_circuit": "accurateResourceUsagePolicy/v2.0.0"
+  }
+}

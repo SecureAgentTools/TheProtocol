@@ -553,6 +553,63 @@ async def get_sync_digest(
     }
 
 
+def _export_refusal(card_data) -> Optional[str]:
+    """None when a fail-closed peer would ACCEPT this card, else the first failing field — its reason.
+
+    The receiving side (crud_peer_registry) validates every inbound card against `agentvault.AgentCard` when
+    FEDERATION_INGEST_FAIL_CLOSED is on, and QUARANTINES what fails. Until now we exported anyway: the card left,
+    the peer refused it, the mirror stood still, and the only trace was a WARNING in SOMEONE ELSE'S log. The same
+    check here means a card we cannot legally hand over is not handed over, and is counted with its reason where the
+    operator who owns the card can see it.
+
+    MEASURED in the V0657 image against that model: a restore with no captured card is refused for having no
+    endpoint; the pre-fix 3-key card is refused on protocolVersion; a real 25-field card is ACCEPTED.
+    """
+    if not isinstance(card_data, dict):
+        return "card_data"
+    try:
+        from agentvault import AgentCard as _AgentCardModel
+        _AgentCardModel.model_validate(card_data)
+        return None
+    except Exception as exc:  # noqa: BLE001 — any refusal is a refusal; the field names it
+        try:
+            from ..crud.crud_peer_registry import schema_refusal_fields
+            fields = schema_refusal_fields(exc)
+            return str(fields[0][0]) if fields else "schema"
+        except Exception:  # noqa: BLE001
+            return "schema"
+
+
+def export_skip_reason(card_is_active: bool, card_data) -> Optional[str]:
+    """None when this card must be exported; otherwise why it is withheld. Pure, so the rule is testable.
+
+    A card a fail-closed peer would quarantine is not handed over — EXCEPT when it carries its home's DENY-ONLY
+    facts, which must travel even though the content will be refused.
+
+    §QUARANTINEDENY (2026-09-29) is the measured reason: EU suspended "Test Agent v3", whose card (2026-09-12, no
+    protocolVersion) fails today's schema, so ASIA quarantined every update and kept serving the old copy ACTIVE AND
+    UNENFORCED FOR TWELVE DAYS, while the operators (fail-closed unset) took the suspension at once. The peer's fix
+    refuses the untrusted CONTENT and still applies `is_active: false` and an enforced status. Withholding the
+    envelope here would take that away — the peer cannot read a denial out of a card it never receives. Caught in
+    review by session-lead before it shipped.
+
+    So the only thing withheld is a card that is ACTIVE, UNENFORCED, and unacceptable to the model.
+    """
+    refusal = _export_refusal(card_data)
+    if refusal is None:
+        return None
+    if card_is_active is False:
+        return None                                  # the home withdrew it; the peer must hear that
+    try:
+        from ..services import enforcement_propagation as _ep
+        status = str(((_ep.extension_from_card(card_data) or {}).get("status") or "")).strip().lower()
+        if _ep.is_enforced_status(status):
+            return None                              # suspended or revoked at home; the peer must hear that too
+    except Exception:  # noqa: BLE001 — an unreadable extension decides nothing; the refusal below still stands
+        pass
+    return refusal
+
+
 @router.get("/agent-cards", response_model=List[AgentCardSyncData])
 async def get_agent_cards_for_sync(
     since: Optional[datetime] = Query(None, description="Return cards updated after this timestamp"),
@@ -734,6 +791,17 @@ async def get_agent_cards_for_sync(
     except Exception as _ep_e:  # noqa: BLE001 — the fan-out must not fail on this read; say so
         logger.error("[ENFPROP] fan-out enforcement state load failed: %s", _ep_e)
         _enf_card_state = {}
+    # V0657 (b) — and the agent's ORGANIZATION (services/org_mark.py): stated only while the organization is listed and
+    # the agent shows it; every change touches the card, so the mark arrives, changes and goes with the next pulls. In a
+    # SAVEPOINT: a failed read rolls back alone and leaves the feed's transaction usable (found on a real Postgres: a
+    # failing loader aborted the transaction for every loader and card after it).
+    from agentvault_registry.services import org_mark as _om
+    try:
+        async with db.begin_nested():
+            _org_card_state = await _om.card_states(db, [c.agent_did for c in cards if c.agent_did])
+    except Exception as _om_e:  # noqa: BLE001 — the fan-out must not fail on this read; say so
+        logger.error("[ORGMARK] fan-out organization mark load failed: %s", _om_e)
+        _org_card_state = {}
     # §TRAVELREC (2026-09-11) — and the WORK RECORD, which until now did not travel at all.
     # The bond crossed because it is injected here; the record did not because its injector was
     # only ever called on the agent's OWN well-known card. So a peer mirrored a bonded, certified,
@@ -753,6 +821,7 @@ async def get_agent_cards_for_sync(
     _listing_mode = _lp.propagation_mode()
     _listing_tombstones = 0
     _listing_carried = 0
+    _unexportable: Dict[str, int] = {}     # first failing field -> how many cards a fail-closed peer would refuse
     for card in cards:
         # OWL24 + OWL30: Echo prevention with hub relay.
         # Native cards: always served to any peer.
@@ -818,6 +887,7 @@ async def get_agent_cards_for_sync(
         if not card_source and card.agent_did:
             export_card_data = _rb.inject_extension(export_card_data, _bond_card_state.get(card.agent_did))
             export_card_data = _ep.inject_extension(export_card_data, _enf_card_state.get(card.agent_did))
+            export_card_data = _om.inject_extension(export_card_data, _org_card_state.get(card.agent_did))
             # §TRAVELREC — only when there IS history. An agent with no settled work exports no
             # extension at all, so a peer distinguishes "no record" from "a record of zero", which
             # are different facts and must not render the same.
@@ -884,6 +954,15 @@ async def get_agent_cards_for_sync(
             export_card_data.setdefault('federation_metadata', {})
             export_card_data['federation_metadata']['protocol_version'] = export_card_data.get('protocolVersion', "1.0")
 
+        # A card this peer would quarantine is not exported. Scoped to the FULL-card path on purpose: a §DARKSYNC
+        # tombstone is a deliberately minimal body ({extensions, did, federation_metadata}) and fails the same model,
+        # but skipping those would silently end tombstone propagation to peers that are NOT fail-closed, where it
+        # works today. That refusal is real and is reported separately rather than fixed by a side effect here.
+        _refusal = export_skip_reason(card.is_active, export_card_data)
+        if _refusal is not None:
+            _unexportable[_refusal] = _unexportable.get(_refusal, 0) + 1
+            continue
+
         sync_data.append(AgentCardSyncData(
             id=str(card.id),
             developer_id=card.developer_id,
@@ -907,6 +986,13 @@ async def get_agent_cards_for_sync(
     if _listing_carried:
         logger.info(f"[DARKSYNC] {_listing_carried} of {len(sync_data)} unlisted cards exported in full, flagged "
                     f"(mode={_listing_mode}) to peer {spiffe_id}")
+    if _unexportable:
+        logger.warning(
+            "[FEDEXPORT] %d card(s) NOT exported to %s: a fail-closed peer would quarantine them. By first failing "
+            "field: %s. Fix the card at its home; this registry no longer hands over what the peer must refuse.",
+            sum(_unexportable.values()), spiffe_id,
+            ", ".join(f"{f}={n}" for f, n in sorted(_unexportable.items(), key=lambda kv: -kv[1])),
+        )
     logger.info(f"Returning {len(sync_data)} native agent cards to peer {spiffe_id}")
     return sync_data
 

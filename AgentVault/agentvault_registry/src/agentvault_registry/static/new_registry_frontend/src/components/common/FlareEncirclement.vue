@@ -176,6 +176,22 @@
     </span>
 
     <span class="fc-encircle-frame">
+      <!-- V0658 (q): faceFirst (the agent selector) draws the face itself, the image or else the initials, and none of
+           the variants below that replace it; the ring, the halos and the earned collar stay as the variant draws them -->
+      <template v-if="faceFirst">
+        <img
+          v-if="avatarUrl && !imgBroken"
+          :src="avatarUrl"
+          :alt="alt || tooltip"
+          class="fc-encircle-avatar-img"
+          @error="onAvatarError"
+        />
+        <span v-else class="fc-encircle-avatar-fallback" data-testid="fc-face-initials">
+          <span v-if="initials" class="fc-encircle-initials">{{ initials.slice(0, 2).toUpperCase() }}</span>
+          <Icon v-else :name="tierIcon" class="fc-encircle-icon" />
+        </span>
+      </template>
+      <template v-else>
       <!-- §18: BLACKHOLE variant REPLACES the avatar entirely. The frame
            interior is rendered as a pure black void with an inset photon
            ring at the rim. Hide avatar img + initials when blackhole.
@@ -1998,8 +2014,9 @@
         />
         <span v-else class="fc-encircle-avatar-fallback">
           <span v-if="initials" class="fc-encircle-initials">{{ initials.slice(0, 2).toUpperCase() }}</span>
-          <Icon v-else :name="CONFIG[tier]?.icon || 'mdi:incognito'" class="fc-encircle-icon" />
+          <Icon v-else :name="tierIcon" class="fc-encircle-icon" />
         </span>
+      </template>
       </template>
 
       <!-- §18: HALLOWEEN variant OVERLAYS the avatar with an inline-SVG
@@ -3229,6 +3246,9 @@ const props = withDefaults(defineProps<{
    * verified jobs, and the surface must say so.
    */
   trackRecord?: TrackRecordCompact | null
+  /** V0658 (q): draw the face (the image, else the initials) in the center whatever the variant; the variants that
+   *  replace the face elsewhere keep only their ring here. The agent selector asks for it. Default false. */
+  faceFirst?: boolean
 }>(), {
   tier: null,
   variant: null,
@@ -3239,6 +3259,7 @@ const props = withDefaults(defineProps<{
   alt: null,
   tooltipOverride: null,
   trackRecord: null,
+  faceFirst: false,
 })
 
 // Per-tier metadata. Keep in sync with backend FLARE_RANK + frontend FlareBadge.
@@ -3493,6 +3514,13 @@ const tooltip = computed(() => {
   return overlayLabel
     ? `${CONFIG[t].label} backer · ${variantLabel} · ${overlayLabel}`
     : `${CONFIG[t].label} backer · ${variantLabel}`
+})
+
+// The icon the center falls back to with neither a picture nor initials: the tier's, else the incognito mark. One
+// computed for both centers (V0658 (q)): the template indexed CONFIG with a tier that may be null.
+const tierIcon = computed(() => {
+  const t = props.tier as EncircleTier | null
+  return (t && CONFIG[t]?.icon) || 'mdi:incognito'
 })
 
 // Image load failure → fall back to initials/icon.

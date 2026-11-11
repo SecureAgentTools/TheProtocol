@@ -289,6 +289,16 @@
             </label>
           </div>
 
+          <!-- V0658 (v), item 2: the Firms strip can be hidden; the choice is kept in this browser and in the address -->
+          <div class="mb-3">
+            <h4 class="text-xs font-medium mb-1 nc-text-muted">{{ t('discoveryView.filters.firms', 'Firms') }}</h4>
+            <label class="flex items-center text-xs cursor-pointer" data-testid="disc-firms-filter"
+                   :title="t('discoveryView.filters.hideFirmsTitle', 'Hide the strip of firms above the agents. The choice is kept in this browser and in the address.')">
+              <input type="checkbox" :checked="firmsHidden" @change="onFirmsFilter" class="mr-1 scale-75">
+              {{ t('discoveryView.filters.hideFirms', 'Hide the Firms strip') }}
+            </label>
+          </div>
+
           <!-- §MARKCOLLAR-2 — the tier legend lives HERE, on the surface where
                people meet the marks, not on the globe. It renders the real
                EarnedMarkCollar per tier, so it cannot drift from the cards. -->
@@ -334,6 +344,9 @@
               {{ t('discoveryView.filters.answerable', 'Answers a probe') }}
             </label>
           </div>
+
+          <!-- V0660 (e): the quantum workload extension's filters (they render only where the frame serves it) -->
+          <QuantumFilters v-if="quantumOn" v-model="quantumFilters" :facets="facets?.quantum ?? null" @change="performSearch" />
 
           <!-- Sort -->
           <div class="mb-2">
@@ -433,7 +446,13 @@
 
         <!-- §FIRMHIRE (H3.2) — FIRMS, proof-ranked; engage opens the intake agent
              through the SAME agent modal every other row uses (one engage brain). -->
-        <FirmsLane @engage="viewAgentByDID" />
+        <FirmsLane v-if="!firmsHidden" @engage="viewAgentByDID" />
+        <!-- V0658 (v), item 2: a strip the filter removed says so and carries the way back (a gate that removes a whole
+             section must not read as an empty one; the filter panel is not on screen below desktop width) -->
+        <p v-else-if="!embedded" class="disc-firms-hidden" data-testid="disc-firms-hidden" role="status">
+          {{ t('discoveryView.firmsHidden', 'The Firms strip is hidden by your filter.') }}
+          <button type="button" class="disc-mix-more" data-testid="disc-firms-show" @click="setFirmsHidden(false)">{{ t('discoveryView.showFirms', 'Show it') }}</button>
+        </p>
 
         <!-- §DISCMIX — the index's rows are IN the list above now (his "sorting mix all sources"), so the
              separate lane is retired. What is left of it lives on the index bar at the top: which registries it
@@ -535,6 +554,7 @@
               'disc-agent-card--fx-locked': fxStateFor(agent).locked,
               'disc-agent-card--fx': fxStateFor(agent).via || fxStateFor(agent).locked,
               'disc-agent-card--index': agent.__index,
+              'disc-agent-card--quantum': quantumOn && !!agent.quantum,
             }"
             :style="{ '--enter-i': Math.min(idx, 24) }"
             :title="agent.__index ? tp('discoveryView.index.openHint', 'Indexed at {r} — this frame does not mirror it; opens at its home', { r: agent.origin_registry_name })
@@ -619,6 +639,9 @@
               </div>
             </div>
 
+            <!-- V0657 (b), item 4: the organization the agent's home states (a listed one only) -->
+            <OrgMark v-if="agent.orgMark" :mark="agent.orgMark" :local="!agent.isFederated" :home-name="agent.originRegistry || null" class="disc-card-org" />
+
             <!-- HRI -->
             <div class="text-xs nc-text-muted font-mono mb-2 truncate" :title="agent.did || agent.humanReadableId">
               {{ agent.humanReadableId || agent.did || agent.id }}
@@ -626,6 +649,9 @@
 
             <!-- Description -->
             <p class="text-xs nc-text-muted mb-2 line-clamp-3" v-html="sanitizeHighlight(agent.highlights?.description || agent.description || 'No description')"></p>
+
+            <!-- V0660 (e): the quantum card, for an agent whose card carries the extension, where the frame serves it -->
+            <QuantumCard v-if="quantumOn && agent.quantum" variant="tile" :did="agent.agent_did || agent.did" :facets="agent.quantum" class="mb-2" />
 
             <!-- §pass18 — Mini skill / tag chips (max 4) so users scan capabilities at a glance -->
             <div v-if="agent.tags && agent.tags.length > 0" class="disc-card-chips" data-tour="dsc-chips">
@@ -721,7 +747,7 @@
             v-for="agent in filteredResults"
             :key="agent.id || agent.did"
             class="disc-list-card group cursor-pointer"
-            :class="{ 'disc-agent-card--fx-locked': fxStateFor(agent).locked }"
+            :class="{ 'disc-agent-card--fx-locked': fxStateFor(agent).locked, 'disc-agent-card--quantum': quantumOn && !!agent.quantum }"
             :title="fxStateFor(agent).locked ? fxHint(agent) : undefined"
             @click="viewAgentByDID(agent.agent_did || agent.did || agent.id)"
           >
@@ -746,6 +772,7 @@
                       {{ liveState(agent)!.label }}
                     </span>
                     <span v-if="agent.is_certified" class="text-xs text-cyan-400">✓ Certified</span>
+                    <OrgMark v-if="agent.orgMark" :mark="agent.orgMark" :local="!agent.isFederated" :home-name="agent.originRegistry || null" />
                     <!-- §BATCH0911 item 3 — the list density carries the bond chip too (it never did). -->
                     <BondChip :bond="agent.reputation?.bond" :is-bonded="!!agent.is_bonded"
                               :volume="agent.reputation?.volume" :fallback-currency="currencyForItem(agent)" />
@@ -760,6 +787,7 @@
 
                 <div class="text-xs nc-text-muted font-mono mb-1 truncate">{{ agent.humanReadableId || agent.did }}</div>
                 <p class="text-sm nc-text-muted" v-html="sanitizeHighlight(agent.highlights?.description || agent.description || 'No description')"></p>
+                <QuantumCard v-if="quantumOn && agent.quantum" variant="tile" :did="agent.agent_did || agent.did" :facets="agent.quantum" />
 
                 <!-- Rep bar (§DISCFIX: EigenTrust scores exceed 100 — clamp the bar) -->
                 <div class="disc-rep-bar mt-2 w-48">
@@ -878,17 +906,23 @@ import { exchangeService, type EquityChip } from '@/services/api/exchangeService
 import Icon from '@/components/Icon.vue'
 import AgentDetailModal from '@/components/AgentDetailModal.vue'
 import FirmsLane from '@/components/discovery/FirmsLane.vue'
+import { useFirmsStrip } from '@/components/discovery/firmsStrip'
 // §DIRFEED — the federated INDEX lane. It renders ONLY where a Directory is configured and the flag is on
 // (public registry-config), so this page is byte-unchanged on every node that has never heard of one.
 // §DISCPANEL — the index's own bar, beside the federation strip.
 import DirectoryStrip from '@/components/discovery/DirectoryStrip.vue'
 import BondMaturityBar from '@/components/discovery/BondMaturityBar.vue'
 import BondChip from '@/components/discovery/BondChip.vue'
+import QuantumCard from '@/components/quantum/QuantumCard.vue'
+import QuantumFilters from '@/components/quantum/QuantumFilters.vue'
+import { useQuantumWorkloads } from '@/composables/useQuantumWorkloads'
+import { emptyQuantumFilters, quantumQuery } from '@/services/quantum/quantumCard'
 import { useRegistryConfig } from '@/composables/useRegistryConfig'
 import { directoryService } from '@/services/api/directory'
 import TrackRecordPanel from '@/components/common/TrackRecordPanel.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import EarnedMarkRing from '@/components/common/EarnedMarkRing.vue'
+import OrgMark from '@/components/OrgMark.vue'
 import EarnedMarkLegend from '@/components/common/EarnedMarkLegend.vue'
 import SovereignRegistryCard from '@/components/SovereignRegistryCard.vue'
 import UserAvatar from '@/components/common/UserAvatar.vue'
@@ -1098,6 +1132,11 @@ const filters = reactive({
   sort_by: 'proven' as string,
 })
 
+// V0660 (e): the quantum workload filters. Only where the frame serves the extension (its registry-config block); under
+// off the group does not render and buildDiscoverParams sends nothing, so the request is the one before V0660.
+const { served: quantumOn } = useQuantumWorkloads()
+const quantumFilters = ref(emptyQuantumFilters())
+
 // ── Results ────────────────────────────────────────────────────────
 const searchResults = ref<any[]>([])
 // §FESUITE: the last search's read failed (the list on screen is not an answer; the empty state must not claim "none")
@@ -1138,6 +1177,10 @@ const availableFilters = computed(() => {
 // Empty selection = "show all" per Commander spec.
 const route = useRoute()
 const router = useRouter()
+// V0658 (v), item 2: the Firms strip, shown or hidden by the filter panel's control (components/discovery/firmsStrip.ts).
+// Embedded in the landing page, the strip reads the kept choice and never writes the address (that is the landing's).
+const { hidden: firmsHidden, setHidden: setFirmsHidden } = useFirmsStrip({ address: !props.embedded })
+function onFirmsFilter(e: Event) { setFirmsHidden(!!(e.target as HTMLInputElement | null)?.checked) }
 const fedTopology = useFederationTopology({ admin: false }) // public topology — Discovery is public
 
 // Set<string> of selected peer names. Empty = show all (no filter applied).
@@ -1732,6 +1775,7 @@ function buildDiscoverParams(offset: number) {
     bonded_only: filters.bonded_only,
     include_unbonded: filters.include_unbonded || undefined,
     answerable_only: filters.answerable_only || undefined,
+    quantum: quantumOn.value ? quantumQuery(quantumFilters.value) : undefined,
     sort: sortMap[filters.sort_by] || filters.sort_by,
     limit: pageSize,
     offset,
@@ -1855,6 +1899,8 @@ function clearAllFilters() {
   filters.is_certified = false
   filters.is_online = false
   filters.sort_by = 'proven'
+  quantumFilters.value = emptyQuantumFilters()
+  setFirmsHidden(false)
   performSearch()
 }
 
@@ -2184,6 +2230,8 @@ function showAgentMenu(agent: any) {}
 }
 .disc-mix-more:hover { opacity: .8; }
 .disc-mix-warn { margin-left: 8px; color: #ff6b6b; opacity: .9; }
+/* V0658 (v): the hidden Firms strip's line, the colour the strip's own small text holds (4.5:1 and up) */
+.disc-firms-hidden { font-size: 12px; color: rgba(148, 163, 184, 0.85); margin: 0 0 18px; }
 .disc-filter-group { padding-top: 4px; border-top: 1px solid rgba(var(--nc-primary-rgb), 0.12); }
 /* §MARKSURFACES — the earned-mark census sentence. Quiet by design: it is context for
    the legend above it, not a control. */
@@ -2261,6 +2309,8 @@ function showAgentMenu(agent: any) {}
 .disc-rep-fill--dim    { background: rgba(150,150,150,0.3); }
 
 /* ── Agent cards ──────────────────────────────────────────── */
+/* V0657 (b): the organization mark under the card's title */
+.disc-card-org { margin: 0 0 6px; }
 /* §pass8 (2026-05-15) — Avatar slot in Discovery card. UserAvatar handles
    its own internal sizing via size="md" (36px); flex-shrink prevents the
    name column from squeezing the circle. */
@@ -2853,5 +2903,26 @@ function showAgentMenu(agent: any) {}
    shared one row and the figure ran past the tile ("Active (24h) LOCAL 16|8"). On a phone the row wraps. */
 @media (max-width: 640px) {
   .disc-stat-row { flex-wrap: wrap; row-gap: 2px; column-gap: 8px; }
+}
+
+/* V0660 (e): an agent whose card carries the quantum workload extension wears a cut stone's edge: a 1px prism ring
+   that turns slowly and stands still under reduced motion, on an opaque ground the quantum card's contrast is measured on. */
+@property --disc-q-a { syntax: '<angle>'; inherits: false; initial-value: 210deg; }
+.disc-agent-card--quantum,
+.disc-agent-card--quantum:hover {
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background:
+    linear-gradient(168deg, rgba(220, 240, 250, 0.05), rgba(10, 14, 26, 0) 46%) padding-box,
+    linear-gradient(#0a0e1a, #0a0e1a) padding-box,
+    conic-gradient(from var(--disc-q-a), #2b3a55 0deg, #7fd8f0 38deg, #2b3a55 72deg, #c3b4f7 118deg, #2b3a55 152deg,
+      #f3efe4 198deg, #2b3a55 232deg, #efc98a 288deg, #2b3a55 322deg, #7fd8f0 360deg) border-box;
+  animation: disc-q-refract 18s linear infinite;
+}
+.disc-agent-card--quantum:hover { box-shadow: 0 14px 36px -16px rgba(195, 180, 247, 0.32); }
+.disc-agent-card--quantum::before { display: none; }
+@keyframes disc-q-refract { to { --disc-q-a: 570deg; } }
+@media (prefers-reduced-motion: reduce) {
+  .disc-agent-card--quantum, .disc-agent-card--quantum:hover { animation: none; }
 }
 </style>

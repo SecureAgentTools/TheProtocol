@@ -392,6 +392,9 @@ class Agent(Base):
     team_id: Mapped[Optional[str]] = mapped_column(
         String(255), ForeignKey("teams.id"), nullable=True
     )
+    # V0657 (b) (mig 0211): "show my org", set by the agent or its owner. The agent's organization is stated on its card
+    # (services/org_mark.py) only while the organization is listed AND this is on.
+    show_org: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, server_default=sa.true())
     # --- END Organization linking ---
 
     # --- IRONHAND: Agent mTLS identity (f052) ---
@@ -1062,6 +1065,29 @@ class BootstrapToken(Base):
         return f"<BootstrapToken(id={self.id}, creator_id={self.creator_developer_id}, expires_at={self.expires_at}, used={self.used_at is not None})>"
 # --- END ADDED ---
 
+class DisputeCorrection(Base):
+    """V0657 (a) (mig 0210): an administrator's correction of a ruling. The record's ruling becomes `to_ruling`; the
+    reputation changes and the enforcement actions the old ruling made are reversed (`reversed`), the new ruling's
+    reputation rule is applied (`applied`). A correction moves no money."""
+    __tablename__ = "dispute_corrections"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    dispute_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    from_ruling: Mapped[str] = mapped_column(String(32), nullable=False)
+    to_ruling: Mapped[str] = mapped_column(String(32), nullable=False)
+    note: Mapped[str] = mapped_column(Text, nullable=False)
+    corrected_by: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    corrected_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    reversed: Mapped[Optional[dict]] = mapped_column(PG_JSONB, nullable=True)
+    applied: Mapped[Optional[dict]] = mapped_column(PG_JSONB, nullable=True)
+    # Claim first (session-lead's review, room seq 1597): 'applying' from the claim (the record's guarded ruling UPDATE,
+    # with `plan`) until the last step; `steps` records each effect in the commit that made it; then 'applied'.
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="applying", default="applying")
+    plan: Mapped[Optional[dict]] = mapped_column(PG_JSONB, nullable=True)
+    steps: Mapped[Optional[dict]] = mapped_column(PG_JSONB, nullable=True)
+    finished_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 # --- ADDED: Dispute and Evidence Models for DDR System ---
 class Dispute(Base):
     """
@@ -1121,6 +1147,19 @@ class Dispute(Base):
     # CONTRACT SPINE (mig 0129): spine contract id (ctr_…) this dispute is about;
     # rulings on such disputes settle the ESCROW, never wallet compensation.
     contract_ref: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+
+    # V0657 (a) (mig 0210, disputes v2): the Guild order it is about (a ruling settles the order's escrow and the
+    # Guild's resolve closes the record), why it opened and who filed it ('party' or 'system'), the amount a
+    # complainant claims (compensation and the enforcement slash read it, never free-form evidence), and the ruling's
+    # who, when, why and what it did.
+    guild_order_id: Mapped[Optional[str]] = mapped_column(String(40), nullable=True, index=True)
+    reason: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    filed_by: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    amount_claimed: Mapped[Optional[Decimal]] = mapped_column(Numeric(38, 18), nullable=True)
+    ruled_by: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    ruled_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    ruling_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    outcome: Mapped[Optional[dict]] = mapped_column(PG_JSONB, nullable=True)
 
     # Indexes
     __table_args__ = (
@@ -2207,6 +2246,49 @@ class Organization(Base):
         return f"<Organization(id={self.id}, name='{self.name}', slug='{self.slug}')>"
 
 
+class OrganizationLogo(Base):
+    """V0657 (b) (mig 0211): an organization's logo, hosted by its own registry (served from its own origin at
+    GET /api/v1/organizations/{id}/logo), so no viewer's browser calls a third party. One row per organization."""
+    __tablename__ = "organization_logos"
+
+    organization_id: Mapped[str] = mapped_column(
+        String(255), ForeignKey("organizations.id", ondelete="CASCADE"), primary_key=True)
+    content_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class OrganizationAgentRequest(Base):
+    """V0657 (b) (mig 0211): an agent asks to join an organization, or its owner proposes it; an administrator of the
+    organization (a person, or an agent holding the organization's admin authority) accepts or declines."""
+    __tablename__ = "organization_agent_requests"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(255), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    agent_did: Mapped[str] = mapped_column(String(255), nullable=False)
+    requested_by_kind: Mapped[str] = mapped_column(String(16), nullable=False)   # 'developer' | 'agent'
+    requested_by_ref: Mapped[str] = mapped_column(String(255), nullable=False)   # a developer id, or the agent's DID
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", server_default="pending")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(),
+                                                          nullable=False)
+    decided_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    decided_by_kind: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    decided_by_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    decision_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_org_agent_requests_org_status", "organization_id", "status"),
+        Index("ix_org_agent_requests_agent", "agent_did"),
+        Index("uq_org_agent_requests_pending", "organization_id", "agent_did", unique=True,
+              postgresql_where=text("status = 'pending'")),
+    )
+
+
 class Team(Base):
     """
     Team model for organizing members within an organization.
@@ -3214,7 +3296,7 @@ class EnforcementAction(Base):
     amount: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(
         String(20), default='pending_approval', nullable=False
-    )  # pending_approval | executed | rejected | failed
+    )  # pending_approval | executed | rejected | failed | reversed (V0657 (a): a corrected ruling's action)
     escalation_level: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     policy_version: Mapped[int] = mapped_column(Integer, nullable=False)
     correlation_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -6463,6 +6545,8 @@ class Conversation(Base):
     mode: Mapped[str] = mapped_column(String(12), nullable=False, default="open", server_default="open")
     topic: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     genesis: Mapped[Optional[dict]] = mapped_column(PG_JSONB, nullable=True)
+    # V0659 (f) (mig 0212): a room's join rule ('invited' | 'request' | 'anyone'), set by its owner; NULL on other kinds
+    join_rule: Mapped[Optional[str]] = mapped_column(String(12), nullable=True)
     # V0652 (ac) (mig 0207): the room's status board ({text, rev, updated_at, updated_by}) and the members its owner named
     # to keep it (principal keys); conversation state, like the genesis: a timer or a burn does not touch it
     board: Mapped[Optional[dict]] = mapped_column(PG_JSONB, nullable=True)
@@ -6706,6 +6790,19 @@ class ChatBlock(Base):
     blocker_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     blocked_ptype: Mapped[str] = mapped_column(String(12), primary_key=True)
     blocked_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ChatRoomBan(Base):
+    """V0659 (f) (mig 0212): who a room's HOST refuses for good, by the participant key it knows the member by (a local
+    principal's key or a remote address). A removed outsider cannot rejoin under 'anyone'. A resident never moderates."""
+    __tablename__ = "chat_room_bans"
+
+    conversation_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("conversations.id", ondelete="CASCADE"), primary_key=True)
+    participant_key: Mapped[str] = mapped_column(String(320), primary_key=True)
+    banned_by: Mapped[str] = mapped_column(String(320), nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False)
 

@@ -53,7 +53,8 @@ def test_every_fall_through_goes_through_the_helper():
     src = pathlib.Path(T.__file__).read_text()
     left = re.findall(r'status_code=status\.HTTP_503_SERVICE_UNAVAILABLE,\n\s+detail="Unable to [^"\n]* at this time"', src)
     assert left == [], left
-    assert src.count("raise _teg_refusal(response, ") == 18
+    # 18, + V0658 (c)'s relay of a claimant's TEG dispute withdrawal (POST /teg/disputes/{id}/withdraw) = 19
+    assert src.count("raise _teg_refusal(response, ") == 19
 
 
 def test_a_route_passes_the_tegs_refusal_through(monkeypatch):

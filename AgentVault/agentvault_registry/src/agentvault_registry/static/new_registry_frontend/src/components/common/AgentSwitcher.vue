@@ -16,9 +16,13 @@
            corner) for the active agent so shadow_chancellor agents render
            correctly. Initials fall back from agent.name. Credential health
            is conveyed via the row-level styling + warning icon below. -->
+      <!-- V0658 (q): the agent's own logo (its card's picture, else its initials) inside its vanity ring and rank: a
+           vanity that replaces the face elsewhere (the black hole) does not stand in for the logo here -->
       <UserAvatar
         v-if="authStore.activeAgent"
         :user="authStore.activeAgent"
+        :avatar-url="agentAvatarUrl(authStore.activeAgent)"
+        face-first
         :display-name="authStore.activeAgent.name || authStore.activeAgent.did.slice(0, 8)"
         :granted-at="authStore.activeAgent.flare_granted_at || null"
         size="xs"
@@ -126,6 +130,8 @@
               <div class="as-row-avatar">
                 <UserAvatar
                   :user="agent"
+                  :avatar-url="agentAvatarUrl(agent)"
+                  face-first
                   :display-name="agent.name || agent.did.slice(0, 8)"
                   :granted-at="agent.flare_granted_at || null"
                   size="sm"
@@ -318,6 +324,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useUIStore } from '@/stores/ui'
 import { useRoute } from 'vue-router'
 import UserAvatar from '@/components/common/UserAvatar.vue'
+import { agentAvatarUrl } from '@/services/agentAvatar'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import Icon from '@/components/Icon.vue'
 import { cannotActReason, cannotActSentence } from '@/services/agentActable'

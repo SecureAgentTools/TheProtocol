@@ -188,7 +188,7 @@ The plain key is shown **once** and stored hashed. `GET /api/v1/auth/api-keys` l
 
 ## Idempotency-Key: Retry-Safe Writes
 
-Money moves and other writes accept an `Idempotency-Key` header. The routes that take it declare the header parameter in the OpenAPI document (35 operations in this release), among them `POST /teg/transfer`, `/teg/send`, `/teg/cross-registry-transfer` and `/teg/treasury/fund-agent`, the A2A `authorize`, `settle` and `release-by-id/{token_id}` calls, the lock calls, the AGORA order, listing and launch calls, the organization treasury calls and `POST /bundles/{bundle_id}/restore`.
+Money moves and other writes accept an `Idempotency-Key` header. The routes that take it declare the header parameter in the OpenAPI document (36 operations in this release), among them `POST /teg/transfer`, `/teg/send`, `/teg/cross-registry-transfer` and `/teg/treasury/fund-agent`, the A2A `authorize`, `settle` and `release-by-id/{token_id}` calls, the lock calls, the AGORA order, listing and launch calls, the organization treasury calls, the ledger's attestation submit (`POST /teg/attestations/submit`) and `POST /bundles/{bundle_id}/restore`.
 
 ```http
 POST /api/v1/teg/transfer

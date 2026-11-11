@@ -161,6 +161,8 @@ const navGroups: NavGroup[] = [
       { name: 'Agent Builder', i18nKey: 'nav.items.agentBuilder', path: '/agent-builder', icon: 'mdi:wrench', color: 'text-orange-600' },
       { name: 'My Agents', i18nKey: 'nav.items.myAgents', path: '/my-agents', icon: 'mdi:robot', color: 'text-green-600' },
       { name: 'Agent Discovery', i18nKey: 'nav.items.agentDiscovery', path: '/discover', icon: 'mdi:magnify', color: 'text-purple-600' },
+      // V0658 (v), item 4: the organizations and the work records they publish (#/firms), reachable from no entry before
+      { name: 'Firms', i18nKey: 'nav.items.firms', path: '/firms', icon: 'mdi:office-building', color: 'text-sky-400', authHint: 'Organizations and the work records they publish' },
       // §pass62 (2026-05-21) — Federation peer browse view (parallel to Agent Discovery).
       // §pass62.1 (2026-05-21) — Renamed "Federation Discovery" → "Federation Peers" (16 chars
       // matches sibling "Agent Discovery"=15; longer name was wrapping on 2 lines in sidebar).
@@ -515,6 +517,8 @@ const PUBLIC_PATHS = new Set<string>([
   // (the Guild board and the Forge arena browse anonymously; acting needs auth).
   '/guild',
   '/forge',
+  // V0658 (v): the organizations and their published work records (#/firms), a public page like the leaderboard
+  '/firms',
 ])
 
 // Determine if a nav item should be hidden ENTIRELY (not just locked).

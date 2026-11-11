@@ -88,80 +88,50 @@ async def update_reputation(
         raise
 
 
-async def record_dispute_outcome(db: AsyncSession, dispute: Dispute) -> None:
+async def record_dispute_outcome(db: AsyncSession, dispute: Dispute) -> list:
     """
     Update reputation scores based on dispute outcome.
-    
+
+    V0657 (a): the changes come from services/dispute_rules.reputation_deltas, the one rule the ruling preview reads
+    too; a system-filed dispute (filed_by='system') has rules of its own (nobody accused anybody). Returns what was
+    applied: [{"did", "change", "why", "before", "after"}], which the ruling keeps in the record's outcome.
+
     Args:
         db: Database session
         dispute: The resolved Dispute object
     """
     if not dispute.ruling:
         logger.warning(f"Dispute {dispute.id} has no ruling, skipping reputation update")
-        return
-        
-    try:
-        if dispute.ruling == "IN_FAVOR_OF_COMPLAINANT":
-            # Defendant loses reputation
-            await update_reputation(
-                db,
-                dispute.defendant_did,
-                -10,
-                f"Lost dispute #{dispute.id}"
-            )
-            # Complainant gains small reputation for winning
-            await update_reputation(
-                db,
-                dispute.complainant_did,
-                2,
-                f"Won dispute #{dispute.id}"
-            )
-            
-        elif dispute.ruling == "IN_FAVOR_OF_DEFENDANT":
-            # Complainant loses reputation for false accusation
-            await update_reputation(
-                db,
-                dispute.complainant_did,
-                -10,
-                f"Lost dispute #{dispute.id} (false accusation)"
-            )
-            # Defendant gains small reputation for being vindicated
-            await update_reputation(
-                db,
-                dispute.defendant_did,
-                2,
-                f"Won dispute #{dispute.id} (vindicated)"
-            )
-            
-        elif dispute.ruling == "DISMISSED":
-            # Both parties lose small reputation for wasting system resources
-            await update_reputation(
-                db,
-                dispute.complainant_did,
-                -3,
-                f"Dispute #{dispute.id} dismissed"
-            )
-            await update_reputation(
-                db,
-                dispute.defendant_did,
-                -3,
-                f"Dispute #{dispute.id} dismissed"
-            )
+        return []
 
-        # EigenTrust++ Phase 2: update bilateral local trust signal
-        try:
-            await local_trust_updater.on_dispute_resolved(
-                db,
-                complainant_did=dispute.complainant_did,
-                defendant_did=dispute.defendant_did,
-                ruling=dispute.ruling,
-            )
-        except Exception as lt_err:
-            logger.warning(f"LocalTrust update failed for dispute {dispute.id} (non-fatal): {lt_err}")
+    from ..services.dispute_rules import reputation_deltas
+    applied: list = []
+    try:
+        for did, change, why in reputation_deltas(dispute.ruling, dispute.complainant_did, dispute.defendant_did,
+                                                  getattr(dispute, "filed_by", None), getattr(dispute, "reason", None)):
+            before = (await db.execute(select(Agent.reputation_score).where(Agent.did == did))).scalar()
+            after = await update_reputation(db, did, change, f"Dispute #{dispute.id}: {why}")
+            applied.append({"did": did, "change": change, "why": why, "before": before, "after": after})
+
+        # EigenTrust++ Phase 2: update bilateral local trust signal. V0657 (a): on a system-filed dispute a ruling for
+        # the complainant is no fault of the worker's unless it missed its deadline (a stuck payout, a silent poster),
+        # so no negative signal travels then, as no reputation changes
+        from ..services.dispute_rules import trust_signal_applies
+        if trust_signal_applies(dispute.ruling, getattr(dispute, "filed_by", None), getattr(dispute, "reason", None)):
+            try:
+                await local_trust_updater.on_dispute_resolved(
+                    db,
+                    complainant_did=dispute.complainant_did,
+                    defendant_did=dispute.defendant_did,
+                    ruling=dispute.ruling,
+                )
+            except Exception as lt_err:
+                logger.warning(f"LocalTrust update failed for dispute {dispute.id} (non-fatal): {lt_err}")
 
     except Exception as e:
         logger.error(f"Error recording dispute outcome for dispute {dispute.id}: {str(e)}")
         raise
+    return applied
 
 
 async def record_attestation_success(db: AsyncSession, agent_did: str) -> Optional[int]:

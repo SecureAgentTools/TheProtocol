@@ -17,7 +17,7 @@ describe('roadmap horizon', () => {
     expect(streams[1].find('.rm-stream-status').text()).toBe('Idea')
     expect(streams[1].find('.rm-glyph--idea').exists()).toBe(true)
     expect(streams[0].find('.rm-stream-status').text()).toBe('Planned')
-    expect(w.findAll('.rm-key-item').map(k => k.text())).toEqual(['Live', 'In preparation', 'Designed', 'Planned', 'Idea'])
+    expect(w.findAll('.rm-key-item').map(k => k.text())).toEqual(['Live', 'Built', 'In preparation', 'Designed', 'Planned', 'Idea'])
     w.unmount()
   })
 })

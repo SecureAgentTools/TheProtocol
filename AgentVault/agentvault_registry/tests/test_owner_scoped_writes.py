@@ -134,7 +134,23 @@ def test_log_ownership_comes_from_server_set_columns_only():
     assert src.count("await _developer_owns_agent(") == 3, "GET, POST (developer) and DELETE ask the one rule"
 
 
-@pytest.mark.parametrize("owner_rows,expected", [((None, None), False), ((("a",), None), True), ((None, ("c",)), True)])
+# A card the SERVER linked to an agent carries a server-set `agent_cards.agent_did` -- and so does a federated MIRROR,
+# which the federated insert could place on a LOCAL account. So the card leg asks one more question, through the one
+# predicate (`home_extensions.is_native`, both of the keys the insert stamps): is this card NATIVE?
+# Before fix/federation-mirror-ownership (7da4a8090) this leg selected only the card's id, so it could not tell a
+# mirror from a native card and granted a local account read, delete and write over a foreign agent's logs.
+NATIVE_CARD = {"name": "mine"}
+MIRROR_CARD = {"name": "theirs",
+               "federation_metadata": {"source_registry": "spiffe://asia.theprotocol.cloud/registry/asia"}}
+
+
+@pytest.mark.parametrize("owner_rows,expected", [
+    ((None, None), False),                  # no agent row of theirs, no card of theirs
+    ((("a",), None), True),                 # they created the agent row: the first leg answers, the card is never read
+    ((None, (NATIVE_CARD,)), True),         # a card the server linked to the agent, and it is native
+    ((None, (MIRROR_CARD,)), False),        # a MIRROR sitting on their account owns nothing
+    ((None, ("not-a-dict",)), False),       # card content that cannot be read decides nothing either way
+])
 def test_the_rule_asks_the_agent_row_then_the_linked_card(owner_rows, expected):
     from agentvault_registry.routers import agent_logs as L
     answers = iter(owner_rows)
@@ -143,7 +159,11 @@ def test_the_rule_asks_the_agent_row_then_the_linked_card(owner_rows, expected):
     first = db.sql[0][0]
     assert "agents.creator_developer_id" in first
     if len(db.sql) > 1:
-        assert "agent_cards.agent_did" in db.sql[1][0] and "card_data" not in db.sql[1][0]
+        card_sql = db.sql[1][0]
+        # The WHERE still keys on the two columns the SERVER sets, never on a DID the card's owner claims inside its
+        # content (the §MCPTEST30 shape above). Selecting card_data to classify the card is a different question.
+        assert "agent_cards.agent_did" in card_sql and "agent_cards.developer_id" in card_sql
+        assert "'did'" not in card_sql and '"did"' not in card_sql
 
 
 def test_a_stranger_reads_no_logs_and_deletes_none(monkeypatch):

@@ -70,7 +70,7 @@ export function milestonesAwaiting(input: any, actingDid: string | null): Attent
 /** Open disputes, from whatever the disputes rail returned. */
 export function openDisputeCount(input: any): number {
   const arr = Array.isArray(input) ? input : []
-  return arr.filter(d => d && (d.status === 'open' || d.status === 'investigating')).length
+  return arr.filter(d => d && d.status === 'open').length
 }
 
 

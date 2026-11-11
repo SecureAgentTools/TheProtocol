@@ -18,6 +18,7 @@ from agentvault_registry.config import settings
 from agentvault_registry.es_ssl_helper import get_httpx_verify
 from agentvault_registry.database import AsyncSessionLocal
 from agentvault_registry.core import ledger_names   # W4: an event's old and new names are one event
+from agentvault_registry.core.outbound_guard import inspect_destination, record_refusal
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,19 @@ async def _send_webpush(row, title: str, message: str, click: Optional[str]) -> 
     if not (row.target and row.p256dh and row.auth):
         return False
     try:
+        # V0660 (l): a row stored before the registration check existed, or whose name now resolves
+        # somewhere else, is asked about before anything is sent. pywebpush would do the sending, so the
+        # guard is asked rather than used; the skip is counted under this site and logged once, with the
+        # row id rather than the endpoint, the way every other line here logs it. It is the FIRST thing
+        # asked, so a target that will be refused costs no key read and no send.
+        verdict = await inspect_destination(row.target)
+        if verdict.refusal:
+            # The guard's own recorder, so a skip here and a refusal at registration are one series with one
+            # label set (registry_outbound_refused_total{site="webpush"}); the line below names the row, never
+            # the endpoint.
+            record_refusal("webpush", verdict.refusal)
+            logger.warning("[PUSH] webpush target refused id=%s reason=%s", row.id, verdict.refusal)
+            return False
         import asyncio as _asyncio
         from agentvault_registry.services import webpush as _wp
         async with AsyncSessionLocal() as db:
@@ -183,15 +197,22 @@ async def _send_webpush(row, title: str, message: str, click: Optional[str]) -> 
         if status in (404, 410):
             try:
                 async with AsyncSessionLocal() as db:
-                    await db.execute(text("DELETE FROM device_push_registrations WHERE id = :i"), {"i": row.id})
+                    kept = await prune_dead_subscription(db, row.id)
                     await db.commit()
-                logger.info("[PUSH] pruned dead webpush subscription id=%s", row.id)
+                logger.info("[PUSH] pruned dead webpush subscription id=%s (credential kept: %s)", row.id, kept)
             except Exception:  # noqa: BLE001
                 logger.debug("[PUSH] prune failed id=%s", row.id, exc_info=True)
         return ok
     except Exception as exc:  # noqa: BLE001 — per-device best-effort by design
         logger.warning("[PUSH] webpush failed id=%s: %s", getattr(row, "id", "?"), exc)
         return False
+
+
+async def prune_dead_subscription(db, row_id: int) -> bool:
+    """A subscription the push service says is gone takes its push half only: a row that also holds a live signing
+    credential stays as a credential-only row (D6-850; the phone did not ask to lose its key). True when kept."""
+    from agentvault_registry.services.device_enrollment import drop_push_keep_credential
+    return await drop_push_keep_credential(db, row_id)
 
 
 async def notify_developers(

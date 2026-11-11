@@ -40,6 +40,7 @@ from agentvault_registry.services import contract_settlement as cs
 from agentvault_registry.services import liability as liab
 from agentvault_registry.services import reputation_bond as _rb
 from agentvault_registry.services import enforcement_propagation as _ep  # §ENFPROP
+from agentvault_registry.services import owner_reads  # V0658 (q): reading follows ownership
 from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
@@ -609,6 +610,10 @@ async def release_milestone(cid: str, seq: int, body: ReleaseIn, request: Reques
         # migrated-legacy agreed rows carry no escrow — money must not leave the treasury for them
         raise HTTPException(status.HTTP_409_CONFLICT,
                             detail="No escrow is held for this contract (legacy row?) — cancel and re-create")
+    # V0660 (b): a milestone with an acceptance test releases on its passing verdict (on refuses, shadow reports; under
+    # off nothing is read). Before the claim, so a refusal leaves the milestone submitted.
+    from agentvault_registry.services import quantum_acceptance as _qacc
+    await _qacc.settlement_gate(db, "contract_milestone", cid, seq)
     # CLAIM submitted→releasing FIRST (+ dated audit in the SAME commit — the reaper age-gates on it)
     res = await db.execute(text(
         "UPDATE contract_milestones SET status='releasing' WHERE contract_id=:c AND seq=:s "
@@ -790,6 +795,48 @@ async def my_contracts(role: Optional[str] = None, status_f: Optional[str] = Non
         d["total_amount"] = str(d["total_amount"]) if d.get("total_amount") is not None else None
         d["replica"] = True
         items.append(d)
+    return {"items": items}
+
+
+@router.get("/api/v1/contracts/v2/owned", summary="The contracts of my agents and of my organizations (developer)")
+async def owned_contracts(status_f: Optional[str] = None, limit: int = 50,
+                          dev: models.Developer = Depends(get_current_developer),
+                          db: AsyncSession = Depends(get_db)):
+    """
+    The contracts on which an agent you created, or an agent a member brought into an organization you own, is the
+    client or the provider, newest first: those held here, then the replicas of contracts held on another registry
+    (`replica: true`). Each item names those parties in `my_parties` (role, agent, name, and `via`: "agent" for your own agent,
+    "organization" for your organization's). Needs a developer token; acting on a contract still needs the party
+    agent's own token.
+
+    \f
+    V0658 (q): /contracts/v2/mine answers for ONE agent (the acting one), so its owner saw none of his other agents'
+    contracts until he selected the right one. Reading follows ownership (services/owner_reads), writing stays the
+    agent's. Registered before /contracts/v2/{cid}, which would otherwise take "owned" for a contract id.
+    """
+    _require_enabled()
+    limit = max(1, min(100, limit))
+    q = "SELECT c.* FROM contracts c WHERE " + owner_reads.owned_by_sql("c.client_did", "c.provider_did")
+    params: Dict[str, Any] = {"dev": dev.id, "lim": limit}
+    if status_f:
+        q += " AND c.status = :st"; params["st"] = status_f
+    q += " ORDER BY c.created_at DESC, c.id DESC LIMIT :lim"
+    items = [_contract_out(dict(r)) for r in (await db.execute(text(q), params)).mappings().all()]
+    rq = ("SELECT r.cid, r.home_registry, r.client_did, r.provider_did, r.title, r.currency, r.total_amount, r.status,"
+          " r.stale, r.updated_at, r.payload->'released_milestones' AS released_milestones"
+          " FROM contract_replicas r WHERE " + owner_reads.owned_by_sql("r.client_did", "r.provider_did"))
+    rparams: Dict[str, Any] = {"dev": dev.id, "lim": limit}
+    if status_f:
+        rq += " AND r.status = :st"; rparams["st"] = status_f
+    rq += " ORDER BY r.updated_at DESC, r.cid DESC LIMIT :lim"
+    for r in (await db.execute(text(rq), rparams)).mappings().all():
+        d = dict(r)
+        d["id"] = d.pop("cid")
+        d["total_amount"] = str(d["total_amount"]) if d.get("total_amount") is not None else None
+        d["replica"] = True
+        items.append(d)
+    for it, parties in zip(items, await owner_reads.owned_parties(db, dev.id, items, owner_reads.CONTRACT_ROLES)):
+        it["my_parties"] = parties
     return {"items": items}
 
 
@@ -1169,7 +1216,8 @@ async def _file_ddr(db: AsyncSession, complainant: str, defendant: str, cid: str
         legacy = (await db.execute(text(
             "SELECT legacy_ruc_id FROM contracts WHERE id=:c"), {"c": cid})).scalar()
         d = await crud_disputes.create_dispute(db, complainant_did=complainant, defendant_did=defendant,
-                                               contract_id=int(legacy) if legacy is not None else None)
+                                               contract_id=int(legacy) if legacy is not None else None,
+                                               contract_ref=cid, reason="filed_by_party", filed_by="party")
         did_ = str(getattr(d, "dispute_id", None) or d.id)
         await db.execute(text("UPDATE disputes SET contract_ref=:r WHERE id=:i"),
                          {"r": cid, "i": d.id})

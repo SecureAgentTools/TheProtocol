@@ -16,6 +16,8 @@ import pytest
 from agentvault_registry.core import settlement_origin
 
 ORIGIN = "https://sandbox-b.theprotocol.cloud:8443"
+# V0660 (k) review: no slash request goes to an https peer without our mTLS client certificate
+CERT = {"cert": ("/certs/svid.0.pem", "/certs/svid.0.key"), "verify": "/certs/bundle.0.pem"}
 REFUSAL = ('{"detail":"Callback URL must belong to a registered peer registry: its host sbx-beta-nginx-federation is '
            'under no active peer\'s base URL (active peer hosts: sandbox-a.theprotocol.cloud, '
            'sbxbetaop.op.theprotocol.cloud)"}')
@@ -94,6 +96,9 @@ def _count(msg: str) -> int:
 
 
 async def test_the_first_delivery_keeps_each_peers_refusal(monkeypatch):
+    # V0660 (k): a request goes out only where delivery is on and the card names a dialable address
+    monkeypatch.setenv("CROSS_REGISTRY_SETTLEMENT_DELIVERY", "on")
+    monkeypatch.setenv("BILATERAL_PEER_URL", ORIGIN)
     from agentvault_registry.crud import crud_disputes as cd
     from agentvault_registry.identity import svid_client
     received = []
@@ -103,7 +108,7 @@ async def test_the_first_delivery_keeps_each_peers_refusal(monkeypatch):
             received.append(kw["dispute_id"])
     monkeypatch.setattr(cd, "get_event_emitter", lambda: _Emitter())
     monkeypatch.setattr(cd.httpx, "AsyncClient", _client((400, REFUSAL)))
-    monkeypatch.setattr(svid_client, "get_client_cert_config", lambda: None)
+    monkeypatch.setattr(svid_client, "get_client_cert_config", lambda *a, **k: dict(CERT))
 
     class _Dispute:
         id, complainant_did, defendant_did = 50, "did:c", "did:d"
@@ -111,8 +116,9 @@ async def test_the_first_delivery_keeps_each_peers_refusal(monkeypatch):
     await cd._process_cross_registry_compensation(db, _Dispute(), "IN_FAVOR_OF_COMPLAINANT", 3, {})
     (settlement,) = db.added
     assert received == [50]
-    assert settlement.status == "PENDING_SLASH" and settlement.defendant_registry_url == ""
-    assert settlement.error_message.startswith("Could not reach defendant's home registry: Sandbox Alpha 400: ")
+    # V0660 (k): a 400 is a definite refusal; every peer refusing ends the settlement at once, visibly, not retried
+    assert settlement.status == "REFUSED" and settlement.defendant_registry_url == ""
+    assert settlement.error_message.startswith("Refused by every peer registry: Sandbox Alpha 400: ")
     assert "its host sbx-beta-nginx-federation is under no active peer's base URL" in settlement.error_message
 
 
@@ -122,9 +128,11 @@ async def test_the_first_delivery_keeps_each_peers_refusal(monkeypatch):
     (httpx.ConnectError("connect to https://sandbox-a.theprotocol.cloud:8443 refused"), "Sandbox Alpha: ConnectError"),
 ])
 async def test_a_retry_keeps_each_peers_answer_after_its_count(monkeypatch, answer, note):
+    monkeypatch.setenv("CROSS_REGISTRY_SETTLEMENT_DELIVERY", "on")     # V0660 (k): off, a retry sends nothing
+    monkeypatch.setenv("BILATERAL_PEER_URL", ORIGIN)                   # nor without a dialable address
     from agentvault_registry.tasks import settlement_reconciliation as rec
     monkeypatch.setattr(rec.httpx, "AsyncClient", _client(answer))
-    monkeypatch.setattr(rec.svid_client, "get_client_cert_config", lambda: None)
+    monkeypatch.setattr(rec.svid_client, "get_client_cert_config", lambda *a, **k: dict(CERT))
     s = _Settlement()
     s.error_message = "retry_count=1, last_retry=2026-10-24T17:40:00+00:00"
     await rec._retry_slash_request(_Db([_Peer()]), s, 1)

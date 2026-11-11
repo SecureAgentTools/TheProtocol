@@ -34,13 +34,12 @@ _MAINFRAMES = ("sandbox-A", "sandbox-B")
 # Observed lanes + kinds. Keep in sync with routers/chat.py — a NEW legal value
 # appearing here should be a deliberate edit, which is the point of pinning it.
 _KNOWN_LANES = {"active", "requests"}
-# `conversations.kind` is an unconstrained String(16) — there is no DB enum and
-# no Literal on the read path, so NOTHING else in the stack pins this. Creation
-# is restricted to Literal["dm","agent_service"] (routers/chat.py:100); the
-# org / support / system kinds are written by the product's own internal paths.
-# Derived from source + the live distinct set, not from memory: an earlier
-# hand-written guess here missed "org", and this test is what caught it.
-_KNOWN_KINDS = {"dm", "agent_service", "org", "support", "system"}
+# A CLOSED vocabulary, pinned here on purpose (session-lead, room seq 2514): a new kind must change this line by a
+# deliberate edit, never arrive here by itself. The database's own list is ck_conversations_kind (chat_service's
+# CONVERSATION_KINDS, pinned to the newest migration by tests/test_chat_room_vocabulary_v0659.py). V0659 (f) added
+# 'room' (cross-frame rooms) and this literal had lacked 'group' since the CHECK allowed it; an earlier hand-written guess
+# missed "org", and this test is what caught it.
+_KNOWN_KINDS = {"dm", "agent_service", "org", "support", "system", "group", "room"}
 
 
 def _soft_error(r: Any) -> Optional[str]:

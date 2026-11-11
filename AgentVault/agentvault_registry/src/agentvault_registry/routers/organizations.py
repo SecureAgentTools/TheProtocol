@@ -4,9 +4,10 @@ Organizations and Teams API Router
 Provides REST API endpoints for managing organizations, teams, and memberships.
 """
 
-from typing import List, Optional, Dict, Any, Annotated
+from typing import List, Optional, Dict, Any, Annotated, NamedTuple
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query, Path, Body, Security, Header, Request
+import types
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Path, Body, Security, Header, Request, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, EmailStr, field_validator
 
@@ -24,6 +25,9 @@ from agentvault_registry.services.organization_service import (
     InvitationService
 )
 from agentvault_registry.security import get_current_developer, get_current_developer_optional, get_current_actor_for_read
+from agentvault_registry.security import get_current_actor_for_read_or_key
+from agentvault_registry.services import org_actor
+from agentvault_registry.services import org_mark
 from agentvault_registry.core.caller_errors import internal_detail   # V0653 (am) item 2: no exception text
 
 logger = logging.getLogger(__name__)
@@ -86,6 +90,11 @@ class OrganizationResponse(BaseModel):
     # waiting on them. Both were only knowable by extra per-org round trips.
     my_role: Optional[str] = None
     pending_owner_is_me: Optional[bool] = None
+    # V0657 (b), item 3: the logo this registry hosts for the organization (a path on this registry's own origin), or
+    # None. `logo_url` is kept for the record but no longer shown: a link to another host showed every viewer to it.
+    logo: Optional[str] = None
+    # V0657 (b), item 2: whether the organization is listed (its name in public, its mark on its agents' cards)
+    listed: bool = False
 
 
 class TeamCreate(BaseModel):
@@ -193,6 +202,70 @@ async def get_organization_with_permission(
     return org
 
 
+async def _logo_paths(db: AsyncSession, org_ids: List[str]) -> Dict[str, Optional[str]]:
+    """V0657 (b): the hosted logo's path for each organization (one query for a page)."""
+    ids = [str(i) for i in org_ids if i]
+    if not ids:
+        return {}
+    try:
+        rows = (await db.execute(sa_text(
+            "SELECT organization_id, sha256 FROM organization_logos WHERE organization_id = ANY(:ids)"),
+            {"ids": ids})).fetchall()
+    except Exception as e:  # noqa: BLE001 — a missing logo never fails an organization's read
+        logger.warning("organization logos unreadable: %s", e)
+        return {}
+    return {str(r[0]): org_mark.logo_path(str(r[0]), r[1]) for r in rows}
+
+
+def _public_website(v: Optional[str]) -> Optional[str]:
+    """An organization's website as a public list may show it: an http(s) address, else nothing (a row from before the
+    website was checked may hold anything)."""
+    try:
+        return web_address_or_empty(v, "website") or None
+    except ValueError:
+        return None
+
+
+def _sql_transparent(alias: str) -> str:
+    """V0657 (b), polish 10: the one opt-in test both public listings ask (the JSON boolean true only, as
+    org_policy.transparency_public reads it); discover/firms matched the string "true" as well."""
+    from agentvault_registry.services.org_policy import sql_transparency_public
+    return sql_transparency_public(alias)
+
+
+def _listed(org) -> bool:
+    from agentvault_registry.services.org_policy import listed_public
+    return listed_public(getattr(org, "settings", None))
+
+
+# The caller of a route an agent may use as well (V0657 (b), item 8): a person's login or key, or an agent's token. What
+# each may do is org_actor.org_authority's: a person by the membership role, an agent by its live organization grant.
+OrgCaller = Annotated[dict, Depends(get_current_actor_for_read_or_key)]
+
+
+async def _authority(db: AsyncSession, org_id: str, actor: dict, people: Optional[str], agents: Optional[str] = None,
+                     *, people_only: bool = False):
+    """(org, who). `people` is the role a person needs (None: any member), `agents` the level an agent needs (defaults
+    to the people's)."""
+    need = agents if (actor.get("kind") == "agent" and agents) else (people or "guest")
+    return await org_actor.org_authority(db, org_id, actor, need, people_only=people_only)
+
+
+async def _inviter(db: AsyncSession, org, who: "org_actor.OrgActor"):
+    """(invited_by developer id, the name the mail gives). A person invites as themself; an agent's invitation is
+    recorded under its owner (the person liable for it) and the mail names the agent and its organization."""
+    if who.kind == "developer":
+        return who.developer.id, None
+    row = (await db.execute(sa_text(
+        "SELECT a.creator_developer_id, c.name FROM agents a LEFT JOIN agent_cards c ON c.agent_did = a.did "
+        "AND (c.card_data#>>'{federation_metadata,source_registry}') IS NULL WHERE a.did = :d LIMIT 1"),
+        {"d": who.agent_did})).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    name = (row[1] or "").strip() or who.agent_did
+    return int(row[0]), f"{name}, an agent of {org.name}"
+
+
 # --- Organization Endpoints ---
 
 @router.post("", response_model=OrganizationResponse)
@@ -239,7 +312,8 @@ async def create_organization(
             settings=org.settings or {},
             limits=org.limits or {},
             member_count=1,  # Owner is the first member
-            team_count=1  # Default team created
+            team_count=1,  # Default team created
+            listed=_listed(org),
         )
     except Exception as e:
         logger.error(f"Internal error: {e}")
@@ -284,6 +358,7 @@ async def list_organizations(
         ), {"ids": ids, "d": current_developer.id})).all()
         for oid, role in rrows:
             roles[str(oid)] = str(role)
+    logos = await _logo_paths(db, ids)
 
     return [
         OrganizationResponse(
@@ -306,6 +381,8 @@ async def list_organizations(
             my_role=("owner" if org.owner_id == current_developer.id
                      else roles.get(org.id)),
             pending_owner_is_me=(getattr(org, "pending_owner_id", None) == current_developer.id),
+            logo=logos.get(str(org.id)),
+            listed=_listed(org),
         )
         for org in orgs
     ]
@@ -313,15 +390,13 @@ async def list_organizations(
 
 @router.get("/{org_id}", response_model=OrganizationResponse)
 async def get_organization(
+    actor: OrgCaller,
     org_id: str = Path(..., description="Organization ID"),
-    current_developer: Annotated[Developer, Security(get_current_developer)] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get organization details by ID."""
-    
-    org = await get_organization_with_permission(
-        org_id, current_developer, db
-    )
+    """Get organization details by ID: a member, or an agent holding the organization's authority (V0657 (b))."""
+
+    org, _who = await _authority(db, org_id, actor, None)
     
     # Get counts
     org_with_relations = await OrganizationService.get_organization(
@@ -343,7 +418,9 @@ async def get_organization(
         limits=org.limits or {},
         # §DOCSFIX D6-502: active rows only, as the list route counts them (a deleted team keeps an inactive row)
         member_count=sum(1 for m in org_with_relations.members if m.is_active) if org_with_relations else 0,
-        team_count=sum(1 for t in org_with_relations.teams if t.is_active) if org_with_relations else 0
+        team_count=sum(1 for t in org_with_relations.teams if t.is_active) if org_with_relations else 0,
+        logo=(await _logo_paths(db, [org.id])).get(str(org.id)),
+        listed=_listed(org),
     )
 
 
@@ -379,15 +456,17 @@ async def get_organization_by_slug(
         updated_at=org.updated_at.isoformat(),
         is_active=org.is_active,
         settings=org.settings or {},
-        limits=org.limits or {}
+        limits=org.limits or {},
+        logo=(await _logo_paths(db, [org.id])).get(str(org.id)),
+        listed=_listed(org),
     )
 
 
 @router.put("/{org_id}", response_model=OrganizationResponse)
 async def update_organization(
+    actor: OrgCaller,
     org_id: str = Path(..., description="Organization ID"),
     org_update: OrganizationUpdate = Body(...),
-    current_developer: Annotated[Developer, Security(get_current_developer)] = None,
     db: AsyncSession = Depends(get_db)
 ):
     """Update organization details (requires admin or owner role). `settings`, when given, is a partial patch
@@ -398,20 +477,27 @@ async def update_organization(
     keys outside the catalog, values outside it, an intake agent outside the organization, a key another door owns
     (room_assistant_present), or {} wiping every setting the organization had."""
 
-    current = await get_organization_with_permission(
-        org_id, current_developer, db, required_role="admin"
-    )
+    # V0657 (b), item 8: a person by the admin role, an agent by the organization's owner authority (its settings)
+    current, who = await _authority(db, org_id, actor, "admin", "owner")
     fields = org_update.model_dump(exclude_unset=True)
     patch = fields.pop("settings", None)
+    was_name, was_listed = current.name, _listed(current)
     if patch is not None:
         fields["settings"] = await _merged_settings(db, current, org_id, patch)
+    # the mark its agents' cards carry moves when the name or the listing does: touched in the same commit
+    from agentvault_registry.services.org_policy import listed_public
+    if (fields.get("name") not in (None, was_name)) or (
+            "settings" in fields and listed_public(fields["settings"]) != was_listed):
+        await org_mark.touch_org_cards_no_commit(db, org_id)
 
     org = await OrganizationService.update_organization(
         db, org_id, **fields
     )
-    
+
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
+    if who.kind == "agent":
+        await org_actor.audit(db, who, "update", org_id, details={"fields": sorted(fields)})
     
     return OrganizationResponse(
         id=org.id,
@@ -425,7 +511,9 @@ async def update_organization(
         updated_at=org.updated_at.isoformat(),
         is_active=org.is_active,
         settings=org.settings or {},
-        limits=org.limits or {}
+        limits=org.limits or {},
+        logo=(await _logo_paths(db, [org.id])).get(str(org.id)),
+        listed=_listed(org),
     )
 
 
@@ -466,15 +554,15 @@ async def _merged_settings(db: AsyncSession, org: Organization, org_id: str, pat
 
 @router.get("/{org_id}/settings", summary="Org configurable settings + catalog + registry posture")
 async def get_organization_settings(
+    actor: OrgCaller,
     org_id: str = Path(..., description="Organization ID"),
-    current_developer: Annotated[Developer, Security(get_current_developer)] = None,
     db: AsyncSession = Depends(get_db),
 ):
     """This org's configurable settings, the catalog of what an org admin may set, and the registry's
     current liability posture, so the UI can show that org policy is TIGHTEN-ONLY on top of it."""
     from agentvault_registry.services import org_policy
     from agentvault_registry.config import settings as app_settings
-    org = await get_organization_with_permission(org_id, current_developer, db)
+    org, _who = await _authority(db, org_id, actor, None)
     reg_mode = (getattr(app_settings, "LIABILITY_MODE", "off") or "off").lower()
     reg_thr = float(getattr(app_settings, "LIABILITY_PRESENCE_THRESHOLD_AVT", 0) or 0)
     # E1a — the pending ownership offer rides the settings payload (the Settings tab is
@@ -492,18 +580,25 @@ async def get_organization_settings(
 
 @router.put("/{org_id}/settings", summary="Update org configurable settings (admin/owner, tighten-only)")
 async def update_organization_settings(
+    actor: OrgCaller,
     org_id: str = Path(..., description="Organization ID"),
     patch: Dict[str, Any] = Body(..., description="Partial settings to merge (see the catalog from GET)"),
-    current_developer: Annotated[Developer, Security(get_current_developer)] = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Validate + deep-merge a settings PATCH into organizations.settings (admin/owner only). Liability
-    is enforced TIGHTEN-ONLY at the gate regardless of what is stored; this validates shape + range."""
-    org = await get_organization_with_permission(org_id, current_developer, db, required_role="admin")
+    """Validate + deep-merge a settings PATCH into organizations.settings (admin/owner only; an agent needs the
+    organization's owner authority). Liability is enforced TIGHTEN-ONLY at the gate regardless of what is stored; this
+    validates shape + range. Turning the listing (`public_listing`) on or off moves the mark on the agents' cards."""
+    org, who = await _authority(db, org_id, actor, "admin", "owner")
+    was_listed = _listed(org)
     merged = await _merged_settings(db, org, org_id, patch)
+    from agentvault_registry.services.org_policy import listed_public
+    if listed_public(merged) != was_listed:
+        await org_mark.touch_org_cards_no_commit(db, org_id)      # in the settings' own commit
     updated = await OrganizationService.update_organization(db, org_id, settings=merged)
     if not updated:
         raise HTTPException(status_code=404, detail="Organization not found")
+    if who.kind == "agent":
+        await org_actor.audit(db, who, "settings", org_id, details={"keys": sorted(patch or {})})
     return {"org_id": org_id, "settings": updated.settings or {}}
 
 
@@ -545,6 +640,8 @@ async def delete_organization(
         "WHERE principal_type = 'org' AND (principal_ref = :ref_slug OR principal_ref = :ref_id) "
         "AND revoked_at IS NULL"
     ), {"ref_slug": f"org:{org.slug}", "ref_id": f"org:{org.id}"})).rowcount or 0
+    # V0657 (b): its agents' cards move before they leave it, so every peer drops the organization's mark
+    await org_mark.touch_org_cards_no_commit(db, org_id)
     unassigned = (await db.execute(_text(
         "UPDATE agents SET organization_id = NULL, team_id = NULL WHERE organization_id = :o"
     ), {"o": str(org_id)})).rowcount or 0
@@ -773,15 +870,13 @@ async def delete_team(
 
 @router.get("/{org_id}/members", response_model=List[MemberResponse])
 async def list_organization_members(
+    actor: OrgCaller,
     org_id: str = Path(..., description="Organization ID"),
-    current_developer: Annotated[Developer, Security(get_current_developer)] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    """List all members of an organization."""
-    
-    await get_organization_with_permission(
-        org_id, current_developer, db
-    )
+    """List all members of an organization (a member, or an agent holding the organization's authority)."""
+
+    await _authority(db, org_id, actor, None)
     
     # Need to eagerly load developer relationship for members
     from sqlalchemy.orm import selectinload
@@ -820,25 +915,29 @@ async def list_organization_members(
 
 @router.post("/{org_id}/invite")
 async def invite_member(
+    actor: OrgCaller,
     org_id: str = Path(..., description="Organization ID"),
     invite: MemberInvite = Body(...),
-    current_developer: Annotated[Developer, Security(get_current_developer)] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    """Invite a new member to the organization (requires admin or owner role)."""
-    
-    await get_organization_with_permission(
-        org_id, current_developer, db, required_role="admin"
-    )
-    
+    """Invite a new member to the organization (requires admin or owner role; an agent, the organization's admin
+    authority: the mail names the agent, and its owner is recorded as the inviter)."""
+
+    org, who = await _authority(db, org_id, actor, "admin")
+    inviter_id, inviter_name = await _inviter(db, org, who)
+
     try:
         invitation, mail_sent = await InvitationService.create_invitation(
             db=db,
             organization_id=org_id,
             email=invite.email,
             role=invite.role,
-            invited_by_id=current_developer.id
+            invited_by_id=inviter_id,
+            inviter_name=inviter_name,
         )
+        if who.kind == "agent":
+            await org_actor.audit(db, who, "invite", org_id, target_type="invitation", target_id=str(invitation.id),
+                                  details={"role": invite.role})
         
         return {
             # §FESUITE (V0594): what happened to the mail, said (it said "sent" whatever the send did); the invitation
@@ -895,8 +994,8 @@ def _invitation_status(row) -> str:
 
 @router.get("/{org_id}/invitations", summary="Invitations this organization has sent")
 async def list_organization_invitations(
+    actor: OrgCaller,
     org_id: str = Path(..., description="Organization ID"),
-    current_developer: Annotated[Developer, Security(get_current_developer)] = None,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -931,7 +1030,7 @@ async def list_organization_invitations(
     from sqlalchemy import select
     from agentvault_registry.models import OrganizationInvitation
 
-    await get_organization_with_permission(org_id, current_developer, db, required_role="admin")
+    await _authority(db, org_id, actor, "admin")
     rows = (await db.execute(
         select(OrganizationInvitation)
         .where(OrganizationInvitation.organization_id == org_id)
@@ -967,9 +1066,9 @@ async def list_organization_invitations(
 
 @router.delete("/{org_id}/invitations/{invitation_id}", summary="Withdraw a pending invitation")
 async def revoke_organization_invitation(
+    actor: OrgCaller,
     org_id: str = Path(..., description="Organization ID"),
     invitation_id: str = Path(..., description="Invitation id from the list route"),
-    current_developer: Annotated[Developer, Security(get_current_developer)] = None,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -1001,7 +1100,7 @@ async def revoke_organization_invitation(
     from sqlalchemy import select, and_
     from agentvault_registry.models import OrganizationInvitation
 
-    await get_organization_with_permission(org_id, current_developer, db, required_role="admin")
+    _org, who = await _authority(db, org_id, actor, "admin")
     row = (await db.execute(
         select(OrganizationInvitation).where(and_(
             OrganizationInvitation.id == invitation_id,
@@ -1021,7 +1120,9 @@ async def revoke_organization_invitation(
 
     row.status = "cancelled"
     await db.commit()
-    logger.info("org %s: invitation %s withdrawn by developer %s", org_id, invitation_id, current_developer.id)
+    logger.info("org %s: invitation %s withdrawn by %s %s", org_id, invitation_id, who.kind, who.ref)
+    if who.kind == "agent":
+        await org_actor.audit(db, who, "invitation_withdraw", org_id, target_type="invitation", target_id=invitation_id)
     return {"id": row.id, "email": row.email, "status": "cancelled", "already": False}
 
 
@@ -1225,16 +1326,15 @@ async def remove_team_member(
 
 @router.delete("/{org_id}/members/{developer_id}")
 async def remove_org_member(
+    actor: OrgCaller,
     org_id: str = Path(..., description="Organization ID"),
     developer_id: int = Path(..., description="Developer ID to remove"),
-    current_developer: Annotated[Developer, Security(get_current_developer)] = None,
     db: AsyncSession = Depends(get_db)
 ):
     """Remove a member from an organization (requires admin role). Hard deletes for UniqueConstraint compatibility."""
     
-    org_row = await get_organization_with_permission(
-        org_id, current_developer, db, required_role="admin"
-    )
+    # V0657 (b), item 8: a person by the admin role, an agent by the organization's owner authority (the roles)
+    org_row, who = await _authority(db, org_id, actor, "admin", "owner")
     
     try:
         success = await OrganizationService.remove_member(
@@ -1308,26 +1408,27 @@ async def remove_org_member(
         logger.warning("org room detach failed for dev %s / org %s: %s",
                        developer_id, org_id, e)
 
+    if who.kind == "agent":
+        await org_actor.audit(db, who, "member_remove", org_id, target_type="developer", target_id=str(developer_id))
     return {"message": "Member removed from organization successfully"}
 
 
 @router.put("/{org_id}/members/{developer_id}/role", response_model=MemberResponse)
 async def update_org_member_role(
+    actor: OrgCaller,
     org_id: str = Path(..., description="Organization ID"),
     developer_id: int = Path(..., description="Developer ID whose role to change"),
     role_data: MemberRoleUpdate = Body(...),
-    current_developer: Annotated[Developer, Security(get_current_developer)] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    """Change a member's organization role (requires admin role).
+    """Change a member's organization role (requires admin role; an agent, the organization's owner authority).
 
     The owner row is refused (400), since ownership is not a role edit, and an
     admin can grant at most 'admin', mirroring the invite clamp.
     """
 
-    await get_organization_with_permission(
-        org_id, current_developer, db, required_role="admin"
-    )
+    org, who = await _authority(db, org_id, actor, "admin", "owner")
+    changed_by = who.developer_id if who.kind == "developer" else (await _inviter(db, org, who))[0]
 
     try:
         member = await OrganizationService.update_member_role(
@@ -1335,8 +1436,11 @@ async def update_org_member_role(
             org_id=org_id,
             developer_id=developer_id,
             new_role=role_data.role,
-            changed_by=current_developer.id,
+            changed_by=changed_by,
         )
+        if who.kind == "agent":
+            await org_actor.audit(db, who, "member_role", org_id, target_type="developer", target_id=str(developer_id),
+                                  details={"role": role_data.role})
     except ValueError as e:
         # USER-facing validation rejection (owner immutability, bad role) —
         # surface str(e), same convention as remove_org_member above.
@@ -2374,16 +2478,17 @@ async def organization_cicd_summary(
 
 @router.get("/{org_id}/agents")
 async def list_organization_agents(
+    actor: OrgCaller,
     org_id: str,
     team_id: Optional[str] = Query(None, description="Filter by team"),
-    developer: Developer = Security(get_current_developer),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all agents assigned to this organization (or filtered by team)."""
+    """List all agents assigned to this organization (or filtered by team): a member, or an agent holding the
+    organization's member authority. Each says whether its card shows the organization (V0657 (b))."""
     from sqlalchemy import select
     from agentvault_registry.models import Agent
 
-    org = await get_organization_with_permission(org_id, developer, db, "member")
+    org, _who = await _authority(db, org_id, actor, "member")
 
     stmt = select(Agent).where(Agent.organization_id == org_id)
     if team_id:
@@ -2457,10 +2562,14 @@ async def list_organization_agents(
                 "creator_is_member": (creator_member.get(a.creator_developer_id)
                                       if a.creator_developer_id else None),
                 "org_authority": authority.get(a.did, "none"),
+                # V0657 (b), item 2: "show my org", and whether the card states the organization now (it is listed)
+                "show_org": bool(getattr(a, "show_org", True)),
+                "org_mark_public": bool(getattr(a, "show_org", True)) and _listed(org),
             }
             for a in agents
         ],
         "count": len(agents),
+        "listed": _listed(org),
     }
 
 
@@ -2663,29 +2772,144 @@ async def get_org_activity_rollup(
     }
 
 
-@router.post("/{org_id}/agents/{agent_did}/assign")
-async def assign_agent_to_org(
-    org_id: str,
-    agent_did: str,
-    team_id: Optional[str] = Body(None, embed=True),
-    developer: Developer = Security(get_current_developer),
-    db: AsyncSession = Depends(get_db),
-):
-    """Assign an agent to this organization (and optionally a team). Only the agent's creator or org admin can do this."""
+class AgentInAnotherOrganization(HTTPException):
+    """V0658 (s) (the maintainer's report, sessions' room seq 2150): the answer to a move the request did not confirm.
+    An agent belongs to one organization (agents.organization_id), so bringing it into another one takes it out of the
+    one it is in; that happened without a word. The move is made only when the request names the organization the
+    agent leaves (leave_organization_id). This 409 names that organization, in its words and in error.context, which is
+    what a console reads to ask before it sends the confirming request. Nothing is written before it is raised.
+
+    The second review (session-lead, sessions' room seq 2361): an accept is decided by an administrator of the
+    RECEIVING organization, whom the request list never showed where the agent is, and an organization that is not
+    listed has not agreed to be named (public_listing is that consent). There this answer names the organization only
+    when _named_to says so (listed, or the administrator is a member of it). Otherwise (`named` False) its words say
+    "another organization, not listed", error.context carries neither its id nor its name, and the move is confirmed
+    with the opaque reference the answer hands out (_leave_reference), which tells nothing of it. Either way
+    error.context.confirm_value is what confirms the move: the value a console sends back as leave_organization_id."""
+
+    error_code = "AGENT_IN_ANOTHER_ORGANIZATION"
+    UNNAMED = "another organization, not listed"
+
+    def __init__(self, current_id: str, current_name: Optional[str], *, named_another: bool = False,
+                 exists: bool = True, named: bool = True, reference: Optional[str] = None):
+        if not named:
+            # nothing of the organization, not its id, its name or whether its row is still there: only the reference.
+            # The same answer whatever the request sent, so it cannot be used to test a guess.
+            said = f"The agent is in {self.UNNAMED}" + (
+                "; the leave_organization_id the request sent does not confirm the move out of it." if named_another
+                else ".")
+            super().__init__(status_code=409, detail=(
+                f"{said} An agent belongs to one organization, so bringing it into this one would take it out of that "
+                f"organization; nothing was changed. To move it, send leave_organization_id {reference} with the "
+                f"request."))
+            self.context = {"current_organization": {"id": None, "name": None, "label": self.UNNAMED},
+                            "confirm_with": "leave_organization_id", "confirm_value": reference}
+            return
+        # the words say the move did not happen: an MCP caller reads only them ("Error: HTTP 409: ..."). An agent can
+        # still name an organization whose row is gone; its id is then not dressed up as a name.
+        if not exists:
+            where, it = f"an organization that no longer exists (id {current_id})", "that organization"
+        elif current_name:
+            where, it = f"the organization {current_name} (id {current_id})", current_name
+        else:
+            where, it = f"the organization with id {current_id}", "that organization"
+        said = f"The agent is in {where}" + (
+            "; the request named another organization for it to leave." if named_another else ".")
+        super().__init__(status_code=409, detail=(
+            f"{said} An agent belongs to one organization, so bringing it into this one would take it out of {it}; "
+            f"nothing was changed. To move it, send leave_organization_id {current_id} with the request."))
+        self.context = {"current_organization": {"id": current_id, "name": current_name},
+                        "confirm_with": "leave_organization_id", "confirm_value": current_id}
+
+
+class _Left(NamedTuple):
+    """V0658 (s): the organization an agent left when it was brought in. `told`: whether the one who brought it in may be
+    told which (the second review: the assign's caller, the agent's creator, always; an accept's administrator only when
+    _named_to says so); `reference`: the opaque value that confirms that move where they may not (_leave_reference)."""
+    id: str
+    told: bool
+    reference: str
+
+
+_LEAVE_REFERENCE_CONTEXT = b"theprotocol organization leave reference v1"   # the derivation's purpose: it keys nothing else
+
+
+def _leave_reference(agent_did: str, current_org_id: str, into_org_id: str) -> str:
+    """V0658 (s), the second review: the opaque value that confirms one move (this agent, out of the organization it is
+    in, into this one) where the answer may not name that organization. An HMAC-SHA256 under a key of its own, derived
+    from the registry's secret (API_KEY_SECRET, which every worker and restart shares, so any worker accepts what
+    another handed out): it tells nothing of the organization, nobody without that secret can make one or test a
+    guessed organization against it, and it confirms no other move (another agent, organization or destination)."""
+    import hashlib
+    import hmac
+    from agentvault_registry.config import settings
+    key = hmac.new(str(getattr(settings, "API_KEY_SECRET", "") or "").encode(), _LEAVE_REFERENCE_CONTEXT,
+                   hashlib.sha256).digest()
+    mac = hmac.new(key, "\x00".join((str(agent_did), str(current_org_id), str(into_org_id))).encode(),
+                   hashlib.sha256).hexdigest()
+    return f"olr_{mac[:32]}"
+
+
+async def _named_to(db: AsyncSession, prev, decider: "org_actor.OrgActor", *, shows: bool = True) -> bool:
+    """V0658 (s), the second review (session-lead, seq 2361): whether a refused accept may name the organization the
+    agent is in to the administrator deciding it. Only when that organization is listed (active, and public_listing set:
+    its consent to be named) or the administrator is a member of it (its owner, or an active member: they know it).
+    An agent decides as an agent of the receiving organization (org_actor gives it authority only in the one it belongs
+    to, and an agent belongs to one), so it is a member of no other. An organization whose row is gone is listed
+    nowhere and has no members. `prev`: its row (id, slug, name, owner_id, listed), or None.
+
+    The third review (seq 2415): being named to another organization takes the same consent as the public mark, the
+    organization listed AND the agent showing it (`shows`: agents.show_org, as org_mark's _STATE_SQL reads it). A member
+    is told either way: they know it."""
+    if prev is None:
+        return False
+    if prev[4] and shows:
+        return True
+    if decider.kind != "developer" or decider.developer_id is None:
+        return False
+    member_of = types.SimpleNamespace(id=prev[0], owner_id=prev[3] if prev[3] is not None else -1)
+    return await org_actor.developer_org_level(db, decider.developer_id, member_of) is not None
+
+
+def _names_organization(named: str, org_id: str, *, reference: Optional[str] = None, by_id: bool = True) -> bool:
+    """V0658 (s): whether a confirmation names this organization. Its id is a uuid4 kept in the canonical lower-case
+    form; the same uuid written in capitals (or without its hyphens) names the same organization.
+
+    The second review: the reference a refusal handed out (_leave_reference) names it too. Where the organization is
+    not named to the caller (`by_id` False) only the reference does: an id sent for it would otherwise answer whether
+    a guess was right, by moving the agent."""
+    if not named:
+        return False
+    import hmac
+    if reference and hmac.compare_digest(named.encode(), reference.encode()):
+        return True
+    if not by_id:
+        return False
+    import uuid
+    try:
+        return uuid.UUID(named) == uuid.UUID(org_id)
+    except ValueError:   # an id that is not a uuid (none is made so): the same text, in any case
+        return named.lower() == org_id.lower()
+
+
+async def _attach_agent(db: AsyncSession, org, agent, *, team_id: Optional[str], granted_by: int,
+                        leave_organization_id: Optional[str] = None,
+                        decider: Optional["org_actor.OrgActor"] = None) -> Optional[_Left]:
+    """Bring `agent` into `org` (and a team): the one path for the owner's assign and an accepted join request (V0657
+    (b), polish 9). The caller checked who may. Commits; then the organization's default authority slice is granted.
+    Returns the organization the agent left (None when it was in none, or already in this one).
+
+    V0658 (s): an agent in another organization leaves it only when the request names that organization
+    (`leave_organization_id`); otherwise AgentInAnotherOrganization (409) names it and nothing is written. A request
+    naming any other organization (the agent moved since the caller asked) moves nothing either. An agent in no
+    organization, or already in this one (a team move), needs no confirmation.
+
+    The second review (seq 2361): `decider` is the administrator deciding an accept; None for the assign, whose caller
+    is the agent's creator and is told where it is. The refusal names the organization to a decider only when
+    _named_to says so; otherwise only the reference it hands out confirms the move."""
     from sqlalchemy import select
     from agentvault_registry.models import Agent
-
-    org = await get_organization_with_permission(org_id, developer, db, "admin")
-
-    # Find agent
-    result = await db.execute(select(Agent).where(Agent.did == agent_did))
-    agent = result.scalar_one_or_none()
-    if not agent:
-        raise HTTPException(404, "Agent not found")
-
-    # Must be agent creator (org admin permission already checked by get_organization_with_permission)
-    if agent.creator_developer_id != developer.id:
-        raise HTTPException(403, "Only the agent creator can assign agents")
+    org_id, agent_did = str(org.id), agent.did
 
     # Enforce the org's stored max_agents cap (limits JSON — may be NULL on old rows).
     # Re-assigning an agent already in this org (e.g. a team move) never counts against it.
@@ -2705,11 +2929,23 @@ async def assign_agent_to_org(
     # removal and unassign, third path. Revoke the PREVIOUS org's grants here so the only
     # authority an agent carries is the one its current org chose.
     prev_org_id = agent.organization_id
-    if prev_org_id and str(prev_org_id) != str(org_id):
+    moving = bool(prev_org_id) and str(prev_org_id) != str(org_id)
+    told, reference = True, ""
+    if moving:
+        # V0658 (s): the move is the request's to confirm, by the organization it leaves; asked before anything is written
+        from agentvault_registry.services.org_policy import sql_listed_public
+        prev = (await db.execute(sa_text(
+            "SELECT id, slug, name, owner_id, (is_active AND " + sql_listed_public("organizations") + ") AS listed "
+            "FROM organizations WHERE id = :o"), {"o": str(prev_org_id)})).first()
+        # the second review: an accept's administrator is told which organization only when _named_to says so
+        told = decider is None or await _named_to(db, prev, decider, shows=bool(getattr(agent, "show_org", True)))
+        reference = _leave_reference(agent_did, str(prev_org_id), org_id)
+        named = leave_organization_id.strip() if isinstance(leave_organization_id, str) else ""
+        if not _names_organization(named, str(prev_org_id), reference=reference, by_id=told):
+            raise AgentInAnotherOrganization(str(prev_org_id), prev[2] if prev else None, named_another=bool(named),
+                                             exists=prev is not None, named=told, reference=reference)
         try:
             async with db.begin_nested():
-                prev = (await db.execute(sa_text(
-                    "SELECT id, slug FROM organizations WHERE id = :o"), {"o": str(prev_org_id)})).first()
                 if prev:
                     await db.execute(sa_text("""
                         UPDATE agent_delegation_grants SET revoked_at = now(),
@@ -2719,7 +2955,10 @@ async def assign_agent_to_org(
                            AND delegate_agent_did = :did AND revoked_at IS NULL
                     """), {"ref_slug": f"org:{prev[1]}", "ref_id": f"org:{prev[0]}", "did": agent_did})
         except Exception as e:  # noqa: BLE001 — never fail the assignment over the old org
-            logger.warning("[ORGLIFE] prev-org grant revoke failed for %s: %s", agent_did, e)
+            # the third review: the error's class and its first line, never its statement or parameters (the org's
+            # slug and id), as the session's own rollback line does (V0545)
+            logger.warning("[ORGLIFE] prev-org grant revoke failed for %s: %s: %s", agent_did, type(e).__name__,
+                           str(e).split("\n", 1)[0][:240])
 
     agent.organization_id = org_id
     if team_id:
@@ -2729,6 +2968,11 @@ async def assign_agent_to_org(
         if not team_result.scalar_one_or_none():
             raise HTTPException(404, "Team not found in this organization")
         agent.team_id = team_id
+    elif moving:
+        # the third review: a team of the organization it left is no team of this one
+        agent.team_id = None
+    # V0657 (b): the card moves with the agent, so every peer re-reads its organization mark (gained, or changed)
+    await org_mark.touch_agent_cards_no_commit(db, [agent_did])
 
     await db.commit()
 
@@ -2740,28 +2984,70 @@ async def assign_agent_to_org(
         slice_name = default_authority_slice(org.settings if isinstance(org.settings, dict) else {})
         if slice_name:
             await grant_org_slice(db, org_slug=org.slug, agent_dids=[agent_did],
-                                  role=slice_name, granted_by=developer.id)
+                                  role=slice_name, granted_by=granted_by)
             await db.commit()
             logger.info("[ORG-AUTHORITY] default slice %s auto-granted to %s on assign to org %s",
                         slice_name, agent_did, org_id)
     except Exception as e:  # noqa: BLE001
         logger.warning(f"[ORG-AUTHORITY] default-slice auto-grant failed for {agent_did}: {e}")
+    return _Left(str(prev_org_id), told, reference) if moving else None
 
-    return {"message": f"Agent {agent_did} assigned to organization {org_id}", "team_id": team_id}
 
-
-@router.post("/{org_id}/agents/{agent_did}/unassign")
-async def unassign_agent_from_org(
+@router.post("/{org_id}/agents/{agent_did}/assign")
+async def assign_agent_to_org(
     org_id: str,
     agent_did: str,
+    team_id: Optional[str] = Body(None, embed=True),
+    leave_organization_id: Optional[str] = Body(
+        None, embed=True, max_length=255,
+        description="The organization the agent leaves, when it is in another one: an agent belongs to one "
+                    "organization, and the move is made only when this names the one it is in"),
     developer: Developer = Security(get_current_developer),
     db: AsyncSession = Depends(get_db),
 ):
-    """Remove an agent from this organization."""
+    """Assign an agent to this organization (and optionally a team). The caller is an org admin AND the agent's
+    creator. Anyone else asks: the agent's owner, a member, or the agent itself files a join request
+    (POST /{org_id}/agent-requests) and an administrator accepts it.
+
+    An agent belongs to one organization. One that is in another organization moves here only when the request names
+    that organization in `leave_organization_id`; otherwise the answer is a 409 (AGENT_IN_ANOTHER_ORGANIZATION) naming
+    it, with its id and name in error.context.current_organization, and nothing changes. The answer to a move names
+    the organization the agent left (`left_organization_id`)."""
     from sqlalchemy import select
     from agentvault_registry.models import Agent
 
     org = await get_organization_with_permission(org_id, developer, db, "admin")
+
+    # Find agent
+    result = await db.execute(select(Agent).where(Agent.did == agent_did))
+    agent = result.scalar_one_or_none()
+    if not agent:
+        raise HTTPException(404, "Agent not found")
+
+    # Must be agent creator (org admin permission already checked by get_organization_with_permission)
+    if agent.creator_developer_id != developer.id:
+        raise HTTPException(403, "Only the agent creator can assign agents; anyone else files a join request "
+                                 f"(POST /api/v1/organizations/{org_id}/agent-requests) for an administrator to accept")
+
+    left = await _attach_agent(db, org, agent, team_id=team_id, granted_by=developer.id,
+                               leave_organization_id=leave_organization_id)
+    return {"message": f"Agent {agent_did} assigned to organization {org_id}", "team_id": team_id,
+            "left_organization_id": left.id if left else None}
+
+
+@router.post("/{org_id}/agents/{agent_did}/unassign")
+async def unassign_agent_from_org(
+    actor: OrgCaller,
+    org_id: str,
+    agent_did: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove an agent from this organization (an org admin, or an agent holding the organization's admin authority).
+    Its card moves, so every peer drops the organization's mark."""
+    from sqlalchemy import select
+    from agentvault_registry.models import Agent
+
+    org, who = await _authority(db, org_id, actor, "admin")
 
     result = await db.execute(select(Agent).where(Agent.did == agent_did, Agent.organization_id == org_id))
     agent = result.scalar_one_or_none()
@@ -2770,7 +3056,10 @@ async def unassign_agent_from_org(
 
     agent.organization_id = None
     agent.team_id = None
+    await org_mark.touch_agent_cards_no_commit(db, [agent_did])
     await db.commit()
+    if who.kind == "agent":
+        await org_actor.audit(db, who, "agent_unassign", org_id, target_type="agent", target_id=agent_did)
 
     # §ORGLIFE L2b — unassigning is the org saying "this agent is not ours any more",
     # so the authority scoped to that relationship goes with it. The link half already
@@ -2815,8 +3104,11 @@ async def unassign_agent_from_org(
 @router.get("/{org_id}/track-record",
             summary="The organization's verifiable track record (public)")
 async def get_org_track_record(org_id: str, db: AsyncSession = Depends(get_db)):
+    from agentvault_registry.services.org_policy import sql_listed_public
+    # V0658 (v): with the row, whether this registry names the organization's members in public (active and listed)
     row = (await db.execute(sa_text(
-        "SELECT id, name, slug, is_active FROM organizations WHERE id = :o"),
+        "SELECT o.id, o.name, o.slug, o.is_active, (o.is_active = TRUE AND " + sql_listed_public("o") + ") AS listed "
+        "FROM organizations o WHERE o.id = :o"),
         {"o": org_id})).first()
     if not row:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -2824,6 +3116,17 @@ async def get_org_track_record(org_id: str, db: AsyncSession = Depends(get_db)):
     rec = await _tr.org_track_record(db, org_id)
     rec.update({"org_id": org_id, "name": row[1], "slug": row[2],
                 "is_active": bool(row[3])})
+    # V0658 (v), item 6: the work its member agents settled on their own, beside the firm's record and never in it, and
+    # only for an organization this registry names in public: an unlisted one carries no line at all (its members are
+    # not stated in public), never a zero. Read last: a failed read leaves the field out (unknown is not zero) and the
+    # firm's own answer stands.
+    if bool(row[4]):
+        try:
+            member = await _tr.member_agents_work(db, [org_id])
+        except Exception as e:  # noqa: BLE001
+            logger.warning("organization %s: its agents' own work unreadable: %s", org_id, e)
+        else:
+            rec["member_work"] = member.get(str(org_id), {"jobs": 0})
     return rec
 
 
@@ -3064,7 +3367,7 @@ async def discover_firms(
             WHERE w.status = 'settled'
             GROUP BY o2.id
         )
-        SELECT o.id, o.name, o.slug, o.description, o.settings, o.created_at,
+        SELECT o.id, o.name, o.slug, o.description, o.website, o.settings, o.created_at,
                COALESCE(wk.jobs, 0) AS worker_jobs,
                COALESCE(cl.orders, 0) AS commissioned,
                GREATEST(wk.last_settled, cl.last_settled) AS last_settled
@@ -3073,14 +3376,15 @@ async def discover_firms(
         LEFT JOIN client cl ON cl.org_id = o.id
         WHERE o.is_active = true
           AND (COALESCE(wk.jobs, 0) > 0 OR COALESCE(cl.orders, 0) > 0
-               OR o.settings->>'public_transparency_opt_in' = 'true'
+               OR @@TRANSPARENT@@
                OR COALESCE(o.settings->>'intake_agent_did', '') != '')
         ORDER BY (COALESCE(wk.jobs, 0) + COALESCE(cl.orders, 0)) DESC, o.created_at ASC
         LIMIT :n
-    """), {"n": limit})).mappings().all()
+    """.replace("@@TRANSPARENT@@", _sql_transparent("o"))), {"n": limit})).mappings().all()
 
     firms = [dict(r) for r in rows]
     org_ids = [f["id"] for f in firms]
+    logos = await _logo_paths(db, org_ids)   # V0657 (b), polish 10: the hosted logo, never another host's
 
     # Stars over the WORKER jobs, one batched query for the page.
     stars: Dict[str, Any] = {}
@@ -3107,6 +3411,22 @@ async def discover_firms(
             if str(a["status"]).lower() == "active" and a["organization_id"]:
                 valid_intake[f"{a['organization_id']}|{a['did']}"] = a["did"]
 
+    # V0658 (v), item 6: the work each firm's member agents settled on their own, a line of its own beside the firm's
+    # count and never added into it, for the firms this registry names in public (listed). The strip lists others too
+    # (open books, an intake agent, settled work as the firm): their members are not stated in public, so their cards
+    # carry no line rather than a false zero, and they are not asked for. Read last, so a failure cannot spoil the reads
+    # above: it leaves the field out.
+    def _is_listed(f) -> bool:
+        return _listed(types.SimpleNamespace(settings=f.get("settings") if isinstance(f.get("settings"), dict) else {}))
+    listed_ids = [f["id"] for f in firms if _is_listed(f)]
+    member: Optional[Dict[str, Dict[str, int]]] = None
+    if listed_ids:
+        from agentvault_registry.services import track_record as _tr
+        try:
+            member = await _tr.member_agents_work(db, listed_ids)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("firms: the agents' own work unreadable: %s", e)
+
     out = []
     for f in firms:
         s = stars.get(f["id"]) or {}
@@ -3116,6 +3436,8 @@ async def discover_firms(
         out.append({
             "org_id": f["id"], "name": f["name"], "slug": f["slug"],
             "description": f["description"],
+            "website": _public_website(f.get("website")), "logo": logos.get(str(f["id"])),
+            "listed": _listed(types.SimpleNamespace(settings=settings)),
             "verified_jobs": int(f["worker_jobs"]),
             "commissioned": int(f["commissioned"]),
             "stars_avg": (round(float(s["stars_avg"]), 2) if s.get("stars_avg") is not None else None),
@@ -3127,6 +3449,8 @@ async def discover_firms(
             "engage_reason": (None if intake else
                               "This firm has not set an intake agent — there is no engage door."),
         })
+        if member is not None and out[-1]["listed"]:
+            out[-1]["member_work"] = member.get(str(f["id"]), {"jobs": 0})
     return {"firms": out, "total": len(out),
             "ranking": "proof-weighted: settled work (as worker + as client) first"}
 
@@ -3150,16 +3474,465 @@ async def list_transparent_organizations(
     test as org_policy.transparency_public, which each firm's feed asks.
     """
     rows = (await db.execute(sa_text(
-        "SELECT o.id, o.name, o.slug, o.description, c.topic, c.last_message_at "
+        "SELECT o.id, o.name, o.slug, o.description, c.topic, c.last_message_at, o.website "
         "FROM organizations o "
         "LEFT JOIN conversations c ON c.kind = 'org' AND c.org_id = o.id "
         "WHERE o.is_active = true "
-        "AND (o.settings->'public_transparency_opt_in')::text = 'true' "
+        "AND " + _sql_transparent("o") + " "
         "ORDER BY c.last_message_at DESC NULLS LAST LIMIT :n"), {"n": limit})).fetchall()
+    logos = await _logo_paths(db, [r[0] for r in rows])
     return {"organizations": [
         {"org_id": r[0], "name": r[1], "slug": r[2], "description": r[3],
-         "topic": r[4], "last_activity_at": r[5].isoformat() if r[5] else None}
+         "topic": r[4], "last_activity_at": r[5].isoformat() if r[5] else None,
+         # V0657 (b), polish 10: the website and the hosted logo, as the other public listing now carries them
+         "website": _public_website(r[6]), "logo": logos.get(str(r[0]))}
         for r in rows]}
+
+
+# ---------------------------------------------------------------------------
+# V0657 (b), session-code 2026-11-06: orgs v2, local (items 2, 3, 6, 8 and polish 9). The discovery: room seq 1475,
+# orgs_v2_discovery_2026-11-06.md; the Commander's answer: seq 1482.
+# ---------------------------------------------------------------------------
+
+_LOGO_MAX_BYTES = 256 * 1024
+_LOGO_TYPES = {"png": "image/png", "jpeg": "image/jpeg"}
+
+
+@router.put("/{org_id}/logo", summary="Upload the organization's logo, hosted by this registry")
+async def upload_organization_logo(
+    actor: OrgCaller,
+    org_id: str = Path(..., description="Organization ID"),
+    file: UploadFile = File(..., description="PNG or JPEG, at most 256 KB"),
+    db: AsyncSession = Depends(get_db),
+):
+    """The logo this registry serves for the organization from its own origin (GET /{org_id}/logo), so no viewer's
+    browser calls a third party; it replaces any earlier upload. PNG or JPEG, at most 256 KB, the type read from the
+    bytes (SVG is refused: it can carry script). An org admin, or an agent holding the organization's owner authority.
+    The agents' cards move, so every peer shows the new logo with their organization's mark."""
+    import hashlib
+    from agentvault_registry.core.image_sniff import sniff_image_format
+    from agentvault_registry.models import OrganizationLogo
+    org, who = await _authority(db, org_id, actor, "admin", "owner")
+    raw = await file.read(_LOGO_MAX_BYTES + 1)
+    if len(raw) > _LOGO_MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"A logo is at most {_LOGO_MAX_BYTES // 1024} KB")
+    fmt = sniff_image_format(raw[:64]) if raw else None
+    if fmt not in _LOGO_TYPES:
+        raise HTTPException(status_code=415, detail=f"A logo is a PNG or a JPEG (this file reads as {fmt or 'neither'})")
+    digest = hashlib.sha256(raw).hexdigest()
+    row = (await db.execute(select(OrganizationLogo).where(OrganizationLogo.organization_id == org.id))).scalar_one_or_none()
+    if row is None:
+        db.add(OrganizationLogo(organization_id=org.id, content_type=_LOGO_TYPES[fmt], data=raw, sha256=digest,
+                                size=len(raw)))
+    else:
+        row.content_type, row.data, row.sha256, row.size = _LOGO_TYPES[fmt], raw, digest, len(raw)
+    await org_mark.touch_org_cards_no_commit(db, org.id)
+    await db.commit()
+    await org_actor.audit(db, who, "logo", org.id, details={"sha256": digest, "size": len(raw)})
+    return {"org_id": org.id, "logo": org_mark.logo_path(org.id, digest), "size": len(raw),
+            "content_type": _LOGO_TYPES[fmt]}
+
+
+@router.delete("/{org_id}/logo", summary="Remove the organization's hosted logo")
+async def delete_organization_logo(
+    actor: OrgCaller,
+    org_id: str = Path(..., description="Organization ID"),
+    db: AsyncSession = Depends(get_db),
+):
+    """An org admin, or an agent holding the organization's owner authority. The agents' cards move."""
+    org, who = await _authority(db, org_id, actor, "admin", "owner")
+    n = (await db.execute(sa_text("DELETE FROM organization_logos WHERE organization_id = :o"),
+                          {"o": str(org.id)})).rowcount or 0
+    if n:
+        await org_mark.touch_org_cards_no_commit(db, org.id)
+    await db.commit()
+    if n:
+        await org_actor.audit(db, who, "logo_removed", org.id)
+    return {"org_id": org.id, "removed": bool(n)}
+
+
+@router.get("/{org_id}/logo", summary="The organization's logo (public)", include_in_schema=True)
+async def get_organization_logo(
+    org_id: str = Path(..., description="Organization ID"),
+    db: AsyncSession = Depends(get_db),
+):
+    """The logo this registry hosts for an active organization: its bytes, from this origin. Public (an image tag sends
+    no credentials); the address carries the bytes' version, so it is cached for a long time."""
+    from fastapi import Response
+    row = (await db.execute(sa_text(
+        "SELECT l.content_type, l.data, l.sha256 FROM organization_logos l JOIN organizations o "
+        "ON o.id = l.organization_id WHERE l.organization_id = :o AND o.is_active = TRUE"), {"o": org_id})).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="This organization has no logo here")
+    return Response(content=bytes(row[1]), media_type=row[0], headers={
+        "Cache-Control": "public, max-age=86400",
+        "ETag": f'"{row[2][:32]}"',
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'",
+    })
+
+
+class OrgMarkUpdate(BaseModel):
+    """V0657 (b), item 2: "show my org"."""
+    show: bool = Field(..., description="Whether the agent's card states its organization (while it is listed)")
+
+
+@router.put("/{org_id}/agents/{agent_did}/mark", summary="Show or hide the organization on this agent's card")
+async def set_agent_org_mark(
+    actor: OrgCaller,
+    org_id: str,
+    agent_did: str,
+    body: OrgMarkUpdate = Body(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """The agent itself, or the person who created it, decides whether its card states its organization (the
+    organization must be listed for the mark to show at all). The card moves, so every peer follows."""
+    row = (await db.execute(sa_text(
+        "SELECT creator_developer_id, organization_id FROM agents WHERE did = :d"), {"d": agent_did})).first()
+    if row is None or str(row[1] or "") != str(org_id):
+        raise HTTPException(status_code=404, detail="That agent is not in this organization")
+    if actor.get("kind") == "agent":
+        if actor.get("agent_did") != agent_did:
+            raise HTTPException(status_code=403, detail="An agent sets this for itself only")
+        who = org_actor.OrgActor(kind="agent", level="self", agent_did=agent_did)
+    else:
+        dev = actor.get("developer")
+        if dev is None or int(row[0] or -1) != int(dev.id):
+            raise HTTPException(status_code=403, detail="The agent's creator sets this, or the agent itself")
+        who = org_actor.OrgActor(kind="developer", level="creator", developer=dev)
+    await db.execute(sa_text("UPDATE agents SET show_org = :s WHERE did = :d"), {"s": bool(body.show), "d": agent_did})
+    await org_mark.touch_agent_cards_no_commit(db, [agent_did])
+    await db.commit()
+    await org_actor.audit(db, who, "mark", org_id, target_type="agent", target_id=agent_did,
+                          details={"show": bool(body.show)})
+    org = await OrganizationService.get_organization(db, org_id)
+    return {"agent_did": agent_did, "show_org": bool(body.show), "org_mark_public": bool(body.show) and _listed(org)}
+
+
+# ── polish 9: an agent asks to join (or its owner proposes it); an administrator decides ──────────────────────────
+class AgentRequestIn(BaseModel):
+    agent_did: Optional[str] = Field(None, description="The agent to bring in (an agent asking for itself may omit it)")
+    note: Optional[str] = Field(None, max_length=1000, description="Why it should join")
+
+
+class AgentRequestDecision(BaseModel):
+    note: Optional[str] = Field(None, max_length=1000, description="The administrator's reason, told to the requester")
+    team_id: Optional[str] = Field(None, description="A team of the organization to put the agent in (accept only)")
+    leave_organization_id: Optional[str] = Field(
+        None, max_length=255,
+        description="Accept only: the organization the agent leaves, when it is in another one (an agent belongs to one "
+                    "organization, and the move is made only when this names the one it is in): the value the 409 "
+                    "AGENT_IN_ANOTHER_ORGANIZATION hands out in error.context.confirm_value (its id, or the reference "
+                    "it gives for an organization it does not name to you)")
+
+
+def _request_row(r) -> Dict[str, Any]:
+    d = dict(r._mapping) if hasattr(r, "_mapping") else dict(r)
+    for k in ("created_at", "decided_at"):
+        if d.get(k) is not None and hasattr(d[k], "isoformat"):
+            d[k] = d[k].isoformat()
+    return d
+
+
+async def _agent_name(db: AsyncSession, did: str) -> Optional[str]:
+    row = (await db.execute(sa_text(
+        "SELECT name FROM agent_cards WHERE agent_did = :d AND (card_data#>>'{federation_metadata,source_registry}') "
+        "IS NULL ORDER BY updated_at DESC LIMIT 1"), {"d": did})).first()
+    return row[0] if row else None
+
+
+def _tell_requester(agent_did: str, title: str, message: str) -> None:
+    try:
+        import asyncio as _aio
+        from agentvault_registry.background_tasks.push_notify import notify_agent_owners
+        _aio.create_task(notify_agent_owners("org.agent_request", [agent_did], title=title, message=message,
+                                             tags="office", priority="default", click="/ui/#/organization"))
+    except Exception:  # noqa: BLE001
+        logger.debug("org agent request notice skipped", exc_info=True)
+
+
+async def _tell_admins(db: AsyncSession, org, agent_did: str, kind: str) -> None:
+    """The organization's owner and admins hear that an agent asks to join. Best effort, never raises."""
+    try:
+        ids = [int(r[0]) for r in (await db.execute(sa_text(
+            "SELECT developer_id FROM organization_members WHERE organization_id = :o AND is_active "
+            "AND role IN ('owner', 'admin') UNION SELECT owner_id FROM organizations WHERE id = :o"),
+            {"o": str(org.id)})).fetchall() if r[0] is not None]
+        if not ids:
+            return
+        name = await _agent_name(db, agent_did) or agent_did
+        from agentvault_registry.background_tasks.push_notify import notify
+        await notify("org.agent_request", ids, title=f"{name} asks to join {org.name}",
+                     message=("The agent asks to join." if kind == "agent" else "Its creator proposes it.")
+                     + " Accept or decline it in the organization's Agents tab.",
+                     tags="office", click="/ui/#/organization")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("org %s: the join request notice failed: %s", getattr(org, "id", "?"), e)
+
+
+@router.post("/{org_id}/agent-requests", status_code=201, summary="Ask for an agent to join the organization")
+async def create_agent_request(
+    actor: OrgCaller,
+    org_id: str,
+    body: AgentRequestIn = Body(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """An agent asks to join for itself, or a member of the organization proposes an agent they created; an
+    administrator (a person, or an agent with the organization's admin authority) accepts or declines it. One open
+    request per agent and organization."""
+    import uuid
+    from agentvault_registry.services.organization_service import OrganizationService as _OS
+    org = await _OS.get_organization(db, org_id)
+    if not org or not org.is_active:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    if actor.get("kind") == "agent":
+        did = actor.get("agent_did")
+        if body.agent_did and body.agent_did != did:
+            raise HTTPException(status_code=403, detail="An agent asks for itself; its creator proposes it otherwise")
+        kind, ref = "agent", did
+    else:
+        dev = actor.get("developer")
+        did = body.agent_did
+        if not did:
+            raise HTTPException(status_code=422, detail="agent_did: the agent to bring in")
+        if not await _OS.check_member_permission(db, org_id, dev.id, "member"):
+            raise HTTPException(status_code=403, detail="A member of the organization proposes an agent")
+        kind, ref = "developer", str(dev.id)
+    a = (await db.execute(sa_text(
+        "SELECT creator_developer_id, organization_id, status FROM agents WHERE did = :d"), {"d": did})).first()
+    if a is None:
+        raise HTTPException(status_code=404, detail="Agent not found on this registry")
+    if kind == "developer" and int(a[0] or -1) != int(ref):
+        raise HTTPException(status_code=403, detail="Only the agent's creator proposes it (or the agent asks itself)")
+    if str(a[2] or "").lower() != "active":
+        raise HTTPException(status_code=409, detail=f"The agent is {a[2]}; only an active agent joins")
+    if str(a[1] or "") == str(org.id):
+        raise HTTPException(status_code=409, detail="The agent is already in this organization")
+    open_row = (await db.execute(sa_text(
+        "SELECT id FROM organization_agent_requests WHERE organization_id = :o AND agent_did = :d "
+        "AND status = 'pending'"), {"o": org.id, "d": did})).first()
+    if open_row is not None:
+        raise HTTPException(status_code=409, detail=f"A request for this agent is already open ({open_row[0]})")
+    rid = "oar_" + uuid.uuid4().hex[:24]
+    await db.execute(sa_text(
+        "INSERT INTO organization_agent_requests (id, organization_id, agent_did, requested_by_kind, requested_by_ref, "
+        "note, status) VALUES (:id, :o, :d, :k, :r, :n, 'pending')"),
+        {"id": rid, "o": org.id, "d": did, "k": kind, "r": ref, "n": (body.note or "").strip() or None})
+    await db.commit()
+    await _tell_admins(db, org, did, kind)
+    await org_actor.audit(db, org_actor.OrgActor(kind=kind, level="requester",
+                                                 developer=actor.get("developer") if kind == "developer" else None,
+                                                 agent_did=did if kind == "agent" else None),
+                          "agent_request", org.id, target_type="agent", target_id=did, details={"request_id": rid})
+    return {"id": rid, "organization_id": org.id, "agent_did": did, "status": "pending",
+            "requested_by_kind": kind, "requested_by_ref": ref}
+
+
+@router.get("/{org_id}/agent-requests", summary="Join requests: all of them for an administrator, one's own otherwise")
+async def list_agent_requests(
+    actor: OrgCaller,
+    org_id: str,
+    status_filter: Optional[str] = Query("pending", alias="status",
+                                         description="pending (default), accepted, declined, withdrawn or all"),
+    db: AsyncSession = Depends(get_db),
+):
+    from agentvault_registry.services.organization_service import OrganizationService as _OS
+    org = await _OS.get_organization(db, org_id)
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    admin = False
+    try:
+        await org_actor.org_authority(db, org_id, actor, "admin")
+        admin = True
+    except HTTPException:
+        admin = False
+    where, params = ["organization_id = :o"], {"o": org.id}
+    if status_filter and status_filter != "all":
+        where.append("status = :st")
+        params["st"] = status_filter
+    if not admin:   # one's own: the requests one made, or about an agent one created (a person), or about oneself
+        if actor.get("kind") == "agent":
+            where.append("agent_did = :me")
+            params["me"] = actor.get("agent_did")
+        else:
+            dev_id = actor["developer"].id
+            where.append("((requested_by_kind = 'developer' AND requested_by_ref = :me) OR agent_did IN "
+                         "(SELECT did FROM agents WHERE creator_developer_id = :dev))")
+            params["me"], params["dev"] = str(dev_id), int(dev_id)
+    rows = (await db.execute(sa_text(
+        "SELECT id, organization_id, agent_did, requested_by_kind, requested_by_ref, note, status, created_at, "
+        "decided_at, decided_by_kind, decided_by_ref, decision_note FROM organization_agent_requests WHERE "
+        + " AND ".join(where) + " ORDER BY created_at DESC LIMIT 200"), params)).fetchall()
+    items = [_request_row(r) for r in rows]
+    if items:
+        names = dict((await db.execute(sa_text(
+            "SELECT DISTINCT ON (agent_did) agent_did, name FROM agent_cards WHERE agent_did = ANY(:d) "
+            "ORDER BY agent_did, updated_at DESC"), {"d": [i["agent_did"] for i in items]})).fetchall())
+        for i in items:
+            i["agent_name"] = names.get(i["agent_did"])
+    return {"organization_id": org.id, "items": items, "can_decide": admin,
+            "applied_filters": {"status": status_filter or "pending", "scope": "all" if admin else "own"}}
+
+
+async def _decide(db: AsyncSession, org_id: str, request_id: str, actor: dict, verdict: str,
+                  body: AgentRequestDecision) -> Dict[str, Any]:
+    org, who = await _authority(db, org_id, actor, "admin")
+    row = (await db.execute(sa_text(
+        "SELECT agent_did, status FROM organization_agent_requests WHERE id = :id AND organization_id = :o"),
+        {"id": request_id, "o": org.id})).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="No such request in this organization")
+    agent_did = row[0]
+    claimed = await db.execute(sa_text(
+        "UPDATE organization_agent_requests SET status = :v, decided_at = now(), decided_by_kind = :k, "
+        "decided_by_ref = :r, decision_note = :n WHERE id = :id AND status = 'pending'"),
+        {"v": verdict, "k": who.kind, "r": who.ref, "n": (body.note or "").strip() or None, "id": request_id})
+    if int(claimed.rowcount or 0) != 1:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=f"The request is no longer open (it is {row[1]})")
+    if verdict == "accepted":
+        from agentvault_registry.models import Agent
+        agent = (await db.execute(select(Agent).where(Agent.did == agent_did))).scalar_one_or_none()
+        if agent is None or str(agent.status or "").lower() != "active":
+            await db.rollback()
+            raise HTTPException(status_code=409, detail="The agent is gone or no longer active; decline the request")
+        granted_by = who.developer_id if who.kind == "developer" else (await _inviter(db, org, who))[0]
+        try:
+            # the second review: the administrator deciding is told the organization the agent leaves only when it is
+            # listed or they are a member of it (_named_to)
+            left = await _attach_agent(db, org, agent, team_id=body.team_id, granted_by=granted_by,
+                                       leave_organization_id=body.leave_organization_id,
+                                       decider=who)   # commits, the claim with it
+        except HTTPException:
+            # V0658 (s): a refused accept (the move not confirmed, the limit, the team) leaves the request open, so the
+            # administrator can accept it again once confirmed
+            await db.rollback()
+            raise
+    else:
+        left = None
+        await db.commit()
+    # V0658 (s): an accept that moved the agent out of another organization says which one in its audit row and its
+    # answer. The second review: only to an administrator it may be named to; otherwise by the reference that confirmed
+    # the move, which names nothing (the audit row is the receiving organization's record of the accept)
+    said = {}
+    if left is not None:
+        said = {"left_organization_id": left.id} if left.told else {"left_organization_ref": left.reference}
+    details = {"request_id": request_id, **said}
+    await org_actor.audit(db, who, f"agent_request_{verdict}", org.id, target_type="agent", target_id=agent_did,
+                          details=details)
+    words = "accepted: it is in the organization now" if verdict == "accepted" else "declined"
+    _tell_requester(agent_did, f"Join request {verdict}",
+                    f"The request to join {org.name} was {words}." + (f" {body.note.strip()[:300]}" if body.note else ""))
+    return {"id": request_id, "organization_id": org.id, "agent_did": agent_did, "status": verdict,
+            "left_organization_id": None, **said}
+
+
+@router.post("/{org_id}/agent-requests/{request_id}/accept", summary="Accept a join request (an administrator)")
+async def accept_agent_request(
+    actor: OrgCaller,
+    org_id: str,
+    request_id: str,
+    body: AgentRequestDecision = Body(default_factory=AgentRequestDecision),
+    db: AsyncSession = Depends(get_db),
+):
+    """The agent joins the organization exactly as its owner's assign would make it (the limit, the move off its
+    previous organization, the default authority slice, its card moved for the peers). An agent in another
+    organization moves only when the accept names that organization (`leave_organization_id`); otherwise a 409
+    (AGENT_IN_ANOTHER_ORGANIZATION) names it and the request stays open.
+
+    The administrator who accepts belongs to this organization, not to the one the agent is in, so the 409 names that
+    one only when it is listed or they are a member of it. Otherwise it says "another organization, not listed",
+    carries neither its id nor its name, and hands out an opaque reference in error.context.confirm_value: that is what
+    `leave_organization_id` then carries (an id does not confirm that move), and the answer and the audit row give
+    `left_organization_ref` instead of `left_organization_id`."""
+    return await _decide(db, org_id, request_id, actor, "accepted", body)
+
+
+@router.post("/{org_id}/agent-requests/{request_id}/decline", summary="Decline a join request (an administrator)")
+async def decline_agent_request(
+    actor: OrgCaller,
+    org_id: str,
+    request_id: str,
+    body: AgentRequestDecision = Body(default_factory=AgentRequestDecision),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _decide(db, org_id, request_id, actor, "declined", body)
+
+
+@router.delete("/{org_id}/agent-requests/{request_id}", summary="Withdraw one's own join request")
+async def withdraw_agent_request(
+    actor: OrgCaller,
+    org_id: str,
+    request_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """The one who asked (the agent, or the person), or the agent's creator, withdraws an open request."""
+    row = (await db.execute(sa_text(
+        "SELECT r.agent_did, r.requested_by_kind, r.requested_by_ref, r.status, a.creator_developer_id "
+        "FROM organization_agent_requests r LEFT JOIN agents a ON a.did = r.agent_did "
+        "WHERE r.id = :id AND r.organization_id = :o"), {"id": request_id, "o": org_id})).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="No such request in this organization")
+    if actor.get("kind") == "agent":
+        mine = actor.get("agent_did") == row[0]
+    else:
+        dev_id = int(actor["developer"].id)
+        mine = (row[1] == "developer" and str(row[2]) == str(dev_id)) or int(row[4] or -1) == dev_id
+    if not mine:
+        raise HTTPException(status_code=403, detail="Only the one who asked, or the agent's creator, withdraws it")
+    res = await db.execute(sa_text(
+        "UPDATE organization_agent_requests SET status = 'withdrawn', decided_at = now() "
+        "WHERE id = :id AND status = 'pending'"), {"id": request_id})
+    await db.commit()
+    if int(res.rowcount or 0) != 1:
+        raise HTTPException(status_code=409, detail=f"The request is no longer open (it is {row[3]})")
+    return {"id": request_id, "status": "withdrawn"}
+
+
+# ── item 6: this registry's listed organizations, for the federation's list ────────────────────────────────────────
+@router.get("/public/listed", summary="This registry's listed organizations (public)")
+async def list_listed_organizations(
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """Every active organization of this registry that chose to be listed (`public_listing`): its name, slug,
+    description, website, the logo this registry hosts, its member and agent counts and its settled Guild work. Others
+    are absent by construction. The federated Directory reads this from every registry; `home` says whose list it is
+    (its console for a person's link, its origin for the logos)."""
+    from agentvault_registry.services.org_policy import sql_listed_public
+    home = org_mark.home_block()
+    total = (await db.execute(sa_text(
+        "SELECT count(*) FROM organizations o WHERE o.is_active = TRUE AND " + sql_listed_public("o")))).scalar() or 0
+    rows = (await db.execute(sa_text(
+        "SELECT o.id, o.slug, o.name, o.description, o.website, l.sha256, o.created_at, "
+        "(SELECT count(*) FROM organization_members m WHERE m.organization_id = o.id AND m.is_active) AS members, "
+        "(SELECT count(*) FROM agents a WHERE a.organization_id = o.id AND a.status = 'active') AS agents, "
+        "(SELECT count(*) FROM guild_work_orders w WHERE w.payee_org_id = o.id AND w.status = 'settled') AS jobs "
+        "FROM organizations o LEFT JOIN organization_logos l ON l.organization_id = o.id "
+        "WHERE o.is_active = TRUE AND " + sql_listed_public("o") + " ORDER BY lower(o.name), o.id "
+        "LIMIT :n OFFSET :off"), {"n": limit, "off": offset})).fetchall()
+    # V0658 (v), item 6: settled_work is the work settled AS the firm; the work its agents settled on their own is its
+    # own field, never added in (its statement carries the listing rule too). Read last: a failure leaves the field out
+    # (unknown is not zero).
+    member: Optional[Dict[str, Dict[str, int]]] = None
+    if rows:
+        from agentvault_registry.services import track_record as _tr
+        try:
+            member = await _tr.member_agents_work(db, [r[0] for r in rows])
+        except Exception as e:  # noqa: BLE001
+            logger.warning("listed organizations: the agents' own work unreadable: %s", e)
+    out = []
+    for r in rows:
+        st = org_mark.state_for(r[0], r[1], r[2], r[5], home)
+        out.append({"id": r[0], "slug": r[1], "name": r[2], "description": r[3],
+                    "website": _public_website(r[4]),
+                    "logo": st["logo"] or org_mark.logo_path(r[0], r[5]), "page": st["page"],
+                    "member_count": int(r[7] or 0), "agent_count": int(r[8] or 0), "settled_work": int(r[9] or 0),
+                    "created_at": r[6].isoformat() if r[6] else None})
+        if member is not None:
+            out[-1]["member_work"] = member.get(str(r[0]), {"jobs": 0})
+    return {"organizations": out, "total": int(total), "home": home, "limit": limit, "offset": offset}
 
 
 # Export router

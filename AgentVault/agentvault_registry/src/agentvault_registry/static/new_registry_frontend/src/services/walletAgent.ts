@@ -1,3 +1,4 @@
+import { payDoor } from './uiMode'
 /**
  * services/walletAgent.ts — §WALLETAGENT (2026-09-02)
  *
@@ -52,6 +53,10 @@ export function firstAgentIsWallet(agents: readonly unknown[], readFailed: boole
 }
 
 /** The ONE send door, prefilled to move funds into a newer agent (D3: one send door). */
-export function moveFundsDoor(toDid: string): string {
-  return `/pocket/pay?to=${encodeURIComponent(toDid)}`
+export function moveFundsDoor(toDid: string, fromDid?: string): string {
+  // V0658 (v), seq 2419: the door follows the shell it is pressed in, like the others. Pocket's Pay picks its own
+  // sender; the desktop Forex Desk is told the wallet (otherwise it would send from the active agent).
+  const base = payDoor()
+  const q = `to=${encodeURIComponent(toDid)}`
+  return base === '/forex' && fromDid ? `${base}?${q}&from=${encodeURIComponent(fromDid)}` : `${base}?${q}`
 }

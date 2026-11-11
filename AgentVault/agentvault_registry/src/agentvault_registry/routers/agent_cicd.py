@@ -103,6 +103,18 @@ class CreateTemplateBody(_BaseBody):
     price_teg: Optional[int] = 0
     tags: Optional[List[str]] = None
     is_official: Optional[bool] = False
+    # D6-844 (V0657 (e)): the agent of the caller's that sells the template and receives its price; required for a
+    # developer's paid template, absent (NULL) only for the frame's own
+    author_did: Optional[str] = Field(None, min_length=1, max_length=255)
+
+
+async def author_agent_owned(db: AsyncSession, did: str, developer_id: int) -> bool:
+    """D6-844: is `did` an active agent this developer created (the one that may be paid as a template's author)? Its
+    creator only: an organization member's access to an org agent does not make that agent their payee."""
+    row = (await db.execute(text(
+        "SELECT 1 FROM agents WHERE did = :d AND creator_developer_id = :dev AND status = 'active' LIMIT 1"
+    ), {"d": did, "dev": developer_id})).first()
+    return row is not None
 
 
 class PurchaseTemplateBody(_BaseBody):
@@ -915,11 +927,24 @@ async def create_template(
     if template_data.is_official and not admin_credential(current_developer):
         raise HTTPException(status_code=403,
                             detail="is_official: only an administrator marks a pipeline template official")
+    # D6-844 (V0657 (e), agentvault2-d3, 2026-11-06): the author was never set (the TODO), so a developer's PAID template
+    # paid its buyers' units to the treasury (_pay_for_template's author-NULL branch, the frame's own template) and its
+    # author could not download it without buying it. The payout rule: a template's price goes to its author agent over
+    # the standard transfer (the buyer pays the price; the author receives it less the frame's transfer fee); a template
+    # without an author is the frame's own and pays the treasury. So a developer's paid template names its author agent,
+    # one the developer created; an administrator may leave it out for the frame's own; a free template may leave it out.
+    author_did = (template_data.author_did or "").strip() or None
+    if author_did and not await author_agent_owned(db, author_did, current_developer.id):
+        raise HTTPException(status_code=403,
+                            detail="author_did: name an agent you created; it sells the template and receives its price")
+    if not author_did and (template_data.price_teg or 0) > 0 and not admin_credential(current_developer):
+        raise HTTPException(status_code=422,
+                            detail="author_did: a paid template names the agent of yours that sells it and receives its "
+                                   "price; without one the price would go to the frame's treasury")
     try:
-        # TODO: Get author DID from developer's agent
-        result = await agent_cicd_service.create_template(
-            db, template_data.model_dump(exclude_unset=True), author_did=None
-        )
+        data = template_data.model_dump(exclude_unset=True)
+        data.pop("author_did", None)
+        result = await agent_cicd_service.create_template(db, data, author_did=author_did)
         return result
     except HTTPException:
         raise

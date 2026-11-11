@@ -31,6 +31,13 @@ describe('roadmap page', () => {
     expect(roadmap).toMatch(/title: 'The network decides its own code',\s*status: 'idea',/)
     expect(roadmap).toContain('.rm-glyph--idea .rm-glyph-ring')
   })
+  it('marks Accountable compute as built: in the release, switched off, not live', () => {
+    // V0660 (the Commander, 2026-11-09): built in the code and off by default, so the page says Built and nothing stronger.
+    expect(roadmap).toContain("{ key: 'built', label: 'Built' }")
+    expect(roadmap).toMatch(/title: 'Accountable compute',\s*status: 'built',/)
+    expect(roadmap).toContain('.rm-glyph--built .rm-glyph-ring')
+    expect(roadmap).toContain('switched off by default')
+  })
   it('keeps the public word list and no em dashes', () => {
     for (const text of [roadmap, paper]) {
       expect(text).not.toMatch(BANNED)

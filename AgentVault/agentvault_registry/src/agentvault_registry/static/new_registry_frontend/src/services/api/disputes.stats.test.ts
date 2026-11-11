@@ -26,7 +26,7 @@ describe('dispute stats', () => {
 
   it('says nothing (null) where there is nothing to count', () => {
     expect(stats([]).resolution_rate).toBeNull()
-    const open = stats([d('open'), d('investigating')])
+    const open = stats([d('open'), d('open')])
     expect(open.resolution_rate).toBe(0)
     expect(open.average_resolution_time, 'no ruling: no time, not 0 h').toBeNull()
   })

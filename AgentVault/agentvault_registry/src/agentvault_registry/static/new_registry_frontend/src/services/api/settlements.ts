@@ -6,6 +6,7 @@
  *  - GET    /settlements/{id}           — detail (admin_enforcement)
  *  - POST   /settlements/{id}/approve   — admin approve, optional reason
  *  - POST   /settlements/{id}/reject    — admin reject, optional reason
+ *  - POST   /settlements/{id}/close     : admin close of a settlement no peer holds, reason required (V0660 (k))
  *  - GET    /peer-slash-config          — list peer auto-slash configs
  *  - PUT    /peer-slash-config/{peer_id} — update peer config
  *
@@ -52,6 +53,8 @@ export interface Settlement {
   slashed_at: string | null
   settled_at: string | null
   error_message: string | null
+  /** V0660 (k): whether the registry closes it (no peer holds it, nothing moved) */
+  closable?: boolean
 }
 
 export interface SettlementStats {
@@ -61,6 +64,10 @@ export interface SettlementStats {
   slashed: number
   failed: number
   expired: number
+  // V0660 (k): the end states of a settlement no peer holds
+  not_delivered?: number
+  refused?: number
+  closed?: number
   total_requested_avt: number
   total_slashed_avt: number
   total_minted_avt: number
@@ -121,6 +128,11 @@ export const settlementsApi = {
   async reject(id: string, reason?: string): Promise<ApproveRejectResult> {
     const body = reason ? { reason } : {}
     const { data } = await apiClient.post(`${BASE}/settlements/${encodeURIComponent(id)}/reject`, body)
+    return data
+  },
+
+  async close(id: string, reason: string): Promise<ApproveRejectResult> {
+    const { data } = await apiClient.post(`${BASE}/settlements/${encodeURIComponent(id)}/close`, { reason })
     return data
   },
 

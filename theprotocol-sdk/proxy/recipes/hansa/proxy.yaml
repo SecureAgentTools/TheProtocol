@@ -1,0 +1,54 @@
+# HANSA (the port-logistics blueprint): the terminal operating system (TOS) posts each gate event, HMAC-signed, to the
+# proxy; every gate-OUT becomes a signed attestation on TheProtocol, and the ERP receives the chain on its API: one
+# signed POST per event, the record's key as its Idempotency-Key, so the ERP keeps each event once.
+#
+# The TOS side: POST /in/gate with X-Signature-256: sha256=<hex HMAC of the body> (fake/fake_tos.py does it). The ERP
+# side: the sink's url, checking X-Signature-256 with ERP_HMAC (fake/mock_erp.py is such an ERP).
+version: 1
+name: hansa-gate
+registry: https://api.theprotocol.cloud
+identity:
+  agent_did: env:AGENT_DID
+  client_id: env:CLIENT_ID
+  client_secret: env:CLIENT_SECRET
+state: /data/hansa-state.db
+sources:
+  tos:
+    type: webhook
+    config: {listen: "0.0.0.0:8711", path: /in/gate, id_field: event_id, secret: env:GATE_HMAC}
+actions:
+  attest:
+    type: attestation
+    config: {attestation_type: hansa.gate_out}
+    limits: {per_minute: 300}
+sinks:
+  erp:
+    type: webhook
+    # your ERP's endpoint for gate events (a URL, written here; its signing secret by reference)
+    config: {url: "https://erp.example.com/api/v1/gate-events", secret: env:ERP_HMAC, timeout_s: 15}
+    limits: {per_minute: 300}
+mappings:
+  - name: gate-out
+    version: 1
+    from: tos
+    to: attest
+    when: {path: $.payload.status, equals: OUT}
+    fields:
+      container: $.payload.container_id
+      gate: $.payload.gate
+      truck: $.payload.truck_plate
+      at: $.payload.timestamp
+      seal: {path: $.payload.seal, default: null}
+      terminal: HAM-CTA
+  - name: gate-out-to-erp
+    version: 1
+    from: tos
+    to: erp
+    when: {path: $.payload.status, equals: OUT}
+    fields:
+      container: $.payload.container_id
+      gate: $.payload.gate
+      at: $.payload.timestamp
+retry: {first_s: 2, max_s: 300, attempts: 8}
+breaker: {refusals: 5, failures: 10, cooldown_s: 30}
+service: {listen: "127.0.0.1:9108"}

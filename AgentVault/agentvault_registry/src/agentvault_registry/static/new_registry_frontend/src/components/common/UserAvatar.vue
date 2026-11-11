@@ -51,6 +51,7 @@
       :alt="resolvedDisplayName"
       :size="size"
       :track-record="effectiveTrackRecord"
+      :face-first="faceFirst"
     />
 
     <!-- Plain avatar ring — used when no encirclement is active -->
@@ -158,6 +159,10 @@ const props = withDefaults(defineProps<{
    *  encirclement (collar inside the frame) or rendered as the standalone
    *  collar on the plain path. Omitted = no collar, exactly as before. */
   trackRecord?: TrackRecordCompact | null
+  /** V0658 (q): the face first. The center is the avatar (the image, else the initials) whatever the vanity: a
+   *  variant that replaces the face (the black hole, the full-cover and signature compositions) keeps its ring and
+   *  the rank but not the center. For pickers, where an agent is chosen by its own logo. Default false. */
+  faceFirst?: boolean
 }>(), {
   user: null,
   avatarUrl: null,
@@ -171,6 +176,7 @@ const props = withDefaults(defineProps<{
   variantOverride: null,
   overlayOverride: undefined,
   trackRecord: null,
+  faceFirst: false,
 })
 
 const emit = defineEmits<{ (e: 'click'): void }>()

@@ -837,7 +837,7 @@ import Icon from '@/components/Icon.vue'
 import { useCurrency } from '@/composables/useCurrency'
 import { appLocale } from '@/services/appLocale'
 import { useRegistryConfig } from '@/composables/useRegistryConfig'
-import { defaultTemplateId, isOffered, listedTemplateIds, offeredTemplates } from '@/services/forgeTemplates'
+import { defaultTemplateId, formHasProgress, FORGE_TEMPLATES, isOffered, listedTemplateIds, offeredTemplates, type ForgeTemplate } from '@/services/forgeTemplates'
 
 const { t, tp } = useI18n()
 const { localCurrency } = useCurrency()
@@ -898,42 +898,10 @@ const transitionDirection = ref<'forward' | 'backward'>('forward')
 const tagsExpanded = ref(false)
 
 // ─── Template catalogue ───────────────────────────────────────────────────────
+// V0658 (b): services/forgeTemplates (FORGE_TEMPLATES): the featured starter, then the PPAO orchestrator
 
-interface Template {
-  id: 'full-capacity' | 'ppao' | 'minimal'
-  icon: string
-  tags: string[]
-  featured: boolean
-  defaultPorts: { mcp: number; agent: number; metrics: number }
-  descriptionPlaceholder?: string
-}
-
-const templates: Template[] = [
-  {
-    id: 'full-capacity',
-    icon: '◈',
-    tags: ['dashboard', 'missions', 'wallet', 'webhooks', 'metrics', 'live-feed'],
-    featured: true,
-    defaultPorts: { mcp: 3100, agent: 8055, metrics: 8056 },
-    descriptionPlaceholder: 'A full-capacity sovereign agent with dashboard, wallet, and live missions.',
-  },
-  {
-    id: 'ppao',
-    icon: '◎',
-    tags: ['orchestrator', 'dashboard', 'docker', 'payments', 'mcp', 'claude-desktop'],
-    featured: true,
-    defaultPorts: { mcp: 3100, agent: 3100, metrics: 3101 },
-    descriptionPlaceholder: 'A PPAO orchestrator agent that fans out paid jobs to specialist agents.',
-  },
-  {
-    id: 'minimal',
-    icon: '⚡',
-    tags: ['sdk', 'custom', 'lightweight', 'a2a', 'payments'],
-    featured: false,
-    defaultPorts: { mcp: 3101, agent: 8060, metrics: 8061 },
-    descriptionPlaceholder: 'A minimal SDK-based agent — bring your own runtime.',
-  },
-]
+type Template = ForgeTemplate
+const templates: readonly Template[] = FORGE_TEMPLATES
 
 // §MCPTEST30 (V0640): the templates this registry can build (services/forgeTemplates): the picker offers those, and
 // a download without a pick takes the first one listed
@@ -947,8 +915,15 @@ async function loadBundleTemplates() {
   } catch {
     bundleTemplateIds.value = null   // an older registry, or a refusal: the whole catalogue, as before
   }
-  // a pick restored from an earlier session that this registry cannot build is cleared, not downloaded into a 404
-  if (!isOffered(formData.templateId, bundleTemplateIds.value)) formData.templateId = null
+  // a pick restored from an earlier session that this registry cannot build is cleared, not downloaded into a 404, and
+  // so is one the catalogue no longer holds (a draft saved with full-capacity, V0658)
+  if (!isOffered(formData.templateId, bundleTemplateIds.value)
+      || (formData.templateId && !templates.some(t => t.id === formData.templateId))) formData.templateId = null
+  // V0658 (b): a form with no pick starts on the default (the starter), which the person may change
+  if (!formData.templateId) {
+    const d = defaultTemplateId(bundleTemplateIds.value)
+    if (templates.some(t => t.id === d)) formData.templateId = d as Template['id']
+  }
 }
 
 const valueProps = [
@@ -1101,7 +1076,7 @@ function loadProgress(): boolean {
     if (typeof parsed.hriManuallyEdited === 'boolean') {
       hriManuallyEdited.value = parsed.hriManuallyEdited
     }
-    return currentStepIdx.value > 0 || !!formData.name || !!formData.templateId
+    return formHasProgress(currentStepIdx.value, formData.name, formData.templateId, defaultTemplateId(bundleTemplateIds.value))
   } catch {
     return false
   }
@@ -1132,13 +1107,6 @@ const SAMPLE_PROFILES: Record<Template['id'], {
   tags: string[]
   authScheme: FormData['authScheme']
 }> = {
-  'full-capacity': {
-    name: 'Inkwell Scribe',
-    hri: 'inkwell-scribe',
-    description: 'A full-capacity scribe agent that summarizes long documents, tags entities, and produces a concise brief on demand.',
-    tags: ['summarization', 'extraction', 'document'],
-    authScheme: 'oauth2',
-  },
   'ppao': {
     name: 'Roundhouse Orchestrator',
     hri: 'roundhouse-orchestrator',
@@ -1147,11 +1115,11 @@ const SAMPLE_PROFILES: Record<Template['id'], {
     authScheme: 'oauth2',
   },
   'minimal': {
-    name: 'Pingback Sentinel',
-    hri: 'pingback-sentinel',
-    description: 'A minimal sentinel agent that watches a webhook stream, applies a single classifier, and emits a paid signal when the classifier fires.',
-    tags: ['webhook', 'classifier', 'lightweight'],
-    authScheme: 'apikey',
+    name: 'Tally Clerk',
+    hri: 'tally-clerk',
+    description: 'A starter agent on my own machine: it counts the words, sentences and most used words of a text, paid per call.',
+    tags: ['text', 'starter', 'sdk'],
+    authScheme: 'oauth2',
   },
 }
 
@@ -1623,7 +1591,8 @@ const abortConfirmOpen = ref(false)
 
 function onAbortRequest() {
   // If user hasn't entered any data, just leave
-  const hasProgress = !!formData.templateId || !!formData.name || currentStepIdx.value > 0
+  const hasProgress = formHasProgress(currentStepIdx.value, formData.name, formData.templateId,
+                                     defaultTemplateId(bundleTemplateIds.value))
   if (!hasProgress) {
     router.push('/my-agents')
     return

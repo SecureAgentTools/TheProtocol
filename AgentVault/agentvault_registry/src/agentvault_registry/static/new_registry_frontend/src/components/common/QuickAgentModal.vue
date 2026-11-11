@@ -315,7 +315,7 @@ function goToFunding() {
 function goToMoveFunds() {
   const did = createdAgent.value?.did
   uiStore.closeQuickAgentModal()
-  if (did) router.push(moveFundsDoor(did)).catch(() => { /* ignore */ })
+  if (did) router.push(moveFundsDoor(did, walletForBond.value?.did)).catch(() => { /* ignore */ })
 }
 
 async function readHeld(did: string) {

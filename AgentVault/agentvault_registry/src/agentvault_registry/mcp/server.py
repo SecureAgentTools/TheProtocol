@@ -233,6 +233,7 @@ from .tools_agent import (
     teg_system_transfer,
     claim_teg_rewards,
     log_teg_dispute,
+    withdraw_teg_dispute,
     cross_teg_balance_sync,
     apply_reputation_signal,
     # §pass70 Sprint 17 (Tier 2)
@@ -429,6 +430,7 @@ from .tools_developer import (
     get_federation_dispute_settlement,
     approve_dispute_settlement,
     reject_dispute_settlement,
+    close_dispute_settlement,
     get_peer_slash_config,
     update_peer_slash_config,
     get_federation_peer_by_id,
@@ -846,6 +848,7 @@ TOOL_DISPATCH: Dict[str, Any] = {
     "theprotocol_tegSystemTransfer": teg_system_transfer,
     "theprotocol_claimTegPayouts": claim_teg_rewards,
     "theprotocol_logTegDispute": log_teg_dispute,
+    "theprotocol_withdrawTegDispute": withdraw_teg_dispute,
     "theprotocol_crossTegBalanceSync": cross_teg_balance_sync,
     "theprotocol_applyReputationSignal": apply_reputation_signal,
     # ─── §pass70 Sprint 13 (Tier 3 — 12 new) ──────────────────────────────
@@ -869,6 +872,7 @@ TOOL_DISPATCH: Dict[str, Any] = {
     "theprotocol_getFederationDisputeSettlement": get_federation_dispute_settlement,
     "theprotocol_approveDisputeSettlement": approve_dispute_settlement,
     "theprotocol_rejectDisputeSettlement": reject_dispute_settlement,
+    "theprotocol_closeDisputeSettlement": close_dispute_settlement,
     "theprotocol_getPeerSlashConfig": get_peer_slash_config,
     "theprotocol_updatePeerSlashConfig": update_peer_slash_config,
     "theprotocol_getFederationPeerByID": get_federation_peer_by_id,
@@ -1133,6 +1137,7 @@ TIER2_TOOLS = {
     # §pass70 Sprint 13 (Tier 2 — 5 new: TEG mutations)
     "theprotocol_tegSystemTransfer",
     "theprotocol_logTegDispute",
+    "theprotocol_withdrawTegDispute",
     "theprotocol_crossTegBalanceSync",
     "theprotocol_applyReputationSignal",
     # §pass70 Sprint 17 (Tier 2 — 8 new)
@@ -1323,6 +1328,7 @@ TIER3_TOOLS = {
     "theprotocol_getFederationDisputeSettlement",
     "theprotocol_approveDisputeSettlement",
     "theprotocol_rejectDisputeSettlement",
+    "theprotocol_closeDisputeSettlement",
     "theprotocol_getPeerSlashConfig",
     "theprotocol_updatePeerSlashConfig",
     "theprotocol_getFederationPeerByID",
@@ -2487,6 +2493,7 @@ from .tools_guild import (  # noqa: E402
     guild_cancel_order as _guild_cancel,
     guild_my_work as _guild_mine,
     guild_cross_registry_bid as _guild_xreg,
+    guild_set_order_room as _guild_set_room,
 )
 
 TOOL_DISPATCH.update({
@@ -2501,6 +2508,7 @@ TOOL_DISPATCH.update({
     "theprotocol_guildCancelOrder": _guild_cancel,
     "theprotocol_guildMyWork": _guild_mine,
     "theprotocol_guildCrossRegistryBid": _guild_xreg,
+    "theprotocol_guildSetOrderRoom": _guild_set_room,   # V0659 (n): the room an order posted without one shows in
 })
 
 _GUILD_T2 = {
@@ -2512,6 +2520,7 @@ _GUILD_T2 = {
     "theprotocol_guildCancelOrder",
     "theprotocol_guildMyWork",
     "theprotocol_guildCrossRegistryBid",
+    "theprotocol_guildSetOrderRoom",
 }
 TIER2_TOOLS.update(_GUILD_T2)
 AUTH_REQUIRED_TOOLS.update(_GUILD_T2)
@@ -2608,6 +2617,27 @@ AUTH_REQUIRED_TOOLS.update(_APPROVAL_T2 | _APPROVAL_T3)
 AGENT_TOOL_SCHEMAS.extend(CHAT_APPROVAL_AGENT_TOOL_SCHEMAS)
 DEVELOPER_TOOL_SCHEMAS.extend(CHAT_APPROVAL_DEVELOPER_TOOL_SCHEMAS)
 ALL_TOOL_SCHEMAS.extend(CHAT_APPROVAL_AGENT_TOOL_SCHEMAS + CHAT_APPROVAL_DEVELOPER_TOOL_SCHEMAS)
+
+
+# ---------------------------------------------------------------------------
+# V0660 (a) (2026-11-08): the quantum workload extension's reads (mcp/tools_quantum.py), the same late-wiring pattern.
+# Tier 1 by absence from TIER2/TIER3. Listed only where QUANTUM_WORKLOADS_MODE is shadow or on (mcp/tool_switches.py).
+# ---------------------------------------------------------------------------
+from .tools_quantum import (  # noqa: E402
+    QUANTUM_TOOL_SCHEMAS,
+    discover_quantum_agents as _quantum_discover,
+    get_quantum_workload as _quantum_workload,
+    get_quantum_workload_schema as _quantum_schema,
+)
+
+# a literal dict: the CI tier gate (.forgejo/checks/mcp_audit_tier_coverage.py) reads the dispatch keys by AST
+TOOL_DISPATCH.update({
+    "theprotocol_discoverQuantumAgents": _quantum_discover,
+    "theprotocol_getQuantumWorkload": _quantum_workload,
+    "theprotocol_getQuantumWorkloadSchema": _quantum_schema,
+})
+DISCOVERY_TOOL_SCHEMAS.extend(QUANTUM_TOOL_SCHEMAS)
+ALL_TOOL_SCHEMAS.extend(QUANTUM_TOOL_SCHEMAS)
 
 
 # ---------------------------------------------------------------------------

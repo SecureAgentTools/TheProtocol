@@ -91,11 +91,14 @@
             <p v-if="agent.description" class="adm-hero-desc">{{ agent.description }}</p>
 
             <div class="adm-hero-meta">
-              <span v-if="agent.provider?.name" class="adm-meta-item">
-                <svg viewBox="0 0 14 14" width="11" height="11" aria-hidden="true">
-                  <path d="M2 11 L2 5 L7 2 L12 5 L12 11 Z M5 11 L5 8 L9 8 L9 11" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linejoin="round"/>
-                </svg>
-                {{ agent.provider.name }}
+              <!-- V0657 (b), item 4: the organization its home registry states (a listed one only) -->
+              <OrgMark v-if="agent.orgMark" :mark="agent.orgMark" :local="!agent.isFederated" :home-name="agent.originRegistry || null" size="md" />
+              <!-- polish 12: provider.name is free text the card's author typed (any card can name any organization), so
+                   it is shown as the agent's own words, apart from the stated mark -->
+              <span v-if="agent.provider?.name && agent.provider.name !== 'Unknown'" class="adm-meta-item adm-meta-item--says"
+                    data-testid="adm-provider-says"
+                    :title="t('agentModal.providerSaysHint', 'What the card\'s author wrote. A registry checks the organization mark, not this.')">
+                {{ tp('agentModal.providerSays', 'says: {name}', { name: agent.provider.name }) }}
               </span>
               <span v-if="agent.version" class="adm-meta-item">
                 <span class="adm-meta-key">v</span>{{ agent.version }}
@@ -356,6 +359,11 @@
           <span class="adm-meta-cell-value">{{ agent.schemaVersion }}</span>
         </div>
       </div>
+
+      <!-- V0660 (e): the quantum card, for an agent whose card carries the quantum workload extension, where the frame
+           serves it (its registry-config block). Under off nothing renders and nothing is asked. -->
+      <QuantumCard v-if="quantumOn && quantumCardParams && resolvedDid" variant="full" :did="resolvedDid"
+                   :params="quantumCardParams" class="adm-quantum" />
 
       <!-- ─── TEG Balance (if available) — §pass18-aligned band ─── -->
       <div v-if="tegBalance !== null" class="adm-balance">
@@ -683,6 +691,10 @@ import { useAuthStore } from '@/stores/auth'
 import TrackRecordPanel from '@/components/common/TrackRecordPanel.vue'
 import BuyServicePanel from '@/components/BuyServicePanel.vue'
 import EarnedMarkRing from '@/components/common/EarnedMarkRing.vue'
+import OrgMark from '@/components/OrgMark.vue'
+import QuantumCard from '@/components/quantum/QuantumCard.vue'
+import { useQuantumWorkloads } from '@/composables/useQuantumWorkloads'
+import { quantumParams } from '@/services/quantum/quantumCard'
 import type { TrackRecordCompact } from '@/services/api/trackRecord'
 import { fxService } from '@/services/api/fx'
 
@@ -1054,6 +1066,9 @@ const resolvedDid = computed(() => {
  *  only spend a request to be told 401. `hasSession` is declared above; the composable watches
  *  it with `immediate: true`, which is why the order matters (the TDZ note above). */
 const { doors: engDoors, draft: engDraft } = useEngageDoors(resolvedDid, hasSession)
+// V0660 (e): the card's own quantum workload extension (top-level extensions[]); the card reads the registry's check
+const { served: quantumOn } = useQuantumWorkloads()
+const quantumCardParams = computed(() => quantumParams(agent.value?.rawCardData))
 
 /**
  * §COCKPITUP U4 (2026-09-01) — a door from the card to the full agent view.
@@ -1571,6 +1586,7 @@ function formatAuthScheme(scheme: any): string {
   font-size: 0.74rem;
   color: rgba(180, 180, 200, 0.75);
 }
+.adm-meta-item--says { font-style: italic; opacity: .8; }
 .adm-meta-item {
   display: inline-flex;
   align-items: center;
@@ -1598,7 +1614,8 @@ function formatAuthScheme(scheme: any): string {
   color: rgba(var(--nc-primary-rgb), 0.95); margin-left: auto;
 }
 .adm-engage-price--free { color: #34d399; }
-.adm-engage-per { opacity: 0.6; font-size: 0.7rem; }
+/* V0658 (v): the unit in the muted text colour, never the accent faded by opacity (3.73:1 on the modal; this is 5.3:1) */
+.adm-engage-per { font-size: 0.7rem; color: var(--nc-text-muted, #94a3b8); }
 .adm-engage-sub { font-size: 0.76rem; line-height: 1.5; color: var(--nc-text-muted, #94a3b8); margin: 0.4rem 0 0.65rem; }
 .adm-engage-actions { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
 .adm-engage-btn {
@@ -2255,6 +2272,8 @@ function formatAuthScheme(scheme: any): string {
   color: rgba(252, 211, 77, 0.98);
 }
 
+/* V0660 (e) */
+.adm-quantum { margin: 12px 0; }
 /* Pass 2 — balance band */
 .adm-balance { display: flex; flex-wrap: wrap; gap: 10px; }
 .adm-balance-cell {
@@ -2336,9 +2355,10 @@ function formatAuthScheme(scheme: any): string {
 }
 .adm-door:hover { border-color: rgba(var(--nc-primary-rgb), 0.6); color: var(--nc-primary); }
 .adm-door--contract { border-color: rgba(var(--nc-primary-rgb), 0.45); }
+/* V0658 (v): the reason in the muted text colour (the accent at 0.45 read 2.84:1 on the modal; this is 5.3:1) */
 .adm-door-shut {
   margin: 0; font-size: 9px; line-height: 1.45; max-width: 62ch;
-  color: rgba(var(--nc-primary-rgb), 0.45);
+  color: var(--nc-text-muted, #94a3b8);
 }
 .adm-offer {
   margin-top: 8px; padding: 10px; border-radius: 6px;

@@ -106,12 +106,14 @@ def test_the_list_asks_the_feeds_opt_in_question():
 
     async def execute(stmt, params=None):
         db.statements.append(str(stmt))
-        return _Result(rows=[("org-1", "Roomless Works", "roomless-works", None, None, None)])
+        if "FROM organization_logos" in str(stmt):   # V0657 (b), polish 10: the hosted logo, read for the page
+            return _Result(rows=[])
+        return _Result(rows=[("org-1", "Roomless Works", "roomless-works", None, None, None, None)])
 
     db.execute = execute
     out = asyncio.run(orgs.list_transparent_organizations(limit=25, db=db))
     assert [o["org_id"] for o in out["organizations"]] == ["org-1"]
-    (sql,) = db.statements
+    sql = db.statements[0]
     assert "(o.settings->'public_transparency_opt_in')::text = 'true'" in sql
     assert "->>'public_transparency_opt_in'" not in sql
     assert "LEFT JOIN conversations" in sql   # a firm without a room stays on the list

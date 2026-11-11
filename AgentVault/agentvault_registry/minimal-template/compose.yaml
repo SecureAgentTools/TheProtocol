@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+# docker compose up -d --build   then   curl http://localhost:8055/health
+services:
+  my-agent:
+    build: .
+    container_name: my-agent
+    env_file:
+      - .env
+      - .env.secret
+    ports:
+      - "${HOST_PORT:-8055}:8055"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys, urllib.request; sys.exit(urllib.request.urlopen('http://127.0.0.1:8055/health', timeout=5).status != 200)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

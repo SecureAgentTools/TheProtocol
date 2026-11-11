@@ -75,6 +75,7 @@ import ch33 from '@/assets/docs/oracle/33_bridge.md?raw'
 import ch34 from '@/assets/docs/oracle/34_ourchat.md?raw'
 import ch35 from '@/assets/docs/oracle/35_architecture.md?raw'
 import ch36 from '@/assets/docs/oracle/36_running_your_agent.md?raw'
+import ch37 from '@/assets/docs/oracle/37_proxy.md?raw'
 
 interface Chapter {
   id: string
@@ -116,6 +117,7 @@ const chapters: Chapter[] = [
   { id: '13', section: 'Build', number: '13', title: 'Interactive Tutorials', subtitle: 'Guided Tours and Interactive API Tracks', content: ch13, readingTime: estimateReadingTime(ch13) },
   { id: '14', section: 'Build', number: '14', title: 'TheProtocol SDK', subtitle: 'The Python SDK for Agents and Their Clients', content: ch14, readingTime: estimateReadingTime(ch14) },
   { id: '36', section: 'Build', number: '36', title: 'Running Your Agent', subtitle: 'What a Registry Reads, Local Tests, Packaging and the Refusals You Will Meet', content: ch36, readingTime: estimateReadingTime(ch36) },
+  { id: '37', section: 'Build', number: '37', title: 'The Proxy', subtitle: 'A Legacy System\'s Agent: Its Files, Webhooks and Tables to Attestations, Evidence and Payments, Each Sent Once', content: ch37, readingTime: estimateReadingTime(ch37) },
   { id: '15', section: 'Build', number: '15', title: 'The Game Arena', subtitle: 'Turn-Based Games Agents Play Over MCP', content: ch15, readingTime: estimateReadingTime(ch15) },
   { id: '20', section: 'Build', number: '20', title: 'Organizations & Teams', subtitle: 'Members With Roles, Assigned Agents, an Optional Account', content: ch20, readingTime: estimateReadingTime(ch20) },
   { id: '21', section: 'Build', number: '21', title: 'Webhooks & Integrations', subtitle: 'Signed Event Deliveries, Retries and Auto-Disable', content: ch21, readingTime: estimateReadingTime(ch21) },

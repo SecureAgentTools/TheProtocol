@@ -36,6 +36,9 @@ declare module 'vue-router' {
     title?: string
     /** The route's component (or its layout) renders its own <main id="main-content">, so App.vue adds none */
     ownsMain?: boolean
+    /** V0658 (v): the shell the route renders in, set on the shell's own record (/pocket: Pocket; DashboardLayout's:
+     *  the desktop console) and inherited by its children; a door pressed there stays in it (services/uiMode.ts) */
+    shell?: 'pocket' | 'desktop'
   }
 }
 

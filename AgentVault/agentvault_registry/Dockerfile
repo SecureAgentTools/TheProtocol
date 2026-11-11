@@ -176,6 +176,7 @@ RUN pip install --no-cache-dir -c /tmp/constraints.txt \
     pytest-mock==3.16.0 \
     pytest-json-report==1.5.0 \
     pytest-metadata==3.1.1 \
+    pytest-xdist==3.8.0 \
     Faker==40.40.0 \
     factory-boy==3.3.3
 

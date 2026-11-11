@@ -73,6 +73,18 @@ export function mayResendOnItsOwn(method: string | undefined, url?: string): boo
   return READ_ONLY_POSTS.some((re) => re.test(path))
 }
 
+/**
+ * V0658 (u): a FormData body is sent as the browser builds it, multipart/form-data with a boundary of its own. This
+ * instance's default type is application/json, and under a JSON type axios writes a FormData out as JSON text (a file in
+ * it as {}): PUT /organizations/{id}/logo received no file and answered "field required" (sessions' room seq 2174). The
+ * request interceptor sets the type to false for such a body. A deletion would stop the JSON text too, but axios would
+ * then name x-www-form-urlencoded for a write, which only its xhr and fetch adapters clear again for a FormData in a
+ * browser; false keeps every step from naming a type, whatever the adapter, so the browser does.
+ */
+export function isFormDataBody(data: unknown): data is FormData {
+  return typeof FormData !== 'undefined' && data instanceof FormData
+}
+
 /** The console's page as the hash router shows it (path only, no query). */
 export function currentPagePath(): string {
   try { return (window.location.hash || '').replace(/^#/, '').split('?')[0] || '/' } catch { return '' }
@@ -271,6 +283,11 @@ apiClient.interceptors.request.use(
       if (!requestConfig.headers['Cache-Control']) {
         requestConfig.headers['Cache-Control'] = 'no-cache'
       }
+    }
+
+    // V0658 (u): a FormData body goes as the browser builds it (see isFormDataBody)
+    if (isFormDataBody(requestConfig.data)) {
+      requestConfig.headers.setContentType?.(false)
     }
 
     // Add request ID for tracking

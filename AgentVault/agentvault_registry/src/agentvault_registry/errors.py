@@ -170,7 +170,11 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     context = {}
     if hasattr(exc, 'headers') and exc.headers:
         context['headers'] = dict(exc.headers)
-    
+    # V0658 (s): what a refusal names for its caller to act on rides in error.context (the organization an agent would
+    # leave, which the console names before it asks); only an exception that carries a `context` dict adds any
+    if isinstance(getattr(exc, "context", None), dict):
+        context.update(exc.context)
+
     # Handle cases where exc.detail is a dict (e.g., token reuse errors)
     detail = exc.detail
     if isinstance(detail, dict):

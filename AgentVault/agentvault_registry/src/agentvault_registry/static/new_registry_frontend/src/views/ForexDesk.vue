@@ -16,7 +16,9 @@ import { appLocale } from '@/services/appLocale'
  * route's viewAmbientTone + DashboardLayout's <ViewAmbient>. [Commander 2026-06-07]
  */
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { forexDoorPrefill } from '@/services/forexDoor'
 import { useUIStore } from '@/stores/ui'
 import { useCurrency } from '@/composables/useCurrency'
 import { useLogger } from '@/composables/useLogger'
@@ -305,6 +307,15 @@ function copyText(t?: string) {
 // ── Lifecycle ───────────────────────────────────────────────────
 // §FESUITE (the leave sweep): a page left during its first read starts no rate poll when it lands
 const alive = useAlive()
+const route = useRoute()
+// V0658 (v), seq 2419: a door (moveFundsDoor) names the recipient and the sender; read on arrival and on a query
+// change under the mounted desk (vue-router reuses it)
+async function applyDoor() {
+  const door = forexDoorPrefill(route.query as Record<string, unknown>, ownedDids.value)
+  if (door.from && door.from !== fromDid.value) await selectFrom(door.from)
+  if (door.to) recipient.value = door.to
+}
+watch(() => [route.query.to, route.query.from], () => { void applyDoor() })
 onMounted(async () => {
   await ensureAgents()
   if (!alive()) return
@@ -319,6 +330,7 @@ onMounted(async () => {
     const first = agents.value.find(a => a.hasCredentials) || agents.value[0]
     if (first) await selectFrom(didOf(first))
   }
+  await applyDoor()
 })
 onUnmounted(() => {
   if (fxQuoteTimer) clearTimeout(fxQuoteTimer)

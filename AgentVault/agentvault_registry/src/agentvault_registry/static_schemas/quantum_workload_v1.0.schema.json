@@ -1,0 +1,399 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://theprotocol.cloud/extensions/v1/quantum/workload/schema-1.0.json",
+  "title": "Quantum workload extension, version 1.0",
+  "description": "One entry of an A2A agent card's top-level extensions[]: what a quantum workload agent does (roles), the backends it offers with their device facts (each with its as_of), how its use is metered (pricing by reference to the A2A payment extension), the evidence it signs and the data terms it keeps. Spec: PRODUCTION_DOCS/SPECS/Quantum_Agent_Card_Extension_v1.0.md. A registry also applies the semantic rules the spec lists (section 7); this schema is the structural half.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["uri", "params"],
+  "properties": {
+    "uri": {"const": "https://theprotocol.cloud/extensions/v1/quantum/workload"},
+    "description": {"type": "string", "maxLength": 500},
+    "required": {"type": "boolean"},
+    "params": {"$ref": "#/$defs/params"}
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$",
+      "description": "RFC 3339 with an offset. Every device fact names the moment it was read from the device."
+    },
+    "https_url": {"type": "string", "format": "uri", "pattern": "^https://[^\\s]+$", "maxLength": 2048},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "probability": {"type": "number", "minimum": 0, "maximum": 1},
+    "code": {
+      "type": "string",
+      "pattern": "^(EU|EEA|[A-Z]{2}(-[A-Z0-9]{1,3})?)$",
+      "description": "A jurisdiction or residency code: an ISO 3166-1 alpha-2 country (DE), an ISO 3166-2 subdivision (US-CA), or EU or EEA."
+    },
+    "signing_algorithm": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9+._-]{1,47}$",
+      "description": "A named algorithm, so a post-quantum change is configuration: Ed25519, ES256, ML-DSA-65, SLH-DSA-SHA2-128s, or a hybrid such as Ed25519+ML-DSA-65."
+    },
+    "short_text": {"type": "string", "minLength": 1, "maxLength": 120},
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "roles", "evidence", "data"],
+      "properties": {
+        "version": {"type": "string", "pattern": "^1\\.[0-9]{1,3}$", "description": "The extension's version: 1.0 for this schema; a later 1.x only adds optional members."},
+        "roles": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["provider", "compiler", "mitigator", "verifier", "router", "meter"]}
+        },
+        "backends": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"$ref": "#/$defs/backend"}},
+        "pricing": {"$ref": "#/$defs/pricing"},
+        "evidence": {"$ref": "#/$defs/evidence"},
+        "data": {"$ref": "#/$defs/data"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"roles": {"contains": {"const": "provider"}}}, "required": ["roles"]},
+          "then": {"required": ["backends"]}
+        }
+      ]
+    },
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "modality", "as_of", "location", "qubits", "connectivity", "native_gates", "formats", "limits", "queue"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+        "name": {"$ref": "#/$defs/short_text"},
+        "kind": {"enum": ["qpu", "simulator", "emulator"]},
+        "modality": {"enum": ["superconducting", "trapped-ion", "neutral-atom", "photonic", "spin", "annealer", "simulator"]},
+        "as_of": {"$ref": "#/$defs/timestamp", "description": "When the static facts below (qubits, connectivity, gates, formats, limits, location) were last read from the device."},
+        "operator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {"name": {"$ref": "#/$defs/short_text"}, "url": {"$ref": "#/$defs/https_url"}}
+        },
+        "location": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["jurisdiction"],
+          "properties": {
+            "label": {"$ref": "#/$defs/short_text"},
+            "country": {"type": "string", "pattern": "^[A-Z]{2}$"},
+            "region": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,47}$"},
+            "jurisdiction": {"$ref": "#/$defs/code"}
+          }
+        },
+        "qubits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["physical"],
+          "properties": {
+            "physical": {"type": "integer", "minimum": 1, "maximum": 10000000},
+            "logical": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["count", "code"],
+              "properties": {
+                "count": {"type": "integer", "minimum": 1},
+                "code": {"type": "string", "pattern": "^[a-z0-9][a-z0-9.+-]{0,47}$"},
+                "decoder": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["name", "version", "placement"],
+                  "properties": {
+                    "name": {"$ref": "#/$defs/short_text"},
+                    "version": {"type": "string", "minLength": 1, "maxLength": 48},
+                    "placement": {"enum": ["on-device", "co-located"]}
+                  }
+                }
+              }
+            }
+          }
+        },
+        "connectivity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["topology"],
+          "properties": {
+            "topology": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,47}$", "description": "all-to-all, heavy-hex, square, linear, ring, or another named topology."},
+            "coupling_map": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["digest", "url"],
+              "properties": {
+                "digest": {"$ref": "#/$defs/digest"},
+                "url": {"$ref": "#/$defs/https_url"},
+                "edges": {"type": "integer", "minimum": 0}
+              }
+            }
+          },
+          "allOf": [
+            {"if": {"properties": {"topology": {"not": {"const": "all-to-all"}}}}, "then": {"required": ["coupling_map"]}}
+          ]
+        },
+        "native_gates": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$"}
+        },
+        "formats": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "anyOf": [
+              {"enum": ["openqasm3", "openqasm2", "qir", "quil", "ahs", "qubo"]},
+              {"type": "string", "pattern": "^x-[a-z0-9][a-z0-9.-]{0,30}$"}
+            ]
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["max_shots", "mid_circuit_measurement", "dynamic_circuits"],
+          "properties": {
+            "max_shots": {"type": "integer", "minimum": 1},
+            "max_depth": {"type": "integer", "minimum": 1},
+            "max_width": {"type": "integer", "minimum": 1},
+            "max_circuits_per_task": {"type": "integer", "minimum": 1},
+            "mid_circuit_measurement": {"type": "boolean"},
+            "dynamic_circuits": {"type": "boolean"}
+          }
+        },
+        "calibration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["as_of", "snapshot"],
+          "properties": {
+            "as_of": {"$ref": "#/$defs/timestamp"},
+            "median_1q_error": {"$ref": "#/$defs/probability"},
+            "median_2q_error": {"$ref": "#/$defs/probability"},
+            "median_readout_error": {"$ref": "#/$defs/probability"},
+            "median_t1_us": {"type": "number", "exclusiveMinimum": 0},
+            "median_t2_us": {"type": "number", "exclusiveMinimum": 0},
+            "snapshot": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["digest"],
+              "properties": {
+                "digest": {"$ref": "#/$defs/digest"},
+                "url": {"$ref": "#/$defs/https_url"},
+                "signing_algorithm": {"$ref": "#/$defs/signing_algorithm"}
+              }
+            }
+          }
+        },
+        "queue": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["as_of", "status"],
+          "properties": {
+            "as_of": {"$ref": "#/$defs/timestamp"},
+            "status": {"enum": ["online", "paused", "offline", "maintenance", "retired"]},
+            "estimated_wait_seconds": {"type": "integer", "minimum": 0},
+            "pending_tasks": {"type": "integer", "minimum": 0}
+          }
+        },
+        "availability": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["as_of", "windows"],
+          "properties": {
+            "as_of": {"$ref": "#/$defs/timestamp"},
+            "windows": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["days", "start_utc", "end_utc"],
+                "properties": {
+                  "days": {"enum": ["everyday", "weekdays", "weekend", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]},
+                  "start_utc": {"type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"},
+                  "end_utc": {"type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"}
+                }
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {"if": {"properties": {"kind": {"const": "simulator"}}, "required": ["kind"]}, "then": {"properties": {"modality": {"const": "simulator"}}}},
+        {"if": {"properties": {"kind": {"enum": ["qpu", "emulator"]}}, "required": ["kind"]}, "then": {"properties": {"modality": {"not": {"const": "simulator"}}}}},
+        {"if": {"properties": {"kind": {"const": "qpu"}}, "required": ["kind"]}, "then": {"required": ["operator", "calibration"]}}
+      ]
+    },
+    "pricing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "unit", "payment_extension"],
+      "description": "How use is metered. The amount and the unit of account live in the card's A2A payment extension, never here.",
+      "properties": {
+        "model": {"enum": ["per_shot", "per_task", "per_second", "per_gate_shot"]},
+        "unit": {"enum": ["shot", "task", "circuit", "qpu-second", "gate-shot"]},
+        "payment_extension": {"const": "https://theprotocol.cloud/extensions/v1/auth/a2a-payment"}
+      },
+      "allOf": [
+        {"if": {"properties": {"model": {"const": "per_shot"}}}, "then": {"properties": {"unit": {"const": "shot"}}}},
+        {"if": {"properties": {"model": {"const": "per_task"}}}, "then": {"properties": {"unit": {"enum": ["task", "circuit"]}}}},
+        {"if": {"properties": {"model": {"const": "per_second"}}}, "then": {"properties": {"unit": {"const": "qpu-second"}}}},
+        {"if": {"properties": {"model": {"const": "per_gate_shot"}}}, "then": {"properties": {"unit": {"const": "gate-shot"}}}}
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt", "verification_rungs"],
+      "properties": {
+        "receipt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema_version", "signing_algorithm"],
+          "properties": {
+            "schema_version": {"type": "string", "pattern": "^[0-9]{1,3}\\.[0-9]{1,3}$"},
+            "signing_algorithm": {"$ref": "#/$defs/signing_algorithm"}
+          }
+        },
+        "acceptance_tests": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["template", "rung", "method"],
+            "properties": {
+              "template": {"type": "string", "pattern": "^[a-z0-9][a-z0-9.-]{0,63}/v[0-9]{1,3}\\.[0-9]{1,3}(\\.[0-9]{1,3})?$"},
+              "rung": {"enum": [1, 2]},
+              "method": {"enum": ["answer_check", "test_circuits", "classical_simulation", "independent_repeat"]},
+              "false_accept_rate": {"$ref": "#/$defs/probability"},
+              "false_reject_rate": {"$ref": "#/$defs/probability"}
+            },
+            "allOf": [
+              {"if": {"properties": {"rung": {"const": 1}}}, "then": {"properties": {"method": {"const": "answer_check"}}}},
+              {"if": {"properties": {"rung": {"const": 2}}}, "then": {"properties": {"method": {"enum": ["test_circuits", "classical_simulation", "independent_repeat"]}}, "required": ["false_accept_rate", "false_reject_rate"]}}
+            ]
+          }
+        },
+        "metering_circuit": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9]{0,63}/v[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}$"},
+        "verification_rungs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": [1, 2, 3]}},
+        "rung_3_basis": {"const": "signed_claims"}
+      },
+      "allOf": [
+        {"if": {"properties": {"verification_rungs": {"contains": {"const": 3}}}, "required": ["verification_rungs"]}, "then": {"required": ["rung_3_basis"]}}
+      ]
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["retention", "residency", "ledger_keeps"],
+      "properties": {
+        "retention": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["circuits_days", "results_days"],
+          "properties": {
+            "circuits_days": {"type": "integer", "minimum": 0, "maximum": 3650},
+            "results_days": {"type": "integer", "minimum": 0, "maximum": 3650}
+          }
+        },
+        "residency": {"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/code"}},
+        "export_control": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["self_declared", "note"],
+          "properties": {
+            "self_declared": {"const": true},
+            "note": {"type": "string", "minLength": 1, "maxLength": 500}
+          }
+        },
+        "ledger_keeps": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["hashes", "verdicts"]}}
+      }
+    }
+  },
+  "examples": [
+    {
+      "uri": "https://theprotocol.cloud/extensions/v1/quantum/workload",
+      "description": "Quantum workload extension 1.0: roles, backends with device facts, evidence and data terms.",
+      "required": false,
+      "params": {
+        "version": "1.0",
+        "roles": ["provider", "meter"],
+        "backends": [
+          {
+            "id": "statevector-32",
+            "name": "Statevector simulator",
+            "kind": "simulator",
+            "modality": "simulator",
+            "as_of": "2026-11-07T12:00:00Z",
+            "operator": {"name": "Example Lab"},
+            "location": {"label": "Frankfurt, Germany", "country": "DE", "region": "eu-central", "jurisdiction": "DE"},
+            "qubits": {"physical": 32},
+            "connectivity": {"topology": "all-to-all"},
+            "native_gates": ["cx", "h", "rz", "sx", "x"],
+            "formats": ["openqasm3"],
+            "limits": {"max_shots": 100000, "max_depth": 10000, "max_width": 32, "mid_circuit_measurement": true, "dynamic_circuits": true},
+            "queue": {"as_of": "2026-11-07T12:00:00Z", "status": "online", "estimated_wait_seconds": 0},
+            "availability": {"as_of": "2026-11-07T12:00:00Z", "windows": [{"days": "everyday", "start_utc": "00:00", "end_utc": "23:59"}]}
+          },
+          {
+            "id": "heavy-hex-27-noisy",
+            "name": "27-qubit heavy-hex emulator",
+            "kind": "emulator",
+            "modality": "superconducting",
+            "as_of": "2026-11-07T12:00:00Z",
+            "operator": {"name": "Example Lab"},
+            "location": {"label": "Frankfurt, Germany", "country": "DE", "jurisdiction": "DE"},
+            "qubits": {"physical": 27},
+            "connectivity": {
+              "topology": "heavy-hex",
+              "coupling_map": {
+                "digest": "sha256:5173ee745091c28a0ab35005f6bf560c89f264bc63c0bed892832343712a6a82",
+                "url": "https://provider.example/coupling/heavy-hex-27.json",
+                "edges": 28
+              }
+            },
+            "native_gates": ["ecr", "id", "rz", "sx", "x"],
+            "formats": ["openqasm3", "qir"],
+            "limits": {"max_shots": 20000, "max_width": 27, "mid_circuit_measurement": true, "dynamic_circuits": false},
+            "calibration": {
+              "as_of": "2026-11-07T11:30:00Z",
+              "median_1q_error": 0.0003,
+              "median_2q_error": 0.008,
+              "median_readout_error": 0.015,
+              "median_t1_us": 180,
+              "median_t2_us": 120,
+              "snapshot": {
+                "digest": "sha256:9a7fc04e552546030645dfe143b9f9808ca35433e6dd8c803171d34578da9183",
+                "url": "https://provider.example/calibration/2026-11-07T1130Z.json",
+                "signing_algorithm": "Ed25519"
+              }
+            },
+            "queue": {"as_of": "2026-11-07T12:00:00Z", "status": "online", "estimated_wait_seconds": 30, "pending_tasks": 2}
+          }
+        ],
+        "pricing": {"model": "per_shot", "unit": "shot", "payment_extension": "https://theprotocol.cloud/extensions/v1/auth/a2a-payment"},
+        "evidence": {
+          "receipt": {"schema_version": "1.0", "signing_algorithm": "Ed25519"},
+          "acceptance_tests": [
+            {"template": "answer-check/v1.0", "rung": 1, "method": "answer_check"},
+            {"template": "test-circuits/v1.0", "rung": 2, "method": "test_circuits", "false_accept_rate": 0.01, "false_reject_rate": 0.05}
+          ],
+          "metering_circuit": "accurateResourceUsagePolicy/v2.0.0",
+          "verification_rungs": [1, 2, 3],
+          "rung_3_basis": "signed_claims"
+        },
+        "data": {
+          "retention": {"circuits_days": 0, "results_days": 30},
+          "residency": ["DE"],
+          "export_control": {"self_declared": true, "note": "Simulators and an emulator only; no controlled hardware is offered."},
+          "ledger_keeps": ["hashes", "verdicts"]
+        }
+      }
+    }
+  ]
+}

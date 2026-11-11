@@ -3,8 +3,9 @@ Agent bundle download — generates a ready-to-run agent package.
 
 POST /api/v1/onboard/download-bundle
 Authorization: Bearer {devJwt}
-Body: { "agent_did": "did:theprotocol:...", "client_id": "agent-...", "client_secret": "tp_secret_..." }
-Returns: ZIP file stream containing a configured GeraldShip agent.
+Body: { "agent_did": "did:theprotocol:...", "client_id": "agent-...", "client_secret": "tp_secret_...", "template_type": "minimal" }
+Returns: ZIP file stream containing a configured agent: the starter ("minimal", Agent Forge's featured default: an
+external agent on the SDK) or the PPAO orchestrator ("ppao").
 """
 import io
 import json
@@ -23,30 +24,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
 from ..models import Agent, AgentCard, Developer
+from ..core.frame_currency import frame_currency
+from ..core.public_url import credential_home_url
 from ..security import get_current_developer_unified, verify_password
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/onboard", tags=["Onboarding"])
 
-# Path to agent templates (mounted as read-only volumes in production)
-TEMPLATE_DIR = Path(os.getenv("AGENT_TEMPLATE_DIR", "/app/agent-template"))
+# Path to agent templates (both ship in the image)
 PPAO_TEMPLATE_DIR = Path(os.getenv("PPAO_TEMPLATE_DIR", "/app/ppao-template"))
 MINIMAL_TEMPLATE_DIR = Path(os.getenv("MINIMAL_TEMPLATE_DIR", "/app/minimal-template"))
 
 
 # §MCPTEST30 (V0640): the templates a bundle can be built from, in the order Agent Forge offers them; one is available
-# where its directory exists. "full-capacity" was a host bind mount on Frame A (./Agents/GeraldShip as
-# /app/agent-template), which no frame stood up since 2026-09-07 carries, so a request for it answered 500 everywhere.
-# Whether to ship it in the image is an open decision (agentvault2-d6's decision list); until then the registry lists what it
-# has.
+# where its directory exists. V0658 (b): the starter (id "minimal": an external agent on the SDK, the image's
+# minimal-template) is Agent Forge's featured default; "full-capacity" (D6-822: a host bind mount on retired Frame A, on
+# no frame since 2026-09-07) is gone from the catalogue.
 def _template_dirs() -> List[Tuple[str, Path]]:
-    return [("full-capacity", TEMPLATE_DIR), ("minimal", MINIMAL_TEMPLATE_DIR), ("ppao", PPAO_TEMPLATE_DIR)]
+    return [("minimal", MINIMAL_TEMPLATE_DIR), ("ppao", PPAO_TEMPLATE_DIR)]
 
 
 def available_templates() -> List[str]:
-    """The template ids this registry can build a bundle from, in _template_dirs' order (full-capacity, minimal, ppao).
-    Agent Forge shows them in its own catalogue's order; a download without a pick takes the first one listed here."""
+    """The template ids this registry can build a bundle from, in _template_dirs' order (minimal, ppao). Agent Forge
+    shows them in its own catalogue's order; a download without a pick takes the first one listed here."""
     return [tid for tid, d in _template_dirs() if d.exists()]
 
 # Directories and patterns to skip when building the ZIP
@@ -79,7 +80,7 @@ class BundleRequest(BaseModel):
     agent_did: str = Field(..., description="The agent's DID (did:theprotocol:...)")
     client_id: str = Field(..., description="The agent's client_id (agent-...)")
     client_secret: str = Field(..., description="The agent's client_secret (tp_secret_...)")
-    template_type: str = Field("full-capacity", description="Template type: full-capacity (GeraldShip), ppao (orchestrator), or minimal (SDK starter)")
+    template_type: str = Field("minimal", description="Template type: minimal (the starter: an external agent on the SDK) or ppao (orchestrator)")
 
 
 def _slugify(name: str) -> str:
@@ -125,43 +126,6 @@ def _should_skip(rel_path: Path) -> bool:
     return False
 
 
-def _generate_env(
-    agent_did: str,
-    client_id: str,
-    agent_name: str,
-    container_name: str,
-    template_env: str,
-) -> str:
-    """Generate .env with agent-specific values filled in."""
-    lines = []
-    replacements = {
-        "AGENT_DID": agent_did,
-        "CLIENT_ID": client_id,
-        "AGENT_NAME": agent_name,
-        "CONTAINER_NAME": container_name,
-        "TEMPLATE_ID": _slugify(agent_name),
-    }
-
-    for line in template_env.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("#") or "=" not in stripped:
-            lines.append(line)
-            continue
-
-        key = stripped.split("=", 1)[0].strip()
-        if key in replacements:
-            lines.append(f"{key}={replacements[key]}")
-        else:
-            lines.append(line)
-
-    return "\n".join(lines) + "\n"
-
-
-def _generate_env_secret(client_secret: str) -> str:
-    """Generate .env.secret with the client secret."""
-    return f"CLIENT_SECRET={client_secret}\n"
-
-
 def _generate_readme(agent_name: str, agent_did: str, template_readme: str) -> str:
     """Fill in agent name and DID in the README."""
     text = template_readme
@@ -176,12 +140,29 @@ def _generate_readme(agent_name: str, agent_did: str, template_readme: str) -> s
     return text
 
 
-def _generate_docker_compose(agent_name: str, container_name: str, template: str) -> str:
-    """Update docker-compose.yml with agent-specific container name."""
-    text = template
-    # Replace the service name and container_name
-    text = text.replace("gerald-ship-agent", container_name)
-    return text
+# V0658 (b): the starter's .env names its registry, its unit and its public address; the download fills them in from
+# what this registry knows, and a value it does not know stays empty (the agent then says what to set).
+def _public_origin(card_data: Dict[str, Any]) -> str:
+    """The scheme and host of the endpoint the card declares (supportedInterfaces[0].url, else the A2A v0.3 `url`),
+    the address the registry reads the agent's card from; "" when the card declares none."""
+    from urllib.parse import urlsplit
+    ifaces = card_data.get("supportedInterfaces") if isinstance(card_data, dict) else None
+    url = ""
+    if isinstance(ifaces, list) and ifaces and isinstance(ifaces[0], dict):
+        url = str(ifaces[0].get("url") or "")
+    if not url and isinstance(card_data, dict):
+        url = str(card_data.get("url") or "")
+    p = urlsplit(url)
+    return f"{p.scheme}://{p.netloc}" if p.scheme in ("http", "https") and p.netloc else ""
+
+
+def _render_starter_env(template_env: str, values: Dict[str, str]) -> str:
+    """The starter's .env with each key of `values` set to its value; every other line as the template has it."""
+    out = []
+    for line in template_env.splitlines():
+        key = line.split("=", 1)[0].strip() if "=" in line and not line.lstrip().startswith("#") else ""
+        out.append(f"{key}={values[key]}" if key in values else line)
+    return "\n".join(out) + "\n"
 
 
 @router.get("/bundle-templates")
@@ -202,8 +183,9 @@ async def download_bundle(
     Generate and download a ready-to-run agent bundle (ZIP).
 
     The bundle contains a configured agent template. Just `docker compose up -d` to run.
-    Supports template_type: "full-capacity" (GeraldShip), "minimal" (SDK starter) or "ppao" (orchestrator), where
-    this registry has it (GET /onboard/bundle-templates).
+    Supports template_type: "minimal" (the starter, Agent Forge's default: an external agent on the SDK, its .env
+    naming this registry, the agent's public address and the registry's unit, its card the agent's own) or "ppao"
+    (orchestrator), where this registry has it (GET /onboard/bundle-templates).
     """
     # 1. Select and verify template directory. §MCPTEST30 (V0640): a template this registry does not have answers 404
     # naming the ones it has, never a 500 for the client's choice, and a name outside the catalogue is no longer read
@@ -266,14 +248,17 @@ async def download_bundle(
     # 4. Build the ZIP in memory
     buf = io.BytesIO()
 
-    # Read template files we'll modify
-    template_env_path = active_template_dir / ".env"
+    # Read template files we'll modify. V0658 (b): the starter keeps its settings as .env.example (a tracked file may
+    # not be named .env: the repository's ignore rules and pre-commit hook refuse one), and the bundle writes .env
+    template_env_path = active_template_dir / (".env.example" if is_minimal else ".env")
     template_env = template_env_path.read_text() if template_env_path.exists() else ""
 
     template_readme_path = active_template_dir / "README.md"
     template_readme = template_readme_path.read_text() if template_readme_path.exists() else ""
 
-    template_compose_path = active_template_dir / "docker-compose.yml"
+    # V0658 (b): the starter's compose file is compose.yaml (the Compose specification's own name; the repository ignores
+    # every docker-compose.yml, which is why the minimal template never shipped one)
+    template_compose_path = active_template_dir / ("compose.yaml" if is_minimal else "docker-compose.yml")
     template_compose = template_compose_path.read_text() if template_compose_path.exists() else ""
 
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -291,38 +276,30 @@ async def download_bundle(
 
             # Replace specific files with generated versions
             if rel_str == ".env":
-                if is_ppao:
-                    content = template_env
-                elif is_minimal:
-                    # Minimal: inject agent name and DID
-                    content = template_env.replace("AGENT_NAME=My Agent", f"AGENT_NAME={agent_name}")
-                    content = content.replace("AGENT_DID=PLACEHOLDER_DID", f"AGENT_DID={req.agent_did}")
-                else:
-                    content = _generate_env(
-                        agent_did=req.agent_did,
-                        client_id=req.client_id,
-                        agent_name=agent_name,
-                        container_name=container_name,
-                        template_env=template_env,
-                    )
-                zf.writestr(rel_str, content)
+                zf.writestr(rel_str, template_env)
             elif rel_str == ".env.secret":
                 # Skip — we generate our own below
                 continue
             elif rel_str == "README.md":
                 content = _generate_readme(agent_name, req.agent_did, template_readme)
+                if is_minimal:
+                    content = content.replace("my-agent", container_name)   # the compose service it names
                 zf.writestr(rel_str, content)
-            elif rel_str == "docker-compose.yml":
-                if is_ppao:
-                    content = template_compose.replace("ppao-agent", container_name)
-                elif is_minimal:
-                    content = template_compose.replace("my-agent", container_name)
-                else:
-                    content = _generate_docker_compose(agent_name, container_name, template_compose)
+            elif rel_str == template_compose_path.name:
+                content = template_compose.replace("ppao-agent" if is_ppao else "my-agent", container_name)
                 zf.writestr(rel_str, content)
+            elif rel_str == "agent-card.json" and is_minimal:
+                # the starter serves the agent's own card (card.py): the registry's copy, as it stands now
+                zf.writestr(rel_str, json.dumps(card_data, indent=2) + "\n")
             else:
                 # Copy file as-is
                 zf.write(file_path, rel_str)
+
+        # The starter's .env: its settings, with what this registry knows filled in (.env.example is not shipped)
+        if is_minimal and template_env:
+            zf.writestr(".env", _render_starter_env(template_env, {
+                "AGENT_NAME": agent_name, "AGENT_DID": req.agent_did, "REGISTRY_URL": credential_home_url() or "",
+                "PUBLIC_URL": _public_origin(card_data), "CURRENCY": frame_currency()}))
 
         # Add generated .env.secret with real credentials
         if is_ppao:
@@ -332,26 +309,14 @@ async def download_bundle(
                 f"PPAO_CLIENT_ID={req.client_id}\n"
                 f"PPAO_CLIENT_SECRET={req.client_secret}\n"
             )
-            zf.writestr(".env.secret", secret_content)
-        elif is_minimal:
+        else:
             secret_content = (
                 f"# Agent Credentials — NEVER COMMIT THIS FILE\n"
                 f"AGENT_DID={req.agent_did}\n"
                 f"CLIENT_ID={req.client_id}\n"
                 f"CLIENT_SECRET={req.client_secret}\n"
             )
-            zf.writestr(".env.secret", secret_content)
-        else:
-            zf.writestr(".env.secret", _generate_env_secret(req.client_secret))
-            zf.writestr("agent-card.json", json.dumps(card_data, indent=2) + "\n")
-
-        # Ensure volume dirs have .gitkeep
-        for d in EMPTY_VOLUME_DIRS:
-            gitkeep = f"{d}/.gitkeep"
-            try:
-                zf.getinfo(gitkeep)
-            except KeyError:
-                zf.writestr(gitkeep, "")
+        zf.writestr(".env.secret", secret_content)
 
     buf.seek(0)
     filename = f"agent-{slug}.zip"

@@ -30,6 +30,8 @@ _FRAME = {  # what aa's frame pair answered (nt261025x1a, V0639), well-formed in
     "theprotocol_finalizeFrameInvitation": ("404", "HTTP 404: Invitation not found."),
     "theprotocol_approveDisputeSettlement": ("404", "HTTP 404: Settlement not found"),
     "theprotocol_rejectDisputeSettlement": ("404", "HTTP 404: Settlement not found"),
+    # V0660 (k): closing a settlement no peer holds; a run makes none, so its refusal (an id that names nothing) is the row
+    "theprotocol_closeDisputeSettlement": ("404", "HTTP 404: Settlement not found"),
     "theprotocol_getFederationDisputeSettlement": ("404", f"HTTP 404: Settlement {_NO_ID} not found"),
     "theprotocol_getRelayStatus": ("422", "HTTP 422: Agent endpoint must be https (card declares http)"),
     "theprotocol_relayAction": ("400", "HTTP 400: Invalid relay tool: relay_phase6"),
@@ -80,7 +82,8 @@ def test_each_not_driven_tool_is_said_on_its_row_and_its_refusal_passes_on_a_fra
         assert ref["healthy"] is True, (tool, ref)
     sent = {t: a for t, a in calls if t in _FRAME}
     for tool in ("theprotocol_finalizeFrameInvitation", "theprotocol_approveDisputeSettlement",
-                 "theprotocol_rejectDisputeSettlement", "theprotocol_getFederationDisputeSettlement"):
+                 "theprotocol_rejectDisputeSettlement", "theprotocol_getFederationDisputeSettlement",
+                 "theprotocol_closeDisputeSettlement"):
         assert _NO_ID in json.dumps(sent[tool]), "an id that is well formed and names nothing"
     assert sent["theprotocol_relayAction"]["action_payload"]["tool"] == "relay_phase6"
 

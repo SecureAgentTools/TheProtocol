@@ -643,3 +643,98 @@ def test_the_chown_goes_through_a_throwaway_container_not_a_root_process():
     body = ast.unparse(fn)
     assert "docker" in body and "chown" in body and "999:1000" in body
     assert "os.chown" not in body, "a direct chown would require the one-shot to run as root"
+
+
+# ── V0660 (j): a re-provision must not start the agent on a recorded stop ────────────────────────────────────────────
+# session-watch, sessions' room seq 2329 and session-lead's reading at seq 2525. Since V0657 (f) a revoke stops the
+# operator's spire-agent, and V0660 (j) records that stop as restart policy "no" so the host's health collector reads
+# it as deliberate. The re-provision is the other half, and it is the dangerous one:
+#   MEASURED on this host with a throwaway compose project — `docker compose up -d` on an existing STOPPED container
+#   starts it and KEEPS policy "no". So a re-provisioned agent would run with docker's restart disarmed, and when it
+#   later died it would be EXITED with policy "no", which the collector SKIPS as a recorded stop. A noisy alert
+#   would have become a silent outage: the §CANARYFIX class, where ten canary workloads once sat dead for 44 hours
+#   behind a stop nobody had written down.
+# The fix takes the policy from compose's own file rather than naming one here: the one service is force-recreated,
+# and only when its policy really reads "no", so an ordinary provision does nothing.
+
+def _stub_docker_with_policy(mod, monkeypatch, policy, agent_ids=("agent-cid",)):
+    """_stub_docker, plus a docker whose spire-agent carries `policy`. Returns the list of _run argvs."""
+    import types as _t
+    _stub_docker(mod, monkeypatch)
+    runs = []
+    real_run = mod._run
+
+    def run(cmd, note, notes, timeout=600, cwd=None):
+        runs.append(list(cmd))
+        return real_run(cmd, note, notes, timeout=timeout, cwd=cwd)
+    monkeypatch.setattr(mod, "_run", run)
+
+    stub_run = mod.subprocess.run
+
+    def _fake(cmd, *a, **k):
+        if cmd[:2] == ["docker", "inspect"] and any("RestartPolicy" in str(c) for c in cmd):
+            return _t.SimpleNamespace(stdout=policy + "\n", stderr="", returncode=0)
+        if "ps" in cmd and "-q" in cmd and "spire-agent" in cmd:
+            return _t.SimpleNamespace(stdout="".join(i + "\n" for i in agent_ids), stderr="", returncode=0)
+        return stub_run(cmd, *a, **k)
+    monkeypatch.setattr(mod, "subprocess", _t.SimpleNamespace(run=_fake))
+    return runs
+
+
+def _recreates(runs):
+    return [c for c in runs if "--force-recreate" in c]
+
+
+def _stack_phase(mod, monkeypatch):
+    root = tempfile.mkdtemp()
+    frame_dir = os.path.join(root, "lantern-1789542771")
+    bundles = os.path.join(frame_dir, "operator-bundles")
+    os.makedirs(bundles)
+    _bundle_with_the_real_template(bundles)
+    return mod.do_host_work(_stack_spec(root, frame_dir, parent_peer={
+        "name": "EU", "base_url": "https://lantern.theprotocol.cloud:8443",
+        "admin_contact_email": "commander@theprotocol.cloud", "trust_domain": "lantern.theprotocol.cloud"}))
+
+
+def test_v0660j_a_reprovision_clears_a_recorded_stop_before_it_brings_the_stack_up(monkeypatch):
+    mod = _load()
+    runs = _stub_docker_with_policy(mod, monkeypatch, "no")
+    r = _stack_phase(mod, monkeypatch)
+    assert r["phase"] == "stack"
+    rec = _recreates(runs)
+    assert len(rec) == 1, f"one recreate of the one service: {rec}"
+    # the EXACT tail, --no-deps included: without it compose restarts the whole dependency tree under this service
+    # (CLAUDE.md rule 17, the most repeated mistake in this project) — redis, the db, pgbouncer, the registry, on a
+    # live operator stack, to fix a restart policy. session-lead's must, room seq 2527.
+    assert rec[0][-5:] == ["up", "-d", "--no-deps", "--force-recreate", "spire-agent"], rec[0]
+    assert rec[0][:2] == ["docker", "compose"] and "--env-file" in rec[0]
+    # the policy is never named here: compose re-applies what its own file declares
+    assert not any("unless-stopped" in " ".join(c) for c in runs)
+    # and it happens BEFORE the stack's own up, so nothing starts the agent on "no" first
+    ups = [i for i, c in enumerate(runs) if c[-2:] == ["up", "-d"]]
+    assert ups and runs.index(rec[0]) < ups[0], (runs.index(rec[0]), ups)
+
+
+def test_v0660j_an_ordinary_reprovision_recreates_nothing(monkeypatch):
+    # the control: an agent on the policy its compose file declares is left alone — a provision that recreated the
+    # agent every time would be an outage of its own, and the §LEGACYSTOP convention is about a STOP, not a policy.
+    mod = _load()
+    runs = _stub_docker_with_policy(mod, monkeypatch, "unless-stopped")
+    r = _stack_phase(mod, monkeypatch)
+    assert r["phase"] == "stack" and not _recreates(runs)
+
+
+def test_v0660j_a_policy_that_cannot_be_read_recreates_nothing(monkeypatch):
+    # not-measured is not permission to act: an unreadable policy leaves the container alone and says so.
+    mod = _load()
+    runs = _stub_docker_with_policy(mod, monkeypatch, "")
+    r = _stack_phase(mod, monkeypatch)
+    assert r["phase"] == "stack" and not _recreates(runs)
+
+
+def test_v0660j_no_single_agent_container_recreates_nothing(monkeypatch):
+    # two ids back from compose means this is not the one container we mean; one id is the only answer acted on.
+    mod = _load()
+    runs = _stub_docker_with_policy(mod, monkeypatch, "no", agent_ids=("a-cid", "b-cid"))
+    r = _stack_phase(mod, monkeypatch)
+    assert r["phase"] == "stack" and not _recreates(runs)

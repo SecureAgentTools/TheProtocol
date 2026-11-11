@@ -29,7 +29,6 @@ class _NoDb:
 def dirs(tmp_path, monkeypatch):
     (tmp_path / "minimal").mkdir()
     (tmp_path / "ppao").mkdir()
-    monkeypatch.setattr(B, "TEMPLATE_DIR", tmp_path / "absent-full-capacity")
     monkeypatch.setattr(B, "MINIMAL_TEMPLATE_DIR", tmp_path / "minimal")
     monkeypatch.setattr(B, "PPAO_TEMPLATE_DIR", tmp_path / "ppao")
     return tmp_path
@@ -47,6 +46,7 @@ def test_the_registry_lists_the_templates_it_has_in_forge_order(dirs):
                                                                        "default": "minimal"}
 
 
+# V0658 (b): "full-capacity" left the catalogue (D6-822); asking for it is asking for a template no registry has
 @pytest.mark.parametrize("asked", ["full-capacity", "no-such-template"])
 def test_a_template_the_registry_does_not_have_answers_404_naming_what_it_has(dirs, asked):
     with pytest.raises(HTTPException) as e:

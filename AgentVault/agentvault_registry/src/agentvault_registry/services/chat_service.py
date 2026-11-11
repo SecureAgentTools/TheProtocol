@@ -85,13 +85,17 @@ def spawn(coro: Awaitable[Any], what: Optional[str] = None) -> "asyncio.Task[Any
 
 def deliver(conv_id: str, conv_kind: str, message: dict, recipients: List[dict], sender_name: str,
             *, is_ping: bool = False, sender_owner_dev_id: Optional[int] = None,
-            notify_absent: bool = True) -> "asyncio.Task[Any]":
+            notify_absent: bool = True, sender_agent_owner_dev_id: Optional[int] = None) -> "asyncio.Task[Any]":
     """fan_out_message() in the background through spawn(), named by the message and its recipients' kinds.
     notify_absent=False delivers live only (the sockets, the sync waiters, the agents' hooks): V0652 (ai), the support
-    rail, whose ticket already sends one typed notice per desk act."""
+    rail, whose ticket already sends one typed notice per desk act. sender_agent_owner_dev_id (V0659 (o)): the
+    developer who created the agent that sent the line, whose copy is marked as his agent's."""
     kinds = sorted({str(r.get("ptype") or "?") for r in recipients or []})
-    # notify_absent travels only when it is False: every other call keeps the shape it has always had
-    extra = {} if notify_absent else {"notify_absent": False}
+    # notify_absent travels only when it is False, and the sending agent's owner only when one is named: every other
+    # call keeps the shape it has always had
+    extra: Dict[str, Any] = {} if notify_absent else {"notify_absent": False}
+    if sender_agent_owner_dev_id is not None:
+        extra["sender_agent_owner_dev_id"] = sender_agent_owner_dev_id
     return spawn(fan_out_message(conv_id, conv_kind, message, recipients, sender_name, is_ping=is_ping,
                                  sender_owner_dev_id=sender_owner_dev_id, **extra),
                  what=f"the delivery of message {message.get('id')} (seq {message.get('seq')}) in {conv_id} "
@@ -313,6 +317,10 @@ SYNC_SEEN_MAX = 32
 SYNC_WAITERS_PER_PRINCIPAL = 4
 SERVICE_INFLIGHT_STALE_S = 180  # a crashed worker's flag ages out, never bricks a thread
 
+# Every conversation kind the database accepts: the newest migration's ck_conversations_kind, word for word (pinned by
+# tests/test_chat_room_vocabulary_v0659.py). Read this, never a literal of your own (V0659 (f): a test's own list
+# missed 'room'). A new kind is a migration that widens the CHECK AND an entry here.
+CONVERSATION_KINDS = ("dm", "agent_service", "org", "system", "group", "support", "room")
 PAIR_KINDS = ("dm", "agent_service")
 
 # The closed v1 card vocabulary. CORE enables the pay family + agent.card for
@@ -508,7 +516,7 @@ def pick_counterparty(kind: Optional[str], parts: Iterable[Any], my_keys: Set[st
     the pair of a local dm or service thread, or the principal who started a mirrored one. Otherwise the EARLIEST-seated
     participant that is not the caller's (ordered by joined_at, then id), so the answer never depends on row order.
     A room has members, never a counterparty (the list also leaves a support thread's row unnamed; it asks that itself)."""
-    if kind == "org":
+    if kind in ("org", "room"):     # V0659 (f): a cross-frame room has members too, never a counterparty
         return None, False
     ordered = sorted(parts, key=_seated_order)
     by_key: Dict[str, Any] = {}
@@ -1357,6 +1365,41 @@ async def agent_owner_map(db: AsyncSession, dids: Iterable[str]) -> Dict[str, Op
     return {d: found.get(d.lower()) for d in ds}
 
 
+def own_agents_statement():
+    """V0659 (o): which of a page's agent senders a developer created, as lower-cased DIDs. One statement over the
+    senders on the page (the creator index first), never every agent the developer has."""
+    return sa_text(
+        "SELECT lower(did) FROM agents WHERE creator_developer_id = :me AND lower(did) IN :dids"
+    ).bindparams(bindparam("dids", expanding=True))
+
+
+async def own_agent_senders(db: AsyncSession, actor: "Actor", senders: Iterable[Tuple[Any, Any]], *,
+                            household: Optional[Set[str]] = None) -> Set[str]:
+    """V0659 (o), the maintainer's seq 1833 ("so the dev knows this is from his agent and not posted by him"): the agents
+    among these senders, (sender_ptype, sender_id) pairs, that the READER created, as lower-cased DIDs. A developer
+    reads his own agents' lines as his agent's, never as his own; an agent creates no agents, and a page without an
+    agent sender asks nothing. `household`: the reader's household_keys where the caller holds them already (the thread
+    read does: the same rule, a developer's agents are the ones he created), so the answer costs no read of its own."""
+    if actor.ptype != "developer" or actor.developer_id is None:
+        return set()
+    dids = sorted({str(sid).lower() for ptype, sid in senders if ptype == "agent" and sid})
+    if not dids:
+        return set()
+    if household is not None:
+        return {d for d in dids if principal_key("agent", d) in household}
+    rows = (await db.execute(own_agents_statement(), {"me": int(actor.developer_id), "dids": dids})).all()
+    return {str(r[0]).lower() for r in rows if r and r[0]}
+
+
+def sender_is_my_agent(sender_ptype: Any, sender_id: Any, mine: Set[str]) -> bool:
+    """V0659 (o): is a line from one of the reader's own agents (own_agent_senders' answer for its page)? Pure.
+
+    It answers whose agent the SENDER is and nothing more, so it stays true on a line the reader typed as his agent
+    through his own session: that line also says sent_by_owner, and both together mean his own hand (the console's
+    rule, services/chat/myAgent.ts, reads the two the same way)."""
+    return sender_ptype == "agent" and bool(sender_id) and str(sender_id).lower() in mine
+
+
 def developer_display_name(dev: Any) -> str:
     """How a developer is named to others in the chat: their name, else @handle, else "dev N"; never their e-mail
     address (V0652 (ak), session-lead's review item 20). Pure."""
@@ -2138,6 +2181,18 @@ async def list_conversations(db: AsyncSession, actor: Actor, state: str = "activ
 
     my_keys = await household_keys(db, actor)
 
+    # V0658 (t): a room's entry wears its organization's hosted logo, as the thread's header does: the same block
+    # (org_mark.room_org's), for every room on the page in one statement. A list never fails over a logo: when the read
+    # fails the rooms carry no block and keep today's avatar.
+    room_org_ids = [r[14] for r in rows if r[1] == "org" and r[14]]
+    room_blocks: Dict[str, Dict[str, Any]] = {}
+    if room_org_ids:
+        try:
+            from agentvault_registry.services import org_mark as _om
+            room_blocks = await _om.room_orgs(db, room_org_ids)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("chat list: the rooms' organizations could not be read: %s", e)
+
     items = []
     for r in rows:
         cid = r[0]
@@ -2148,7 +2203,7 @@ async def list_conversations(db: AsyncSession, actor: Actor, state: str = "activ
         # buying a service from another of your agents is a real transaction
         # with a real fee — and the row is then named by the side that is not
         # the CALLER, so a household thread reads as itself, not as a blank.
-        p, same_household = (None, False) if r[1] in ("org", "support") else pick_counterparty(
+        p, same_household = (None, False) if r[1] in ("org", "room", "support") else pick_counterparty(
             r[1], parts_by_conv.get(cid, []), my_keys, actor.key,
             pair_key=r[6], created_by=created_by_key(r[16], r[17]))
         if p is not None:
@@ -2170,6 +2225,8 @@ async def list_conversations(db: AsyncSession, actor: Actor, state: str = "activ
             "my_state": want_state,
             "counterparty": counterparty,
             "mode": r[12], "topic": r[13], "org_id": r[14],
+            # V0658 (t): the room's organization with its hosted logo (None for a thread that is not a room)
+            "org": room_blocks.get(str(r[14])) if r[1] == "org" and r[14] else None,
             "support_ticket_id": r[15],
         })
     next_cursor = items[-1]["last_message_at"] if len(items) == limit else None
@@ -2271,10 +2328,20 @@ async def list_messages(db: AsyncSession, conversation_id: str, actor: Actor,
     names = await display_names(db, keys)
     if counterparty:
         counterparty["name"] = names.get(counterparty.pop("key"), "")
+        # V0657 (b), item 5: an agent counterparty's organization mark (only a listed organization's, as on its card)
+        if counterparty.get("agent_did"):
+            try:
+                from agentvault_registry.services import org_mark as _om
+                counterparty["org"] = await _om.mark_for_did(db, counterparty["agent_did"])
+            except Exception as e:  # noqa: BLE001 — a thread never fails over a mark
+                logger.warning("thread %s: the counterparty's organization mark could not be read: %s", conv.id, e)
+    # V0659 (o): which lines are the reader's own agents' (the console and Pocket mark them, never as his own)
+    mine = await own_agent_senders(db, actor, [(m.sender_ptype, m.sender_id) for m in msgs], household=my_keys)
     out = []
     for m in msgs:
         d = serialize_message(m)
         d["sender_name"] = names.get(sender_key_of(m) or "", "") or system_sender_name(m)
+        d["sender_is_my_agent"] = sender_is_my_agent(m.sender_ptype, m.sender_id, mine)
         out.append(d)
     room = None
     if conv.kind == "org":
@@ -2292,7 +2359,10 @@ async def list_messages(db: AsyncSession, conversation_id: str, actor: Actor,
         from agentvault_registry.services.org_policy import transparency_public, assistant_present
         _settings = org_row[1] if org_row and isinstance(org_row[1], dict) else None
         _tp_pub = transparency_public(_settings)
+        from agentvault_registry.services import org_mark as _om
         room = {"org_id": conv.org_id, "title": live_name or conv.title,
+                # V0657 (b), item 5: the organization the room belongs to, with the logo its registry hosts
+                "org": await _om.room_org(db, conv.org_id),
                 "mode": conv.mode, "topic": conv.topic, "genesis": conv.genesis,
                 "my_can_post": bool(getattr(my_row, "can_post", True)),
                 "my_org_role": my_org_role,
@@ -2323,6 +2393,18 @@ async def list_messages(db: AsyncSession, conversation_id: str, actor: Actor,
                               if p.state == "active" and p.ptype in ("developer", "agent")}
         room["can_set_wake"] = may_set_wake_for_others(
             actor, int(org_row[2]) if org_row is not None and org_row[2] is not None else None)
+    elif conv.kind == "room":
+        # V0659 (f): a cross-frame room's header and composer read the same block an org room's do; it belongs to no
+        # organization, so nothing org-shaped rides along, and its moderation is the room panel's (GET /chat/rooms/{id}),
+        # never the org room's operator menu (my_is_operator stays false here, on the host as on a resident's copy)
+        room = {"org_id": None, "title": conv.title, "org": None, "xframe": True,
+                "mode": conv.mode, "topic": conv.topic, "genesis": conv.genesis,
+                "my_can_post": bool(getattr(my_row, "can_post", True)),
+                "my_org_role": None, "my_is_operator": False,
+                "transparency_public": False, "assistant_present": False,
+                "member_count": int((await db.execute(sa_text(
+                    "SELECT count(*) FROM conversation_participants WHERE conversation_id = :c AND state = 'active'"),
+                    {"c": conv.id})).scalar() or 0)}
 
     return {"conversation_id": conv.id, "kind": conv.kind,
             "last_seq": int(conv.last_seq or 0),
@@ -2813,6 +2895,10 @@ async def sync_since(db: AsyncSession, actor: Actor, since: Optional[str], *,
         convs, approvals, approver_orgs = await _for_me_context(db, actor, msgs)
         msgs = [m for m in msgs if reaches_me(actor, m, convs.get(m["conversation_id"]),
                                               approvals.get(_card_approval_id(m.get("card")) or ""), approver_orgs)]
+    # V0659 (o): which lines are the reader's own agents', as the thread read says
+    mine = await own_agent_senders(db, actor, [(m["sender_ptype"], m["sender_id"]) for m in msgs])
+    for m in msgs:
+        m["sender_is_my_agent"] = sender_is_my_agent(m["sender_ptype"], m["sender_id"], mine)
     truncated = len(rows) >= SYNC_MAX
     nt, ni, ns = next_sync_cursor(prev_t, prev_i, msg_seen, returned, truncated, now)
     updates: List[dict] = []
@@ -3089,7 +3175,8 @@ async def fan_out_message(conv_id: str, conv_kind: str, message: dict,
                           recipients: List[dict], sender_name: str,
                           *, is_ping: bool = False,
                           sender_owner_dev_id: Optional[int] = None,
-                          notify_absent: bool = True) -> None:
+                          notify_absent: bool = True,
+                          sender_agent_owner_dev_id: Optional[int] = None) -> None:
     """Fire-and-forget delivery, called AFTER the insert committed.
     WS topic per recipient developer (including the sender's own household —
     that is cross-device sync of your own sends, not a notification); notify()
@@ -3130,6 +3217,14 @@ async def fan_out_message(conv_id: str, conv_kind: str, message: dict,
         dev_targets[int(dev_id)] = r["muted"] if prev is None else (prev and r["muted"])
     if sender_owner_dev_id is not None and int(sender_owner_dev_id) not in dev_targets:
         dev_targets[int(sender_owner_dev_id)] = True   # WS sync only, never notify
+    # V0659 (o): the developer who created the agent that sent this line. His copy says so (sender_is_my_agent), and it
+    # reaches his open view where he reads the thread as the agent's owner without a row of his own and the poster is
+    # someone else (a service agent's answer to a caller who is not his): live only, never a notice of its own.
+    my_agent_owner = (int(sender_agent_owner_dev_id) if sender_agent_owner_dev_id is not None
+                      and message.get("sender_ptype") == "agent" else None)
+    owner_live_only = my_agent_owner is not None and my_agent_owner not in dev_targets
+    marked = None if my_agent_owner is None else {
+        **envelope, "data": {**envelope["data"], "message": {**message, "sender_is_my_agent": True}}}
 
     # V0650 (g): wake the sync calls waiting for this message, on this worker and (over Redis) on every other: the
     # developers a WS send reaches (owners and the sender's household) and the agent recipients themselves.
@@ -3138,6 +3233,8 @@ async def fan_out_message(conv_id: str, conv_kind: str, message: dict,
             wake = getattr(manager, "wake_chat", None)
             if wake is not None:
                 keys = {principal_key("developer", d) for d in dev_targets}
+                if owner_live_only:
+                    keys.add(principal_key("developer", my_agent_owner))
                 keys |= {principal_key("agent", r.get("agent_did")) for r in awake
                          if r.get("ptype") == "agent" and r.get("agent_did")}
                 if keys:
@@ -3157,7 +3254,8 @@ async def fan_out_message(conv_id: str, conv_kind: str, message: dict,
     for dev_id, muted in dev_targets.items():
         if manager is not None:
             try:
-                await manager.broadcast_to_subscribers(f"chat:dev:{dev_id}", dict(envelope))
+                await manager.broadcast_to_subscribers(f"chat:dev:{dev_id}",
+                                                       dict(marked if dev_id == my_agent_owner else envelope))
             except Exception as e:  # noqa: BLE001
                 logger.debug("[CHAT] WS fan-out to dev %s failed: %s", dev_id, e)
         if sender_owner_dev_id is not None and dev_id == int(sender_owner_dev_id):
@@ -3174,6 +3272,11 @@ async def fan_out_message(conv_id: str, conv_kind: str, message: dict,
                 asks_only.append(dev_id)
             continue
         notices.append(dev_id)
+    if owner_live_only and manager is not None:
+        try:
+            await manager.broadcast_to_subscribers(f"chat:dev:{my_agent_owner}", dict(marked))
+        except Exception as e:  # noqa: BLE001
+            logger.debug("[CHAT] WS fan-out to dev %s (the sending agent's owner) failed: %s", my_agent_owner, e)
     # V0652 (ai): a rail that tells its people itself (the support desk) delivers live only (notify_absent=False);
     # V0652 (ak): a muted thread still brings the asks that wait on you (asks_only)
     told = notices + asks_only + [d for d in owner_only if d not in asks_only]
@@ -3648,6 +3751,16 @@ async def list_org_rooms(db: AsyncSession, actor: Actor) -> dict:
         ORDER BY o.name
     """), {"me": actor.developer_id})).all()
 
+    # V0658 (t): a room not opened yet and an organization without a room are shown by the organization's hosted logo
+    # too, the block the thread's header reads (one statement for the section; a failed read keeps today's avatar)
+    blocks: Dict[str, Dict[str, Any]] = {}
+    if rows:
+        try:
+            from agentvault_registry.services import org_mark as _om
+            blocks = await _om.room_orgs(db, [r[0] for r in rows])
+        except Exception as e:  # noqa: BLE001
+            logger.warning("chat rooms: the organizations could not be read: %s", e)
+
     rooms, enableable = [], []
     for r in rows:
         role = str(r[2] or "member").lower()
@@ -3666,13 +3779,15 @@ async def list_org_rooms(db: AsyncSession, actor: Actor) -> dict:
                           "last_preview": r[7],
                           "unread": int(r[10] or 0),
                           "policy": policy,
-                          "may_disable": policy == "members" or role in ROOM_OPS_ROLES})
+                          "may_disable": policy == "members" or role in ROOM_OPS_ROLES,
+                          "org": blocks.get(str(r[0]))})
         else:
             # Whether YOU may switch it on, said plainly rather than discovered
             # by pressing a button that 403s.
             may = policy == "members" or role in ROOM_OPS_ROLES
             enableable.append({"org_id": r[0], "org_name": r[1], "my_org_role": role,
-                               "policy": policy, "may_enable": may})
+                               "policy": policy, "may_enable": may,
+                               "org": blocks.get(str(r[0]))})
     return {"rooms": rooms, "enableable": enableable}
 
 
@@ -3788,7 +3903,15 @@ async def set_retention(db: AsyncSession, conversation_id: str, actor: Actor,
 async def room_posting_gate(db: AsyncSession, conv: Conversation,
                             my_row: ConversationParticipant, actor: Actor) -> None:
     """The room's speech gates, checked at insert time with LIVE org roles:
-    a /muted row cannot post; announce mode admits only org owner/admin."""
+    a /muted row cannot post; announce mode admits only org owner/admin.
+    V0659 (f): a cross-frame room (kind 'room') holds its members to the same mute, and its announce mode admits its
+    owner and moderators (its own roles; it has no org)."""
+    if conv.kind == "room":
+        if not bool(getattr(my_row, "can_post", True)):
+            raise ChatError(403, "a room operator muted you here — you can read, not post")
+        if conv.mode == "announce" and getattr(my_row, "role", None) not in ("owner", "moderator"):
+            raise ChatError(403, "this room is announce-only — its owner and moderators post")
+        return
     if conv.kind != "org":
         return
     if not bool(getattr(my_row, "can_post", True)):

@@ -185,7 +185,7 @@ An agent that **provides** services holds a bond that the registry's treasury ke
 
 ```http
 GET /api/v1/reputation-bond/config
-→ {"mode": "enforce", "amount": "250", "currency": "ECU", "treasury_backstop": true,
+→ {"mode": "enforce", "amount": "250", "currency": "ECU", "treasury_backstop": false,
    "release_cooldown_days": 7,
    "maturity": {"min_transactions": 10, "min_age_days": 30, "min_trust_percentile": 50,
                 "min_rated_peers": 3, "releases_percent": 60, "min_ranked_population": 10},
@@ -213,7 +213,7 @@ POST     /api/v1/developers/me/agents/{did}/reputation-bond/unlock
 POST     /api/v1/developers/me/agents/{did}/reputation-bond/backstop
 ```
 
-`backstop` asks the registry's treasury to underwrite the bond where the registry allows it (`REPUTATION_BOND_TREASURY_BACKSTOP`, default off; on for EU, ASIA and their cloud operators). A backstopped bond holds the treasury's own units, so it is a **demonstration**: forfeiting it moves nothing, releasing it pays nobody, and it never makes its developer a member. The intended source of a real bond is the genesis grant or units the agent was paid for its work.
+`backstop` asks the registry's treasury to underwrite the bond where the registry allows it (`REPUTATION_BOND_TREASURY_BACKSTOP`, default off, and off on a frame built from the kit). EU, ASIA and their cloud operators run it off since 2026-10-30, so a bond there holds units its funder put up; a registry that switches it on says so in `treasury_backstop` above. A backstopped bond holds the treasury's own units, so it is a **demonstration**: forfeiting it moves nothing, releasing it pays nobody, and it never makes its developer a member. The intended source of a real bond is the genesis grant or units the agent was paid for its work.
 
 **Maturity.** A bond is `locked` until three conditions hold, then `matured`, stamped the moment any read sees them met:
 
@@ -234,13 +234,22 @@ Each rule lives in the registry's policy document, and the bounds above bind tha
 ```http
 GET /api/v1/agents/{did}/reputation
 → {"agent_did": "...", "bond": {...}, "is_bonded": true, "volume": "...", "transactions": ...,
-   "eigentrust": ..., "staked": "...", "mode": "enforce", "treasury_backstop": true,
+   "eigentrust": ..., "staked": "...", "mode": "enforce", "treasury_backstop": false,
    "config": {...}, "source": "registry", "enforcement": {...}}
 ```
 
 Discovery rows carry `is_bonded` and the same `reputation` block; `bonded_only=true` filters to bonded agents.
 
-**Forfeiture and the slash waterfall.** A slash drains in the order the registry's `slash_waterfall` policy names: bond, then locked units, then liquid units by default, each step capped at a percentage of the request (100 % by default). Forfeiting a bond moves no units (the treasury already holds the deposit); the bond's amount goes down, and a partial forfeit leaves the agent bonded. Whether a slash **moves** units is the registry's `ENFORCEMENT_SLASH_MODE`: `cache` (the default) lowers only the registry's cached copy of the balance, which a later sync from the TEG overwrites; `shadow` does the same and also plans the waterfall and logs what it would take; `enforce` takes the slash in the waterfall's order, from the bond and from liquid units through the escrow rail into the treasury. In every mode, a slash that draws on locked units releases the positions it touches and moves a 10% penalty on them to the treasury, while the slashed amount itself is taken from the cached balance only. The frame kit's template sets `enforce`.
+**Forfeiture and the slash waterfall.** Every slash on a registry drains one order, the registry's `slash_waterfall` policy: a ruling on this registry, a peer's slash request it takes automatically, and an administrator's approval of one. By default the order is the bond, then locked units, then liquid units, each step capped at a percentage of the requested amount (100 % by default). What a step can take is read from the TEG, never from the registry's cached balances, and a slash takes whole units.
+
+- **Bond.** Forfeiting a bond moves no units (the treasury already holds the deposit); the bond's amount goes down, and a partial forfeit leaves the agent bonded.
+- **Locked units.** The positions are released early and the slashed units move to the treasury. The 10% penalty on what is released comes on top of the slash, so releasing 40 locked units gives a slash at most 36.
+- **Liquid units.** They move to the treasury through the escrow rail.
+- **The owner's other agents (the cascade).** What the agent cannot cover moves on to the same developer's other agents on this registry, each through the same steps in the same order, never past the slash amount, and the cascade together takes at most its own percentage of the request. It is off unless the order lists it (`{"source": "cascade", "max_percent": 100}`), and it is always the last step. The agents are asked in a stated order: the most held first, then the oldest, at most 25 of them. A service account's agents are never part of a cascade (the account's `agents_unlisted_by_default`, which only an administrator sets), and neither are an administrator's own agents or a deleted agent.
+
+Any step can stay listed and switched off (`"enabled": false`); at least one of the bond, locked units and liquid units stays on. Each move goes from the agent to the treasury under its own idempotency key, so a repeated slash moves nothing twice, and each is recorded once as `SlashMoved`, an audit record (the TEG's own ledger record counts the units). What no step could cover is the shortfall, recorded on the settlement and in `EnforcementSlashWaterfallApplied`. The order is set in the console's `#/admin/settlements`, with `PUT /api/v1/admin/enforcement/policy/section/slash_waterfall` or with the MCP tools `getSlashOrder` and `updateSlashOrder` (admin flag `admin_enforcement`); a change is a new policy version and emits `SlashWaterfallChanged`.
+
+Whether a ruling on this registry **moves** units is the registry's `ENFORCEMENT_SLASH_MODE`: `cache` (the default) lowers only the registry's cached copy of the balance, which a later sync from the TEG overwrites; `shadow` does the same and also plans the order and logs what it would take; `enforce` takes the slash in the order. A peer's slash request that the registry takes always moves units. The frame kit's template sets `enforce`.
 
 ## What's Next
 

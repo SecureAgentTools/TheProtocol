@@ -63,8 +63,9 @@ def _strip_quotes(etag_header_value: Optional[str]) -> Optional[str]:
     summary="Public Registry Card (v0.6)",
     description=(
         "Returns the full registry card (registry_card_version 0.6; the compliance block when the registry "
-        "declares one; a signature over the paths its `signature.signed_canonical` lists, "
-        f"{len(SIGNED_CANONICAL_PATHS)} in this release). The `X-Registry-Card-Version` header repeats the "
+        "declares one; the `quantum_workloads` block while it hosts quantum workloads; a signature over the paths "
+        f"its `signature.signed_canonical` lists, {len(SIGNED_CANONICAL_PATHS)} in this release, and "
+        "`quantum_workloads` after them on a card that carries it). The `X-Registry-Card-Version` header repeats the "
         "card's version. ETag-driven; supports If-None-Match → 304."
     ),
 )

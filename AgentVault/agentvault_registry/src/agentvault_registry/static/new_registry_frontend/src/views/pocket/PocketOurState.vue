@@ -56,6 +56,9 @@
         <Icon name="mdi:magnify" />
         <span>{{ t('ourstate.find.door', 'Find someone to talk to') }}</span>
       </button>
+      <!-- V0659 (f): open a cross-frame room, or join one by its address (a ?join= link fills it in) -->
+      <RoomDoors v-if="lane === 'active'" :token="token" :join-address="joinAddress"
+                 @opened="id => router.push(`${base}/${id}`).catch(() => {})" />
 
       <!-- The Protocol thread (D7): the notification feed absorbed VIRTUALLY —
            a pinned door, zero new writes. -->
@@ -98,7 +101,9 @@
                             :ptype="identityKind(c.counterparty.ptype)"
                             :pid="identityPid(c.counterparty)"
                             :fallback-name="c.counterparty.name" size="md" />
-          <span v-else-if="c.kind === 'org'" class="os-proto-icon"><Icon name="mdi:account-group" /></span>
+          <!-- V0658 (t): a room's entry wears its organization's hosted logo, as the thread's header does -->
+          <OrgRoomAvatar v-else-if="c.kind === 'org'" class="os-proto-icon" :org="c.org" />
+          <span v-else-if="c.kind === 'room'" class="os-proto-icon"><Icon name="mdi:account-group" /></span>
           <!-- §OURSTATE-7 D — a support thread has a desk, not a counterparty.
                Without its own branch it fell through to the nameless row. -->
           <span v-else-if="c.kind === 'support'" class="os-proto-icon"><Icon name="mdi:lifebuoy" /></span>
@@ -111,7 +116,7 @@
               <span v-if="c.kind === 'support'" class="os-announce">{{ t('ourstate.support.tag', 'support') }}</span>
               <span v-if="c.kind === 'org' && c.mode === 'announce'" class="os-announce">{{ t('ourstate.rooms.announce', 'announce') }}</span>
             </span>
-            <span class="os-row-preview">{{ (c.kind === 'org' && c.topic) ? c.topic : (c.last_preview || '') }}</span>
+            <span class="os-row-preview">{{ ((c.kind === 'org' || c.kind === 'room') && c.topic) ? c.topic : (c.last_preview || '') }}</span>
           </span>
           <span class="os-row-meta">
             <span class="os-row-time">{{ timeAgo(c.last_message_at) }}</span>
@@ -143,7 +148,7 @@
         <p class="os-rooms-head">{{ t('ourstate.rooms.section', 'Rooms') }}</p>
         <button v-for="r in unopenedRooms" :key="r.org_id" class="os-row"
                 :data-testid="`os-room-${r.org_id}`" @click="openRoom(r)">
-          <span class="os-proto-icon"><Icon name="mdi:account-group" /></span>
+          <OrgRoomAvatar class="os-proto-icon" :org="r.org" />
           <span class="os-row-body">
             <span class="os-row-name">{{ r.org_name }}
               <span v-if="r.mode === 'announce'" class="os-announce">{{ t('ourstate.rooms.announce', 'announce') }}</span>
@@ -171,7 +176,7 @@
         <button v-for="r in enableableRooms" :key="r.org_id" class="os-row"
                 :data-testid="`os-room-off-${r.org_id}`" :disabled="!r.may_enable || enabling === r.org_id"
                 @click="enableRoom(r)">
-          <span class="os-proto-icon"><Icon name="mdi:account-group" /></span>
+          <OrgRoomAvatar class="os-proto-icon" :org="r.org" />
           <span class="os-row-body">
             <span class="os-row-name">{{ r.org_name }}</span>
             <span class="os-row-preview">{{ r.may_enable
@@ -236,10 +241,13 @@ import Icon from '@/components/Icon.vue'
 import UserAvatar from '@/components/common/UserAvatar.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import OurStateIdentity from '@/components/ourstate/OurStateIdentity.vue'
+import OrgRoomAvatar from '@/components/ourstate/OrgRoomAvatar.vue'
 import PocketProfile from '@/views/pocket/PocketProfile.vue'
 import TrustLinesRow from '@/components/ourstate/TrustLinesRow.vue'
 import OurStateFind from '@/components/ourstate/OurStateFind.vue'
 import ChatYouPanel from '@/components/ourstate/ChatYouPanel.vue'
+import RoomDoors from '@/components/ourstate/RoomDoors.vue'
+import { joinAddressFromQuery } from '@/services/chat/rooms'
 import { chatApi } from '@/services/api/chat'
 import { discoveryService } from '@/services/api/discovery'
 import { useAuthStore } from '@/stores/auth'
@@ -286,6 +294,8 @@ const loading = ref(false)
 const err = ref('')
 const cast = ref<any[]>([])
 const findOpen = ref(!!route.query.find)
+// V0659 (f): a room link (#/ourchat?join=<address>) fills the join door in; joining still takes the press
+const joinAddress = computed(() => joinAddressFromQuery(route.query as any))
 watch(() => route.query.find, v => { if (v) findOpen.value = true })
 function closeFind() {
   findOpen.value = false
@@ -433,6 +443,8 @@ function timeAgo(iso: string | null): string {
  *  or agent on the other side. */
 function rowTitle(c: any): string {
   if (c.kind === 'org') return c.title || t('ourstate.rooms.room', 'Org room')
+  // V0659 (f): a cross-frame room carries its own title too
+  if (c.kind === 'room') return c.title || t('ourstate.rooms.untitled', 'Room')
   if (c.kind === 'support') return c.title || t('ourstate.support.thread', 'Support')
   return c.counterparty?.name || t('ourstate.list.unknown', 'Conversation')
 }

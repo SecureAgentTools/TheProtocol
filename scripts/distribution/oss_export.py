@@ -486,6 +486,8 @@ def g11_literal(value: bytes) -> bool:
     low = v.lower().decode("utf-8", "replace")
     if "${" in low or "{{" in low or "$(" in low or low.startswith(("<", "*", "&", "!", "[", "{")):
         return False                      # interpolated, templated, a placeholder, a YAML anchor/tag/list/map
+    if re.fullmatch(r"env:[a-z_][a-z0-9_]*|file:[a-z0-9_./-]+(#[a-z_][a-z0-9_]*)?", low):
+        return False                      # a reference the proxy resolves at run time (env:NAME, file:/path, file:/path#KEY), never the value
     if low in ("true", "false", "yes", "no", "on", "off") or low.replace(".", "", 1).isdigit():
         return False
     if low.startswith(("/", "./", "../", "~/")):
@@ -707,6 +709,16 @@ def selftest(log) -> bool:
         h = gate(t, log, live=[]); quiet = not h["G11_secret_literal"]; p.unlink()
         log(f"  control G11 quiet (interpolated, a label key, a reviewed annotation, a placeholder): "
             f"{'ok' if quiet else 'FAILED ' + str(h['G11_secret_literal'])}"); ok &= quiet
+        # G11 and the proxy's credential references (kit beta.35): env:NAME and file:/path are quiet; a literal that only
+        # starts like one FIRES
+        p = t / "planted/proxy.ref.yaml"; p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("network:\n  client_id: env:CLIENT_ID\n  client_secret: env:CLIENT_SECRET\n  api_key: file:/run/secrets/key\n  token: file:.env.secret#TOKEN\n")
+        h = gate(t, log, live=[]); quiet = not h["G11_secret_literal"]; p.unlink()
+        log(f"  control G11 quiet (the proxy's env: and file: references): "
+            f"{'ok' if quiet else 'FAILED ' + str(h['G11_secret_literal'])}"); ok &= quiet
+        p.write_text("network:\n  client_secret: env:k9v2 q8x1m4z7p3w6\n")
+        h = gate(t, log, live=[]); fired = bool(h["G11_secret_literal"]); p.unlink()
+        log(f"  control G11 a literal that starts like a reference: {'FIRED' if fired else 'DID NOT FIRE'}"); ok &= fired
         # G11 in code: a supply figure under a `tokens_*` key with a trailing comma is quiet; a quoted credential under
         # a token key with the same trailing comma FIRES (both shapes measured in the tree, 2026-09-20)
         p = t / "planted/tests/unit/t_fixture.py"; p.parent.mkdir(parents=True, exist_ok=True)   # the tests glob wants a subdirectory, like the tree's

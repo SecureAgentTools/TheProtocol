@@ -17,15 +17,17 @@ import math
 import secrets
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, Security, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentvault_registry import models
 from agentvault_registry.config import settings
 from agentvault_registry.database import get_db
-from agentvault_registry.security import get_current_agent, get_current_developer, admin_credential
+from agentvault_registry.security import get_current_agent, get_current_developer, admin_credential, require_admin_flag
+from agentvault_registry.services import device_enrollment as de
 # §RATEFIX: THE shared, Redis-backed limiter — a router-local Limiter() would give
 # every gunicorn worker its own private budget and multiply the cap by 32.
 from agentvault_registry.middleware.rate_limiter import shared_limiter as limiter
@@ -283,6 +285,18 @@ class KeyEnrollIn(BaseModel):
 class WebAuthnRegisterIn(BaseModel):
     attestation_object: str
     client_data_json: str
+    # D6-850: once the account holds an enrolled device, the challenge that device approved (the 428 names it)
+    confirm_challenge_id: Optional[str] = Field(None, max_length=64)
+    # D6-850: an account's FIRST device, with 2FA on, takes a current authenticator code
+    totp_code: Optional[str] = Field(None, max_length=12)
+
+
+KeyRevokeIn = de.StepUpProofIn
+
+
+class DeviceKeysRecoveryIn(BaseModel):
+    reason: str = Field(..., min_length=8, max_length=500,
+                        description="How the person was verified out of band (kept in the audit trail)")
 
 
 def _host_of(url: Any) -> Optional[str]:
@@ -493,6 +507,29 @@ async def get_mandate(mid: str, dev: models.Developer = Depends(get_current_deve
     """), {"m": mid})).mappings().all()
     return {**_mandate_out(m, resolved), "chain_ok": chain_ok, "chain_break_at": break_at,
             "evidence": [dict(e) for e in evidence]}
+
+
+@router.get("/api/v1/liability/mandates/{mid}/for-agent",
+            summary="The mandate that underwrites the calling agent, as it binds now (the agent's own read)")
+async def get_mandate_for_agent(mid: str, agent: models.Agent = Security(get_current_agent),
+                                db: AsyncSession = Depends(get_db)):
+    """
+    V0659 (c): the agent a mandate underwrites reads it with its own token: its status, whether it is valid now, the
+    scope it conveys now (re-derived from the human's authority this moment), the reasons when it conveys nothing,
+    its limits and its expiry. Nothing about the human behind it. Answered only to that agent: a mandate that does
+    not exist and one that underwrites another agent answer the same 404.
+    """
+    _require_enabled()
+    m = (await db.execute(select(models.LiabilityMandate).where(
+        models.LiabilityMandate.id == mid, models.LiabilityMandate.agent_did == agent.did))).scalars().first()
+    if m is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=f"No mandate {mid} underwrites this agent")
+    issuer = await db.get(models.Developer, m.developer_id)
+    resolved = await liab.resolve_mandate(db, m, issuer)
+    return {"mandate_id": m.id, "agent_did": m.agent_did, "tier": m.tier, "status": m.status,
+            "valid": resolved["valid"], "effective_scope": resolved["effective_scope"],
+            "reasons": resolved["reasons"], "limits": m.limits or {},
+            "expires_at": m.expires_at.isoformat() if m.expires_at else None}
 
 
 @router.post("/api/v1/liability/mandates/{mid}/revoke", summary="Revoke a mandate (instant clamp)")
@@ -1528,48 +1565,46 @@ async def mandate_receipts(mid: str, since: Optional[str] = None, limit: int = 2
             "receipts": rows, "count": len(rows)}
 
 
+# D6-850: the per-device enrolment trio (the raw signing key and the device-scoped WebAuthn options/register) had no
+# caller since §POCKETBRIDGE P0 removed the console's enclave path. They answer 410 with the way that replaces them; a
+# key enrolled through them before keeps working (verification is unchanged), and revoke-key stays a live rail.
+_RETIRED_DEVICE_ENROLMENT = ("Retired: a device enrols itself, signed in, through GET /api/v1/liability/webauthn/options "
+                             "and POST /api/v1/liability/webauthn/register. A key enrolled earlier keeps working.")
+
+
 @router.post("/api/v1/liability/devices/{device_id}/enroll-key",
-             summary="Enrol a biometric-gated P-256 signing key on a registered device")
+             summary="Retired: enrol a raw P-256 signing key on a device (410)")
 async def enroll_device_key(device_id: int, body: KeyEnrollIn,
                             dev: models.Developer = Depends(get_current_developer),
                             db: AsyncSession = Depends(get_db)):
-    _require_enabled_for_device_keys()
-    drow = await db.get(models.DevicePushRegistration, device_id)
-    if not drow or drow.developer_id != dev.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Device not found")
-    jwk = body.pubkey_jwk or {}
-    if jwk.get("kty") != "EC" or jwk.get("crv") != "P-256" or not jwk.get("x") or not jwk.get("y"):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="pubkey_jwk must be an EC P-256 key")
-    await db.execute(text("""
-        UPDATE device_push_registrations
-        SET pubkey_jwk = CAST(:j AS JSONB), key_alg = 'ES256',
-            attestation = CAST(:a AS JSONB), key_enrolled_at = now(), key_revoked_at = NULL
-        WHERE id = :i
-    """), {"j": json.dumps(jwk), "a": json.dumps(body.attestation) if body.attestation else None, "i": device_id})
-    await log_liability_action(db, action="device_key_enrolled", actor_type="dev",
-                             actor_id=str(dev.id), target_type="device", target_id=str(device_id),
-                             details={"alg": "ES256", "attested": body.attestation is not None})
-    await db.commit()
-    return {"ok": True, "device_id": device_id, "key_alg": "ES256"}
+    raise HTTPException(status.HTTP_410_GONE, detail=_RETIRED_DEVICE_ENROLMENT)
 
 
 @router.get("/api/v1/liability/webauthn/options", summary="Registration options for THIS device")
 async def webauthn_options_self(request: Request,
-                                dev: models.Developer = Depends(get_current_developer)):
+                                dev: models.Developer = Depends(get_current_developer),
+                                db: AsyncSession = Depends(get_db)):
     """Device-agnostic registration options.
 
     The per-device variant required a push-device row to exist first, which forced a second,
     separate enrolment on top of the Pocket biometric lock: two credentials on one phone, two
     prompts, and a browser passkey picker when the wrong one was requested.
     ONE credential per device now serves the lock, confirmations and sign-in approval alike.
+
+    D6-850: the challenge is the server's own (services.device_enrollment), kept for REGISTRATION_TTL_SECONDS and
+    spent by the registration that echoes it; asked signed in only.
     """
     _require_enabled_for_device_keys()
-    import secrets as _s
+    de.refuse_api_key("A device credential is added")
+    ch = await de.issue_registration_challenge(db, dev, scope="self")
+    await db.commit()
     return {
         "rp": {"id": _rp_id(request), "name": "TheProtocol"},
         "user": {"id": liab.b64u(str(dev.id).encode()), "name": dev.email,
                  "displayName": getattr(dev, "name", None) or dev.email},
-        "challenge": liab.b64u(_s.token_bytes(32)),
+        "challenge": de.webauthn_challenge_of(ch),
+        "challenge_id": ch.id,
+        "challenge_expires_at": ch.expires_at.isoformat(),
         "pubKeyCredParams": [{"type": "public-key", "alg": -7}],   # ES256 only — what we verify
         "timeout": 120000,
         "attestation": "none",
@@ -1592,19 +1627,57 @@ async def webauthn_register_self(body: WebAuthnRegisterIn, request: Request,
     AND signing); otherwise creates a credential-only row; `rail='local'` is deliberately not a
     push rail, so a desktop browser can hold a signing credential without pretending to be
     reachable by notification.
+
+    D6-850 (services.device_enrollment): signed in only; the clientDataJSON must echo a registration challenge this
+    server issued to this account (GET /api/v1/liability/webauthn/options), and the whole create ceremony is checked
+    (services.webauthn.verify_registration: an origin of ours, user present AND verified). Once the account holds an
+    enrolled device, a NEW credential waits for that device's approval: the first answer is 428 step_up_required naming
+    a challenge Pocket's Approvals shows; this device sends the same registration again with confirm_challenge_id once
+    it is approved. Re-enrolling a credential already live here adds no new trust and needs no approval.
     """
     _require_enabled_for_device_keys()
+    de.refuse_api_key("A device credential is added")
     from agentvault_registry.services import webauthn as wa
+    registration = await de.find_registration_challenge(
+        db, dev, wa.client_data_challenge(body.client_data_json), scope="self")
+    if registration is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=(
+            "No registration challenge of yours matches this credential. Ask GET /api/v1/liability/webauthn/options "
+            "and create the credential with the challenge it returns (used once, valid for "
+            f"{de.REGISTRATION_TTL_SECONDS // 60} minutes)."))
     try:
-        cred_id, cose_key, rp_hash = wa.parse_attestation_public_key(body.attestation_object)
-    except Exception as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Unsupported credential: {exc}")
-    # Refuse a credential bound to an origin we do not serve. Without this it would enrol
-    # cleanly and then fail every signature with an opaque rp_id_mismatch, months later.
-    bound_to = wa.match_rp_id(rp_hash, _rp_id_candidates(request))
-    if not bound_to:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="Credential was created for a different origin")
+        # Refuses, among the rest, a credential bound to an origin we do not serve: it would otherwise enrol
+        # cleanly and fail every signature with an opaque rp_id_mismatch, months later.
+        cred_id, cose_key, bound_to = wa.verify_registration(
+            attestation_object_b64u=body.attestation_object, client_data_json_b64u=body.client_data_json,
+            expected_challenge_b64u=de.webauthn_challenge_of(registration),
+            expected_rp_ids=_rp_id_candidates(request))
+    except wa.RegistrationRefused as refused:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Credential refused: {refused}")
+
+    approval = "first_device"
+    if await de.live_row_for_credential(db, dev.id, cred_id, cose_key) is not None:
+        approval = "same_credential"
+    elif await de.holds_enrolled_device(db, dev):
+        approved, step_up, minted = await de.device_approval(
+            db, dev, registration=registration, credential_id=cred_id, rp_id=bound_to,
+            confirm_challenge_id=body.confirm_challenge_id)
+        if not approved:
+            await db.commit()   # the phone must find the row the cue names
+            if minted:
+                await de.announce_device_challenge(dev.id, step_up["step_up"]["challenge_id"])
+            return JSONResponse(status_code=428, content=step_up)
+        approval = "enrolled_device"
+    elif de.has_code_factor(dev):
+        approved, step_up = await de.first_device_code(
+            db, dev, registration=registration, credential_id=cred_id, rp_id=bound_to, totp_code=body.totp_code)
+        if not approved:
+            await db.commit()
+            return JSONResponse(status_code=428, content=step_up)
+        approval = "first_device_code"
+    if not await de.spend_registration_challenge(db, registration):
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="This registration challenge was already used; ask "
+                                                             "for new options and create the credential again.")
 
     # Attach ONLY to a row that does not already hold a credential (a phone then keeps ONE row for
     # push and signing), and otherwise create a fresh one. Taking the account's first row outright
@@ -1636,78 +1709,50 @@ async def webauthn_register_self(body: WebAuthnRegisterIn, request: Request,
     await log_liability_action(db, action="device_webauthn_enrolled", actor_type="dev",
                                actor_id=str(dev.id), target_type="device", target_id=str(device_id),
                                details={"user_verification": "required", "unified": True,
-                                        "rp_id": bound_to})
+                                        "rp_id": bound_to, "approval": approval})
     await db.commit()
-    return {"ok": True, "device_id": device_id, "credential_id": cred_id}
+    if approval != "same_credential":
+        de.tell_the_account(dev.id, title="A device was added to your account",
+                            message=f"Device code {de.match_code(cred_id)}. Not you? Revoke it in Pocket, Approvals.")
+    return {"ok": True, "device_id": device_id, "credential_id": cred_id, "approval": approval}
 
 
 @router.get("/api/v1/liability/devices/{device_id}/webauthn/options",
-            summary="Registration options for a biometric device credential")
+            summary="Retired: registration options for one device row (410)")
 async def webauthn_options(device_id: int, request: Request,
                            dev: models.Developer = Depends(get_current_developer),
                            db: AsyncSession = Depends(get_db)):
-    _require_enabled_for_device_keys()
-    drow = await db.get(models.DevicePushRegistration, device_id)
-    if not drow or drow.developer_id != dev.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Device not found")
-    import secrets as _s
-    challenge = liab.b64u(_s.token_bytes(32))
-    return {
-        "rp": {"id": _rp_id(request), "name": "TheProtocol"},
-        "user": {"id": liab.b64u(str(dev.id).encode()), "name": dev.email,
-                 "displayName": getattr(dev, "name", None) or dev.email},
-        "challenge": challenge,
-        "pubKeyCredParams": [{"type": "public-key", "alg": -7}],   # ES256 only — what we verify
-        "timeout": 120000,
-        "attestation": "none",
-        "authenticatorSelection": {
-            "authenticatorAttachment": "platform",   # the phone itself, not a roaming key
-            "userVerification": "required",          # THE point: no signature without a human
-            "residentKey": "preferred",
-        },
-    }
+    raise HTTPException(status.HTTP_410_GONE, detail=_RETIRED_DEVICE_ENROLMENT)
 
 
 @router.post("/api/v1/liability/devices/{device_id}/webauthn/register",
-             summary="Bind a biometric credential to this device")
+             summary="Retired: bind a credential to one device row (410)")
 async def webauthn_register(device_id: int, body: WebAuthnRegisterIn, request: Request,
                             dev: models.Developer = Depends(get_current_developer),
                             db: AsyncSession = Depends(get_db)):
-    _require_enabled_for_device_keys()
-    drow = await db.get(models.DevicePushRegistration, device_id)
-    if not drow or drow.developer_id != dev.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Device not found")
-    from agentvault_registry.services import webauthn as wa
-    try:
-        cred_id, cose_key, rp_hash = wa.parse_attestation_public_key(body.attestation_object)
-    except Exception as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail=f"Unsupported credential: {exc}")
-    bound_to = wa.match_rp_id(rp_hash, _rp_id_candidates(request))
-    if not bound_to:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            detail="Credential was created for a different origin")
-    await db.execute(text("""
-        UPDATE device_push_registrations
-        SET webauthn_credential_id=:c, webauthn_public_key=:k, webauthn_sign_count=0,
-            webauthn_enrolled_at=now(), key_revoked_at=NULL
-        WHERE id=:i
-    """), {"c": cred_id, "k": cose_key, "i": device_id})
-    await log_liability_action(db, action="device_webauthn_enrolled", actor_type="dev",
-                               actor_id=str(dev.id), target_type="device", target_id=str(device_id),
-                               details={"user_verification": "required"})
-    await db.commit()
-    return {"ok": True, "device_id": device_id, "credential_id": cred_id, "user_verification": "required"}
+    raise HTTPException(status.HTTP_410_GONE, detail=_RETIRED_DEVICE_ENROLMENT)
 
 
 @router.post("/api/v1/liability/devices/{device_id}/revoke-key",
              summary="Revoke a device signing key (falls back to TOTP)")
-async def revoke_device_key(device_id: int, dev: models.Developer = Depends(get_current_developer),
+async def revoke_device_key(device_id: int, body: Optional[KeyRevokeIn] = None,
+                            dev: models.Developer = Depends(get_current_developer),
                             db: AsyncSession = Depends(get_db)):
+    """D6-850: signed in only, and a LIVE key goes only with the account's second factor (an enrolled device or a
+    code: 428 step_up_required names the challenge to approve, then send this again with challenge_id or totp_code).
+    Otherwise a removal would be the way back to an account with no device. Lost every factor: the maintainer's
+    recovery route (POST /api/v1/admin/developers/{developer_id}/device-keys/revoke)."""
     _require_enabled_for_device_keys()
+    de.refuse_api_key("A device's key is removed")
     drow = await db.get(models.DevicePushRegistration, device_id)
     if not drow or drow.developer_id != dev.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Device not found")
+    if de.holds_live_credential(drow):
+        ok, step_up = await de.removal_step_up(db, dev, drow, totp_code=getattr(body, "totp_code", None),
+                                               challenge_id=getattr(body, "challenge_id", None))
+        if not ok:
+            await db.commit()   # the challenge must outlive this refusal: the phone looks it up
+            return JSONResponse(status_code=428, content=step_up)
     await db.execute(text("UPDATE device_push_registrations SET key_revoked_at = now() WHERE id = :i"),
                      {"i": device_id})
     await log_liability_action(db, action="device_key_revoked", actor_type="dev",
@@ -1715,6 +1760,30 @@ async def revoke_device_key(device_id: int, dev: models.Developer = Depends(get_
                              severity="warning")
     await db.commit()
     return {"ok": True, "device_id": device_id, "key_revoked": True}
+
+
+@router.post("/api/v1/admin/developers/{developer_id}/device-keys/revoke",
+             summary="Account recovery: revoke every device key of a developer (admin)")
+async def admin_revoke_device_keys(developer_id: int, body: DeviceKeysRecoveryIn,
+                                   admin: models.Developer = Security(require_admin_flag("admin_support")),
+                                   db: AsyncSession = Depends(get_db)):
+    """D6-850: the maintainer's account recovery path, for a person who lost every enrolled device and holds no code
+    to approve a removal with. After it the account holds no device, and the person enrols afresh (signed in). Kept
+    in the liability audit trail with the stated out-of-band verification."""
+    rows = (await db.execute(text(
+        "UPDATE device_push_registrations SET key_revoked_at = now() WHERE developer_id = :d AND key_revoked_at IS "
+        "NULL AND (webauthn_public_key IS NOT NULL OR pubkey_jwk IS NOT NULL) RETURNING id"),
+        {"d": developer_id})).fetchall()
+    revoked = [int(r[0]) for r in rows]
+    await log_liability_action(db, action="device_keys_revoked_by_admin", actor_type="dev",
+                               actor_id=str(admin.id), target_type="developer", target_id=str(developer_id),
+                               severity="warning", details={"devices": revoked, "reason": body.reason})
+    await db.commit()
+    if revoked:
+        de.tell_the_account(developer_id, title="Support revoked your device keys",
+                            message=f"{len(revoked)} device key(s) revoked during account recovery. Enrol this "
+                                    "device again in Pocket, Approvals.")
+    return {"ok": True, "developer_id": developer_id, "revoked_devices": revoked}
 
 
 # ═══════════════════════════════════════════════════════════════════════════

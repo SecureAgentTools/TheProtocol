@@ -103,6 +103,26 @@ async def post_bid(db: AsyncSession, *, poster_did: str, order_id: str, title: O
     return payload
 
 
+async def post_notice(db: AsyncSession, agent_did: str, body: str, client_ref: str) -> Optional[dict]:
+    """V0657 (a), polish item 13: a Guild notice the AGENT can wait on, in its own Guild thread (the same row as a bid's:
+    system, rail-written, fanned out). The day-before reminder reached only the agent's OWNERS: for a session agent
+    that is a phone, never the session holding the order (gwo_a4be529f went to a dispute that way). `client_ref` makes it
+    once per occasion. None for an agent this registry does not host, or a notice already posted."""
+    conv = await ensure_thread(db, agent_did)
+    if conv is None:
+        return None
+    sender = cs.Actor("system", display_name=GUILD_TITLE, system_id=GUILD_SYSTEM_ID)
+    msg, dup = await cs.insert_message(db, conv, None, sender, "system", body, None,
+                                       client_ref=client_ref[:64], rail_author=True, mark_read=False)
+    if dup:
+        return None
+    payload = cs.serialize_message(msg)
+    recipients = await cs.recipients_snapshot(db, conv, sender)
+    if recipients:
+        cs.deliver(conv.id, conv.kind, payload, recipients, GUILD_TITLE)
+    return payload
+
+
 async def notify_bid(**kw: Any) -> None:
     """The background entry, in its own session after the bid committed; never raises (the bid stands either way)."""
     from ..database import get_db_context

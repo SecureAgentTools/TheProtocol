@@ -71,6 +71,16 @@ _ADMIN = "sandbox-A-admin"
 # Entries marked `# observed` have live rows in the EventStore and are the ones
 # the shape contract below actually reads.
 _UNCOVERED_BASELINE: Set[str] = {
+    # ── V0658 (k) 2026-11-07 (session-code, one slash order) ─────────────────
+    # One audit record per move a slash makes (services/slash_order): fires only when a slash moves units, which no
+    # sweep provokes. Coverage DEBT: the sandbox drive of (k) reads them (a peer's slash request on the pair, then each
+    # move's SlashMoved beside the TEG's own record).
+    "SlashMoved",                        # V0658 (k): one per move of a slash (bond, locks, liquid, a cascade agent)
+    # ── V0657 (a) 2026-11-06 (session-code, disputes v2) ─────────────────────
+    # The correction rail (POST /admin/disputes/{id}/correct): an administrator's correction of a ruling, made once per
+    # mistaken ruling and driven by no sweep. Coverage DEBT: the MCP tester's dispute lifecycle can drive it (rule, then
+    # correct) once the sandbox pair runs V0657.
+    "DisputeRulingCorrected",            # V0657 (a): a ruling corrected (its effects reversed, why kept)
     # ── §MEMBERSHIP phase B 2026-10-02 (commons/v1, migration 0183) ──────────
     # (V0551, agentvault2-09: CommonsSeasonOpened, CommonsSeasonClosed and CommonsAwardPaid left this list: the MCP
     # tester carries the commons tools and maps them in _EMIT_MAP; the season lifecycle drives open and close.)

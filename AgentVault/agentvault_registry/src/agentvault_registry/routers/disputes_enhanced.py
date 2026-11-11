@@ -135,7 +135,8 @@ async def log_dispute(
         dispute = await crud_disputes.create_dispute(
             db=db,
             complainant_did=current_agent.did,
-            defendant_did=dispute_data.defendant_agent_id
+            defendant_did=dispute_data.defendant_agent_id,
+            reason="filed_by_party", filed_by="party",
         )
         
         # Store additional metadata as evidence

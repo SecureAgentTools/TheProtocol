@@ -31,6 +31,10 @@ def _settlement(msg, age_hours=1):
 
 
 def _patch(monkeypatch):
+    # V0660 (k): with delivery off a settlement no peer holds ends NOT_DELIVERED before the retry gate; these pin the
+    # retry gate itself, so delivery is on and the card names a dialable address
+    monkeypatch.setenv("CROSS_REGISTRY_SETTLEMENT_DELIVERY", "on")
+    monkeypatch.setenv("BILATERAL_PEER_URL", "https://sandbox-b.theprotocol.cloud:8443")
     seen = {"evidence": 0, "retries": []}
 
     async def no_slash(_s):

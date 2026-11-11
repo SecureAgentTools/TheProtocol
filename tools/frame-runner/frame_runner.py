@@ -3504,12 +3504,23 @@ print(json.dumps({"status": r.status, "body": body}))
         ctx = self._identity_ctx(req, uid)
         op = self._caller_operator(ctx, req.get("operator"))
         service = spec_operator_service(req.get("service"))
+        # V0660 (j): a start is where a recorded stop must be undone, BEFORE the container runs again — compose
+        # starts an existing container without restoring the file's `restart:` (measured), so a re-started agent
+        # would otherwise run with docker's restart disarmed.
+        restored, restore_note = (None, None)
+        if service in ("all", "spire-agent"):
+            restored, restore_note = self._restore_operator_agent_policy(op)
         rc, out, ms = self._operator_compose(op, ["restart"] + ([] if service == "all" else [service]),
                                              self.OPERATOR_RESTART_TIMEOUT_S)
         self.audit(uid, "operator_restart", frame=ctx["frame"], operator=op["operator"], service=service, rc=rc,
-                   duration_ms=ms)
-        return {"frame": ctx["frame"], "operator": op["operator"], "service": service, "rc": rc,
-                "restarted": rc == 0, "output_tail": out[-400:].decode("utf-8", "replace"), "duration_ms": ms}
+                   agent_policy_restored=restored, duration_ms=ms)
+        ans = {"frame": ctx["frame"], "operator": op["operator"], "service": service, "rc": rc,
+               "restarted": rc == 0, "output_tail": out[-400:].decode("utf-8", "replace"), "duration_ms": ms}
+        if restored is not None:
+            ans["agent_policy_restored"] = restored
+            if restore_note:
+                ans["agent_policy_note"] = restore_note
+        return ans
 
     def op_operator_logs(self, req, uid):
         """`docker compose logs --no-color --tail=N [service]` of one of the calling frame's operators, the last
@@ -3540,7 +3551,20 @@ print(json.dumps({"status": r.status, "body": body}))
         A node that parents ANY other entry is refused with nothing changed, so this op can ban neither the frame's own
         node (it parents /service/ entries) nor another operator's. The operator's containers are not required: a revoked
         operator may be gone already or run elsewhere; the binding is the caller's own SPIRE server and the operator's
-        SPIFFE path."""
+        SPIFFE path.
+
+        V0657 (f) (agentvault2-d3, 2026-11-06): where this runner holds the operator's stack, its spire-agent is STOPPED
+        before the ban (`agent_stopped`). Measured on the nightly pairs (23 nights since 10-31, nt261106x2 reproduced it):
+        a banned agent logs "Agent is banned: removing SVID and shutting down" and exits 1, and its container's
+        unless-stopped policy restarted it into the same refusal 9-10 times until the teardown, the nightly
+        ContainerRestartLoop warning. A stopped container is not restarted. An operator whose stack is not on this host
+        (gone, or run elsewhere) is revoked as before, `agent_stopped` null and the reason in `agent_stop_note`; a stop
+        that fails is said there too, and the ban goes ahead (the ban is the revocation; the stop only ends the loop).
+        What brings the agent back (session-lead's condition, seq 1551), in the answer as `agent_returns`: only a
+        re-provision. A revoke and a purge are terminal (the registry's reinstate route takes a SUSPENDED operator only, and
+        a suspend bans nothing: "revoked operators must re-apply"); the new application's activation issues a new x509pop
+        certificate, so a new node, and its provision's `compose up` starts the stopped agent on it. The banned node
+        never re-attests as itself."""
         ctx = self._identity_ctx(req, uid)
         name = spec_operator_name(req.get("operator"))
         raw_fp = req.get("fingerprint")
@@ -3576,10 +3600,16 @@ print(json.dumps({"status": r.status, "body": body}))
                          | {e["entry_id"] for e in agents})
         out = {"frame": ctx["frame"], "operator": name, "node": node, "node_listed": None, "banned": False,
                "entries_found": len(targets), "agent_entries": len(agents), "entries_deleted": 0, "evicted": False,
-               "sweep_path": sweep_path, "errors": []}
+               "sweep_path": sweep_path, "agent_stopped": None, "errors": []}
         if node:
             out["node_listed"] = node in self._live_nodes(ctx)
             if out["node_listed"]:
+                out["agent_stopped"], note, recorded = self._stop_operator_agent(ctx, name)   # V0657 (f): before the ban
+                out["agent_stop_recorded"] = recorded      # V0660 (j): null when there was nothing to record
+                if note:
+                    out["agent_stop_note"] = note
+                if out["agent_stopped"]:
+                    out["agent_returns"] = self.AGENT_RETURNS
                 r = self._spire_exec(ctx["spire"], ["agent", "ban", "-spiffeID", node])
                 out["banned"] = r["rc"] == 0
                 if r["rc"] != 0:
@@ -3595,8 +3625,81 @@ print(json.dumps({"status": r.status, "body": body}))
         self.audit(uid, "operator_revoke_spire", frame=ctx["frame"], project=ctx["project"], operator=name, node=node,
                    node_listed=out["node_listed"], banned=out["banned"], entries_found=out["entries_found"],
                    agent_entries=out["agent_entries"], entries_deleted=out["entries_deleted"], evicted=out["evicted"],
-                   sweep_path=sweep_path, errors=len(out["errors"]))
+                   sweep_path=sweep_path, agent_stopped=out["agent_stopped"], errors=len(out["errors"]))
         return out
+
+    AGENT_RETURNS = ("only by a re-provision: a revoked operator re-applies (reinstate takes a suspended operator only, "
+                     "and a suspend bans nothing); the new activation's certificate is a new node, and the provision's "
+                     "compose up starts this stopped agent on it")
+
+    # V0660 (j) — session-watch, room seq 2329. The stop V0657 (f) makes is DELIBERATE, and the host's health
+    # collector (monitoring/scripts/docker-health-textfile.sh) skips a stopped container only when its restart
+    # policy is "no": that is §LEGACYSTOP's recorded-stop convention, and an unrecorded stop must stay visible
+    # (§CANARYFIX). The revoke left the container on unless-stopped, so its own stop reported
+    # docker_container_health 0 and ContainerUnhealthy fired on every nightly pair — an alert about a thing the
+    # system had just done on purpose. So the revoke records the stop it makes.
+    # ⚠ MEASURED 2026-11-08 with a throwaway compose project: `docker compose up -d` on an existing stopped
+    # container STARTS IT AND KEEPS policy "no". Compose does not restore the file's `restart:` for a container it
+    # merely starts, so the restore has to be explicit, and a RUNNING agent on "no" would have docker's restart of
+    # a real crash disarmed. Hence _restore_operator_agent_policy, before anything starts it.
+    AGENT_STOPPED_POLICY = "no"              # what the collector reads as "stopped on purpose"
+    AGENT_RUNNING_POLICY = "unless-stopped"  # what the operator compose declares
+    POLICY_FORMAT = "{{.HostConfig.RestartPolicy.Name}}"
+
+    def _operator_agent_policy(self, container):
+        """The container's restart policy as docker reports it, or "" when it could not be read. Never a default:
+        a guess here would either hide a stop or disarm a restart."""
+        try:
+            r = subprocess.run(["docker", "inspect", container, "--format", self.POLICY_FORMAT],
+                               capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            return ""
+        return (r.stdout or "").strip() if r.returncode == 0 else ""
+
+    def _set_operator_agent_policy(self, op, policy):
+        """Write `policy` onto this operator's spire-agent container, found by the labels compose stamped (never by a
+        name spelled here). (True, None) when written; (False, why) when docker refused; (None, why) when there is no
+        such container. Never raises: the revoke that follows is the point."""
+        container = self._operator_container(op["stack_dir"], "spire-agent")
+        if not container:
+            return None, f"no spire-agent container of {op['operator']} on this host, so nothing to mark {policy}"
+        try:
+            r = subprocess.run(["docker", "update", "--restart", policy, container],
+                               capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return False, f"docker update --restart {policy} {container}: {exc}"
+        if r.returncode != 0:
+            return False, (f"docker update --restart {policy} rc={r.returncode}: "
+                           f"{((r.stderr or r.stdout) or '').strip()[:160]}")
+        return True, None
+
+    def _restore_operator_agent_policy(self, op):
+        """Before anything starts this operator's agent again: put it back on unless-stopped if a revoke recorded a
+        stop on it. (True|False, note) when there was something to restore; (None, None) when there was not — a
+        container already on unless-stopped is left alone, so a start writes nothing in the ordinary case."""
+        container = self._operator_container(op["stack_dir"], "spire-agent")
+        if not container or self._operator_agent_policy(container) != self.AGENT_STOPPED_POLICY:
+            return None, None
+        return self._set_operator_agent_policy(op, self.AGENT_RUNNING_POLICY)
+
+    def _stop_operator_agent(self, ctx, name):
+        """V0657 (f): `docker compose stop spire-agent` on the operator's own stack, where this runner holds it (the same
+        checks as every operator op: one registry container, its compose working dir under the stack root, its own
+        compose files and env file, the calling frame's trust domain). (True|False, note, recorded) when it ran;
+        (None, why, None) when there is no such stack here. Never raises: the ban that follows is the revocation.
+
+        V0660 (j): on a successful stop the policy is recorded (`no`) under the same checks, so the host's collector
+        reads it as the deliberate stop it is. A stop that FAILED records nothing: the container is still running, and
+        "no" on a running container would both lie about the state and disarm docker's restart of a real crash."""
+        try:
+            op = self._caller_operator(ctx, name, for_write=False)
+        except Refused as exc:
+            return None, f"no stack of {name} on this host to stop ({exc})", None
+        rc, tail, _ms = self._operator_compose(op, ["stop", "spire-agent"], self.OPERATOR_RESTART_TIMEOUT_S)
+        if rc != 0:
+            return False, f"compose stop spire-agent rc={rc}: {tail[-200:].decode('utf-8', 'replace').strip()}", None
+        recorded, note = self._set_operator_agent_policy(op, self.AGENT_STOPPED_POLICY)
+        return True, note, recorded
 
     OPERATOR_PURGE_TIMEOUT_S = 300
     OPERATOR_DRAIN_TIMEOUT_S = 60

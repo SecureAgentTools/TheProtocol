@@ -54,3 +54,13 @@ describe('the AGORA market under both names', () => {
   })
 })
 
+
+// V0658 (d), polish 15: the owner's evidence route takes the owner's own sign-in; the agent's stays agent-tier
+describe('dispute evidence tiers', () => {
+  it('evidence as the owner is a DEVELOPER call', () => {
+    expect(isAgentEndpoint('/disputes/7/evidence/as-owner', 'post')).toBe(false)
+  })
+  it('evidence as the acting agent stays agent-tier', () => {
+    expect(isAgentEndpoint('/disputes/7/evidence', 'post')).toBe(true)
+  })
+})

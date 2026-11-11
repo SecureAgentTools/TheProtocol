@@ -57,5 +57,6 @@ def test_the_direct_scrape_and_other_paths_are_untouched():
 def test_the_registry_wires_it_with_its_metrics():
     import agentvault_registry.main as main
     src = inspect.getsource(main.create_app)
-    i, j = src.index('_instrumentator.expose(app, endpoint="/metrics"'), src.index("app.add_middleware(PublicMetricsMiddleware)")
+    # V0657 (c): /metrics is the registry's own route (core/metrics_multiproc.py), no longer the instrumentator's expose()
+    i, j = src.index('app.add_api_route("/metrics", metrics_endpoint'), src.index("app.add_middleware(PublicMetricsMiddleware)")
     assert 0 < j - i < 400, "added where /metrics is exposed, so METRICS_ENABLED=false adds neither"

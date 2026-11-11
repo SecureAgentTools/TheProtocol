@@ -70,7 +70,7 @@ export const organizationsTrack: TutorialTrack = {
       stepNumber: 3,
       title: 'Create the Agent',
       subtitle: 'An agent to assign to the org',
-      explanation: "Create an agent owned by you. Because you don't belong to an org yet, it stays unassigned — we'll attach it to the team in Step 7.",
+      explanation: "Create an agent owned by you. If you don't belong to an org yet, it stays unassigned; if you belong to exactly one, the registry puts it there and the answer names it (organization_id). Either way we attach it to the team in Step 7.",
       apiCall: {
         method: 'POST',
         path: '/onboard/create_agent',
@@ -94,7 +94,11 @@ export const organizationsTrack: TutorialTrack = {
         authType: 'bootstrap',
         authTokenRef: '$bootstrapToken',
       },
-      captures: [{ key: 'orgAgentDid', responsePath: 'agent_did', displayLabel: 'Agent DID' }],
+      captures: [
+        { key: 'orgAgentDid', responsePath: 'agent_did', displayLabel: 'Agent DID' },
+        // V0658 (s): null unless the registry put the new agent in the one organization its developer belongs to
+        { key: 'orgAgentHomeOrgId', responsePath: 'organization_id', displayLabel: 'Organization it was put in' },
+      ],
       validation: { successStatusCodes: [200, 201], requiredResponseKeys: ['agent_did'] },
       requiresStepId: 'bootstrap-agent',
     },
@@ -163,13 +167,13 @@ export const organizationsTrack: TutorialTrack = {
       stepNumber: 7,
       title: 'Assign the Agent to the Team',
       subtitle: 'Bring your fleet into the org',
-      explanation: 'Attach the agent you created to the org and the team. Now it can act on the org\'s behalf: trade its listing, draw on its treasury (within policy), ship via CICD.',
+      explanation: 'Attach the agent you created to the org and the team. Now it can act on the org\'s behalf: trade its listing, draw on its treasury (within policy), ship via CICD. An agent belongs to one organization: if Step 3 put it in the one you already belonged to, this request names that organization in leave_organization_id, which is how the registry is told to move it (without it the answer is a 409 naming the organization). It is null when there is nothing to leave.',
       apiCall: {
         method: 'POST',
         path: '/organizations/$orgId/agents/$orgAgentDid/assign',
         description: 'Assign the agent to the org + team',
         pathParams: { org_id: '$orgId', agent_did: '$orgAgentDid' },
-        body: { team_id: '$teamId' },
+        body: { team_id: '$teamId', leave_organization_id: '$orgAgentHomeOrgId' },
         bodyDynamic: [{ jsonPath: 'team_id', capturedKey: 'teamId' }],
         authType: 'developer',
         authTokenRef: '$sandboxDevToken',

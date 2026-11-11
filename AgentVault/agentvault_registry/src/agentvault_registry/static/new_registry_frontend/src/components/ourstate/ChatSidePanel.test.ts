@@ -47,7 +47,35 @@ describe('the side panel of an organization room', () => {
     }))
     await flushPromises()
     expect(sectionKeys(w)).toEqual(['csp-approvals', 'csp-board', 'csp-live', 'csp-present'])
-    expect(w.find('[data-testid="slot-board"]').exists() && w.find('[data-testid="slot-live"]').exists()).toBe(true)
+    expect(w.find('[data-testid="slot-live"]').exists()).toBe(true)
+    await w.find('[data-testid="csp-board-toggle"]').trigger('click')   // V0657 (h): the board starts folded
+    expect(w.find('[data-testid="slot-board"]').exists()).toBe(true)
+  })
+
+  it('V0657 (h): the board starts folded to its first line, which opens it on demand and stays open for that person', async () => {
+    m.presence.mockResolvedValue(presence([]))
+    const slots = { board: () => vh('div', { 'data-testid': 'slot-board' }, 'a long board') }
+    const w = mount(ChatSidePanel, opts({ boardFirstLine: 'V0657: (e) to (j) with session-tester' }, slots))
+    await flushPromises()
+    const toggle = w.find('[data-testid="csp-board-toggle"]')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(w.find('[data-testid="slot-board"]').exists()).toBe(false)              // nothing of the board's body is drawn
+    expect(w.find('[data-testid="csp-board-first"]').text()).toBe('V0657: (e) to (j) with session-tester')
+    await toggle.trigger('click')
+    expect(w.find('[data-testid="slot-board"]').exists()).toBe(true)
+    expect(w.find('[data-testid="csp-board-first"]').exists()).toBe(false)          // open: the text itself, not its line
+    w.unmount()
+    const again = mount(ChatSidePanel, opts({ boardFirstLine: 'x' }, slots))
+    await flushPromises()
+    expect(again.find('[data-testid="slot-board"]').exists()).toBe(true)
+  })
+
+  it('V0657 (h): a folded board with no text shows no line, and the other sections keep their header as before', async () => {
+    m.presence.mockResolvedValue(presence([]))
+    const w = mount(ChatSidePanel, opts({ boardFirstLine: '' }, { board: () => vh('div', 'b') }))
+    await flushPromises()
+    expect(w.find('[data-testid="csp-board-first"]').exists()).toBe(false)
+    expect(w.findAll('.csp-first')).toHaveLength(0)
   })
 
   it('names who is present: a live status line first, a live ring for it, a quiet one without, the count', async () => {

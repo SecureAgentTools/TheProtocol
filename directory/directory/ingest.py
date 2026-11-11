@@ -47,7 +47,9 @@ FRAME_TIERS = ("sovereign-mainframe", "regional-mainframe", "frame", "sandbox")
 # 3 (§TWOAGENT #10, 2026-09-23): the registries state a native card's bond, enforcement and listing on the single-card
 # read from V0437 on (they served stored card_data before, so every native card read as unbonded), and the enforcement
 # flag is now read from the extension's `status` (the block has never carried an `is_enforced` field, so it read false).
-EXTRACT_VERSION = 3
+# 4 (V0657 (b), 2026-11-06): a card's organization mark (the org extension its home states, orgs_reader.py).
+# 5 (V0660 (a), 2026-11-08): the index of a card's quantum workload extension (quantum_reader.py).
+EXTRACT_VERSION = 5
 # A cursor pass can never see something GO AWAY: a deleted or deactivated card simply stops appearing in a feed
 # nobody re-reads. Every FULL_EVERY cycles the Directory reads a registry whole and marks what it no longer
 # publishes as unreachable (never deletes).
@@ -137,6 +139,8 @@ def _verify_for(url: str, bundle: Optional[str]):
 
 from .agora_listings import fetch_listings  # noqa: E402  (no registry import: the reader-gate CI job runs without it)
 from .board import pull_board  # noqa: E402  (§MEMBERSHIP phase C; registry-free like agora_listings)
+from .orgs_reader import fetch_organizations, org_mark_from_card, org_row  # noqa: E402  (V0657 (b); registry-free)
+from .quantum_reader import facets_from_card as quantum_facets_from_card  # noqa: E402  (V0660 (a); registry-free)
 
 
 async def fetch_json(client: httpx.AsyncClient, url: str) -> Tuple[Optional[Any], Optional[str]]:
@@ -266,6 +270,8 @@ async def _index_page(client: httpx.AsyncClient, store: Store, reg: Dict[str, An
             issuer=issuer, shape=(agent_did_suffix_shape(str(did)) if did else None), home=name, bond_json=json.dumps(bond),
             enforcement_json=json.dumps(enforcement), verified=1 if reg["verified"] else 0, reachable=1, fetched_at=now(),
             card_json=json.dumps(cd)[:100000],
+            org_json=(json.dumps(_org) if (_org := org_mark_from_card(cd, name, base)) else None),
+            quantum_json=(json.dumps(_q) if (_q := quantum_facets_from_card(cd)) else None),
         )
         ctr["changed"] += 1
 
@@ -414,6 +420,28 @@ async def pull_listings(client: httpx.AsyncClient, store: Store, reg: Dict[str, 
     return {"held": held, "listed": len(items), "gone": gone, "error": None}
 
 
+async def pull_organizations(client: httpx.AsyncClient, store: Store, reg: Dict[str, Any]) -> Dict[str, Any]:
+    """V0657 (b), item 6: the organizations each registry LISTS. Like the listings, small and complete on every read, so
+    every cycle is a full pass and may sweep, but only after a complete read: a registry before V0657 (404) or a failed
+    page keeps what is held, and a 404 is "does not list organizations", never "has none"."""
+    base, name = reg["base"], reg["name"]
+    items, err = await fetch_organizations(fetch_json, client, base)
+    if items is None:
+        return {"error": None if err == "http 404" else err, "supported": err != "http 404",
+                "held": store.count_for_source("organizations", name)}
+    seen: List[str] = []
+    for it in items:
+        row = org_row(it, name, base)
+        if row is None:
+            continue
+        seen.append(row["id"])
+        store.upsert_organization(**row, reachable=1, fetched_at=now())
+    gone = store.sweep_source("organizations", name, seen) if err is None else 0
+    held = store.count_for_source("organizations", name)
+    store.set_registry_field(name, organizations_indexed=held)
+    return {"held": held, "listed": len(items), "gone": gone, "error": err, "supported": True}
+
+
 # §DIRFEED — ADMISSION. A row in an anchor's federation table is one of three things, and only two of them are
 # an admission: a FRAME it federated with, an OPERATOR it licensed, or a name it merely DISCOVERED through
 # someone else's fan-out. Hearsay is a lead, not a licence — a discovered row is admitted only if some anchor
@@ -512,6 +540,7 @@ async def sync_cycle(store: Store) -> Dict[str, Any]:
             if reg["verified"]:
                 cards = await pull_cards(client, store, reg, full=full, force_detail=extract_changed)
                 listings = await pull_listings(client, store, reg)
+                orgs = await pull_organizations(client, store, reg)
                 board = await pull_board(client, store, reg)
                 summary["registries"][reg["name"]] = {"hop": hop, "verified": True, "indexed": cards.get("held"),
                                                       "changed": cards.get("changed"), "detail_reads": cards.get("detail_reads"),
@@ -525,6 +554,8 @@ async def sync_cycle(store: Store) -> Dict[str, Any]:
                                                       "swept": cards.get("swept"),
                                                       "listings": listings.get("held"), "listings_gone": listings.get("gone"),
                                                       "listings_error": listings.get("error"),
+                                                      "organizations": orgs.get("held"), "organizations_gone": orgs.get("gone"),
+                                                      "organizations_error": orgs.get("error"),
                                                       # §MEMBERSHIP phase C: the board's two reads, each in its own state
                                                       "membership": board["membership"], "commons": board["commons"],
                                                       "board_errors": board["errors"]}

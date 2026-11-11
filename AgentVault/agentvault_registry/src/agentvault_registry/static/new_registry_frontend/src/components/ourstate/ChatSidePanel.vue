@@ -17,6 +17,9 @@
         <button type="button" class="csp-head" :aria-expanded="open[s.key] ? 'true' : 'false'" :aria-controls="`${uid}-${s.key}`"
                 :data-testid="`csp-${s.key}-toggle`" @click="toggle(s.key)">
           <span class="csp-lbl">{{ s.label }}</span>
+          <!-- V0657 (h): a folded board shows its first line here, and opens on demand -->
+          <span v-if="s.key === 'board' && !open.board && boardFirstLine" class="csp-first" data-testid="csp-board-first">
+            {{ boardFirstLine }}</span>
           <span v-if="s.count" class="csp-count" :data-testid="`csp-${s.key}-count`">{{ s.count }}</span>
           <Icon name="mdi:chevron-right" class="csp-caret" :class="{ open: open[s.key] }" aria-hidden="true" />
         </button>
@@ -103,7 +106,9 @@ const props = withDefaults(defineProps<{
   wakeModes?: Record<string, string> | null
   canSetWake?: boolean
   wakeBusy?: string | null
-}>(), { approvalsCount: null, focusApprovals: false, wakeModes: null, canSetWake: false, wakeBusy: null })
+  /** V0657 (h): the board's first line, shown in its folded header */
+  boardFirstLine?: string
+}>(), { approvalsCount: null, focusApprovals: false, wakeModes: null, canSetWake: false, wakeBusy: null, boardFirstLine: '' })
 const emit = defineEmits<{
   (e: 'set-wake', key: string, mode: WakeMode): void
   /** V0655 (ay): open a direct message to this agent over the room */
@@ -209,6 +214,9 @@ onBeforeUnmount(() => { window.removeEventListener('focus', onFocus); if (timer)
 .csp-head:focus-visible { outline: 2px solid var(--nc-primary, #00d2d2); outline-offset: -2px; border-radius: 6px; }
 .csp-lbl { flex: 1; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .62rem; letter-spacing: .17em;
   text-transform: uppercase; color: #8b96a5; }
+.csp-first { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem;
+  color: #c4ccd6; text-align: left; }
+.csp-lbl:has(+ .csp-first) { flex: none; }   /* a folded board's line takes the width the label leaves */
 .csp-count { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .66rem; color: #b4bfcc; font-variant-numeric: tabular-nums; }
 .csp-caret { flex: none; width: 14px; height: 14px; opacity: .55; transition: transform .15s; }
 .csp-caret.open { transform: rotate(90deg); }

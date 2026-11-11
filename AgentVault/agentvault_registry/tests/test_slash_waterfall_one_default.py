@@ -38,7 +38,8 @@ def mods():
     from agentvault_registry.services import enforcement_engine as ee
     from agentvault_registry.services import reputation_bond as rb
     from agentvault_registry.crud import crud_enforcement as ce
-    return types.SimpleNamespace(ee=ee, rb=rb, ce=ce)
+    from agentvault_registry.services import slash_order as so   # V0658 (k): where every slash drains the order
+    return types.SimpleNamespace(ee=ee, rb=rb, ce=ce, so=so)
 
 
 def _waterfall_literals(tree: ast.AST):
@@ -53,12 +54,16 @@ def _waterfall_literals(tree: ast.AST):
 
 
 def test_the_engine_holds_no_second_copy_of_the_waterfall():
-    tree = ast.parse((SRC / "services" / "enforcement_engine.py").read_text(encoding="utf-8"))
-    lines = _waterfall_literals(tree)
-    assert not lines, (
-        f"enforcement_engine.py carries a waterfall literal at line(s) {lines}: the default lives in "
-        f"crud_enforcement.DEFAULT_POLICY_JSON and nowhere else"
-    )
+    # V0658 (k): nor does services/slash_order, where every slash drains the order now
+    for name in ("enforcement_engine.py", "slash_order.py"):
+        path = SRC / "services" / name
+        if not path.exists():
+            continue
+        lines = _waterfall_literals(ast.parse(path.read_text(encoding="utf-8")))
+        assert not lines, (
+            f"{name} carries a waterfall literal at line(s) {lines}: the default lives in "
+            f"crud_enforcement.DEFAULT_POLICY_JSON and nowhere else"
+        )
     # the instrument itself must be able to see one: the factory default IS such a literal
     ce_tree = ast.parse((SRC / "crud" / "crud_enforcement.py").read_text(encoding="utf-8"))
     assert _waterfall_literals(ce_tree), "the literal detector found nothing where the default lives"
@@ -91,10 +96,18 @@ async def _plan(mods, monkeypatch, policy, bond_amount="10"):
     async def _load_bond(db, did):
         return types.SimpleNamespace(amount=Decimal(bond_amount), status="locked")
 
+    class _TegReads:
+        """V0658 (k): the slash order reads each step's capacity from the TEG, not the cache. The TEG holds 1000 liquid
+        and 55 locked: released whole, 55 locked units give a slash 50 (their 10% penalty of 5 comes on top), the 50
+        the cached staked balance said before."""
+        async def get_balances_admin(self, did):
+            return Decimal("1000"), Decimal("55")
+
     em = _Emitter()
     monkeypatch.setattr(mods.rb, "policy_json", _policy)
     monkeypatch.setattr(mods.rb, "load_bond", _load_bond)
     monkeypatch.setattr(mods.ee, "get_event_emitter", lambda: em)
+    monkeypatch.setattr(mods.so, "get_teg_client", lambda: _TegReads())
     handled = await mods.ee.EnforcementEngine()._slash_waterfall(None, _agent(), _action(), mode="shadow")
     assert handled is False, "shadow must fall through to the cache-only branches"
     # shadow must emit exactly one event, and it must be the PLANNED one (never Applied)

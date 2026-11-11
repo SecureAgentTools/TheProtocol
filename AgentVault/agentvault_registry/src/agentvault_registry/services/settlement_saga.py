@@ -42,7 +42,9 @@ SAGA_TIMEOUT_HOURS = 72
 # A settlement in one of these statuses was decided (slashed, failed, rejected, settled) or has already timed out: the
 # sweep never rewrites it. Rows decided before V0649 still carry saga_state INITIATED (the admin approve and reject did
 # not move it), so the saga state alone cannot protect them (agentvault2-13, 2026-10-30).
-DECIDED_STATUSES = ("SLASHED", "FAILED", "REJECTED", "SETTLED", "EXPIRED")
+# V0660 (k): and the three end states of a settlement whose slash request no peer holds (core/settlement_origin.ENDED):
+# NOT_DELIVERED, REFUSED and CLOSED. Nothing moved on any of them, and a timeout would only rewrite their words.
+DECIDED_STATUSES = ("SLASHED", "FAILED", "REJECTED", "SETTLED", "EXPIRED", "NOT_DELIVERED", "REFUSED", "CLOSED")
 
 # Valid state transitions
 VALID_TRANSITIONS = {

@@ -1,6 +1,6 @@
 // Dispute Management Store — OWL-17 patch
 import { defineStore } from 'pinia'
-import { disputesApi, type Dispute, type Evidence, type CreateDisputeData, type SubmitEvidenceData, type DisputeStats, type CompensationResult } from '@/services/api/disputes'
+import { disputesApi, type Dispute, type Evidence, type CreateDisputeData, type SubmitEvidenceData, type DisputeStats, type CompensationResult, type RulingValue } from '@/services/api/disputes'
 import { useUIStore } from './ui'
 import { useAuthStore } from './auth'
 
@@ -81,9 +81,7 @@ export const useDisputesStore = defineStore('disputes', {
     },
 
     openDisputes: (state): Dispute[] => {
-      return state.disputes.filter(d =>
-        d.status === 'open' || d.status === 'investigating'
-      )
+      return state.disputes.filter(d => d.status === 'open')
     }
   },
 
@@ -174,10 +172,13 @@ export const useDisputesStore = defineStore('disputes', {
       }
     },
 
-    async submitEvidence(disputeId: string, data: SubmitEvidenceData) {
+    /** `asOwner`: file through the owner's route (V0658 (d)), as `asOwner.agentDid` when the owner owns both parties */
+    async submitEvidence(disputeId: string, data: SubmitEvidenceData, asOwner?: { agentDid?: string }) {
       const uiStore = useUIStore()
       try {
-        const evidence = await disputesApi.submitEvidence(disputeId, data)
+        const evidence = asOwner
+          ? await disputesApi.submitEvidenceAsOwner(disputeId, data, asOwner.agentDid)
+          : await disputesApi.submitEvidence(disputeId, data)
         const dispute = this.disputes.find(d => d.id === disputeId)
         if (dispute) dispute.evidence.push(evidence)
         if (this.selectedDispute?.id === disputeId) this.selectedDispute.evidence.push(evidence)
@@ -189,11 +190,15 @@ export const useDisputesStore = defineStore('disputes', {
       }
     },
 
-    async updateRuling(disputeId: string, ruling: string, resolution: 'resolved' | 'dismissed') {
+    /** V0657 (a): the ruling (any of the three), the ruler's reason and, for a dispute about a Guild order, the worker's
+     *  share of its escrow. The answer is re-read whole (names, the order's evidence, the outcome) when it can be. */
+    async updateRuling(disputeId: string, ruling: RulingValue, note: string, workerShare?: number | null) {
       const uiStore = useUIStore()
+      const resolution: 'resolved' | 'dismissed' = ruling === 'DISMISSED' ? 'dismissed' : 'resolved'
       try {
-        const result = await disputesApi.updateRuling(disputeId, ruling, resolution)
-        const dispute = result.dispute
+        const result = await disputesApi.updateRuling(disputeId, ruling, note, workerShare)
+        let dispute = result.dispute
+        try { dispute = (await disputesApi.getDispute(disputeId)) || dispute } catch { /* the ruling's own answer stands */ }
         if (result.compensation) (dispute as any).compensation = result.compensation
         if (result.reputation_changes) (dispute as any).reputation_changes = result.reputation_changes
 

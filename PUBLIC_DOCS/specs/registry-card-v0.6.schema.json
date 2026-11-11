@@ -1773,6 +1773,141 @@
         }
       }
     },
+    "quantum_workloads": {
+      "type": "object",
+      "description": "MAY. Derived from the registry's own switches (QUANTUM_WORKLOADS_MODE and the rails it names), never from an operator's edit. Absent entirely while the switch is off; never an empty object. SIGNED as a whole block while present: signature.signed_canonical then ends with \"quantum_workloads\".",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "receipt_schema",
+        "acceptance_tests",
+        "metering_circuit"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "shadow",
+            "on"
+          ],
+          "description": "Whether the registry hosts quantum workloads. shadow: it checks what on would refuse and reports it without refusing. on: it refuses."
+        },
+        "receipt_schema": {
+          "type": "object",
+          "description": "The job receipt format a job settled on this registry carries, and the signature algorithms it names.",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "signature_algorithms"
+          ],
+          "properties": {
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16
+            },
+            "signature_algorithms": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              }
+            }
+          }
+        },
+        "acceptance_tests": {
+          "type": "object",
+          "description": "The acceptance tests a verifier's verdict can settle here, agreed before a run: rung 1 checks the answer, rung 2 tests the run statistically (test circuits with stated error rates, or a repeat on an independent provider). Both lists are empty when no rail here settles a verdict.",
+          "additionalProperties": false,
+          "required": [
+            "rungs",
+            "settled_through"
+          ],
+          "properties": {
+            "rungs": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  1,
+                  2
+                ]
+              }
+            },
+            "settled_through": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "guild_work_order",
+                  "contract_milestone"
+                ]
+              },
+              "description": "The rails that settle a verdict here, each listed only where its own switch is on. guild_work_order: the verify step of a Guild work order. contract_milestone: the approval of a contract milestone."
+            }
+          }
+        },
+        "metering_circuit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 120,
+          "description": "The policy circuit the attestation rail verifies for metered usage (shots or seconds reported against a log a meter committed to), or null when this registry does not verify it."
+        },
+        "allocation_profile": {
+          "type": "object",
+          "description": "Present when the registry declares an allocation profile: research allocations, each with its holder and a cap in the registry's unit, which a grant naming the allocation cannot pass. A summary only; the allocations themselves are not on the card.",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "declared",
+                "invalid"
+              ],
+              "description": "invalid: a profile is configured but does not parse, so no grant can draw on an allocation until it does."
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "allocation_count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "profile_hash": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "description": "'sha256:' followed by the hex SHA-256 of the canonical JSON of the profile document."
+            }
+          },
+          "if": {
+            "properties": {
+              "state": {
+                "const": "declared"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "name",
+              "version",
+              "allocation_count",
+              "profile_hash"
+            ]
+          }
+        }
+      }
+    },
     "signature": {
       "type": [
         "object",

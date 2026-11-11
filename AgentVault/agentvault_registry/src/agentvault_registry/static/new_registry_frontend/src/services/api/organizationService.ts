@@ -27,6 +27,48 @@ export interface Organization {
    *  the type ratchet carried 12 errors against a field the API really returns. */
   my_role?: string | null
   pending_owner_is_me?: boolean | null
+  /** V0657 (b): the logo this registry hosts (a path on its own origin), or null; and whether the org is listed */
+  logo?: string | null
+  listed?: boolean
+  /** V0658 (r): the address the organization named for its logo before V0657 (b), never shown; offered to its owner
+   *  for upload (OrgMarkWhy) */
+  logo_url?: string | null
+}
+
+/** V0657 (b), polish 9: a join request (an agent asks, or its creator proposes it; an administrator decides) */
+export interface OrgAgentRequest {
+  id: string
+  organization_id: string
+  agent_did: string
+  agent_name?: string | null
+  requested_by_kind: 'developer' | 'agent'
+  requested_by_ref: string
+  note?: string | null
+  status: 'pending' | 'accepted' | 'declined' | 'withdrawn' | string
+  created_at?: string | null
+  decided_at?: string | null
+  decided_by_kind?: string | null
+  decided_by_ref?: string | null
+  decision_note?: string | null
+}
+
+/** V0657 (b), item 6: one listed organization as its registry's public list answers it */
+export interface ListedOrganization {
+  id: string
+  slug: string
+  name: string
+  description?: string | null
+  website?: string | null
+  logo?: string | null
+  page?: string | null
+  member_count: number
+  agent_count: number
+  /** settled Guild work AS the organization (paid to it) */
+  settled_work: number
+  /** V0658 (v): the settled work its member agents did on their own (only the agents that show this organization),
+   *  never added into settled_work; absent when the registry could not read it (or predates it) */
+  member_work?: { jobs: number } | null
+  created_at?: string | null
 }
 
 /** Wire shape of one row of GET /organizations/{id}/invitations (§ORGINVITE).
@@ -168,6 +210,8 @@ export interface OrgLiabilitySettings {
 export interface OrgPolicySettings {
   liability?: OrgLiabilitySettings
   contract_offer_ttl_days?: number
+  /** V0657 (b), item 2: the organization's consent to be named in public (its mark on its agents' cards) */
+  public_listing?: boolean
 }
 
 /** One catalog-driven control descriptor returned by GET /settings. */
@@ -776,22 +820,6 @@ class OrganizationService {
     }
   }
 
-  /** Assign an agent to the org (and optionally a team). Creator-only on the agent. */
-  async assignAgent(orgId: string, agentDid: string, teamId?: string): Promise<any> {
-    try {
-      const body: Record<string, any> = {}
-      if (teamId) body.team_id = teamId
-      const response = await apiClient.post(
-        `${this.basePath}/${orgId}/agents/${encodeURIComponent(agentDid)}/assign`,
-        body
-      )
-      return response.data
-    } catch (error: any) {
-      console.error('Assign agent error:', error)
-      throw new Error(error.response?.data?.detail || 'Failed to assign agent')
-    }
-  }
-
   /** Remove an agent from the org. */
   async unassignAgent(orgId: string, agentDid: string): Promise<any> {
     try {
@@ -901,6 +929,63 @@ class OrganizationService {
       { dest_agent_did: destAgentDid },
       { headers: { 'Idempotency-Key': idempotencyKey } },
     )
+    return response.data
+  }
+
+  // ==================
+  // V0657 (b) — orgs v2: the hosted logo, "show my org", join requests, the public list of listed organizations
+  // ==================
+
+  /** PUT /{id}/logo — a PNG or JPEG of at most 256 KB, hosted by this registry */
+  async uploadLogo(orgId: string, file: File | Blob): Promise<{ org_id: string; logo: string; size: number; content_type: string }> {
+    const form = new FormData()
+    form.append('file', file)
+    const response = await apiClient.put(`${this.basePath}/${orgId}/logo`, form)
+    return response.data
+  }
+
+  async deleteLogo(orgId: string): Promise<{ org_id: string; removed: boolean }> {
+    const response = await apiClient.delete(`${this.basePath}/${orgId}/logo`)
+    return response.data
+  }
+
+  /** PUT /{id}/agents/{did}/mark — whether the agent's card states the organization (while it is listed) */
+  async setAgentMark(orgId: string, agentDid: string, show: boolean): Promise<{ agent_did: string; show_org: boolean; org_mark_public: boolean }> {
+    const response = await apiClient.put(`${this.basePath}/${orgId}/agents/${encodeURIComponent(agentDid)}/mark`, { show })
+    return response.data
+  }
+
+  async listAgentRequests(orgId: string, status = 'pending'): Promise<{ items: OrgAgentRequest[]; can_decide: boolean }> {
+    const response = await apiClient.get(`${this.basePath}/${orgId}/agent-requests`, { params: { status } })
+    return response.data
+  }
+
+  async createAgentRequest(orgId: string, body: { agent_did?: string; note?: string }): Promise<OrgAgentRequest> {
+    const response = await apiClient.post(`${this.basePath}/${orgId}/agent-requests`, body)
+    return response.data
+  }
+
+  /** V0658 (s): an accept moves an agent out of another organization only when `leave_organization_id` names it (a 409
+   *  AGENT_IN_ANOTHER_ORGANIZATION names it otherwise; services/orgMove.ts reads that answer). A 409 is an answer the
+   *  join request panel words itself (the move question, a request no longer open), so the client raises no global
+   *  error toast for it. */
+  async decideAgentRequest(orgId: string, requestId: string, verdict: 'accept' | 'decline',
+    body: { note?: string; team_id?: string; leave_organization_id?: string } = {}):
+    Promise<{ id: string; status: string; agent_did: string; left_organization_id?: string | null }> {
+    const response = await apiClient.post(`${this.basePath}/${orgId}/agent-requests/${requestId}/${verdict}`, body,
+      { expectedStatuses: [409] })
+    return response.data
+  }
+
+  async withdrawAgentRequest(orgId: string, requestId: string): Promise<{ id: string; status: string }> {
+    const response = await apiClient.delete(`${this.basePath}/${orgId}/agent-requests/${requestId}`)
+    return response.data
+  }
+
+  /** GET /public/listed — this registry's listed organizations (public), with whose list it is */
+  async listListedOrganizations(): Promise<{ organizations: ListedOrganization[]; total: number;
+    home: { name?: string | null; origin?: string | null; console?: string | null } }> {
+    const response = await apiClient.get(`${this.basePath}/public/listed`)
     return response.data
   }
 

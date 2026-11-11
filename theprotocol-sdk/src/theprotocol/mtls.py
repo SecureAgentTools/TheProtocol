@@ -30,12 +30,13 @@ The private key is written ``0600`` and the directory ``0700``. Nothing here
 logs key material.
 """
 import asyncio
+import inspect
 import logging
 import os
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional, Union
 
 import httpx
 
@@ -307,7 +308,7 @@ class IronhandClient:
 
     def start_auto_rotate(
         self,
-        agent_jwt: str,
+        agent_jwt: Union[str, Callable[[], Union[str, Awaitable[str]]]],
         *,
         check_interval: float = 60.0,
         on_error=None,
@@ -319,11 +320,23 @@ class IronhandClient:
         not permanently strand an agent whose certificate is still valid.
         ``IronhandUnavailableError`` and permission errors DO stop it: those are
         settled answers, not hiccups, and retrying cannot change them.
+
+        ``agent_jwt`` may be a callable (sync or async) that returns the agent's
+        current token: it is asked only when a renewal is due. Pass one for any
+        loop that outlives a token: an agent token expires long before the loop
+        does, and a fixed string makes every renewal after its expiry a 401.
         """
+        async def _token() -> str:
+            if not callable(agent_jwt):
+                return agent_jwt
+            tok = agent_jwt()
+            return await tok if inspect.isawaitable(tok) else tok
+
         async def _loop() -> None:
             while True:
                 try:
-                    await self.ensure_fresh(agent_jwt)
+                    if self.needs_refresh():
+                        await self.enroll(await _token())
                 except (IronhandUnavailableError, IronhandPermissionError) as exc:
                     logger.error("IRONHAND auto-rotate stopping: %s", exc)
                     raise

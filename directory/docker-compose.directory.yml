@@ -44,7 +44,7 @@ services:
     logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
 
   directory:
-    image: theprotocol-directory:sovkit1
+    image: theprotocol-directory:board5
     container_name: directory-eu-asia
     restart: unless-stopped
     # §SOVKIT T4 (2026-09-14): NO host port. The plain 127.0.0.1:8600 kept "during the transition" answered /graphql with no

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { isWalletAgent, walletTags, walletSentence, walletHowItWorks, moveFundsDoor, WALLET_TAG, firstAgentIsWallet } from './walletAgent'
+import * as uiMode from './uiMode'
 
 const t = (_k: string, fb: string) => fb
 
@@ -17,8 +18,25 @@ describe('§WALLETAGENT — one marker, one sentence', () => {
     expect(walletHowItWorks(t)).toHaveLength(4)
     expect(walletSentence(t)[0]).toMatch(/identity/)
   })
-  it('the move-funds door is the ONE send door, prefilled', () => {
-    expect(moveFundsDoor('did:theprotocol:abc')).toBe('/pocket/pay?to=did%3Atheprotocol%3Aabc')
+  it('the move-funds door is the ONE send door, prefilled (in Pocket)', () => {
+    const doors = uiMode as unknown as Record<string, any>
+    doors.bindDoorRouter?.({ currentRoute: { value: { path: '/pocket/home', meta: { shell: 'pocket' } } } })
+    try {
+      expect(moveFundsDoor('did:theprotocol:abc')).toBe('/pocket/pay?to=did%3Atheprotocol%3Aabc')
+      // Pocket's own send picks its sender: the wallet is not carried there
+      expect(moveFundsDoor('did:theprotocol:abc', 'did:theprotocol:wallet')).toBe('/pocket/pay?to=did%3Atheprotocol%3Aabc')
+    } finally { doors.bindDoorRouter?.(null) }
+  })
+  // V0658 (v), session-lead's seq 2419: the same rule as the other doors. RED on 041b3e9ac: always /pocket/pay.
+  it('pressed in the desktop console it opens the Forex Desk, from the wallet, whatever is saved', () => {
+    const doors = uiMode as unknown as Record<string, any>
+    doors.bindDoorRouter?.({ currentRoute: { value: { path: '/mission-control', meta: { shell: 'desktop' } } } })
+    localStorage.setItem(uiMode.UI_MODE_KEY, 'pocket')
+    try {
+      expect(moveFundsDoor('did:theprotocol:abc', 'did:theprotocol:wallet'))
+        .toBe('/forex?to=did%3Atheprotocol%3Aabc&from=did%3Atheprotocol%3Awallet')
+      expect(moveFundsDoor('did:theprotocol:abc')).toBe('/forex?to=did%3Atheprotocol%3Aabc')
+    } finally { doors.bindDoorRouter?.(null); localStorage.clear() }
   })
 })
 

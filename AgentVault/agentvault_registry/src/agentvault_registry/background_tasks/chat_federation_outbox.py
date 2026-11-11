@@ -103,31 +103,50 @@ async def _drain_once() -> None:
 
 
 async def _due_rows() -> bool:
-    """Whether a queued row is due now (the drain's own condition, through ix_chat_fed_outbox_due)."""
-    from sqlalchemy import text as sa_text
+    """Whether a queued row is due now: the drain's own condition (services/chat_federation._due_conditions)."""
     async with async_session_factory() as db:
-        return (await db.execute(sa_text(
-            "SELECT 1 FROM chat_federation_outbox WHERE delivered_at IS NULL AND next_attempt_at <= now() "
-            "AND attempts < :m LIMIT 1"), {"m": fed.MAX_ATTEMPTS})).first() is not None
+        return await fed.due_exists(db)
+
+
+async def _wait_wake(seconds: float) -> bool:
+    """V0659 (g): block on the commit wake (services/chat_federation.wake_outbox) for up to `seconds`; True when one
+    came. Without a shared store it only waits."""
+    try:
+        from .leader import get_redis
+        r = await get_redis()
+        if r is None:
+            await asyncio.sleep(seconds)
+            return False
+        return (await r.blpop(fed.WAKE_KEY, timeout=max(0.05, seconds))) is not None
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:  # noqa: BLE001 — a wake that cannot be read costs this second's wait, nothing else
+        logger.debug("[CHATFED] outbox wake unreadable: %s", e)
+        await asyncio.sleep(seconds)
+        return False
 
 
 async def _rest(seconds: float, may_wake: bool) -> None:
-    """The pause between cycles. A worker that is not the leader sleeps it whole; the leader ends it as soon as a row
-    is due (a message just queued for another registry), so delivery waits about a second, not a cycle."""
+    """The pause between cycles. A worker that is not the leader sleeps it whole. The leader drains again at once
+    while a row is due (a batch's tail, a thread's next row), then waits for the next commit's wake (V0659 (g): a
+    message leaves as soon as its transaction commits), and still looks for due rows every second, in case a wake
+    could not be sent."""
     if not may_wake or DUE_POLL_SECONDS <= 0:
         await asyncio.sleep(seconds)
         return
     loop = asyncio.get_running_loop()
     end = loop.time() + seconds
-    while _running and loop.time() < end:
-        await asyncio.sleep(min(DUE_POLL_SECONDS, max(0.0, end - loop.time())))
-        try:
+    try:
+        if await _due_rows():
+            return
+        while _running and loop.time() < end:
+            if await _wait_wake(min(DUE_POLL_SECONDS, max(0.05, end - loop.time()))):
+                return
             if await _due_rows():
                 return
-        except Exception as e:  # noqa: BLE001 — a probe that fails costs the cycle's ordinary wait, nothing else
-            logger.debug("[CHATFED] outbox due-probe failed: %s", e)
-            await asyncio.sleep(max(0.0, end - loop.time()))
-            return
+    except Exception as e:  # noqa: BLE001 — a probe that fails costs the cycle's ordinary wait, nothing else
+        logger.debug("[CHATFED] outbox due-probe failed: %s", e)
+        await asyncio.sleep(max(0.0, end - loop.time()))
 
 
 async def chat_federation_outbox_loop():

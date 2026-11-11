@@ -768,6 +768,35 @@ class TEGClient:
         except httpx.RequestError as e:
             raise TEGClientError(f"Failed to connect to TEG Layer: {str(e)}")
 
+    async def get_balances_admin(self, agent_did: str) -> "tuple[Decimal, Decimal]":
+        """V0658 (k): (liquid, locked) as the TEG holds them for an agent, in one admin read (the route the staking
+        reconciliation reads, GET /admin/agent-locked-balance, answers both). What a slash may take is read here, never
+        from the registry's cached balances. An agent the TEG has no profile for holds nothing there: (0, 0)."""
+        admin_key = os.getenv("TEG_ADMIN_API_KEY", "")
+        try:
+            response = await self._client.get(
+                f"{self.base_url}{self.api_prefix}/admin/agent-locked-balance",
+                params={"agent_id": agent_did},
+                headers={"Authorization": f"Bearer {admin_key}"},
+            )
+        except httpx.RequestError as e:
+            raise TEGClientError(f"Failed to connect to TEG Layer: {str(e)}")
+        if response.status_code == 404:
+            try:
+                detail = str((response.json() or {}).get("detail") or "")
+            except Exception:  # noqa: BLE001
+                detail = ""
+            if "agent not found" in detail.lower():
+                return Decimal(0), Decimal(0)
+        if response.status_code != 200:
+            raise TEGClientError(f"balance read failed for {agent_did}: HTTP {response.status_code}")
+        try:
+            data = response.json() or {}
+            return (Decimal(str(data.get("token_balance", "0") or "0")),
+                    Decimal(str(data.get("locked_balance", "0") or "0")))
+        except Exception as e:  # noqa: BLE001
+            raise TEGClientError(f"balance read for {agent_did} answered no balance: {e}")
+
     async def unlock_tokens(self, agent_did: str, amount: Decimal) -> TokenUnlockResponse:
         """
         Unlock tokens from staking.

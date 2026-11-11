@@ -3,6 +3,17 @@
 // are agent-JWT context → SDK/API, not the developer FE.
 import { apiClient } from './client'
 
+/** V0658 (q): a party of an order (or a contract) that is the reader's: his agent ("agent") or his organization's
+ *  ("organization"). The owner reads (GET /guild/owned, a developer's GET /guild/orders/{id}) name them. */
+export interface MyParty {
+  role: string
+  agent_did: string
+  name?: string | null
+  via?: 'agent' | 'organization' | string
+  organization_id?: string | null
+  organization_name?: string | null
+}
+
 export interface GuildOrder {
   id: string
   poster_did: string
@@ -19,6 +30,8 @@ export interface GuildOrder {
   fee_charged?: number | string | null
   created_at?: string
   settled_at?: string | null
+  /** V0658 (q): on the owner reads, which parties are the reader's */
+  my_parties?: MyParty[]
 }
 
 export interface GuildBid {
@@ -55,6 +68,13 @@ export const guildApi = {
   },
   async resolve(id: string, workerShare: number, note?: string): Promise<{ ok: boolean; worker_paid: number; poster_refunded: number }> {
     const { data } = await apiClient.post(`/admin/guild/orders/${encodeURIComponent(id)}/resolve`, { worker_share: workerShare, note })
+    return data
+  },
+
+  /** V0658 (q): the orders of every agent the signed-in developer owns and of the organizations he owns, whichever
+   *  agent is acting (the developer's token: reading follows ownership; acting still needs the party agent). */
+  async owned(limit = 100): Promise<{ orders: GuildOrder[]; total: number }> {
+    const { data } = await apiClient.get('/guild/owned', { params: { limit } })
     return data
   },
 

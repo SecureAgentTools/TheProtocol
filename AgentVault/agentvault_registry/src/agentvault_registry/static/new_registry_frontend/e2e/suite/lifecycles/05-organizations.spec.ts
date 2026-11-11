@@ -141,3 +141,91 @@ test('organization_full_life', async ({ page, context, steps, api, a11y, openAs 
     return 'organization deleted, read back'
   })
 })
+
+/**
+ * V0658 (s) (the maintainer's report, sessions' room seq 2150): an agent belongs to one organization, and assigning it
+ * to a second one took it out of the first without a word. The owner of two organizations assigns their agent, which is
+ * in the first, to the second: the tab names the organization it leaves and asks; cancelling moves nothing; confirming
+ * moves it. Every step is read back from the API. The unconfirmed assign is refused on purpose (409), twice; the page
+ * declares it as an answer, so no red error toast stands over the question (the review's blocking 1).
+ */
+test('organization_agent_move_asks_first', async ({ page, context, steps, api, a11y, capture }) => {
+  test.setTimeout(4 * 60_000)
+  const owner = await registerDeveloper(api, 'orgmove')
+  const agent = await createAgentApi(api, owner, 'org-move')   // before any organization: it is born in none
+  await seedSession(context, owner.token)
+  const fromName = uniqueName('org-from')
+  const toName = uniqueName('org-to')
+  const made: string[] = []
+  const createOrg = async (name: string) => {
+    const r = await api.json('POST', '/api/v1/organizations', { token: owner.token,
+      body: { name, description: 'made by the console lifecycle suite' } })
+    expect(r.status, `the organization ${name} is made`).toBeLessThan(300)
+    made.push(String(r.body.id))
+    return String(r.body.id)
+  }
+  const inOrg = async (orgId: string) => {
+    const r = await api.json('GET', `/api/v1/organizations/${orgId}/agents`, { token: owner.token })
+    expect(r.status, 'the org agents list answers').toBe(200)
+    const list: any[] = Array.isArray(r.body) ? r.body : r.body?.agents || r.body?.items || []
+    return list.some((x) => String(x.did || x.agent_did || '') === agent.did)
+  }
+  let fromId = ''
+  let toId = ''
+
+  await steps.run('agent-in-the-first-organization', 'ui:developer', async () => {
+    fromId = await createOrg(fromName)
+    const r = await api.json('POST', `/api/v1/organizations/${fromId}/agents/${agent.did}/assign`, { token: owner.token })
+    expect(r.status, 'an agent in no organization is assigned without a question').toBe(200)
+    expect(await inOrg(fromId)).toBe(true)
+    toId = await createOrg(toName)
+    return `the agent is in ${fromName}; ${toName} is made`
+  })
+
+  const dialog = page.locator('.ca-modal[role="dialog"]').last()
+  const assign = page.locator(`[data-testid="org-assignable"][data-did="${agent.did}"] button`)
+  const alarm = page.locator('[data-testid="toast"][data-kind="error"]')
+
+  await steps.run('assign-asks-naming-the-organization-it-leaves', 'ui:developer', async () => {
+    capture.allow(/POST \/api\/v1\/organizations\/[^/]+\/agents\/.+\/assign$/, 409,
+      'an agent in another organization: the unconfirmed assign is refused on purpose, and the console asks')
+    await openRoute(page, `/organization?org=${toId}`)
+    await page.locator('[data-tour="org-tab-agents"]').click()
+    await assign.click()
+    await expect(dialog).toBeVisible()
+    await expect(dialog.locator('[data-testid="org-move-from"]')).toHaveText(fromName)
+    await expect(alarm, 'a question, not an alarm: no red toast over it').toHaveCount(0)
+    await a11y(page, 'org-move-confirm')
+    expect(await inOrg(fromId), 'asking moved nothing').toBe(true)
+    expect(await inOrg(toId)).toBe(false)
+    return `the question names ${fromName}`
+  })
+
+  await steps.run('cancel-moves-nothing', 'ui:developer', async () => {
+    await dialog.locator('.ca-btn--ghost').click()
+    await expect(dialog).toHaveCount(0)
+    expect(await inOrg(fromId), 'still in the first organization').toBe(true)
+    expect(await inOrg(toId)).toBe(false)
+    return 'cancelled; the API still lists it under the first organization'
+  })
+
+  await steps.run('confirm-moves-it', 'ui:developer', async () => {
+    await assign.click()
+    await expect(dialog.locator('[data-testid="org-move-from"]')).toHaveText(fromName)
+    await expect(alarm, 'asked again, still no alarm').toHaveCount(0)
+    await confirmDialog(page)
+    await toast(page, 'success', /assigned/i)
+    await expect.poll(() => inOrg(toId), { message: 'the API lists it under the second organization' }).toBe(true)
+    expect(await inOrg(fromId), 'and no longer under the first').toBe(false)
+    await expect(page.locator(`[data-testid="org-agent"][data-did="${agent.did}"]`)).toBeVisible()
+    return 'confirmed; moved, read back'
+  })
+
+  await steps.run('clean-up', 'ui:developer', async () => {
+    for (const id of made) {
+      const r = await api.json('DELETE', `/api/v1/organizations/${id}`, { token: owner.token })
+      expect(r.status, `the organization ${id} is deleted`).toBeLessThan(300)
+    }
+    return `${made.length} organizations deleted`
+  })
+})

@@ -1,0 +1,43 @@
+# DYNAMO (the energy blueprint): smart meters publish their readings to the plant's MQTT broker; every reading becomes
+# a signed attestation on TheProtocol (the meter is the topic's second level, meters/<meter>/reading), kept exactly once
+# however often the broker redelivers it (QoS 1, a persistent session, the meter's own sequence number as the id).
+#
+# The meter side: JSON {"seq", "kwh", "voltage", "at"} on meters/<meter>/reading (fake/fake_meters.py publishes such
+# readings). Production brokers use TLS with a client certificate: uncomment tls and name the files.
+version: 1
+name: dynamo-meters
+registry: https://api.theprotocol.cloud
+identity:
+  agent_did: env:AGENT_DID
+  client_id: env:CLIENT_ID
+  client_secret: env:CLIENT_SECRET
+state: /data/dynamo-state.db
+sources:
+  meters:
+    type: mqtt
+    config:
+      host: broker.plant.local
+      port: 1883
+      client_id: tp-proxy-dynamo-meters      # the broker keeps this source's session under this name
+      topics: [{filter: "meters/+/reading", qos: 1}]
+      id_field: $.seq                        # each meter's own reading number
+      # tls: {ca_file: /etc/tp-proxy/plant-ca.crt, cert_file: /etc/tp-proxy/meters.crt, private_key: file:/etc/tp-proxy/meters.key}
+actions:
+  attest:
+    type: attestation
+    config: {attestation_type: dynamo.meter_reading}
+    limits: {per_minute: 600}
+sinks: {}
+mappings:
+  - name: reading
+    version: 1
+    from: meters
+    to: attest
+    fields:
+      meter: $.payload.levels.1
+      reading: $.payload.data.seq
+      kwh: $.payload.data.kwh
+      voltage: {path: $.payload.data.voltage, default: null}
+      at: $.payload.data.at
+retry: {first_s: 2, max_s: 300, attempts: 8}
+service: {listen: "127.0.0.1:9108"}

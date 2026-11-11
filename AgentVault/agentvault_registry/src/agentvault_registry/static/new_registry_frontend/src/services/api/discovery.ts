@@ -3,6 +3,8 @@ import { useLogger } from '@/composables/useLogger'
 import { cardPricing } from '@/services/cardPricing'
 import { cardAuthSchemes } from '@/services/cardAuth'
 import { authService } from '@/services/auth'
+import { orgMarkFromParams, orgMarkOf } from '@/services/orgMark'
+import { asDiscoverFacets, asFacets, type QuantumDiscoverFacets } from '@/services/quantum/quantumCard'
 
 const log = useLogger('Discovery')
 
@@ -94,6 +96,9 @@ export interface DiscoverFacets {
   free: number
   origins: { name: string; count: number; live_24h: number; paid: number }[]
   tags: { name: string; count: number }[]
+  /** V0660 (a)/(e): the quantum workload extension's facets of the page's population. Present only where the frame
+   *  serves the extension (QUANTUM_WORKLOADS_MODE shadow or on); null elsewhere. */
+  quantum?: QuantumDiscoverFacets | null
 }
 
 export interface DiscoverParams {
@@ -118,6 +123,9 @@ export interface DiscoverParams {
    *  call to discover() from Discovery.vue. A parameter that exists on the wire and not in the
    *  type is one a refactor can drop without anything noticing. */
   include_unbonded?: boolean
+  /** V0660 (e): the quantum filters as query parameters (services/quantum/quantumCard.quantumQuery). Sent only where
+   *  the frame serves the extension and a filter is set; absent, the request is the one before V0660. */
+  quantum?: Record<string, string>
   sort?: string
   limit?: number
   offset?: number
@@ -136,6 +144,8 @@ export interface EnrichedAgent {
   capabilities: Record<string, any>
   authSchemes: any[]
   provider: { name: string; url?: string }
+  /** V0657 (b): the organization the agent's HOME registry states (services/orgMark.ts); null when it states none */
+  orgMark?: import('@/services/orgMark').OrgMark | null
   version: string
   schemaVersion: string
   developerId: number
@@ -459,6 +469,11 @@ class DiscoveryService {
         description: this.highlight(it.description || '', query),
       } : undefined,
       card_data: { iconUrl: it.icon_url || null, flare: it.flare || null, did: it.did || null },
+      // V0657 (b), item 4: the organization the agent's home states (the discover list answers it as `org`)
+      orgMark: orgMarkFromParams(it.org),
+      // V0660 (a)/(e): the quantum workload extension's facets, as the index reads them (null where the card carries
+      // none, and on a frame that does not serve the extension, which sends no such field)
+      quantum: asFacets(it.quantum),
       flare_tier:                  f.tier                        ?? null,
       flare_id:                    f.id                          ?? null,
       flare_display_name:          f.display_name                ?? null,
@@ -508,6 +523,7 @@ class DiscoveryService {
     // §FESUITE: the "include agents without a bond" box set this and it was never sent, for anyone (the admin included,
     // the one viewer it can widen the list for); 49-discovery found it
     if (params.include_unbonded) query.include_unbonded = true
+    if (params.quantum) for (const [k, v] of Object.entries(params.quantum)) if (k.startsWith('quantum_') && v) query[k] = v
     const resp = await apiClient.get('/agent-cards/discover', { params: query })
     const d = resp.data || {}
     const facets: DiscoverFacets = {
@@ -517,6 +533,7 @@ class DiscoveryService {
       free: d.facets?.free ?? 0,
       origins: Array.isArray(d.facets?.origins) ? d.facets.origins : [],
       tags: Array.isArray(d.facets?.tags) ? d.facets.tags : [],
+      quantum: asDiscoverFacets(d.facets?.quantum),
     }
     return {
       results: (Array.isArray(d.items) ? d.items : []).map((it: any) => this.discoverItemToResult(it, params.q?.trim() || undefined)),
@@ -687,6 +704,7 @@ class DiscoveryService {
       // §CARDAUTH: both legal places, like the price below (an A2A v1.0 card declares its auth in securitySchemes)
       authSchemes: cardAuthSchemes(cd),
       provider: cd.provider || { name: 'Unknown' },
+      orgMark: orgMarkOf(cd),
       version: cd.agentVersion || '1.0',
       schemaVersion: cd.schemaVersion || '1.0',
       developerId: card.developer_id,

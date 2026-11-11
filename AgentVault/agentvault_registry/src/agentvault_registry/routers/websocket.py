@@ -213,8 +213,18 @@ class ConnectionManager:
     CHAT_WAKE_TOPIC = "chat:wake"
 
     def __init__(self):
-        # Store connections by user_id
+        # Store connections by user_id: the user's LATEST socket on this worker (presence and older readers ask this)
         self.active_connections: Dict[str, WebSocket] = {}
+        # V0658 (n): EVERY socket of a user on this worker, keyed by the socket's own id. One person holds several (the
+        # desktop console and the phone, a second tab); keeping one per user let a second socket on the same worker
+        # silence the first, which stayed open and got nothing until a reload (the Commander, room seq 1838).
+        self._sockets: Dict[str, Dict[int, WebSocket]] = {}
+        # V0658 (n): each socket's own topics and visibility (a tab that unsubscribes, or a phone in a pocket, speaks for
+        # itself, never for the person's other sockets); `subscriptions` and `_hidden` stay the per-user summaries
+        self._topics: Dict[int, Set[str]] = {}
+        self._hidden_socks: Set[int] = set()
+        # tasks started here and awaited by nobody: held until they end, so the loop cannot collect one mid-flight
+        self._bg: Set[asyncio.Task] = set()
         # V0655 (az): the users whose socket on this worker last said its page is hidden (see mark_shown)
         self._hidden: set = set()
         # Store user details for each connection
@@ -328,9 +338,14 @@ class ConnectionManager:
         except Exception as e:  # noqa: BLE001
             logger.debug("[WS] presence clear failed for %s: %s", user_id, e)
 
-    def mark_shown(self, user_id: str, visible: bool) -> None:
+    def mark_shown(self, user_id: str, visible: bool, websocket: Optional[WebSocket] = None) -> None:
         """V0655 (az): what the socket's last heartbeat said of its page. Only a page the person can see counts as
-        present: a hidden tab or a phone in a pocket holds a socket and reads nothing."""
+        present: a hidden tab or a phone in a pocket holds a socket and reads nothing. V0658 (n): said of THAT socket;
+        the person is hidden only while every socket of theirs on this worker is."""
+        if websocket is not None and id(websocket) in self._topics:
+            (self._hidden_socks.discard if visible else self._hidden_socks.add)(id(websocket))
+            self._resummarise(str(user_id))
+            return
         if visible:
             self._hidden.discard(str(user_id))
         else:
@@ -455,12 +470,37 @@ class ConnectionManager:
     # Connection lifecycle (unchanged)
     # ------------------------------------------------------------------
 
+    def _sockets_of(self, user_id: str) -> List[WebSocket]:
+        """Every open socket of `user_id` on this worker (V0658 (n)). A caller that set only active_connections (an
+        older test) gets that one."""
+        socks = self._sockets.get(user_id)
+        if socks:
+            return list(socks.values())
+        ws = self.active_connections.get(user_id)
+        return [ws] if ws is not None else []
+
+    def _resummarise(self, user_id: str) -> None:
+        """The per-user summaries from the user's sockets (V0658 (n)): subscribed to a topic when any socket is, hidden
+        only when every socket says its page is hidden."""
+        tracked = [ws for ws in self._sockets_of(user_id) if id(ws) in self._topics]
+        if not tracked:
+            return
+        if user_id in self.subscriptions:
+            self.subscriptions[user_id] = set().union(*(self._topics[id(ws)] for ws in tracked))
+        if all(id(ws) in self._hidden_socks for ws in tracked):
+            self._hidden.add(str(user_id))
+        else:
+            self._hidden.discard(str(user_id))
+
     async def connect(self, websocket: WebSocket, user_id: str, user_data: dict):
-        """Accept a new WebSocket connection"""
+        """Accept a new WebSocket connection. A user may hold several at once (V0658 (n)): each is kept and each gets
+        every send, and the user's topic subscriptions are kept across them, never reset by a second connect."""
         await websocket.accept(subprotocol=_select_subprotocol(websocket))
+        self._sockets.setdefault(user_id, {})[id(websocket)] = websocket
+        self._topics[id(websocket)] = set()
         self.active_connections[user_id] = websocket
         self.connection_users[user_id] = user_data
-        self.subscriptions[user_id] = set()
+        self.subscriptions.setdefault(user_id, set())
 
         logger.info(f"WebSocket connected: {user_id} ({email_for_log(user_data.get('email', 'unknown'))})")
 
@@ -471,22 +511,38 @@ class ConnectionManager:
         # Lazily start the Pub/Sub listener on first connection
         await self._ensure_pubsub()
 
-        # Send connection confirmation
+        # Send connection confirmation: to this socket only (V0658 (n): the console emits every frame by its type, so a
+        # greeting to every socket of the person told their other tabs "connected" again each time one more opened)
         await self.send_personal_message({
             "type": "connected",
             "data": {
                 "message": "WebSocket connection established",
                 "user": user_data
             }
-        }, user_id)
+        }, user_id, websocket)
 
-    def disconnect(self, user_id: str):
-        """Remove a WebSocket connection"""
+    def disconnect(self, user_id: str, websocket: Optional[WebSocket] = None):
+        """Remove a WebSocket connection: that socket only, when it is named (V0658 (n)); the user goes, with their
+        subscriptions and presence, when their last socket on this worker does. Without a socket: every one of them."""
+        socks = self._sockets.get(user_id)
+        if websocket is not None and socks is not None and id(websocket) in socks:
+            del socks[id(websocket)]
+            self._topics.pop(id(websocket), None)
+            self._hidden_socks.discard(id(websocket))
+            if socks:
+                if self.active_connections.get(user_id) is websocket:
+                    self.active_connections[user_id] = next(iter(socks.values()))
+                self._resummarise(user_id)
+                logger.info(f"WebSocket closed: {user_id} ({len(socks)} still open on this worker)")
+                return
+        for k in list((self._sockets.pop(user_id, None) or {}).keys()):
+            self._topics.pop(k, None)
+            self._hidden_socks.discard(k)
         self._hidden.discard(str(user_id))
         if user_id in self.active_connections:
             del self.active_connections[user_id]
-            del self.connection_users[user_id]
-            del self.subscriptions[user_id]
+            self.connection_users.pop(user_id, None)
+            self.subscriptions.pop(user_id, None)
             # §PRESENCE — best effort: this is sync, so the delete is scheduled.
             # If it never runs the key still expires within PRESENCE_TTL, and the
             # only cost of that window is a suppressed duplicate, never a lost
@@ -498,19 +554,24 @@ class ConnectionManager:
                 pass
             logger.info(f"WebSocket disconnected: {user_id}")
 
-    async def send_personal_message(self, message: dict, user_id: str):
-        """Send a message to a specific user"""
+    async def send_personal_message(self, message: dict, user_id: str, websocket: Optional[WebSocket] = None):
+        """Send a message to a specific user: every socket of theirs, or only `websocket` when the message answers
+        that socket (a reply to its own subscribe, heartbeat or request; V0658 (n))."""
         if user_id in self.active_connections:
             # Add metadata to message
             message["timestamp"] = datetime.now(timezone.utc).isoformat()
             message["id"] = f"msg_{datetime.now(timezone.utc).timestamp()}"
 
-            try:
-                await self.active_connections[user_id].send_json(message)
-            except Exception as e:
-                logger.error(f"Error sending message to {user_id}: {e}")
-                # Remove dead connection
-                self.disconnect(user_id)
+            targets = self._sockets_of(user_id)
+            if websocket is not None:
+                targets = [ws for ws in targets if ws is websocket]
+            for ws in targets:
+                try:
+                    await ws.send_json(message)
+                except Exception as e:
+                    logger.error(f"Error sending message to {user_id}: {e}")
+                    # Remove that dead socket, never the user's others
+                    self.disconnect(user_id, ws)
 
     # ------------------------------------------------------------------
     # Local-only delivery (called from Pub/Sub listener or as fallback)
@@ -571,7 +632,7 @@ class ConnectionManager:
 
         disconnected_users = []
 
-        for user_id, websocket in self.active_connections.items():
+        for user_id in list(self.active_connections):
             if user_id == exclude_user:
                 continue
             user_info = self.connection_users.get(user_id, {})
@@ -593,15 +654,16 @@ class ConnectionManager:
                     prefs = None
                 if not _passes_prefs_filter(prefs, notif_type, msg_target_org_id):
                     continue
-            try:
-                await websocket.send_json(message)
-            except Exception as e:
-                logger.error(f"Error broadcasting to {user_id}: {e}")
-                disconnected_users.append(user_id)
+            for websocket in self._sockets_of(user_id):
+                try:
+                    await websocket.send_json(message)
+                except Exception as e:
+                    logger.error(f"Error broadcasting to {user_id}: {e}")
+                    disconnected_users.append((user_id, websocket))
 
-        # Clean up dead connections
-        for user_id in disconnected_users:
-            self.disconnect(user_id)
+        # Clean up dead sockets, each alone
+        for user_id, websocket in disconnected_users:
+            self.disconnect(user_id, websocket)
 
     # ------------------------------------------------------------------
     # §bc3 T3.2b — per-developer notification preferences cache
@@ -656,12 +718,16 @@ class ConnectionManager:
         message["timestamp"] = datetime.now(timezone.utc).isoformat()
         message["id"] = f"msg_{datetime.now(timezone.utc).timestamp()}"
 
-        for user_id, topics in self.subscriptions.items():
+        for user_id, topics in list(self.subscriptions.items()):
             if topic in topics and user_id in self.active_connections:
-                try:
-                    await self.active_connections[user_id].send_json(message)
-                except Exception as e:
-                    logger.error(f"Error sending to subscriber {user_id}: {e}")
+                for ws in self._sockets_of(user_id):
+                    own = self._topics.get(id(ws))
+                    if own is not None and topic not in own:
+                        continue          # V0658 (n): this socket did not subscribe (or unsubscribed)
+                    try:
+                        await ws.send_json(message)
+                    except Exception as e:
+                        logger.error(f"Error sending to subscriber {user_id}: {e}")
 
     # ------------------------------------------------------------------
     # Public broadcast methods (Redis Pub/Sub with local fallback)
@@ -722,28 +788,40 @@ class ConnectionManager:
         # Fallback: local only
         await self._local_broadcast_to_subscribers(topic, message)
 
-    def subscribe(self, user_id: str, topic: str):
-        """Subscribe a user to a topic"""
+    def subscribe(self, user_id: str, topic: str, websocket: Optional[WebSocket] = None):
+        """Subscribe a user's socket to a topic: `websocket` alone when named, else every socket of the user (V0658 (n))"""
         if user_id in self.subscriptions:
+            socks = [websocket] if websocket is not None else self._sockets_of(user_id)
+            for ws in socks:
+                if id(ws) in self._topics:
+                    self._topics[id(ws)].add(topic)
             self.subscriptions[user_id].add(topic)
             logger.debug(f"User {user_id} subscribed to {topic}")
-            # Ensure the Redis Pub/Sub connection listens on this topic channel.
-            # _ensure_topic_subscribed is async so we schedule it as a fire-and-forget task.
+            # Ensure the Redis Pub/Sub connection listens on this topic channel: a task nobody awaits, so it is held
+            # here until it ends (an unreferenced task can be collected mid-flight; V0658 (n), met on the way).
             try:
                 loop = asyncio.get_running_loop()
-                loop.create_task(self._ensure_topic_subscribed(topic))
+                task = loop.create_task(self._ensure_topic_subscribed(topic))
+                self._bg.add(task)
+                task.add_done_callback(self._bg.discard)
             except RuntimeError:
                 pass  # No running loop — Redis subscription will happen on next broadcast
 
-    def unsubscribe(self, user_id: str, topic: str):
-        """Unsubscribe a user from a topic"""
+    def unsubscribe(self, user_id: str, topic: str, websocket: Optional[WebSocket] = None):
+        """Unsubscribe a user's socket from a topic: `websocket` alone when named, else every socket (V0658 (n))"""
         if user_id in self.subscriptions:
-            self.subscriptions[user_id].discard(topic)
+            socks = [websocket] if websocket is not None else self._sockets_of(user_id)
+            for ws in socks:
+                self._topics.get(id(ws), set()).discard(topic)
+            if any(id(ws) in self._topics for ws in self._sockets_of(user_id)):
+                self._resummarise(user_id)
+            else:
+                self.subscriptions[user_id].discard(topic)
             logger.debug(f"User {user_id} unsubscribed from {topic}")
 
     def get_connection_count(self) -> int:
-        """Get the number of active connections"""
-        return len(self.active_connections)
+        """The number of open sockets on this worker (V0658 (n): a user may hold several)"""
+        return sum(len(self._sockets_of(u)) for u in self.active_connections)
 
     def get_user_info(self, user_id: str) -> Optional[dict]:
         """Get user info for a connection"""
@@ -754,12 +832,12 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-async def heartbeat_presence(user_id: str, message_data: Any) -> None:
+async def heartbeat_presence(user_id: str, message_data: Any, websocket: Optional[WebSocket] = None) -> None:
     """V0655 (az): what one heartbeat of the developer socket does to presence. Only a page the person can see counts:
     a heartbeat that says visible: false refreshes nothing (the key lapses within PRESENCE_TTL) and this worker's socket
     stops counting; a visible one refreshes it; a client that does not say keeps the behaviour it always had."""
     visible = message_data.get("visible") if isinstance(message_data, dict) else None
-    manager.mark_shown(user_id, visible is not False)
+    manager.mark_shown(user_id, visible is not False, websocket)
     if visible is not False:
         await manager.mark_present(user_id)
 
@@ -853,17 +931,17 @@ def topic_allowed(user_data: dict, topic: str) -> bool:
     return t == "system.events" or t.startswith("event:") or t.startswith("agent:")
 
 
-async def _subscribe_checked(user_id: str, user_data: dict, topic: str) -> bool:
-    """Subscribe `user_id` to `topic` if `topic_allowed` says so, and tell the caller either way."""
+async def _subscribe_checked(user_id: str, user_data: dict, topic: str, websocket: Optional[WebSocket] = None) -> bool:
+    """Subscribe `user_id`'s socket to `topic` if `topic_allowed` says so, and tell that socket either way."""
     if not topic_allowed(user_data, topic):
         logger.warning("[WS] subscription to %r refused for user %s", topic, user_id)
         await manager.send_personal_message({
             "type": "error",
             "data": {"message": "subscription refused: this topic is not yours to read", "topic": topic}
-        }, user_id)
+        }, user_id, websocket)
         return False
-    manager.subscribe(user_id, topic)
-    await manager.send_personal_message({"type": "subscribed", "data": {"topic": topic}}, user_id)
+    manager.subscribe(user_id, topic, websocket)
+    await manager.send_personal_message({"type": "subscribed", "data": {"topic": topic}}, user_id, websocket)
     return True
 
 
@@ -917,7 +995,7 @@ async def websocket_endpoint(
     # hears its own OurChat topic with no client round-trip. Delivery for
     # agent participants resolves DID→owner developer (the notify_agent_owners
     # pattern), so this ONE per-developer topic is the whole realtime plane.
-    manager.subscribe(user_id, f"chat:dev:{user_id}")
+    manager.subscribe(user_id, f"chat:dev:{user_id}", websocket)
 
     try:
         while True:
@@ -936,34 +1014,34 @@ async def websocket_endpoint(
                 # is therefore always something a live socket ASSERTED recently,
                 # never something inferred from an absence.
                 # V0655 (az): and only of a page the person can see (heartbeat_presence)
-                await heartbeat_presence(user_id, message_data)
+                await heartbeat_presence(user_id, message_data, websocket)
                 # Heartbeat response
                 await manager.send_personal_message({
                     "type": "pong",
                     "data": {"timestamp": message_data.get("timestamp")}
-                }, user_id)
+                }, user_id, websocket)
             
             elif message_type == "subscribe":
                 # Subscribe to a topic (e.g., specific agent updates), if it is the caller's to read
                 topic = message_data.get("topic")
                 if topic:
-                    await _subscribe_checked(user_id, user_data, topic)
+                    await _subscribe_checked(user_id, user_data, topic, websocket)
             
             elif message_type == "unsubscribe":
                 # Unsubscribe from a topic
                 topic = message_data.get("topic")
                 if topic:
-                    manager.unsubscribe(user_id, topic)
+                    manager.unsubscribe(user_id, topic, websocket)
                     await manager.send_personal_message({
                         "type": "unsubscribed",
                         "data": {"topic": topic}
-                    }, user_id)
+                    }, user_id, websocket)
             
             elif message_type == "agent.subscribe":
                 # Subscribe to specific agent updates
                 agent_id = message_data.get("agent_id")
                 if agent_id:
-                    await _subscribe_checked(user_id, user_data, f"agent:{agent_id}")
+                    await _subscribe_checked(user_id, user_data, f"agent:{agent_id}", websocket)
             
             elif message_type == "metrics.request":
                 # Fetch real metrics from database
@@ -971,17 +1049,17 @@ async def websocket_endpoint(
                 await manager.send_personal_message({
                     "type": "metrics.update",
                     "data": metrics
-                }, user_id)
+                }, user_id, websocket)
             
             else:
                 # Unknown message type
                 await manager.send_personal_message({
                     "type": "error",
                     "data": {"message": f"Unknown message type: {message_type}"}
-                }, user_id)
+                }, user_id, websocket)
     
     except WebSocketDisconnect:
-        manager.disconnect(user_id)
+        manager.disconnect(user_id, websocket)
         # Tell the ADMINS that user disconnected (presence is not everyone's to know; this went to every connected
         # tenant until 2026-09-24, §TWOAGENT)
         await manager.broadcast({
@@ -991,7 +1069,7 @@ async def websocket_endpoint(
     
     except Exception as e:
         logger.error(f"WebSocket error for {user_id}: {e}")
-        manager.disconnect(user_id)
+        manager.disconnect(user_id, websocket)
 
 
 # Utility functions to send events from other parts of the application
@@ -1208,7 +1286,7 @@ async def websocket_agent_endpoint(
     
     # Connect the user and automatically subscribe to the agent
     await manager.connect(websocket, f"{user_id}_agent_{agent_id}", user_data)
-    manager.subscribe(f"{user_id}_agent_{agent_id}", f"agent:{agent_id}")
+    manager.subscribe(f"{user_id}_agent_{agent_id}", f"agent:{agent_id}", websocket)
     
     # Send subscription confirmation
     await manager.send_personal_message({
@@ -1248,10 +1326,10 @@ async def websocket_agent_endpoint(
                 }, f"{user_id}_agent_{agent_id}")
     
     except WebSocketDisconnect:
-        manager.disconnect(f"{user_id}_agent_{agent_id}")
+        manager.disconnect(f"{user_id}_agent_{agent_id}", websocket)
     except Exception as e:
         logger.error(f"WebSocket error for agent {agent_id}: {e}")
-        manager.disconnect(f"{user_id}_agent_{agent_id}")
+        manager.disconnect(f"{user_id}_agent_{agent_id}", websocket)
 
 
 @router.websocket("/ws/events")
@@ -1264,7 +1342,7 @@ async def websocket_events_endpoint(
     user_data = {"id": conn_id, "role": "public"}
 
     await manager.connect(websocket, conn_id, user_data)
-    manager.subscribe(conn_id, "system.events")
+    manager.subscribe(conn_id, "system.events", websocket)
 
     await manager.send_personal_message({
         "type": "subscribed",
@@ -1294,9 +1372,9 @@ async def websocket_events_endpoint(
                 events = message_data.get("events", [])
                 channel = data.get("channel", "")
                 if channel == "events:all":
-                    manager.subscribe(conn_id, "system.events")
+                    manager.subscribe(conn_id, "system.events", websocket)
                 for event in events:
-                    manager.subscribe(conn_id, f"event:{event}")
+                    manager.subscribe(conn_id, f"event:{event}", websocket)
 
                 await manager.send_personal_message({
                     "type": "subscribed",
@@ -1304,10 +1382,10 @@ async def websocket_events_endpoint(
                 }, conn_id)
 
     except WebSocketDisconnect:
-        manager.disconnect(conn_id)
+        manager.disconnect(conn_id, websocket)
     except Exception as e:
         logger.error(f"WebSocket events error: {e}")
-        manager.disconnect(conn_id)
+        manager.disconnect(conn_id, websocket)
 
 
 @router.websocket("/ws/metrics")
@@ -1379,12 +1457,12 @@ async def websocket_metrics_endpoint(
     except WebSocketDisconnect:
         if metrics_task:
             metrics_task.cancel()
-        manager.disconnect(f"{user_id}_metrics")
+        manager.disconnect(f"{user_id}_metrics", websocket)
     except Exception as e:
         logger.error(f"WebSocket metrics error: {e}")
         if metrics_task:
             metrics_task.cancel()
-        manager.disconnect(f"{user_id}_metrics")
+        manager.disconnect(f"{user_id}_metrics", websocket)
 
 
 @router.websocket("/ws/agents/status")
@@ -1424,7 +1502,7 @@ async def websocket_agent_status_endpoint(
                 # Subscribe to status updates for specific agents
                 agent_ids = message_data.get("agent_ids", [])
                 for agent_id in agent_ids:
-                    manager.subscribe(f"{user_id}_status", f"agent_status:{agent_id}")
+                    manager.subscribe(f"{user_id}_status", f"agent_status:{agent_id}", websocket)
                 
                 await manager.send_personal_message({
                     "type": "subscribed",
@@ -1435,10 +1513,10 @@ async def websocket_agent_status_endpoint(
                 }, f"{user_id}_status")
     
     except WebSocketDisconnect:
-        manager.disconnect(f"{user_id}_status")
+        manager.disconnect(f"{user_id}_status", websocket)
     except Exception as e:
         logger.error(f"WebSocket status error: {e}")
-        manager.disconnect(f"{user_id}_status")
+        manager.disconnect(f"{user_id}_status", websocket)
 
 
 # ========================================
@@ -1591,7 +1669,7 @@ async def websocket_docker_stats(
         })
         
         # Subscribe to Docker stats updates
-        manager.subscribe(f"docker_{developer.id}", "docker_stats")
+        manager.subscribe(f"docker_{developer.id}", "docker_stats", websocket)
         
         # Send initial connection confirmation
         await manager.send_personal_message({
@@ -1630,7 +1708,7 @@ async def websocket_docker_stats(
                 }, f"docker_{developer.id}")
                 
     except WebSocketDisconnect:
-        manager.disconnect(f"docker_{developer.id}")
+        manager.disconnect(f"docker_{developer.id}", websocket)
         
         # Stop broadcasting if no more clients
         if not any("docker_" in client_id for client_id in manager.active_connections.keys()):
@@ -1638,7 +1716,7 @@ async def websocket_docker_stats(
             
     except Exception as e:
         logger.error(f"WebSocket Docker stats error: {e}")
-        manager.disconnect(f"docker_{developer.id}")
+        manager.disconnect(f"docker_{developer.id}", websocket)
         
         # Stop broadcasting if error
         if not any("docker_" in client_id for client_id in manager.active_connections.keys()):

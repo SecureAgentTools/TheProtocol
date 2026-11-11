@@ -1,5 +1,5 @@
 {
-  "total": 322,
+  "total": 321,
   "perFile": {
     "src/components/AgentDetailModal.vue": 2,
     "src/components/DashboardSidebar.vue": 1,
@@ -10,7 +10,6 @@
     "src/components/bundles/BundleCard.vue": 5,
     "src/components/command/BalanceReconcileModal.vue": 1,
     "src/components/common/FlareBadge.vue": 2,
-    "src/components/common/FlareEncirclement.vue": 1,
     "src/components/common/QuickAgentModal.vue": 2,
     "src/components/contracts/AcceptContractModal.vue": 1,
     "src/components/contracts/ApproveCompletionModal.vue": 1,

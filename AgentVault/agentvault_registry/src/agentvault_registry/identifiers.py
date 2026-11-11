@@ -167,7 +167,12 @@ def developer_teg_did(email: str) -> str:
 # ids (GET /api/v1/teg/reputation/rankings, GET /api/v1/public/eventstore-recent). The account keeps its id (balances
 # key on it); a PUBLIC answer shows an opaque one instead. The SVID subject form writes '.' as '_dot_' too: same mark.
 _EMAIL_DERIVED_DID_RE = re.compile(r"did:theprotocol:[^\s\"<>/?#:,;()\[\]{}]*_at_[^\s\"<>/?#:,;()\[\]{}]*")
-_EMAIL_ADDRESS_RE = re.compile(r"[A-Za-z0-9.!#$%&*+=?^_`{|}~'-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
+# V0658 (l), code-scanning #41 (py/polynomial-redos): withhold_personal_ids runs this over caller-shaped values on
+# the way to a PUBLIC answer, so its quantifiers are BOUNDED, at the RFC's own limits (a local part of 64, a label of
+# 63, and ten labels, which is well past any real address). An unbounded `+` on the label run backtracks across the
+# group boundary on a long non-matching tail; a bound makes that budget fixed. The language this accepts is unchanged
+# for every address that can exist.
+_EMAIL_ADDRESS_RE = re.compile(r"[A-Za-z0-9.!#$%&*+=?^_`{|}~'-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){1,10}")
 PUBLIC_ACCOUNT_PREFIX = "account:"
 EMAIL_WITHHELD = "[address withheld]"
 

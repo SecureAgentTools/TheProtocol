@@ -387,7 +387,16 @@ jobs:
           #                                              v0653/cut and kit/beta32 until V0654's cut named them here
           #   test_chat_assistant_v0654.py and test_chat_wake_modes_v0654.py  1 each  V0654's (ap) stored line and (aq) setter on
           #                                              a REAL Postgres (MEMBERSHIP_TEST_DB): test_membership_db.py's class
-          ALLOW="test_spawn_anchor.py:1 test_api_tests_no_tier_literals.py:3 test_fund_origin_allowlist.py:1 test_admin_sweep_honours_skip_reason.py:2 test_sovereign_owners_are_frame_data.py:1 test_operator_runner_branch.py:7 test_operator_host_work_phases.py:9 test_release_channel.py:1 test_membership_db.py:1 test_commons_db.py:1 test_federation_ballot_db.py:1 test_card_key_migration_db.py:1 test_authz_role_add_db.py:1 test_operator_opa.py:1 test_operator_push.py:1 test_moira_template_words_db.py:1 test_webhook_delete_race_db.py:1 test_chat_named_sender_v0653.py:1 test_chat_read_floor_race_v0654.py:1 test_chat_assistant_v0654.py:1 test_chat_wake_modes_v0654.py:1"
+          #   test_owner_reads_db.py                  1  V0658 (q)'s owner reads on a REAL Postgres it may wipe
+          #                                              (OWNER_READS_TEST_DB): test_membership_db.py's class
+          #   test_chat_org_room_logo_v0658.py        1  V0658 (t)'s room-logo read on a REAL Postgres it may wipe
+          #                                              (ORGS_TEST_DB): test_membership_db.py's class
+          #   test_orgs_v2_db.py and test_dispute_correction_race_db.py  1 each  V0657's orgs v2 (ORGS_TEST_DB,
+          #                                              ORGS_TEST_PEER_DB) and the dispute correction race (DISPUTES_TEST_DB) on
+          #                                              REAL Postgres: test_membership_db.py's class (named here with V0659's cut)
+          #   test_firm_member_work_v0658_db.py       1  V0658 (v)'s firm and its agents' own work on a REAL Postgres
+          #                                              (FIRMS_TEST_DB): test_membership_db.py's class
+          ALLOW="test_spawn_anchor.py:1 test_api_tests_no_tier_literals.py:3 test_fund_origin_allowlist.py:1 test_admin_sweep_honours_skip_reason.py:2 test_sovereign_owners_are_frame_data.py:1 test_operator_runner_branch.py:7 test_operator_host_work_phases.py:9 test_release_channel.py:1 test_membership_db.py:1 test_commons_db.py:1 test_federation_ballot_db.py:1 test_card_key_migration_db.py:1 test_authz_role_add_db.py:1 test_operator_opa.py:1 test_operator_push.py:1 test_moira_template_words_db.py:1 test_webhook_delete_race_db.py:1 test_chat_named_sender_v0653.py:1 test_chat_read_floor_race_v0654.py:1 test_chat_assistant_v0654.py:1 test_chat_wake_modes_v0654.py:1 test_owner_reads_db.py:1 test_chat_org_room_logo_v0658.py:1 test_orgs_v2_db.py:1 test_dispute_correction_race_db.py:1 test_firm_member_work_v0658_db.py:1"
           SKIPS=$(awk '/^SKIPPED \[[0-9]+\] tests\// { n = $2; gsub(/[][]/, "", n); f = $3; sub(/^tests\//, "", f); sub(/:.*/, "", f); c[f] += n } END { for (k in c) print k ":" c[k] }' /tmp/registry-tests.log | sort)
           echo "registry unit tests skipped, by file: $(echo $SKIPS)"
           BAD=0
@@ -518,6 +527,7 @@ jobs:
               tests/test_ledger_gate.py tests/test_attestation_reward_fail_closed.py tests/test_cross_teg_partner_rule.py \
               tests/test_inbound_reconciler.py tests/test_ledger_names_teg.py \
               tests/test_home_frame_async_check_v0653.py tests/test_validation_log_no_input_v0653.py tests/test_d8_onboarding_mint_flag.py \
+              tests/test_metrics_multiproc_v0657.py tests/test_release_sql_tag_v0658.py tests/test_dispute_withdraw_v0658.py \
               -q -p no:cacheprovider -o asyncio_mode=auto -rs > /tmp/teg-pytest.log 2>&1 || RC2=$?
           : "${RC2:=0}"
           cat /tmp/teg-pytest.log
@@ -532,12 +542,17 @@ jobs:
           # V0653: + test_home_frame_async_check_v0653 (22: the async home check compares whole trust domains),
           # test_validation_log_no_input_v0653 (2: a 422 line keeps where and why, never the refused value) and
           # test_d8_onboarding_mint_flag (13: the retired faucet is off unless a TEG names it) = 199.
+          # V0657 (c): + test_metrics_multiproc_v0657 (3: a dead worker's metrics files fold into one archive per kind,
+          # the arbiter's start wipes an earlier run, /metrics reports the directory's fill) = 202.
+          # V0658 (c): + test_release_sql_tag_v0658 (5: every statement of both engines names the TEG's release, a constant
+          # of the source) and test_dispute_withdraw_v0658 (13: a claimant withdraws its own OPEN dispute, nobody else, no
+          # other status, once) = 220.
           # adding a test raises the floor.
           P2=$(command grep -oE '[0-9]+ passed' /tmp/teg-pytest.log | tail -1 | cut -d' ' -f1)
           S2=$(command grep -oE '[0-9]+ skipped' /tmp/teg-pytest.log | tail -1 | cut -d' ' -f1)
           : "${P2:=0}"; : "${S2:=0}"
-          echo "TEG pytest-style tests passed=${P2} skipped=${S2} (floor 199, skip ceiling 0)"
-          if [ "$P2" -lt 199 ] || [ "$S2" -gt 0 ]; then
+          echo "TEG pytest-style tests passed=${P2} skipped=${S2} (floor 220, skip ceiling 0)"
+          if [ "$P2" -lt 220 ] || [ "$S2" -gt 0 ]; then
             echo "FATAL: TEG pytest-style suites collapsed (passed=${P2} skipped=${S2})"
             exit 1
           fi

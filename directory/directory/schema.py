@@ -98,6 +98,74 @@ def _commons_figures(r) -> Optional[CommonsFigures]:
                           checked_at=got["checked_at"], error=got["error"])
 
 
+@strawberry.type(description="An organization's home registry, as this Directory reads it (its addresses rebuilt from the "
+                               "registry's public URL, never taken from what the registry says).")
+class OrgHome:
+    name: Optional[str]
+    origin: Optional[str]
+    console: Optional[str]
+
+
+@strawberry.type(description="An agent's organization, as its home registry states it on the agent's card (only a listed "
+                               "organization, and only while the agent shows it).")
+class AgentOrg:
+    id: str
+    slug: Optional[str]
+    name: str
+    logo: Optional[str]
+    page: Optional[str]
+    home: Optional[OrgHome]
+
+
+@strawberry.type(description="The index of the quantum workload extension an agent's card states (spec "
+                               "Quantum_Agent_Card_Extension_v1.0, section 8). The device facts stay on the card at its "
+                               "home, signed by that registry with their as_of; this is what a search filters on.")
+class QuantumWorkload:
+    version: Optional[str]
+    roles: List[str] = strawberry.field(description="provider, compiler, mitigator, verifier, router, meter")
+    kinds: List[str] = strawberry.field(description="The kinds of its backends: qpu, simulator, emulator")
+    modalities: List[str] = strawberry.field(description="The modalities of its backends")
+    backends: int
+    max_qubits: Optional[int] = strawberry.field(description="The most physical qubits of any backend")
+    max_logical_qubits: Optional[int]
+    formats: List[str] = strawberry.field(description="The circuit formats its backends take (openqasm3, qir, ...)")
+    jurisdictions: List[str] = strawberry.field(description="The jurisdiction codes its backends state (DE, US-CA, EU)")
+    rungs: List[int] = strawberry.field(description="The verification rungs a buyer can get (3 is signed claims only)")
+    pricing_model: Optional[str] = strawberry.field(description="How use is metered: per_shot, per_task, per_second, "
+                                                                "per_gate_shot (the amount is in the payment extension)")
+
+
+@strawberry.type(description="An organization a registry lists (its GET /api/v1/organizations/public/listed): only those that "
+                               "chose to be listed. Its logo and page are on its home registry.")
+class Organization:
+    id: str = strawberry.field(description="The organization's id on its home registry.")
+    slug: Optional[str]
+    name: str
+    description: Optional[str]
+    website: Optional[str]
+    logo: Optional[str]
+    page: Optional[str]
+    member_count: Optional[int]
+    agent_count: Optional[int]
+    settled_work: Optional[int]
+    source: str = strawberry.field(description="The registry it was read from: its home.")
+
+    @strawberry.field(description="The organization's home registry.")
+    def home(self, info: Info) -> Optional[OrgHome]:
+        from .orgs_reader import home as _home
+        r = info.context["store"].get_registry(self.source)
+        h = _home(self.source, (r or {}).get("public_url"))
+        return OrgHome(name=h["name"], origin=h["origin"], console=h["console"])
+
+
+@strawberry.type
+class OrganizationConnection:
+    edges: List[Organization]
+    end_cursor: Optional[str]
+    has_next_page: bool
+    total: Optional[int]
+
+
 @strawberry.type
 class Listing:
     """A share listing on a registry's own AGORA venue. The Directory INDEXES venues; it never routes an order —
@@ -153,6 +221,7 @@ class Registry:
     last_sync_at: Optional[float]
     agents_indexed: int
     listings_indexed: int
+    organizations_indexed: int = strawberry.field(description="The organizations it lists, as last read.", default=0)
     feed_supported: bool = strawberry.field(description="Whether this registry serves the index feed (updated_since / natives_only echoed in applied_filters); false = the Directory reads it whole every cycle.", default=False)
     cards_cursor: Optional[str] = strawberry.field(description="The epoch the Directory has walked this registry's card feed to.", default=None)
     hop_depth: Optional[int] = strawberry.field(description="How deep this Directory walks FROM this registry (per-source budget).", default=None)
@@ -164,6 +233,10 @@ class Registry:
     @strawberry.field
     def listings(self, info: Info) -> List[Listing]:
         return [_listing(l) for l in info.context["store"].list_listings(first=500, source=self.name)["rows"]]
+
+    @strawberry.field(description="The organizations this registry lists.")
+    def organizations(self, info: Info) -> List[Organization]:
+        return [_organization(o) for o in info.context["store"].list_organizations(first=500, source=self.name)["rows"]]
 
     @strawberry.field
     def operators(self, info: Info) -> List["Registry"]:
@@ -188,6 +261,10 @@ class Agent:
     reachable: bool
     bond: Bond
     enforcement: Enforcement
+    org: Optional[AgentOrg] = strawberry.field(description="The organization its home states on its card; null when it "
+                                                           "states none.", default=None)
+    quantum: Optional[QuantumWorkload] = strawberry.field(description="The index of the quantum workload extension its "
+                                                                      "card states; null when it states none.", default=None)
 
     @strawberry.field(description="The settlement currency of this agent's HOME — an index row costs an FX hop when it differs from the viewer's.")
     def home_currency(self, info: Info) -> Optional[str]:
@@ -257,6 +334,7 @@ class DirectoryStatus:
     consecutive_failures: int
     seconds_since_last_success: Optional[float]
     indexing: bool
+    organizations_total: int = strawberry.field(description="Organizations the registries list (V0657).", default=0)
 
 
 def _registry(r) -> Registry:
@@ -266,6 +344,7 @@ def _registry(r) -> Registry:
                     card_epoch=r.get("card_epoch"), federation_status=r.get("federation_status"), hop=r.get("hop"),
                     last_sync_at=r.get("last_sync_at"), agents_indexed=int(r.get("agents_indexed") or 0),
                     listings_indexed=int(r.get("listings_indexed") or 0), feed_supported=bool(r.get("feed_supported")),
+                    organizations_indexed=int(r.get("organizations_indexed") or 0),
                     cards_cursor=r.get("cards_cursor"), last_full_at=r.get("last_full_at"),
                     hop_depth=(int(r["hop_depth"]) if r.get("hop_depth") is not None else None), currency=r.get("currency"),
                     membership=_membership_figures(r), commons=_commons_figures(r))
@@ -279,13 +358,52 @@ def _listing(l) -> Listing:
                    treasury_agent_did=l.get("treasury_agent_did"), source=l["source"], reachable=bool(l.get("reachable")))
 
 
+def _organization(o) -> Organization:
+    return Organization(id=o.get("org_id") or o["id"], slug=o.get("slug"), name=o.get("name") or "", description=o.get("description"),
+                        website=o.get("website"), logo=o.get("logo"), page=o.get("page"), member_count=o.get("member_count"),
+                        agent_count=o.get("agent_count"), settled_work=o.get("settled_work"), source=o["source"])
+
+
+def _agent_org(raw: Optional[str]) -> Optional[AgentOrg]:
+    try:
+        m = json.loads(raw) if raw else None
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(m, dict) or not m.get("id") or not m.get("name"):
+        return None
+    h = m.get("home") if isinstance(m.get("home"), dict) else {}
+    return AgentOrg(id=str(m["id"]), slug=m.get("slug"), name=str(m["name"]), logo=m.get("logo"), page=m.get("page"),
+                    home=OrgHome(name=h.get("name"), origin=h.get("origin"), console=h.get("console")) if h else None)
+
+
+def _quantum(raw: Optional[str]) -> Optional[QuantumWorkload]:
+    try:
+        q = json.loads(raw) if raw else None
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(q, dict):
+        return None
+
+    def strs(k):
+        return [str(x) for x in (q.get(k) or []) if isinstance(x, str)]
+    return QuantumWorkload(version=q.get("version") if isinstance(q.get("version"), str) else None,
+                           roles=strs("roles"), kinds=strs("kinds"), modalities=strs("modalities"),
+                           backends=int(q.get("backends") or 0),
+                           max_qubits=q.get("max_qubits") if isinstance(q.get("max_qubits"), int) else None,
+                           max_logical_qubits=q.get("max_logical_qubits") if isinstance(q.get("max_logical_qubits"), int) else None,
+                           formats=strs("formats"), jurisdictions=strs("jurisdictions"),
+                           rungs=[int(r) for r in (q.get("rungs") or []) if isinstance(r, int) and not isinstance(r, bool)],
+                           pricing_model=q.get("pricing_model") if isinstance(q.get("pricing_model"), str) else None)
+
+
 def _agent(a) -> Agent:
     b = json.loads(a.get("bond_json") or "{}"); e = json.loads(a.get("enforcement_json") or "{}")
     return Agent(card_id=a["id"], did=a.get("did"), name=a.get("name"), human_readable_id=a.get("hri"), description=a.get("description"),
                  is_active=bool(a.get("is_active")), issuer=a.get("issuer"), shape=a.get("shape"), epoch=a.get("updated_at"),
                  source=a["source"], verified=bool(a.get("verified")), reachable=bool(a.get("reachable")),
                  bond=Bond(status=b.get("status") or "none", is_bonded=bool(b.get("is_bonded")), amount=b.get("amount"), currency=b.get("currency")),
-                 enforcement=Enforcement(is_enforced=bool(e.get("is_enforced")), status=e.get("status")))
+                 enforcement=Enforcement(is_enforced=bool(e.get("is_enforced")), status=e.get("status")),
+                 org=_agent_org(a.get("org_json")), quantum=_quantum(a.get("quantum_json")))
 
 
 @strawberry.type
@@ -301,7 +419,11 @@ class Query:
 
     @strawberry.field
     def agents(self, info: Info, first: int = 50, after: Optional[str] = None, issuer: Optional[str] = None,
-               name_contains: Optional[str] = None, bonded_only: bool = False, source: Optional[str] = None) -> AgentConnection:
+               name_contains: Optional[str] = None, bonded_only: bool = False, source: Optional[str] = None,
+               quantum_only: bool = False, quantum_role: Optional[str] = None, quantum_kind: Optional[str] = None,
+               quantum_modality: Optional[str] = None, quantum_min_qubits: Optional[int] = None,
+               quantum_format: Optional[str] = None, quantum_jurisdiction: Optional[str] = None,
+               quantum_rung: Optional[int] = None) -> AgentConnection:
         """The live set: the agents whose source still publishes them.
 
         §DARKSYNC (2026-09-22): there is deliberately NO `includeGone` argument here, and adding one back is a
@@ -314,8 +436,12 @@ class Query:
         which is the rule the registries keep too — a direct lookup is not enumeration. Nothing is deleted: the rows
         stay marked, and `sweep_source` restores one the moment its source publishes it again."""
         first = max(1, min(first, 500))
+        # V0660 (a): the quantum workload filters read the index (quantum_reader.py); none asked filters nothing
+        quantum = {"only": quantum_only, "role": quantum_role, "kind": quantum_kind, "modality": quantum_modality,
+                   "min_qubits": quantum_min_qubits, "format": quantum_format,
+                   "jurisdiction": quantum_jurisdiction.upper() if quantum_jurisdiction else None, "rung": quantum_rung}
         page = info.context["store"].list_agents(first=first, after=after, issuer=issuer, name_contains=name_contains,
-                                                 bonded_only=bonded_only, source=source)
+                                                 bonded_only=bonded_only, source=source, quantum=quantum)
         return AgentConnection(edges=[_agent(a) for a in page["rows"]], end_cursor=page["end_cursor"], has_next_page=page["has_next_page"], total=page["total"])
 
     @strawberry.field
@@ -326,6 +452,16 @@ class Query:
         first = max(1, min(first, 500))
         page = info.context["store"].list_listings(first=first, after=after, source=source, symbol=symbol, trading_only=trading_only)
         return ListingConnection(edges=[_listing(l) for l in page["rows"]], end_cursor=page["end_cursor"], has_next_page=page["has_next_page"], total=page["total"])
+
+    @strawberry.field
+    def organizations(self, info: Info, first: int = 50, after: Optional[str] = None, source: Optional[str] = None,
+                      name_contains: Optional[str] = None) -> OrganizationConnection:
+        """V0657 (b), item 6: every organization the registries list, in one query (each registry lists only those that
+        chose to be listed). A registry before V0657 lists none here; its organizations are not "none", just unread."""
+        first = max(1, min(first, 500))
+        page = info.context["store"].list_organizations(first=first, after=after, source=source, name_contains=name_contains)
+        return OrganizationConnection(edges=[_organization(o) for o in page["rows"]], end_cursor=page["end_cursor"],
+                                      has_next_page=page["has_next_page"], total=page["total"])
 
     @strawberry.field
     def agent(self, info: Info, did: str) -> Optional[Agent]:
@@ -359,7 +495,7 @@ class Query:
                                last_error_at=err.get("at"), last_error=err.get("error"),
                                consecutive_failures=int(err.get("consecutive") or 0),
                                seconds_since_last_success=(round(_since, 1) if _since is not None else None),
-                               indexing=_indexing)
+                               indexing=_indexing, organizations_total=int(c.get("organizations") or 0))
 
 
 schema = strawberry.Schema(query=Query)  # no mutation=…: read-only by construction

@@ -87,11 +87,15 @@ def _answer(monkeypatch, mail_sent: bool) -> dict:
     async def created(**_kw):
         return SimpleNamespace(id="inv-1", token="tok", expires_at=datetime(2026, 10, 18, tzinfo=timezone.utc)), mail_sent
 
-    monkeypatch.setattr(orgs, "get_organization_with_permission", allowed)
+    async def authority(db, org_id, actor, people, agents=None, *, people_only=False):   # V0657 (b): person or agent
+        return SimpleNamespace(id="org-1", name="Org"), SimpleNamespace(kind="developer", developer=actor["developer"],
+                                                                        ref="7", level="admin")
+
+    monkeypatch.setattr(orgs, "_authority", authority)
     monkeypatch.setattr(orgs.InvitationService, "create_invitation", staticmethod(created))
     return asyncio.run(orgs.invite_member(
         org_id="org-1", invite=orgs.MemberInvite(email="m@example.com", role="member"),
-        current_developer=SimpleNamespace(id=7), db=None))
+        actor={"kind": "developer", "developer": SimpleNamespace(id=7)}, db=None))
 
 
 def test_the_route_says_the_mail_was_not_sent(monkeypatch):

@@ -161,8 +161,15 @@ def test_red_a_body_that_is_not_an_agent_card_is_not_merged():
 
 def test_red_both_fetch_sites_use_the_guarded_fetch():
     tree = ast.parse(SRC.read_text())
-    clients = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and ast.unparse(n.func).endswith("AsyncClient")]
+    # V0660 (l): both clients here are the outbound guard's (core.outbound_guard.guarded_client), which refuses
+    # follow_redirects at construction and checks every hop itself, so the keyword this gate was written for can no
+    # longer be passed at all. The gate therefore pins the stronger fact: a client in this module is the guard's, and
+    # a plain httpx.AsyncClient — which would carry its own redirect policy again — is not built here.
+    clients = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+               and ast.unparse(n.func).endswith(("AsyncClient", "guarded_client"))]
     assert clients, "no client is built in this module any more: check the test, not the code"
+    plain = [ast.unparse(n) for n in clients if ast.unparse(n.func).endswith("AsyncClient")]
+    assert not plain, f"a plain httpx client is built here, outside the guard: {plain}"
     for call in clients:
         for kw in call.keywords:
             assert not (kw.arg == "follow_redirects" and getattr(kw.value, "value", None) is True), ast.unparse(call)

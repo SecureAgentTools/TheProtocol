@@ -2,9 +2,9 @@
  "version": 2,
  "source": "agentvault_registry/core/auth_tiers.py (the FastAPI dependency tree, registration order)",
  "counts": {
-  "a": 156,
-  "e": 72,
-  "d": 6
+  "a": 162,
+  "e": 97,
+  "d": 8
  },
  "routes": [
   [
@@ -14,13 +14,63 @@
   ],
   [
    "GET",
+   "/api/v1/organizations/{org_id}",
+   "e"
+  ],
+  [
+   "GET",
    "/api/v1/organizations/slug/{slug}",
    "d"
+  ],
+  [
+   "PUT",
+   "/api/v1/organizations/{org_id}",
+   "e"
+  ],
+  [
+   "GET",
+   "/api/v1/organizations/{org_id}/settings",
+   "e"
+  ],
+  [
+   "PUT",
+   "/api/v1/organizations/{org_id}/settings",
+   "e"
+  ],
+  [
+   "GET",
+   "/api/v1/organizations/{org_id}/members",
+   "e"
+  ],
+  [
+   "POST",
+   "/api/v1/organizations/{org_id}/invite",
+   "e"
+  ],
+  [
+   "GET",
+   "/api/v1/organizations/{org_id}/invitations",
+   "e"
+  ],
+  [
+   "DELETE",
+   "/api/v1/organizations/{org_id}/invitations/{invitation_id}",
+   "e"
   ],
   [
    "GET",
    "/api/v1/organizations/invitations/{token}",
    "d"
+  ],
+  [
+   "DELETE",
+   "/api/v1/organizations/{org_id}/members/{developer_id}",
+   "e"
+  ],
+  [
+   "PUT",
+   "/api/v1/organizations/{org_id}/members/{developer_id}/role",
+   "e"
   ],
   [
    "POST",
@@ -29,7 +79,57 @@
   ],
   [
    "GET",
+   "/api/v1/organizations/{org_id}/agents",
+   "e"
+  ],
+  [
+   "GET",
    "/api/v1/organizations/{org_id}/presence",
+   "e"
+  ],
+  [
+   "POST",
+   "/api/v1/organizations/{org_id}/agents/{agent_did}/unassign",
+   "e"
+  ],
+  [
+   "PUT",
+   "/api/v1/organizations/{org_id}/logo",
+   "e"
+  ],
+  [
+   "DELETE",
+   "/api/v1/organizations/{org_id}/logo",
+   "e"
+  ],
+  [
+   "PUT",
+   "/api/v1/organizations/{org_id}/agents/{agent_did}/mark",
+   "e"
+  ],
+  [
+   "POST",
+   "/api/v1/organizations/{org_id}/agent-requests",
+   "e"
+  ],
+  [
+   "GET",
+   "/api/v1/organizations/{org_id}/agent-requests",
+   "e"
+  ],
+  [
+   "POST",
+   "/api/v1/organizations/{org_id}/agent-requests/{request_id}/accept",
+   "e"
+  ],
+  [
+   "POST",
+   "/api/v1/organizations/{org_id}/agent-requests/{request_id}/decline",
+   "e"
+  ],
+  [
+   "DELETE",
+   "/api/v1/organizations/{org_id}/agent-requests/{request_id}",
    "e"
   ],
   [
@@ -61,6 +161,16 @@
    "GET",
    "/api/v1/agents/me/status",
    "a"
+  ],
+  [
+   "GET",
+   "/api/v1/agents/me/authz",
+   "a"
+  ],
+  [
+   "GET",
+   "/api/v1/agents/{did}/authz",
+   "d"
   ],
   [
    "POST",
@@ -150,6 +260,11 @@
   [
    "POST",
    "/api/v1/teg/disputes/log",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/teg/disputes/{dispute_log_id}/withdraw",
    "a"
   ],
   [
@@ -399,6 +514,11 @@
   ],
   [
    "GET",
+   "/api/v1/contracts/v2/owned",
+   "d"
+  ],
+  [
+   "GET",
    "/api/v1/contracts/v2/{cid}",
    "e"
   ],
@@ -460,6 +580,11 @@
   [
    "POST",
    "/api/v1/contracts/templates/{tid}/instantiate",
+   "a"
+  ],
+  [
+   "GET",
+   "/api/v1/liability/mandates/{mid}/for-agent",
    "a"
   ],
   [
@@ -611,6 +736,16 @@
    "GET",
    "/api/v1/governance/federation/proposals/{proposal_id}/ballots",
    "e"
+  ],
+  [
+   "POST",
+   "/api/v1/quantum/acceptance",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/quantum/verdicts",
+   "a"
   ],
   [
    "GET",
@@ -823,6 +958,11 @@
    "a"
   ],
   [
+   "POST",
+   "/api/v1/guild/orders/{oid}/room",
+   "a"
+  ],
+  [
    "GET",
    "/api/v1/guild/orders/{oid}",
    "e"
@@ -1010,6 +1150,31 @@
   [
    "POST",
    "/api/v1/chat/org-rooms/{org_id}/open",
+   "e"
+  ],
+  [
+   "POST",
+   "/api/v1/chat/rooms",
+   "e"
+  ],
+  [
+   "GET",
+   "/api/v1/chat/rooms/{conversation_id}",
+   "e"
+  ],
+  [
+   "POST",
+   "/api/v1/chat/rooms/join",
+   "e"
+  ],
+  [
+   "POST",
+   "/api/v1/chat/rooms/{conversation_id}/join",
+   "e"
+  ],
+  [
+   "POST",
+   "/api/v1/chat/rooms/{conversation_id}/act",
    "e"
   ],
   [

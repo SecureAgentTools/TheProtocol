@@ -531,7 +531,8 @@ async def lifecycle_earned_disputes(rpc: RpcCall, parse: ParseResult, bag: Any, 
     """Two agents of the runner's: A files a dispute against B (submitDispute), adds evidence (submitDisputeEvidence)
     and files an enhanced one (logEnhancedDispute); the admin dismisses both and the agents are deleted. The sentinel
     reads the TEG dispute phase 4 filed for it (getTegDisputeDetail); a run with no phase 4 (a cloud operator's) has A
-    file that TEG dispute against B itself (logTegDispute) and read it back. resolveTegDispute refuses every caller by
+    file that TEG dispute against B itself (logTegDispute) and read it back; its claimant then withdraws it
+    (withdrawTegDispute) and it reads WITHDRAWN. resolveTegDispute refuses every caller by
     design (who may resolve is decided in routers/teg_integration.py): its row says so, and the refusal is kept
     beside it."""
     tag = _tag()
@@ -575,8 +576,9 @@ async def lifecycle_earned_disputes(rpc: RpcCall, parse: ParseResult, bag: Any, 
                 to_dismiss.append(str(_d(r3).get("id")))
         # the TEG dispute phase 4 filed with the sentinel as its claimant (its id is a UUID in flow_values). §MCPTEST30
         # (V0644): a cloud operator's run has no phase 4, so logTegDispute read "refusal only" there (a defendant no
-        # registry knows) and this read went unmeasured; there A files the same dispute against B and reads it back. A
-        # TEG dispute has no resolution route (resolveTegDispute below), so it stays, as phase 4's does on a frame.
+        # registry knows) and this read went unmeasured; there A files the same dispute against B and reads it back.
+        # V0658 (c), D6-825: then its claimant withdraws it (withdrawTegDispute) and it reads WITHDRAWN, so a run no
+        # longer leaves an OPEN dispute on the TEG (resolveTegDispute below still refuses every caller).
         log_id = str(bag.flow_values.get("teg_dispute_log_id") or bag.flow_values.get("dispute_id") or "")
         reader_jwt = bag.sentinel_jwt
         if not _UUID.match(log_id) and not why:
@@ -598,10 +600,26 @@ async def lifecycle_earned_disputes(rpc: RpcCall, parse: ParseResult, bag: Any, 
                 _check(outcomes, "theprotocol_getTegDisputeDetail",
                        None if str(_d(r).get("dispute_log_id") or _d(r).get("id") or log_id) == log_id else
                        "the TEG answered another dispute than the one asked for")
+            okw, rw = await ef.step(rpc, parse, "theprotocol_withdrawTegDispute", "2",
+                                    {"agent_jwt": reader_jwt, "dispute_log_id": log_id,
+                                     "reason": f"MCP tester fixture {tag}, withdrawn by its claimant in the same run"},
+                                    bag.developer_jwt, outcomes)
+            if okw:
+                bag.flow_values["teg_dispute_withdrawn"] = log_id
+                okr, rr = await ef.step(rpc, parse, "theprotocol_getTegDisputeDetail", "2",
+                                        {"agent_jwt": reader_jwt, "dispute_log_id": log_id}, bag.developer_jwt,
+                                        outcomes, record_as_separate=False)
+                _check(outcomes, "theprotocol_withdrawTegDispute",
+                       None if str(_d(rw).get("status")) == "WITHDRAWN" and okr and str(_d(rr).get("status")) == "WITHDRAWN"
+                       else f"the withdrawal answered {_d(rw).get('status')!r} and the dispute then reads "
+                            f"{_d(rr).get('status')!r}")
         else:
             ef.unmeasured(outcomes, "theprotocol_getTegDisputeDetail", "2",
                           "no TEG dispute was filed this run (phase 4's, or here logTegDispute's), so there is none to "
                           "read" + (f" ({why})" if why else ""))
+            ef.unmeasured(outcomes, "theprotocol_withdrawTegDispute", "2",
+                          "no TEG dispute was filed this run (phase 4's, or here logTegDispute's), so there is none to "
+                          "withdraw" + (f" ({why})" if why else ""))
         ef.unmeasured(outcomes, "theprotocol_resolveTegDispute", "2",
                       "this registry forwards a TEG dispute resolution for no caller, by design (who may resolve is "
                       "his decision, routers/teg_integration.py); the refusal is kept as its own row")
@@ -1587,6 +1605,10 @@ NOT_DRIVEN: Tuple[Tuple[str, str, str], ...] = (
      "held back on purpose: a settlement exists only for a dispute against another registry's agent that an admin has "
      "ruled, which no tester run makes (approving one slashes that agent). Its refusal (a settlement that does not "
      "exist) is a refusal row"),
+    ("theprotocol_closeDisputeSettlement", "3",
+     "held back on purpose: a settlement exists only for a dispute against another registry's agent that an admin has "
+     "ruled, which no tester run makes; closing one ends it for good (V0660 (k)). Its refusal (a settlement that does "
+     "not exist) is a refusal row"),
     ("theprotocol_getFederationDisputeSettlement", "3",
      "a settlement exists only for a dispute against another registry's agent that an admin has ruled, which no tester "
      "run makes (approving one slashes that agent). Its refusal (a settlement that does not exist) is a refusal row"),
@@ -1620,6 +1642,8 @@ def not_driven_refusals(bag: Any) -> List[Tuple[str, Dict[str, Any], str, Tuple[
          ("settlement not found",)),
         ("theprotocol_rejectDisputeSettlement", {"settlement_id": _NO_ID}, "a settlement that does not exist", (404,),
          ("settlement not found",)),
+        ("theprotocol_closeDisputeSettlement", {"settlement_id": _NO_ID, "reason": "phase6: a settlement that does not exist"},
+         "a settlement that does not exist", (404,), ("settlement not found",)),
         ("theprotocol_getFederationDisputeSettlement", {"settlement_id": _NO_ID}, "a settlement that does not exist",
          (404,), ("not found",)),
         ("theprotocol_getOperatorMyLifecycle", {}, "a developer with no operator application", (404,),

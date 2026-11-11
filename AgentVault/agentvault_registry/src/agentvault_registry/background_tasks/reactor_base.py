@@ -46,7 +46,7 @@ from urllib.parse import quote
 import aiohttp
 import httpx
 
-from .leader import try_acquire_leadership, renew_leadership, get_redis
+from .leader import try_acquire_leadership, renew_leadership, get_redis, WORKER_ID
 from ..es_ssl_helper import get_es_ssl_context  # prod-aligned dual-mode SSL
 from agentvault_registry.core.access_log_mask import mask_query_secrets
 from agentvault_registry.core import ledger_names   # W4: an event's old and new names are one event
@@ -115,6 +115,15 @@ _live_instances: List["EventStoreReactor"] = []
 # ≤ ~80KB per reactor instance.
 _DEDUP_RING_CAP = 256
 
+# V0658 (p) (2026-11-07): the horizon the EMPTY-ring fallback uses. Not a general
+# freshness filter — it applies only when the durable ring could not be warmed at
+# all (a wiped or unreachable Redis), because then an id being absent says nothing.
+# Seven days is far past any reconnect replay and far short of the September events
+# that reached the maintainer's devices on 2026-11-07.
+_REPLAY_FALLBACK_MAX_AGE_SEC = int(
+    os.getenv("REACTOR_REPLAY_FALLBACK_MAX_AGE_SEC", str(7 * 24 * 3600))
+)
+
 # R-1 (2026-07-24): handler-failure retry cap. On handler failure the event_id
 # is EVICTED from the dedup ring (up to this many times) so an EventStore
 # reconnect replay or the polling backstop can re-fire the handler. Past the
@@ -174,6 +183,20 @@ class EventStoreReactor(abc.ABC):
     polling_backstop_initial_lookback_seconds: ClassVar[int] = int(
         os.getenv("REACTOR_POLLING_BACKSTOP_LOOKBACK_SEC", "300")
     )
+    # V0658 (p) — the replay guard, per reactor rather than one shared number.
+    #
+    # WHY IT IS PER REACTOR: one cap is wrong in both directions. A busy reactor's
+    # replay can exceed it; a reactor that sees an event a month needs only a few
+    # ids but needs them for MONTHS, and 256 shared entries say nothing about
+    # either. The default is the old constant, so no reactor changes by accident.
+    dedup_ring_cap: ClassVar[int] = _DEDUP_RING_CAP
+    # A reactor that must see EVERY delivery, replays included, sets this — and must
+    # say why. An unexplained opt-out is indistinguishable from a forgotten guard,
+    # which is how 2026-11-07's fanout storm read from the outside.
+    dedup_disabled: ClassVar[bool] = False
+    dedup_disabled_reason: ClassVar[str] = ""
+    # The horizon for the empty-ring fallback (see _REPLAY_FALLBACK_MAX_AGE_SEC).
+    replay_fallback_max_age_seconds: ClassVar[int] = _REPLAY_FALLBACK_MAX_AGE_SEC
     polling_backstop_limit: ClassVar[int] = int(
         os.getenv("REACTOR_POLLING_BACKSTOP_LIMIT", "1000")
     )
@@ -193,6 +216,14 @@ class EventStoreReactor(abc.ABC):
         if not self.event_type or not self.leader_key:
             raise RuntimeError(
                 f"{type(self).__name__} must define class attrs event_type and leader_key"
+            )
+        if self.dedup_disabled and not (self.dedup_disabled_reason or "").strip():
+            raise ValueError(
+                f"{type(self).__name__} sets dedup_disabled without "
+                f"dedup_disabled_reason. A reactor that must see every delivery is a "
+                f"decision; without the reason it cannot be told apart from a guard "
+                f"somebody forgot, which is exactly how the restart replays of "
+                f"2026-11-07 read from the outside."
             )
         if self.leader_key in _registered_leader_keys:
             raise RuntimeError(
@@ -238,6 +269,15 @@ class EventStoreReactor(abc.ABC):
         # FIFO eviction at 256 entries; per-instance is sufficient because
         # leader election guarantees one consumer per reactor at a time.
         self._seen_event_ids: collections.OrderedDict[str, float] = collections.OrderedDict()
+        # True once a warm found NO durable ids: the window in which a replay would
+        # be dispatched, and the only window the stale-age fallback acts in.
+        self._dedup_warmed_empty: bool = False
+        self._replay_fallback_skips: int = 0
+        if self.dedup_disabled:
+            logger.info(
+                f"[Reactor:{self._label}] replay dedup is OFF by declaration: "
+                f"{self.dedup_disabled_reason}"
+            )
 
         # R-1: per-event handler-failure counts backing the capped retry net.
         self._event_fail_counts: Dict[str, int] = {}
@@ -383,6 +423,25 @@ class EventStoreReactor(abc.ABC):
         registry_name = os.getenv("REGISTRY_NAME", "registry")
         return f"reactor_seen:{registry_name}:{self.leader_key}"
 
+    async def note_replay_window(self, event_ids: List[str]) -> int:
+        """Log what a reconnect is about to replay, and return how many are known.
+
+        session-lead's ask (room seq 2167) after 2026-11-07: 390 AgentSuspended
+        dispatches in 17 s is 26x the 15-event replay window, and nobody could say
+        what multiplied it — a 300 s polling lookback and a 4-worker gunicorn both
+        fail to explain it. Rather than theorise, each replaying reconnect now says
+        WHICH WORKER it is, HOW MANY ids arrived, and HOW MANY were already handled.
+        The next restart then answers the question from the log.
+        """
+        known = [e for e in event_ids if e and e in self._seen_event_ids]
+        logger.info(
+            f"[Reactor:{self._label}] reconnect replay: worker={WORKER_ID} "
+            f"size={len(event_ids)} already_handled={len(known)} "
+            f"ring={len(self._seen_event_ids)}/{self.dedup_ring_cap} "
+            f"warmed_empty={self._dedup_warmed_empty}"
+        )
+        return len(known)
+
     async def _warm_dedup_from_redis(self) -> None:
         """Load the most-recent seen event_ids from Redis into the in-memory ring at
         startup, so a restart resumes dedup state and does not re-dispatch the
@@ -393,14 +452,26 @@ class EventStoreReactor(abc.ABC):
             if r is None:
                 return
             # Newest CAP ids, most-recent first (decode_responses=True → str members).
-            ids = await r.zrevrange(self._redis_seen_key, 0, _DEDUP_RING_CAP - 1)
+            ids = await r.zrevrange(self._redis_seen_key, 0, self.dedup_ring_cap - 1)
             if not ids:
+                # V0658 (p): SAY IT. A silent return here is why a census of the
+                # 2026-11-07 replays counted 5 reactors "participating" out of 54:
+                # the log line only ever appeared when there was something to warm,
+                # so its absence read as "this reactor has no guard" when it meant
+                # "this reactor's set was empty". An empty set is also the one state
+                # in which the stale-age fallback has any work to do.
+                self._dedup_warmed_empty = True
+                logger.info(
+                    f"[Reactor:{self._label}] dedup ring warmed EMPTY (no durable ids "
+                    f"for this reactor) — a reconnect replay would be dispatched, so "
+                    f"the stale-age fallback is the only guard until the first event"
+                )
                 return
             now = time.monotonic()
             # Insert oldest-first so the OrderedDict FIFO order matches recency.
             for eid in reversed(ids):
                 self._seen_event_ids[str(eid)] = now
-            while len(self._seen_event_ids) > _DEDUP_RING_CAP:
+            while len(self._seen_event_ids) > self.dedup_ring_cap:
                 self._seen_event_ids.popitem(last=False)
             logger.info(
                 f"[Reactor:{self._label}] Warmed dedup ring from Redis "
@@ -442,7 +513,11 @@ class EventStoreReactor(abc.ABC):
             r = await get_redis()
             if r is None:
                 return
-            await r.set(self._redis_cursor_key, ts.isoformat(), ex=7 * 24 * 3600)
+            # V0658 (p): NO EXPIRY. The 7-day TTL here was the cursor's half of the
+            # restart-replay defect: a reactor quiet for longer than it lost its
+            # watermark and the polling backstop fell back to its 300 s lookback and
+            # re-fetched. One key per reactor costs nothing to keep.
+            await r.set(self._redis_cursor_key, ts.isoformat())
         except Exception as e:
             logger.debug(f"[Reactor:{self._label}] cursor save failed (fail-open): {e}")
 
@@ -476,13 +551,20 @@ class EventStoreReactor(abc.ABC):
                 mapping["last_event_id"] = event_id
             await r.hset(self._redis_status_key, mapping=mapping)
             # Durable dedup backing: persist this seen id so a restart can warm the
-            # ring and skip EventStore's replay window (FINDING_2026-05-29). Capped
-            # to the ring size + 24h TTL so it self-bounds. Best-effort (fail-open).
+            # ring and skip EventStore's replay window (FINDING_2026-05-29).
+            #
+            # V0658 (p) (2026-11-07): THE 24-HOUR TTL IS GONE, and it was the defect.
+            # It removed the guard from any reactor quiet for a day — which is every
+            # RARE one, and the rare ones are the ones whose side effects leave this
+            # box. Measured on EU's V0657 recreate: AgentSuspended dispatched 390
+            # times in 17 s, re-running the cross-frame block fanout to 5 peers, while
+            # the busy money reactors were untouched because their key never expires
+            # in practice. The set is bounded by zremrangebyrank, so it self-bounds on
+            # SIZE and needs no expiry to stay small. Best-effort (fail-open).
             if event_id:
                 seen_key = self._redis_seen_key
                 await r.zadd(seen_key, {event_id: time.time()})
-                await r.zremrangebyrank(seen_key, 0, -(_DEDUP_RING_CAP + 1))
-                await r.expire(seen_key, 86400)
+                await r.zremrangebyrank(seen_key, 0, -(self.dedup_ring_cap + 1))
         except Exception as e:
             logger.debug(f"[Reactor:{self._label}] last_event Redis write failed: {e}")
 
@@ -899,7 +981,9 @@ class EventStoreReactor(abc.ABC):
         # 2026-05-02: dedup ring is also shared with the polling backstop —
         # so a WS-delivered event followed by a polling-delivered event with
         # the same id won't double-dispatch.
-        if event_id and event_id in self._seen_event_ids:
+        # V0658 (p): a reactor that opted out with a named reason sees every
+        # delivery, replays included. The reason is logged once at startup.
+        if event_id and not self.dedup_disabled and event_id in self._seen_event_ids:
             await self._record_dedup()
             # Move to end so FIFO eviction keeps it warm (touch-on-hit)
             self._seen_event_ids.move_to_end(event_id)
@@ -909,6 +993,37 @@ class EventStoreReactor(abc.ABC):
             )
             return
 
+        # V0658 (p) — THE FALLBACK FOR A WIPED RING, and only for that.
+        #
+        # When the durable set could not be warmed, an id's ABSENCE says nothing: we
+        # have no record either way. So in that window an event far older than any
+        # reconnect replay is treated as a replay. It is deliberately NOT a general
+        # freshness filter — outside that window a genuinely old event must still be
+        # handled, or the guard would silently drop real work (§29e: a verdict that
+        # cannot tell two states apart must not pick one).
+        if (
+            not self.dedup_disabled
+            and self._dedup_warmed_empty
+            and not self._seen_event_ids
+        ):
+            from agentvault_registry.background_tasks.reactor_helpers import (
+                is_notification_stale,
+            )
+            stale, age = is_notification_stale(
+                data, max_age_sec=self.replay_fallback_max_age_seconds
+            )
+            if stale:
+                self._replay_fallback_skips += 1
+                await self._record_dedup()
+                logger.info(
+                    f"[Reactor:{self._label}] skipping event_id={event_id} aged "
+                    f"{int(age or 0)}s while the dedup ring is EMPTY: older than the "
+                    f"{self.replay_fallback_max_age_seconds}s replay horizon, so it is "
+                    f"a replay rather than new work "
+                    f"(fallback skips={self._replay_fallback_skips})"
+                )
+                return
+
         await self._record_event_received(event_id)
 
         # Add to dedup ring BEFORE dispatch so concurrent WS replays
@@ -916,9 +1031,9 @@ class EventStoreReactor(abc.ABC):
         # R-1 (2026-07-24): on handler FAILURE the id is evicted again (capped
         # at _HANDLER_RETRY_CAP) so a reconnect replay / polling backstop can
         # retry; only after the cap does it stay seen (poison drop).
-        if event_id:
+        if event_id and not self.dedup_disabled:
             self._seen_event_ids[event_id] = time.monotonic()
-            if len(self._seen_event_ids) > _DEDUP_RING_CAP:
+            if len(self._seen_event_ids) > self.dedup_ring_cap:
                 self._seen_event_ids.popitem(last=False)
 
         # Dispatch handler as a concurrent task (bounded by semaphore).

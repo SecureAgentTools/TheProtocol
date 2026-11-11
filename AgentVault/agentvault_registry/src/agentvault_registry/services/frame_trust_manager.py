@@ -35,7 +35,7 @@ import tarfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
 
@@ -100,10 +100,10 @@ async def _resolve(host: str, port: int) -> List[str]:
     return sorted({i[4][0] for i in infos})
 
 
-async def _host_is_internal(host: str, port: int, allow_private: bool = False) -> Tuple[bool, str]:
-    """(internal, why) for a literal address or EVERY address a name resolves to; a name that does not resolve counts as
-    internal (refused: nothing can be said about where it leads). With allow_private, an RFC1918/ULA address passes (and
-    only that: one loopback or link-local address among them still refuses the host)."""
+async def _vetted_address(host: str, port: int, allow_private: bool = False) -> Tuple[Optional[str], str]:
+    """(an address to dial, why it is refused). The name is resolved ONCE and the address handed back is one of the
+    addresses that was checked, so a caller can connect to what the check actually saw: a name is not resolved a second
+    time for the connection, where it could answer differently. A literal address is returned as given."""
     literal = host.strip("[]")
     try:
         ipaddress.ip_address(literal.split("%", 1)[0])
@@ -112,10 +112,18 @@ async def _host_is_internal(host: str, port: int, allow_private: bool = False) -
         try:
             addrs = await _resolve(host, port)
         except Exception as exc:  # noqa: BLE001 — named in the refusal
-            return True, f"the bundle host does not resolve ({type(exc).__name__})"
+            return None, f"the bundle host does not resolve ({type(exc).__name__})"
     if not addrs or any(_address_is_internal(a) and not (allow_private and _address_is_lan_private(a)) for a in addrs):
-        return True, "the bundle host is (or resolves to) an internal address"
-    return False, ""
+        return None, "the bundle host is (or resolves to) an internal address"
+    return addrs[0], ""
+
+
+async def _host_is_internal(host: str, port: int, allow_private: bool = False) -> Tuple[bool, str]:
+    """(internal, why) for a literal address or EVERY address a name resolves to; a name that does not resolve counts as
+    internal (refused: nothing can be said about where it leads). With allow_private, an RFC1918/ULA address passes (and
+    only that: one loopback or link-local address among them still refuses the host)."""
+    addr, why = await _vetted_address(host, port, allow_private=allow_private)
+    return addr is None, why
 
 
 def _bundle_client(timeout: float) -> httpx.AsyncClient:
@@ -128,19 +136,33 @@ def _bundle_client(timeout: float) -> httpx.AsyncClient:
 async def _dial_checked(client: httpx.AsyncClient, method: str, url: str, allow_internal: bool, headers=None,
                         allow_private: bool = False):
     """(response, refusal): every hop https, and public unless allow_internal (or, with allow_private, public or
-    RFC1918/ULA); at most _BUNDLE_MAX_REDIRECTS redirects."""
+    RFC1918/ULA); at most _BUNDLE_MAX_REDIRECTS redirects.
+
+    A checked hop is dialled at the ADDRESS the check saw (_vetted_address), with the name kept in the Host header and
+    in SNI, so the connection goes where the check looked and not wherever the name answers a moment later. ⚠ This
+    client does not verify certificates on purpose (see _bundle_client: a bootstrapping frame may serve a self-signed
+    one and the SPIRE bundle, not the certificate, is the trust anchor), so the pin is what bounds where the bytes come
+    from here; SNI and Host only keep the request the same one the server would have answered by name."""
     for _hop in range(_BUNDLE_MAX_REDIRECTS + 1):
         parts = urlsplit(url)
         if parts.scheme != "https" or not parts.hostname:
             return None, "every hop must be an https URL"
+        dial, hop_headers, extensions = url, headers, None
         if not allow_internal:
-            internal, why = await _host_is_internal(parts.hostname, parts.port or 443, allow_private=allow_private)
-            if internal:
+            addr, why = await _vetted_address(parts.hostname, parts.port or 443, allow_private=allow_private)
+            if addr is None:
                 return None, why
-        r = await client.request(method, url, headers=headers)
+            name = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
+            netloc = f"[{addr}]" if ":" in addr else addr
+            if parts.port:
+                name, netloc = f"{name}:{parts.port}", f"{netloc}:{parts.port}"
+            dial = urlunsplit(("https", netloc, parts.path, parts.query, ""))
+            hop_headers = {**(headers or {}), "Host": name}
+            extensions = {"sni_hostname": parts.hostname}
+        r = await client.request(method, dial, headers=hop_headers, extensions=extensions)
         location = r.headers.get("location")
         if r.is_redirect and location:
-            url = urljoin(url, location)
+            url = urljoin(url, location)   # the LOGICAL url: a relative Location must not resolve against the address
             continue
         return r, None
     return None, f"more than {_BUNDLE_MAX_REDIRECTS} redirects"

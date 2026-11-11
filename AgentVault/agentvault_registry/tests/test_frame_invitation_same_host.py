@@ -41,6 +41,17 @@ DNS = {"sbx-a.example.invalid": ["172.18.0.1"], "loop.example.invalid": ["127.0.
        "mixed.example.invalid": ["172.18.0.1", "127.0.0.1"], "public.example.invalid": ["1.1.1.1"]}
 ENVS = ("REGISTRY_ENVIRONMENT", "FRAME_POSTURE", "FRAME_INVITATIONS_SAME_HOST_PEERS", "FRAME_INVITATIONS_PEER_CA_FILE")
 BUNDLE = "https://sbx-a.example.invalid:8444/"
+
+def _asked(request):
+    """The name the request is FOR. V0658 (l), code-scanning #357: a checked hop is dialled at the address the
+    check approved, with the name kept in the Host header, so a mock routes on Host as a real server would and
+    not on the socket address."""
+    return (request.headers.get("host") or request.url.host or "").rsplit(":", 1)[0].strip("[]")
+
+# V0658 (l), code-scanning #357: a checked hop is dialled at the address the check saw, with the name kept in the
+# Host header and in SNI (test_bundle_dial_pinned_address.py proves the name survives), so what the transport
+# records is the ADDRESS and no longer the name.
+DIALLED = f"https://{DNS['sbx-a.example.invalid'][0]}:8444/"
 PRIVATE_CALLER = {"X-Forwarded-For": "172.18.0.5"}
 CA_CN = "same host edge test root"
 REFUSED_POSTURES = [
@@ -123,20 +134,20 @@ def test_the_lane_opens_on_a_frame_born_sandbox_with_the_opt_in(env):
 async def test_the_private_allowance_is_checked_on_every_hop(monkeypatch):
     # BASE: _dial_checked takes no allow_private
     def handler(request):
-        if request.url.host == "sbx-a.example.invalid" and request.url.path == "/hop-meta":
+        if _asked(request) == "sbx-a.example.invalid" and request.url.path == "/hop-meta":
             return httpx.Response(302, headers={"location": "https://meta.example.invalid/latest/"})
-        if request.url.host == "sbx-a.example.invalid" and request.url.path == "/hop-loop":
+        if _asked(request) == "sbx-a.example.invalid" and request.url.path == "/hop-loop":
             return httpx.Response(302, headers={"location": "https://loop.example.invalid/"})
         return httpx.Response(200)
     seen = _transport(monkeypatch, handler)
     async with ftm._bundle_client(5) as client:
         r, refusal = await ftm._dial_checked(client, "GET", BUNDLE, False, allow_private=True)
-        assert refusal is None and r.status_code == 200 and seen == [BUNDLE]
+        assert refusal is None and r.status_code == 200 and seen == [DIALLED]
         for path in ("/hop-meta", "/hop-loop"):
             seen.clear()
             r, refusal = await ftm._dial_checked(client, "GET", f"https://sbx-a.example.invalid:8444{path}", False,
                                                  allow_private=True)
-            assert r is None and refusal and seen == [f"https://sbx-a.example.invalid:8444{path}"]   # refused at the hop
+            assert r is None and refusal and seen == [f"https://{DNS['sbx-a.example.invalid'][0]}:8444{path}"]  # refused at the hop
         seen.clear()
         r, refusal = await ftm._dial_checked(client, "GET", "https://mixed.example.invalid/", False, allow_private=True)
         assert r is None and refusal and seen == []
@@ -215,7 +226,7 @@ def test_the_opt_in_opens_the_guard_for_a_same_host_peer(monkeypatch):
     http, session = _route(monkeypatch)
     r = http.post("/api/v1/federation/frame-invitations", json=_invite(), headers=PRIVATE_CALLER)
     assert r.status_code == 201, r.text[:300]
-    assert r.json()["status"] == "pending" and seen == [BUNDLE]
+    assert r.json()["status"] == "pending" and seen == [DIALLED]
     row, = session.added
     assert isinstance(row, models.FrameInvitation) and row.initiator_bundle_endpoint_url == BUNDLE
 

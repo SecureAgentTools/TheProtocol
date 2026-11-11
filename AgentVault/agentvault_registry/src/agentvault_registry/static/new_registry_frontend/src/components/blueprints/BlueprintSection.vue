@@ -163,8 +163,17 @@
       </div>
       <p class="bps-legacy-note">{{ t('blueprintsView.legacy.parallel',
         'A full sovereign frame boots from pre-built images in minutes, and one server runs several. That is cheap enough to run the whole system in parallel with the legacy stack: the old system keeps running, real work mirrors onto the rails, and you compare ledgers until the evidence settles the argument. Nothing is ripped out.') }}</p>
-      <p class="bps-legacy-note bps-legacy-plan">{{ t('blueprintsView.legacy.proxy',
-        'Planned: a public proxy library. Free, ready-made connectors for the systems above and whatever else a merge needs, so the bridge is an import, not an integration project.') }}</p>
+      <!-- V0659 (e): the proxy ships with the SDK; eight blueprints have a written recipe (data/blueprints/proxy.ts) -->
+      <p class="bps-legacy-note bps-legacy-plan" data-testid="bp-proxy-line" :data-recipe="recipeUrl ? 'yes' : 'no'">
+        <template v-if="recipeUrl">{{ t('blueprintsView.legacy.proxyRecipe',
+          'TheProtocol Proxy, free and open source in the SDK, has a ready recipe for this bridge: a spec, a fake of the legacy system to try it against, and a README.') }}</template>
+        <template v-else>{{ t('blueprintsView.legacy.proxyNoRecipe',
+          'TheProtocol Proxy, free and open source in the SDK, connects systems like these through webhooks, file drops, MQTT, SFTP and SQL, so the bridge is a spec file, not an integration project. This blueprint\'s recipe is not written yet.') }}</template>
+        <span class="bps-proxy-links">
+          <a v-if="recipeUrl" :href="safeExternalUrl(recipeUrl)" target="_blank" rel="noopener" data-testid="bp-proxy-recipe">{{ t('blueprintsView.legacy.proxyRecipeLink', 'The recipe') }}</a>
+          <a :href="safeExternalUrl(PROXY_DOCS_URL)" target="_blank" rel="noopener" data-testid="bp-proxy-docs">{{ t('blueprintsView.legacy.proxyDocsLink', 'How the proxy works') }}</a>
+        </span>
+      </p>
     </div>
 
     <!-- Grounding shot -->
@@ -202,6 +211,7 @@ import { useI18n } from '@/composables/useI18n'
 import FlowLoom from './FlowLoom.vue'
 import { RAIL_BY_ID } from '@/data/blueprints/rails'
 import type { Blueprint } from '@/data/blueprints/types'
+import { PROXY_DOCS_URL, proxyRecipeUrl } from '@/data/blueprints/proxy'
 
 const props = defineProps<{ bp: Blueprint }>()
 const { t } = useI18n()
@@ -213,6 +223,8 @@ const activeAttack = ref(0)
 const attackRunning = ref(false)
 const attackDone = ref(false)
 const attack = computed(() => props.bp.attacks[activeAttack.value])
+
+const recipeUrl = computed(() => proxyRecipeUrl(props.bp.id))
 
 function railName(id: string): string {
   return RAIL_BY_ID[id]?.name ?? id
@@ -360,6 +372,9 @@ a.bps-badge:hover { filter: brightness(1.25); }
 .bps-legacy-row p { margin: 0; font-size: 0.74rem; color: var(--bp-dim); line-height: 1.6; }
 .bps-legacy-note { margin: 0.8rem 0 0; font-size: 0.74rem; line-height: 1.65; color: var(--bp-dim); }
 .bps-legacy-plan { border-left: 2px solid rgba(var(--flow-rgb), 0.45); padding-left: 0.8rem; }
+.bps-proxy-links { display: inline-flex; flex-wrap: wrap; gap: 0.9rem; margin-left: 0.5rem; }
+.bps-proxy-links a { color: rgb(var(--flow-rgb)); text-decoration: none; border-bottom: 1px solid rgba(var(--flow-rgb), 0.35); }
+.bps-proxy-links a:hover { border-bottom-color: rgb(var(--flow-rgb)); }
 
 .bps-shot img { width: 100%; aspect-ratio: 3 / 2; object-fit: cover; border-radius: 12px; border: 1px solid rgba(var(--flow-rgb), 0.18); display: block; }
 .bps-shot figcaption { margin-top: 0.5rem; font-family: var(--bp-mono); font-size: 0.66rem; color: var(--bp-faint); line-height: 1.5; }

@@ -93,6 +93,10 @@
       <div class="osc-head"><Icon name="mdi:robot" /> {{ t('ourstate.card.agentCard', 'Agent') }}</div>
       <OurStateIdentity ptype="agent" :pid="view.did" :fallback-name="view.name" size="sm" show-name
                         :clickable="!view.defanged" @open="emit('open-agent', view.did)" />
+      <!-- V0660 (e): an agent whose card carries the quantum workload extension shows its quantum card here, where the
+           frame serves it; the card has no door of its own. Under off nothing renders and nothing is asked. A card not
+           yet accepted (defanged) reads and draws nothing: a stranger's card asks no route before acceptance. -->
+      <QuantumCard v-if="quantumOn && view.did && !view.defanged" variant="chat" :did="view.did" class="osc-quantum" />
       <div v-if="view.defanged" class="osc-defanged" data-testid="osc-defanged">
         <Icon name="mdi:shield-key" /> {{ t('ourstate.card.defanged', 'Accept the request to use this card.') }}</div>
     </template>
@@ -507,7 +511,7 @@
 
 <script setup lang="ts">
 import { appLocale } from '@/services/appLocale'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import Icon from '@/components/Icon.vue'
 import apiClient from '@/services/api/client'
 import OurStateIdentity from '@/components/ourstate/OurStateIdentity.vue'
@@ -515,8 +519,15 @@ import { cardView, type ChatCard } from '@/services/chat/cards'
 import { guildStages, stepTotals } from '@/services/chat/liveCards'
 import { OPEN_MAX_CHARS, openedFile, previewHtml, type OpenedFile } from '@/services/chat/filePreview'
 import { useI18n } from '@/composables/useI18n'
+import QuantumCard from '@/components/quantum/QuantumCard.vue'
+import { useQuantumWorkloads } from '@/composables/useQuantumWorkloads'
+import { loadRegistryConfig } from '@/composables/useRegistryConfig'
+import { chatCardNamesQuantum } from '@/services/quantum/quantumCard'
 
 const { t, tp } = useI18n()
+// V0660 (e): the chat path reads the quantum mode passively, from a registry-config something else already loaded, so
+// a Pocket thread under off makes no new request; only a shared card that names the extension asks for the config.
+const { served: quantumOn } = useQuantumWorkloads({ passive: true })
 
 const props = withDefaults(defineProps<{
   card: ChatCard | null
@@ -567,6 +578,8 @@ const emit = defineEmits<{
 }>()
 
 const view = computed(() => cardView(props.card, { defang: props.defang }))
+watch(() => props.card?.type === 'agent.card' && !props.defang && chatCardNamesQuantum(props.card?.data),
+      (asks) => { if (asks) void loadRegistryConfig() }, { immediate: true })
 
 /** The WORK branch, NARROWED here rather than in the template: a `v-else-if`
  *  with an `||` cannot narrow a discriminated union, which is exactly how the
@@ -761,6 +774,7 @@ const shorten = (s: string) => !s ? '' : s.length > 18 ? s.slice(0, 8) + '…' +
 .osc-note, .osc-ref { font-size: .72rem; opacity: .6; }
 .osc-defanged { display: inline-flex; align-items: center; gap: 6px; font-size: .78rem; opacity: .7; }
 .osc-btn { align-self: flex-start; min-height: 44px; padding: 0 18px; border-radius: 10px; border: none; font-weight: 600; cursor: pointer; background: var(--primary-color, #4fd8c4); color: #06211d; }
+.osc-quantum { margin-top: 8px; }
 .osc-unknown { text-transform: none; letter-spacing: 0; }
 /* §CHATPOLISH (2026-08-30) — ten classes below carried MARKUP AND NO RULE
    anywhere in the tree (control-tested reachability scan). The §ROOMVIEW class:

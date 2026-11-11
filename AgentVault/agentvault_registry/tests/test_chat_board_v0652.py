@@ -68,7 +68,9 @@ def env(monkeypatch):
     async def _owners(db, dids):
         return {d: OWNER for d in dids}
     monkeypatch.setattr(cs, "agent_owner_map", _owners)
-    db = sqlite_db(models.Developer, models.Organization, models.OrganizationMember, models.Agent, models.Conversation,
+    # V0657 (b), item 5: the room's read names its organization with its hosted logo (organization_logos)
+    db = sqlite_db(models.Developer, models.Organization, models.OrganizationLogo, models.OrganizationMember,
+                   models.Agent, models.Conversation,
                    models.ConversationParticipant, models.ChatMessage, models.ChatBoardRevision, models.ChatBlock)
     s = db.sync
     for i in (OWNER, MEMBER, LEFT):

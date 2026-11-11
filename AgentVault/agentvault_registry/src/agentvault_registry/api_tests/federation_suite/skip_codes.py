@@ -230,10 +230,14 @@ _PATTERNS: List[Tuple[str, "re.Pattern[str]", str]] = [
         # CROSS_REGISTRY_SETTLEMENT_DELIVERY and publishes no dialable federation address, so the home refuses every
         # slash request it would send; it skipped there unread (unclassified) since V0639. The standing sandbox runs it.
         "settlement_origin_internal",
-        re.compile(r"as the settlement's origin, an address no peer holds", re.I),
-        "the frame that ruled names its internal federation proxy as a cross-frame settlement's origin "
-        "(CROSS_REGISTRY_SETTLEMENT_DELIVERY off, or no dialable federation address, as on the nightly pairs), so every "
-        "peer refuses its slash request and the home's half of the path cannot run there; the sandbox runs it",
+        # V0660 (k): since then such a frame sends no request at all and its ruling says "not_delivered"; the flows say
+        # "did not deliver the settlement's slash request" for it, under the same code (one of the two per flow)
+        re.compile(r"as the settlement's origin, an address no peer holds|did not deliver the settlement's slash request",
+                   re.I),
+        "the frame that ruled does not deliver a cross-frame settlement's slash request "
+        "(CROSS_REGISTRY_SETTLEMENT_DELIVERY off, or no dialable federation address, as on the nightly pairs): it sends "
+        "none since V0660 (k), and before that every peer refused it, so the home's half of the path cannot run there; "
+        "the sandbox runs it",
     ),
     (
         # §MCPTEST30 (V0651, tester batch 3 item 2, agentvault2-d3, on his "2. approved"): read on the trial pair

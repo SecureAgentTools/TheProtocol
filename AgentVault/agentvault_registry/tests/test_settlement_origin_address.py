@@ -17,6 +17,8 @@ import pytest
 
 PUBLIC = "https://sandbox-b.theprotocol.cloud:8443"
 INTERNAL = "http://sbx-beta-nginx-federation:8443"
+# V0660 (k) review: no slash request goes to an https peer without our mTLS client certificate
+CERT = {"cert": ("/certs/svid.0.pem", "/certs/svid.0.key"), "verify": "/certs/bundle.0.pem"}
 
 
 @pytest.fixture
@@ -31,6 +33,8 @@ def origin(monkeypatch):
 
 def test_off_by_default_the_origin_is_the_internal_address_as_before(origin):
     assert origin.delivery_on() is False and origin.origin_url() == INTERNAL
+    # V0660 (k): off, the settlement only records that address; no request goes out, and it says why
+    assert "CROSS_REGISTRY_SETTLEMENT_DELIVERY is off" in origin.why_not_delivered()
 
 
 def test_on_the_origin_is_the_address_its_peers_hold(origin, monkeypatch):
@@ -46,6 +50,8 @@ def test_on_without_a_dialable_address_it_keeps_the_internal_one(origin, monkeyp
     monkeypatch.setenv("CROSS_REGISTRY_SETTLEMENT_DELIVERY", "on")
     monkeypatch.setenv("BILATERAL_PEER_URL", "http://agentvault_registry_test:8000")    # a docker name: not dialable
     assert origin.origin_url() == INTERNAL
+    # V0660 (k): recorded only; no request goes out to be refused, and the settlement says why
+    assert "no federation address a peer can dial" in origin.why_not_delivered()
 
 
 def test_the_settlement_and_its_retry_both_ask_the_helper():
@@ -149,9 +155,11 @@ DUP = '{"detail":"Settlement s-1 already received (duplicate slash request)"}'
 async def test_a_retry_the_home_already_holds_is_delivered_once(monkeypatch, code, text, held):
     """(2) the home claims the settlement id before any money moves, so a redelivery is one slash; the origin reads
     its 409 as delivered and records the home a confirmation may come from, never as another failure."""
+    monkeypatch.setenv("CROSS_REGISTRY_SETTLEMENT_DELIVERY", "on")     # V0660 (k): off, a retry sends nothing
+    monkeypatch.setenv("BILATERAL_PEER_URL", PUBLIC)
     from agentvault_registry.tasks import settlement_reconciliation as rec
     monkeypatch.setattr(rec.httpx, "AsyncClient", _client_answering(code, text))
-    monkeypatch.setattr(rec.svid_client, "get_client_cert_config", lambda: None)
+    monkeypatch.setattr(rec.svid_client, "get_client_cert_config", lambda *a, **k: dict(CERT))
     s = _Settlement()
     await rec._retry_slash_request(_Db([_Peer()]), s, 1)
     assert (s.defendant_registry_url == _Peer.base_url) is held
@@ -159,6 +167,9 @@ async def test_a_retry_the_home_already_holds_is_delivered_once(monkeypatch, cod
 
 
 async def test_the_first_delivery_reads_the_homes_claim_the_same_way(monkeypatch):
+    # V0660 (k): a request goes out only where delivery is on and the card names a dialable address
+    monkeypatch.setenv("CROSS_REGISTRY_SETTLEMENT_DELIVERY", "on")
+    monkeypatch.setenv("BILATERAL_PEER_URL", PUBLIC)
     from agentvault_registry.core import settlement_origin
     from agentvault_registry.crud import crud_disputes as cd
     received = []
@@ -169,7 +180,7 @@ async def test_the_first_delivery_reads_the_homes_claim_the_same_way(monkeypatch
     monkeypatch.setattr(cd, "get_event_emitter", lambda: _Emitter())
     monkeypatch.setattr(cd.httpx, "AsyncClient", _client_answering(409, DUP))
     from agentvault_registry.identity import svid_client
-    monkeypatch.setattr(svid_client, "get_client_cert_config", lambda: None)
+    monkeypatch.setattr(svid_client, "get_client_cert_config", lambda *a, **k: dict(CERT))
 
     class _Dispute:
         id, complainant_did, defendant_did = 50, "did:c", "did:d"

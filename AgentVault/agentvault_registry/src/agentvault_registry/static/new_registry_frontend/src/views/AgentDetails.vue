@@ -30,6 +30,9 @@ import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import UserAvatar from '@/components/common/UserAvatar.vue'
 import { useI18n } from '@/composables/useI18n'
 import { useCurrency } from '@/composables/useCurrency'
+import QuantumCard from '@/components/quantum/QuantumCard.vue'
+import { useQuantumWorkloads } from '@/composables/useQuantumWorkloads'
+import { quantumParams } from '@/services/quantum/quantumCard'
 
 const { t, tp } = useI18n()
 const { localCurrency } = useCurrency()
@@ -183,6 +186,10 @@ async function toggleListing(ev: Event) {
   } finally { listingBusy.value = false }
 }
 const agentDid = computed<string>(() => (agent.value as any)?.did || (agent.value as any)?.agent_did || '')
+// V0660 (e): the quantum card, on the same conditions as the agent modal: the agent's card carries the quantum workload
+// extension (top-level extensions[]) and the frame serves it (the registry-config's quantum_workloads block).
+const { served: quantumOn } = useQuantumWorkloads()
+const quantumCardParams = computed(() => quantumParams((agent.value as any)?.card_data))
 // §REPBOND — declared BELOW the ref it watches (§HIRECOHERE's TDZ class): the bond loads once the DID is known.
 watch(agentDid, (d) => { if (d) void loadBond() }, { immediate: true })
 const agentEndpoint = computed<string>(() => {
@@ -929,6 +936,11 @@ onMounted(async () => {
               <span class="od-value od-mono">{{ agent.card_data?.protocolVersion || agent.card_data?.agentVersion || '—' }}</span>
             </div>
           </div>
+
+          <!-- V0660 (e): the quantum card, where the frame serves quantum workloads and this agent's card carries the
+               extension. Under off nothing renders and nothing is asked. -->
+          <QuantumCard v-if="quantumOn && quantumCardParams && agentDid" variant="full" :did="agentDid"
+                       :params="quantumCardParams" class="ov-section ov-section--spaced" />
 
           <!-- §FLARESHOP (2026-08-16) — THE OWNER'S OWN VIEW OF PUBLIC TRUTH.
                This tab used to end here: a description and six metadata cells,

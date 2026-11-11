@@ -9,6 +9,7 @@
  */
 
 import { apiClient } from './client'
+import type { MyParty } from './guild'
 import { registryConfigWithin } from '@/composables/useRegistryConfig'
 
 /** The template library's own refusal where CONTRACT_TEMPLATES_ENABLED is off (routers/contract_templates.py). */
@@ -76,6 +77,8 @@ export interface ContractV2 {
   // §TWOAGENT (V0434 home, V0437 read): the milestones the home has released, from the replica's signed payload;
   // null when the home does not state them
   released_milestones?: number[] | null
+  /** V0658 (q): on the owner read (owned()), which parties are the reader's */
+  my_parties?: MyParty[]
 }
 
 export interface ContractTemplate {
@@ -118,6 +121,12 @@ export const contractsV2Api = {
   async listOpenOffers(params: { limit?: number; cursor?: string; contract_type?: string } = {}) {
     const { data } = await apiClient.get('/contracts/v2', { params })
     return data as { items: ContractV2[]; next_cursor: string | null }
+  },
+  /** V0658 (q): the contracts (and replicas) of every agent the signed-in developer owns and of the organizations he
+   *  owns, each naming his parties (`my_parties`), on the developer's token: reading follows ownership. */
+  async owned(params: { status_f?: string; limit?: number } = {}) {
+    const { data } = await apiClient.get('/contracts/v2/owned', { params })
+    return data as { items: ContractV2[] }
   },
   async mine(params: { role?: 'client' | 'provider'; status_f?: string } = {}) {
     const { data } = await apiClient.get('/contracts/v2/mine', { params, ...await agentAuth() })

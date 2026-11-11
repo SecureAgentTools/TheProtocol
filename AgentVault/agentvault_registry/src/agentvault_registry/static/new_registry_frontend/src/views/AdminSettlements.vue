@@ -74,6 +74,10 @@
               <span v-if="data.stats.slashed > 0" class="as-pill as-pill--violet"><Icon name="mdi:scale-balance" /> {{ data.stats.slashed }}</span>
               <span v-if="data.stats.failed > 0" class="as-pill as-pill--red">✕ {{ data.stats.failed }}</span>
               <span v-if="data.stats.expired > 0" class="as-pill as-pill--warn"><Icon name="mdi:timer-sand" /> {{ data.stats.expired }}</span>
+              <!-- V0660 (k): the end states of a settlement no peer holds, named -->
+              <span v-if="(data.stats.not_delivered || 0) > 0" class="as-pill as-pill--warn" :title="stateLabel('NOT_DELIVERED')">{{ stateLabel('NOT_DELIVERED') }} {{ data.stats.not_delivered }}</span>
+              <span v-if="(data.stats.refused || 0) > 0" class="as-pill as-pill--red" :title="stateLabel('REFUSED')">{{ stateLabel('REFUSED') }} {{ data.stats.refused }}</span>
+              <span v-if="(data.stats.closed || 0) > 0" class="as-pill" :title="stateLabel('CLOSED')">{{ stateLabel('CLOSED') }} {{ data.stats.closed }}</span>
             </div>
           </div>
 
@@ -129,6 +133,7 @@
             <div
               v-for="s in data.settlements" :key="s.id"
               class="as-feed-row"
+              :data-settlement="s.id"
               :class="{ 'as-feed-row--expanded': expandedId === s.id }"
               @click="toggleExpand(s.id)"
             >
@@ -149,6 +154,8 @@
                 <span class="as-feed-time">{{ formatHHMMSS(s.requested_at) }}</span>
                 <span class="as-feed-date">{{ formatDate(s.requested_at) }}</span>
                 <span class="as-status-pill" :class="statusPillClass(s.status)">{{ s.status }}</span>
+                <!-- V0660 (k): an end state says itself in plain words -->
+                <span v-if="ENDED_STATES.has(s.status)" class="as-state-words" data-testid="as-state-words">{{ stateLabel(s.status) }}</span>
                 <span v-if="s.is_partial" class="as-pill as-pill--warn">PARTIAL</span>
                 <span class="as-feed-amount">{{ formatAvt(s.slashed_amount) }}<span class="as-feed-amount-unit">/{{ formatAvt(s.requested_amount) }} {{ localCurrency }}</span></span>
                 <code class="as-feed-did" :title="s.complainant_did">↗ {{ shortDid(s.complainant_did) }}</code>
@@ -167,9 +174,19 @@
                     @click.stop="openSingleAction('reject', s.id)"
                   >Reject</button>
                 </template>
+                <!-- V0660 (k): Close only where the registry closes it (no peer holds it, nothing moved) -->
+                <button
+                  v-if="canClose(s)"
+                  class="as-btn as-btn--ghost as-btn--xs"
+                  data-testid="as-close"
+                  :disabled="actionBusy || closeBusy"
+                  @click.stop="openClose(s.id)"
+                >{{ t('adminSettlementsView.actions.close', 'Close') }}</button>
                 <span class="as-feed-saga" v-if="s.saga_state && s.saga_state !== 'LEGACY'">{{ s.saga_state }}</span>
                 <span class="as-feed-caret">{{ expandedId === s.id ? '▾' : '▸' }}</span>
               </div>
+
+              <p v-if="stateNote(s.status)" class="as-feed-note" data-testid="as-state-note">{{ stateNote(s.status) }}</p>
 
               <div v-if="expandedId === s.id" class="as-feed-detail" @click.stop>
                 <div class="as-detail-grid">
@@ -293,6 +310,30 @@
           <span> · admin_enforcement gated</span>
         </div>
       </template>
+
+      <!-- V0658 (k): how this registry takes a slash (its slash order, the cascade included) and which peers' slash
+           requests it takes without an administrator; read and written on their own, whatever the list above read -->
+      <div class="as-settings" data-testid="as-slash-settings">
+        <SlashOrderPanel />
+        <PeerAutoSlashPanel />
+      </div>
+    </div>
+
+    <!-- V0660 (k): closing a settlement no peer holds; a reason is required, a refusal is shown in the registry's words -->
+    <div v-if="closeTarget" class="as-close-overlay" @click.self="cancelClose">
+      <div class="as-close-dialog" role="dialog" aria-modal="true" aria-labelledby="as-close-title" data-testid="as-close-modal">
+        <h2 id="as-close-title" class="as-close-title">{{ t('adminSettlementsView.modal.closeTitle', 'Close this settlement') }}</h2>
+        <p class="as-close-text">{{ t('adminSettlementsView.modal.closeBody', 'No peer holds its slash request. Closing it ends it for good: nothing moves, and the complainant is not paid through it. The reason is kept on the settlement and in the audit log.') }}</p>
+        <p class="as-close-text"><code>{{ closeTarget }}</code></p>
+        <label class="as-close-label" for="as-close-reason">{{ t('adminSettlementsView.modal.closeReasonLabel', 'Reason (required)') }}</label>
+        <textarea id="as-close-reason" v-model="closeReason" class="as-close-input" rows="3" maxlength="500"
+          :placeholder="t('adminSettlementsView.modal.closeReasonPh', 'Why this settlement is closed')" :disabled="closeBusy"></textarea>
+        <p v-if="closeRefused" class="as-close-refused" role="alert" data-testid="as-close-refused">{{ t('adminSettlementsView.modal.closeRefused', 'The registry did not close it:') }} {{ closeRefused }}</p>
+        <div class="as-close-actions">
+          <button class="as-btn as-btn--ghost as-btn--sm" :disabled="closeBusy" @click="cancelClose">{{ t('adminSettlementsView.modal.cancel', 'Cancel') }}</button>
+          <button class="as-btn as-btn--danger as-btn--sm" :disabled="closeBusy || !closeReason.trim()" @click="executeClose">{{ closeBusy ? t('adminSettlementsView.modal.working', 'Working…') : t('adminSettlementsView.modal.closeConfirm', 'Close settlement') }}</button>
+        </div>
+      </div>
     </div>
 
     <!-- Bulk + single approve/reject confirmation (Build #17, 2026-05-08) -->
@@ -336,7 +377,10 @@ import {
 import { downloadCsv, csvFilenameTimestamp, type CsvColumn } from '@/components/common/csvExport'
 import ConfirmActionModal from '@/components/common/ConfirmActionModal.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
+import SlashOrderPanel from '@/components/settlements/SlashOrderPanel.vue'
+import PeerAutoSlashPanel from '@/components/settlements/PeerAutoSlashPanel.vue'
 import { useCurrency } from '@/composables/useCurrency'
+import { ENDED_STATES, canClose, refusalWords, stateLabel, stateNote } from '@/services/settlementStates'
 
 const { t } = useI18n()
 const { localCurrency } = useCurrency()
@@ -352,6 +396,10 @@ const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: 'SETTLED', label: 'Settled' },
   { value: 'FAILED', label: 'Failed' },
   { value: 'EXPIRED', label: 'Expired' },
+  // V0660 (k): the end states of a settlement no peer holds
+  { value: 'NOT_DELIVERED', label: 'Not delivered' },
+  { value: 'REFUSED', label: 'Refused' },
+  { value: 'CLOSED', label: 'Closed' },
 ]
 
 const data = ref<SettlementsListResponse | null>(null)
@@ -428,6 +476,38 @@ async function executeAction(reason: string) {
     )
   }
   void refresh()
+}
+
+// V0660 (k): close a settlement no peer holds, with the administrator's reason
+const closeTarget = ref<string | null>(null)
+const closeReason = ref('')
+const closeBusy = ref(false)
+const closeRefused = ref<string | null>(null)
+function openClose(id: string) {
+  closeTarget.value = id
+  closeReason.value = ''
+  closeRefused.value = null
+}
+function cancelClose() {
+  if (closeBusy.value) return
+  closeTarget.value = null
+}
+async function executeClose() {
+  const id = closeTarget.value
+  const reason = closeReason.value.trim()
+  if (!id || !reason || closeBusy.value) return
+  closeBusy.value = true
+  closeRefused.value = null
+  try {
+    await settlementsAdminService.close(id, reason)
+    closeTarget.value = null
+    uiStore.showSuccess?.('Closed', `Settlement ${id} is closed. Nothing moved.`)
+    void refresh()
+  } catch (e: any) {
+    closeRefused.value = refusalWords(e)
+  } finally {
+    closeBusy.value = false
+  }
 }
 
 // F (2026-05-08): usePolledData composable replaces hand-rolled polling.
@@ -543,7 +623,8 @@ function statusPillClass(status: string): string {
   if (s === 'SLASHED' || s === 'SLASHING') return 'as-status-pill--violet'
   if (s === 'PENDING_SLASH') return 'as-status-pill--cyan'
   if (s === 'EXPIRED') return 'as-status-pill--warn'
-  if (s === 'FAILED' || s === 'CANCELLED') return 'as-status-pill--red'
+  if (s === 'FAILED' || s === 'CANCELLED' || s === 'REFUSED') return 'as-status-pill--red'
+  if (s === 'NOT_DELIVERED') return 'as-status-pill--warn'
   return 'as-status-pill--muted'
 }
 
@@ -786,6 +867,7 @@ function goToEventStore(did: string) {
 .as-error-text { font-family: var(--mono); font-size: 0.85rem; color: var(--nc-danger); }
 
 .as-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+.as-settings { margin-top: 2rem; }
 .as-stat-card {
   background: linear-gradient(180deg, rgba(10, 13, 22, 0.85), rgba(6, 8, 16, 0.85));
   border: 1px solid rgba(var(--cyan-rgb), 0.18);
@@ -898,7 +980,9 @@ function goToEventStore(did: string) {
 }
 .as-feed-saga {
   font-size: 0.55rem;
-  color: rgba(168, 85, 247, 0.85);
+  /* V0657 recut: 85% violet read #924bd7 on the row's #131224, 3.69:1 (the console proof's a11y check); the opaque
+     violet the view's pills use reads 6.97:1 */
+  color: #c084fc;
   background: rgba(168, 85, 247, 0.06);
   padding: 1px 6px; border-radius: 3px;
   border: 1px solid rgba(168, 85, 247, 0.2);
@@ -906,6 +990,27 @@ function goToEventStore(did: string) {
   letter-spacing: 0.06em;
 }
 .as-feed-spacer { flex: 1; }
+/* V0660 (k): an end state in plain words, its meaning under the row, and the close dialog (opaque colours: the console
+   proof's a11y check reads each at 4.5:1 or more on the row) */
+.as-state-words { font-size: 0.66rem; color: rgba(255, 255, 255, 0.85); }
+.as-feed-note { margin: 4px 0 0 34px; font-size: 0.7rem; line-height: 1.45; color: rgba(255, 255, 255, 0.75); }
+.as-close-overlay {
+  position: fixed; inset: 0; z-index: 9800; display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+}
+.as-close-dialog {
+  width: min(480px, 94vw); padding: 20px; border-radius: 8px;
+  background: #10101c; border: 1px solid rgba(var(--cyan-rgb), 0.3); color: rgba(255, 255, 255, 0.9);
+}
+.as-close-title { margin: 0 0 8px; font-size: 1rem; font-weight: 600; }
+.as-close-text { margin: 0 0 8px; font-size: 0.8rem; line-height: 1.5; color: rgba(255, 255, 255, 0.8); }
+.as-close-label { display: block; margin: 8px 0 4px; font-size: 0.7rem; color: rgba(255, 255, 255, 0.8); }
+.as-close-input {
+  width: 100%; padding: 6px 8px; border-radius: 4px; font-size: 0.8rem; color: #fff;
+  background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.25);
+}
+.as-close-refused { margin: 8px 0 0; font-size: 0.75rem; color: #ff8a8a; }
+.as-close-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .as-feed-caret { font-size: 0.7rem; color: rgba(var(--cyan-rgb), 0.6); }
 
 .as-status-pill {

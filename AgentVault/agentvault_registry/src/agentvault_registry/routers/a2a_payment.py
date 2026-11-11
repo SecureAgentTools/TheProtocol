@@ -16,12 +16,13 @@ import hashlib
 import logging
 import os
 import secrets
+from ..core.outbound_guard import guarded_client
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Dict, List, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status, Query, Security
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status, Query, Security
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -676,11 +677,20 @@ async def authorize_payment(
     db: AsyncSession = Depends(get_db),
     idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key",
         description="§pass56 PR-8: optional retry idempotency."),
+    liability_mandate: Optional[str] = Header(default=None, alias="X-Liability-Mandate", max_length=44,
+        description="Optional: a Cockpit mandate this payment is made under. The registry then holds the call to it "
+                    "(as if liability were enforced): it must underwrite the caller and cover a2a.pay, and its limits, "
+                    "standing consents and step-ups apply"),
 ):
     """
     Issue a payment token (apt_) that authorizes the caller to invoke an agent's A2A endpoint; the token proves the
     caller has the balance, and settlement happens after the task. An `Idempotency-Key` header is kept for 24 hours:
     a replay answers the same plain token, never a new one. Needs an agent token with the `a2a.pay` permission.
+
+    With `X-Liability-Mandate: <mandate id>` the caller asks to be held to that Cockpit mandate for this payment,
+    whatever the registry's liability mode: a mandate that does not underwrite the caller, does not cover `a2a.pay`,
+    or whose `max_per_tx` or `currency` the amount exceeds refuses it (403), and an amount that needs the owner's
+    presence parks a challenge on the owner's phone; the retry cites it with `X-Presence-Proof`.
 
     \f
     Issue a payment token that authorizes the caller to invoke an agent's A2A endpoint.
@@ -698,6 +708,18 @@ async def authorize_payment(
     from agentvault_registry.services.idempotency.cache import agent_caller
     me = agent_caller(current_agent.did)   # D6-777: the key is this caller's; a replay carries the payment token
     _idem_body = req.model_dump(mode="json")
+    # a caller in this process (a test, the batch path) leaves the parameter as FastAPI's Header default: no header
+    mandate = liability_mandate.strip() if isinstance(liability_mandate, str) and liability_mandate.strip() else None
+    if mandate:
+        # V0659 (c): before the idempotent replay, as the bond gate: a mandate revoked since is refused fresh. The
+        # action_ref follows the caller's key, so the presence challenge a block parks is the one its retry cites.
+        import uuid
+        from agentvault_registry.services import liability as _liab
+        await _liab.check_liability_gate(
+            db, current_agent.did, "a2a.pay", mandate_id=mandate,
+            action_ref=(f"a2a-pay:{idempotency_key}" if idempotency_key else f"a2a-pay:{uuid.uuid4().hex}")[:128],
+            amount=req.amount, currency=_FRAME_CCY, counterparty_did=req.target_agent_did,
+            presence=_liab.presence_from_request(request))
     _cached, _err = await idempotency_lookup("a2a.authorize", idempotency_key, _idem_body, principal=me)
     if _err:
         raise HTTPException(status_code=422, detail=_err)
@@ -1203,6 +1225,8 @@ class BuyRequest(BaseModel):
     token: Optional[str] = Field(None, description="Reuse an existing payment token instead of authorizing a new one")
     settle: bool = Field(True, description="Settle automatically when the agent delivers")
     ttl_seconds: int = Field(DEFAULT_TTL_SECONDS, ge=60, le=MAX_TTL_SECONDS)
+    free_only: bool = Field(False, description="Call only a free agent: an agent that charges is refused (stage "
+                                               "quoted), and nothing is authorized or paid")
 
 
 class BuyResponse(BaseModel):
@@ -1339,6 +1363,10 @@ async def buy_service(
     request: Request,
     current_agent: Agent = Security(require_agent_permission("a2a.pay")),
     db: AsyncSession = Depends(get_db),
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key",
+        description="Optional: a retry under the same key answers the first answer for 24 hours instead of calling "
+                    "the agent (and paying it) again"),
+    http_response: Response = None,
 ):
     """One door for a human: quote → authorize → call the agent → settle → answer.
 
@@ -1346,7 +1374,41 @@ async def buy_service(
     the agent are different origins, and the payment token must not be handed to
     page JavaScript. The endpoint is taken from the agent's OWN registered card and
     SSRF-checked; it is never caller-supplied.
+
+    An `Idempotency-Key` header keeps the answer for 24 hours: a retry under it answers the first answer (marked
+    `Idempotent-Replayed: true`) without calling the agent or paying again. The key is given back only for an answer
+    that proves nothing moved (refused before anything was sent, or not delivered and the reservation released), so
+    that retry runs. With `free_only`, an agent that charges is refused and nothing is authorized.
     """
+    # V0659 (c): a kept attempt (TheProtocol Proxy's A2A task sends each record's key and sends it again when an
+    # answer is lost; a repeat ran the agent's task, and for a paid agent authorized and paid, a second time)
+    from agentvault_registry.services.idempotency.cache import agent_caller, begin_attempt, mark_replayed, run_kept
+    # a caller in this process leaves the parameters as FastAPI's defaults: no key, no response to mark
+    key = idempotency_key if isinstance(idempotency_key, str) and idempotency_key else None
+    if key is None:
+        return await _buy_run(req, request, current_agent, db, None, None)     # no key: it runs as it always did
+    attempt = await begin_attempt("a2a.buy", key, req.model_dump(mode="json"), principal=agent_caller(current_agent.did))
+    if attempt.replay is not None:
+        mark_replayed(http_response if isinstance(http_response, Response) else None)
+        return attempt.replay
+    return await run_kept(attempt, lambda: _buy_run(req, request, current_agent, db, attempt, key),
+                          error_moved_nothing=lambda st, _d: int(st or 0) < 500,
+                          answer_moved_nothing=_buy_moved_nothing)
+
+
+def _buy_moved_nothing(resp) -> bool:
+    """A buy's answer that proves nothing moved and the agent did no work worth keeping: refused before anything was
+    sent, or failed and its reservation released (or never made). An answer the agent delivered, or one whose release
+    could not be confirmed, is kept."""
+    if getattr(resp, "ok", False):
+        return False
+    if getattr(resp, "settlement_status", None) == "release_failed":
+        return False
+    return getattr(resp, "stage", None) in ("quoted", "failed", "not_delivered")
+
+
+async def _buy_run(req: BuyRequest, request: Request, current_agent: Agent, db: AsyncSession, attempt,
+                   idempotency_key: Optional[str]):
     from ..services import service_purchase as sp
 
     caller_jwt = request.headers.get("Authorization", "").replace("Bearer ", "").strip()
@@ -1362,6 +1424,11 @@ async def buy_service(
     if not q.can_buy:
         resp.stage, resp.error = "failed", (q.reason or "This agent cannot be bought from right now.")
         return resp
+    if req.free_only and q.payment_required:
+        resp.stage = "quoted"
+        resp.error = (f"This agent charges for its service ({q.price} {q.price_currency}): a free_only call does not "
+                      f"pay it.")
+        return resp
 
     client = _get_settle_client()
     token, token_id = req.token, None
@@ -1372,13 +1439,18 @@ async def buy_service(
         if not amount:
             resp.stage, resp.error = "failed", (q.reason or "Could not determine an amount to authorize.")
             return resp
+        if attempt is not None:
+            attempt.mark_dispatched()
         try:
             ar = await client.post(
                 f"{_SELF_BASE}/api/v1/a2a-payment/authorize",
                 json={"target_agent_did": req.target_agent_did, "amount": amount,
                       "ttl_seconds": req.ttl_seconds},
-                # V0652 (af): the payee is not told of an authorization this call settles itself
-                headers={**_caller_headers(request, caller_jwt), "X-A2A-Rail": "buy"}, timeout=30.0,
+                # V0652 (af): the payee is not told of an authorization this call settles itself; V0659 (c): a
+                # kept buy authorizes under a key of its own, so a re-run after a lost answer reuses the token
+                headers={**_caller_headers(request, caller_jwt), "X-A2A-Rail": "buy",
+                         **({"Idempotency-Key": f"buy-{idempotency_key}"[:128]} if idempotency_key else {})},
+                timeout=30.0,
             )
         except httpx.RequestError as e:
             resp.stage, resp.error = "failed", f"Authorization unreachable: {e.__class__.__name__}"
@@ -1399,8 +1471,15 @@ async def buy_service(
 
     # ── call the agent ──
     payload = req.payload or sp.build_a2a_message(req.text or "")
+    if attempt is not None:
+        attempt.mark_dispatched()
     try:
-        called = await sp.call_agent(client, q.endpoint or "", payload, token, q.issuer)
+        # V0660 (l): the agent's endpoint comes from its own card, so this ONE call gets the guard, which
+        # connects only to an address it checked. It is deliberately not the shared settle client: that
+        # one dials issuers and peers an operator set, which the guard is explicitly not for, and
+        # widening it here would guard settlement as a side effect of hardening a buy.
+        async with guarded_client("service_buy", timeout=sp._CALL_TIMEOUT) as agent_client:
+            called = await sp.call_agent(agent_client, q.endpoint or "", payload, token, q.issuer)
     except sp.UnsafeEndpoint as e:
         called = {"ok": False, "http_status": 0, "body": None, "error": str(e)}
 

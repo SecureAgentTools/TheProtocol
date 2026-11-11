@@ -35,7 +35,7 @@ export interface Dispute {
   // 'reason' is synthesised client-side from evidence_data.description or category
   reason: string
   description: string
-  status: 'open' | 'investigating' | 'resolved' | 'dismissed'
+  status: 'open' | 'resolved' | 'dismissed'   // the server's OPEN, and CLOSED read by its ruling (V0658 (f))
   evidence: Evidence[]
   ruling?: string
   resolution_date?: string
@@ -46,6 +46,106 @@ export interface Dispute {
   }
   created_at: string
   updated_at: string
+  // V0657 (a), disputes v2: what the record knows since V0657 (all optional: an older registry sends none of them)
+  contract_ref?: string | null
+  guild_order_id?: string | null
+  /** why it opened, in the record's words (deadline_missed, rejected_by_poster, poster_silent, stuck_payout,
+   *  filed_by_party) and as a sentence */
+  reason_code?: string | null
+  reason_text?: string | null
+  filed_by?: 'party' | 'system' | null
+  amount_claimed?: string | null
+  ruled_by?: number | null
+  ruled_at?: string | null
+  ruling_note?: string | null
+  outcome?: DisputeOutcome | null
+  parties?: { complainant: DisputeParty; defendant: DisputeParty } | null
+  guild_order?: DisputeGuildOrder | null
+  corrections?: DisputeCorrection[] | null
+}
+
+export type RulingValue = 'IN_FAVOR_OF_COMPLAINANT' | 'IN_FAVOR_OF_DEFENDANT' | 'DISMISSED'
+
+export interface DisputeParty { did: string; name?: string | null; owner?: string | null; home?: string | null }
+
+export interface DisputeOutcome {
+  reputation?: { did: string; change: number; why?: string; before?: number | null; after?: number | null }[] | null
+  enforcement?: { action?: string | null; status?: string | null; escalation_level?: number | null; amount?: string | null } | null
+  money?: Record<string, any> | null
+  corrected?: { from: string; to: string; note: string; by?: number | null; at?: string } | null
+}
+
+export interface DisputeGuildOrder {
+  id: string
+  title?: string | null
+  spec?: string | null
+  status?: string | null
+  bounty?: string | null
+  currency?: string | null
+  escrow_held?: string | null
+  poster_did?: string | null
+  worker_did?: string | null
+  deadline?: string | null
+  awarded_at?: string | null
+  submitted_at?: string | null
+  settled_at?: string | null
+  handed_in?: boolean
+  deliverable?: Record<string, any> | null
+  awarded_bid?: { bidder_did?: string; price?: string; eta_seconds?: number | null; pitch?: string | null } | null
+  announce_conversation_id?: string | null
+  events?: { seq: number; event_type: string; actor_did?: string | null; payload?: any; created_at?: string | null }[]
+}
+
+export interface DisputeCorrection {
+  id?: number
+  from_ruling: string
+  to_ruling: string
+  note: string
+  corrected_by?: number | null
+  corrected_at?: string | null
+  /** 'applying' from its claim until every step is done (a failure midway leaves it so: finish it), then 'applied' */
+  status?: 'applying' | 'applied' | string | null
+  finished_at?: string | null
+}
+
+/** GET /admin/disputes/{id}/preview: what a ruling would do, before it is made */
+export interface RulingPreview {
+  dispute_id: number
+  ruling: RulingValue
+  ruling_words: string
+  money: Record<string, any>
+  reputation: { did: string; name?: string | null; change: number; why: string }[]
+  enforcement: Record<string, any> | null
+}
+
+/** GET /admin/disputes/{id}/correction-preview */
+export interface CorrectionPreview {
+  from_ruling: string
+  to_ruling: string
+  from_words: string
+  to_words: string
+  reverse_reputation: { did: string; change: number; why?: string; source?: string }[]
+  reverse_enforcement: { action_id: string; agent_did: string; action: string; not_returned?: string; suspension_stays?: string }[]
+  apply_reputation: { did: string; change: number; why: string }[]
+  money: string
+}
+
+export interface QueueItem {
+  kind: 'dispute' | 'guild' | 'contract'
+  id: string | number
+  dispute_id: number | null
+  title?: string | null
+  reason?: string | null
+  reason_text?: string | null
+  filed_by?: string | null
+  complainant_did?: string | null
+  complainant_name?: string | null
+  defendant_did?: string | null
+  defendant_name?: string | null
+  guild_order_id?: string | null
+  contract_ref?: string | null
+  at_stake?: { amount: string; currency?: string; what: string } | null
+  opened_at?: string | null
 }
 
 export interface Evidence {
@@ -113,22 +213,23 @@ class DisputesAPI {
   // complainant_did is pulled from authStore.activeAgent inside the store action.
   // We accept it here as a required parameter so the store controls the DID.
   async createDispute(data: CreateDisputeData & { complainant_did: string }): Promise<Dispute> {
+    // V0657 (a), item 2: the amount claimed is the filing's own field; a ruling never reads it from evidence
     const response = await apiClient.post('/disputes/', {
       complainant_did: data.complainant_did,
       defendant_did: data.defendant_did,
       category: data.category,
-      description: data.description
+      description: data.description,
+      ...(data.amount_disputed && data.amount_disputed > 0 ? { amount_claimed: data.amount_disputed } : {})
     })
     const dispute = this.transformDispute(response.data)
 
-    // Auto-submit description + amount_disputed as first evidence if present
-    if (data.description || data.amount_disputed) {
+    // Auto-submit the description as the first evidence
+    if (data.description) {
       try {
         const ev = await this.submitEvidence(dispute.id, {
           type: 'text',
-          content: data.description || 'Dispute filed.',
-          description: data.category || 'Initial evidence',
-          ...(data.amount_disputed ? { amount_disputed: data.amount_disputed } : {})
+          content: data.description,
+          description: data.category || 'Initial evidence'
         }, data.complainant_did)
         dispute.evidence.push(ev)
       } catch (e) {
@@ -189,37 +290,92 @@ class DisputesAPI {
 
     const response = await apiClient.post(`/disputes/${disputeId}/evidence`, {
       submitter_did: did,
-      evidence_data: {
-        type: data.type,
-        content: data.content,
-        ...(data.description ? { description: data.description } : {}),
-        ...(data.amount_disputed !== undefined ? { amount_disputed: data.amount_disputed } : {})
-      }
+      evidence_data: this.evidenceData(data)
     })
     return this.transformEvidence(response.data)
   }
 
-  // PUT /api/v1/admin/disputes/{id}/ruling?ruling=IN_FAVOR_OF_COMPLAINANT
+  /** POST /api/v1/disputes/{id}/evidence/as-owner (V0658 (d), polish 15): the owner of a party files evidence AS that
+   *  party with their own sign-in. `agentDid` names the party when the owner owns both; left out, the server takes the
+   *  one party the caller owns. */
+  async submitEvidenceAsOwner(disputeId: string, data: SubmitEvidenceData, agentDid?: string): Promise<Evidence> {
+    const response = await apiClient.post(`/disputes/${disputeId}/evidence/as-owner`, {
+      evidence_data: this.evidenceData(data),
+      ...(agentDid ? { agent_did: agentDid } : {})
+    })
+    return this.transformEvidence(response.data)
+  }
+
+  private evidenceData(data: SubmitEvidenceData): Record<string, any> {
+    return {
+      type: data.type,
+      content: data.content,
+      ...(data.description ? { description: data.description } : {}),
+      ...(data.amount_disputed !== undefined ? { amount_disputed: data.amount_disputed } : {})
+    }
+  }
+
+  /** PUT /api/v1/admin/disputes/{id}/ruling — V0657 (a): the ruling, the ruler's reason (kept on the record and told to
+   *  both parties; it was asked for and never sent) and, for a dispute about a Guild order, the worker's share of its
+   *  escrow. The ruling also travels as the query parameter, which an older registry reads. */
   async updateRuling(
     disputeId: string,
-    rulingNotes: string,
-    resolution: 'resolved' | 'dismissed'
-  ): Promise<{ dispute: Dispute; compensation: CompensationResult | null; reputation_changes: any }> {
-    const backendRuling = resolution === 'resolved' ? 'IN_FAVOR_OF_COMPLAINANT' : 'DISMISSED'
-
-    const response = await apiClient.put(
-      `/admin/disputes/${disputeId}/ruling`,
-      null,
-      { params: { ruling: backendRuling } }
-    )
+    ruling: RulingValue,
+    note: string,
+    workerShare?: number | null
+  ): Promise<{ dispute: Dispute; compensation: CompensationResult | null; reputation_changes: any; outcome: DisputeOutcome | null }> {
+    const body: Record<string, any> = { ruling, note }
+    if (workerShare !== undefined && workerShare !== null) body.worker_share = workerShare
+    const response = await apiClient.put(`/admin/disputes/${disputeId}/ruling`, body, { params: { ruling } })
 
     const data = response.data
     const dispute = this.transformDispute(data)
     return {
       dispute,
       compensation: data.compensation || null,
-      reputation_changes: data.reputation_changes || null
+      reputation_changes: data.reputation_changes || null,
+      outcome: data.outcome || null
     }
+  }
+
+  /** GET /admin/disputes/{id}/preview — what a ruling would do (who gets what, each reputation change, the enforcement
+   *  step), read only, from the rules the ruling applies */
+  async previewRuling(disputeId: string, ruling: RulingValue, workerShare?: number | null): Promise<RulingPreview> {
+    const params: Record<string, any> = { ruling }
+    if (workerShare !== undefined && workerShare !== null) params.worker_share = workerShare
+    const response = await apiClient.get(`/admin/disputes/${disputeId}/preview`, { params })
+    return response.data
+  }
+
+  /** GET /admin/disputes/{id}/correction-preview — what correcting a ruling would undo and apply */
+  async previewCorrection(disputeId: string, ruling: RulingValue): Promise<CorrectionPreview> {
+    const response = await apiClient.get(`/admin/disputes/${disputeId}/correction-preview`, { params: { ruling } })
+    return response.data
+  }
+
+  /** POST /admin/disputes/{id}/correct — the correction rail (why is required; no money moves) */
+  async correctRuling(disputeId: string, ruling: RulingValue, note: string): Promise<any> {
+    const response = await apiClient.post(`/admin/disputes/${disputeId}/correct`, { ruling, note })
+    return response.data
+  }
+
+  /** POST /admin/disputes/{id}/corrections/{cid}/finish — finish a correction a failure left 'applying' (its recorded
+   *  steps are kept, the rest done once) */
+  async finishCorrection(disputeId: string, correctionId: number | string): Promise<any> {
+    const response = await apiClient.post(`/admin/disputes/${disputeId}/corrections/${correctionId}/finish`)
+    return response.data
+  }
+
+  /** GET /admin/disputes/queue — every open record, and every disputed Guild order and contract without one */
+  async rulerQueue(): Promise<{ items: QueueItem[]; counts: Record<string, number>; total: number }> {
+    const response = await apiClient.get('/admin/disputes/queue')
+    return response.data
+  }
+
+  /** POST /admin/disputes/queue/{kind}/{ref}/record — give a disputed order or contract its record */
+  async fileQueueRecord(kind: 'guild' | 'contract', ref: string): Promise<{ dispute_id: number }> {
+    const response = await apiClient.post(`/admin/disputes/queue/${kind}/${encodeURIComponent(ref)}/record`)
+    return response.data
   }
 
   // Calculate stats from disputes list (no dedicated stats endpoint). A failed read throws (the store keeps its tiles at a
@@ -264,14 +420,16 @@ class DisputesAPI {
     let status: Dispute['status'] = 'open'
     if (rawStatus === 'closed') {
       status = data.ruling === 'DISMISSED' ? 'dismissed' : 'resolved'
-    } else if (['open', 'investigating', 'resolved', 'dismissed'].includes(rawStatus)) {
+    } else if (['open', 'resolved', 'dismissed'].includes(rawStatus)) {
       status = rawStatus as Dispute['status']
     }
 
-    // Synthesise reason/description from evidence_data (BUG-D04 fix)
-    const reason = data.category
+    // Why it opened: the record's own words since V0657 (a), item 10; before, synthesised from evidence_data (BUG-D04),
+    // and "Contract dispute" labelled every dispute that carried none
+    const reason = data.reason_text
+      || data.category
       || this.extractFieldFromEvidence(data.evidence, ['description', 'brief_description', 'category', 'type'])
-      || 'Contract dispute'
+      || 'Dispute'
 
     const description = data.description
       || this.extractFieldFromEvidence(data.evidence, ['description', 'brief_description', 'content'])
@@ -293,7 +451,21 @@ class DisputesAPI {
       ruling: data.ruling,
       resolution_date: data.resolution_date,
       created_at: data.created_at || new Date().toISOString(),
-      updated_at: data.updated_at || new Date().toISOString()
+      updated_at: data.updated_at || new Date().toISOString(),
+      // V0657 (a): what the record knows
+      ...(data.contract_ref ? { contract_ref: data.contract_ref } : {}),
+      guild_order_id: data.guild_order_id ?? null,
+      reason_code: data.reason ?? null,
+      reason_text: data.reason_text ?? null,
+      filed_by: data.filed_by ?? null,
+      amount_claimed: data.amount_claimed ?? null,
+      ruled_by: data.ruled_by ?? null,
+      ruled_at: data.ruled_at ?? null,
+      ruling_note: data.ruling_note ?? null,
+      outcome: data.outcome ?? null,
+      parties: data.parties ?? null,
+      guild_order: data.guild_order ?? null,
+      corrections: data.corrections ?? null
     }
   }
 
@@ -337,7 +509,7 @@ class DisputesAPI {
 
   private calculateStats(disputes: Dispute[]): DisputeStats {
     const total = disputes.length
-    const open = disputes.filter(d => d.status === 'open' || d.status === 'investigating').length
+    const open = disputes.filter(d => d.status === 'open').length
     const resolved = disputes.filter(d => d.status === 'resolved').length
     const dismissed = disputes.filter(d => d.status === 'dismissed').length
     // §COCKPITDESK (2026-10-15): the camera read "0 resolved · 0% · 0h" over 22 disputes of which 19 were dismissed. A

@@ -36,20 +36,41 @@ export function narrowPane(paneWidth: number): boolean {
   return w > 0 && w < NARROW_PANE_PX
 }
 
-const KEY = (viewer: string) => `ourchat.side.v1.${viewer || 'anon'}`
+const KEY_V1 = (viewer: string) => `ourchat.side.v1.${viewer || 'anon'}`
+const KEY = (viewer: string) => `ourchat.side.v2.${viewer || 'anon'}`
 
-/** The sections' fold state for this person: every section open until they fold it. */
-export function sidePanelOpen(viewer: string): Record<SideSection, boolean> {
-  const out = Object.fromEntries(SIDE_SECTIONS.map((s) => [s, true])) as Record<SideSection, boolean>
+function readJson(key: string): Record<string, unknown> | null {
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY(viewer)) || 'null')
-    if (raw && typeof raw === 'object') for (const s of SIDE_SECTIONS) out[s] = raw[s] !== false
-  } catch { /* a value nobody can read is no state */ }
+    const raw = JSON.parse(localStorage.getItem(key) || 'null')
+    return raw && typeof raw === 'object' ? raw : null
+  } catch { return null }   /* a value nobody can read is no state */
+}
+
+/**
+ * The sections' fold state for this person: every section open until they fold it, except the status board.
+ * V0657 (h) (the Commander, seq 1439: on a desktop a board with text pushed the sessions off the side panel): the board
+ * starts folded to its first line and opens on demand; opened, it stays open for that person. The v1 state (every
+ * section open by default) carries the other sections over; the board's fold is read from v2 alone, so everyone starts
+ * with it folded once.
+ */
+export function sidePanelOpen(viewer: string): Record<SideSection, boolean> {
+  const out = Object.fromEntries(SIDE_SECTIONS.map((s) => [s, s !== 'board'])) as Record<SideSection, boolean>
+  const v2 = readJson(KEY(viewer))
+  const raw = v2 || readJson(KEY_V1(viewer))
+  if (raw) for (const s of SIDE_SECTIONS) if (s !== 'board') out[s] = raw[s] !== false
+  out.board = v2?.board === true
   return out
 }
 
 export function saveSidePanelOpen(viewer: string, state: Partial<Record<SideSection, boolean>>): void {
   const out: Record<string, boolean> = {}
-  for (const s of SIDE_SECTIONS) out[s] = state[s] !== false
+  for (const s of SIDE_SECTIONS) out[s] = s === 'board' ? state[s] === true : state[s] !== false
   try { localStorage.setItem(KEY(viewer), JSON.stringify(out)) } catch { /* full or blocked */ }
+}
+
+/** The board's first line as plain text (no heading, list, emphasis or link syntax): what a folded board shows. */
+export function boardFirstLine(text: string | null | undefined): string {
+  const plain = (l: string) => l.replace(/^\s*(?:#{1,6}|>|[-*+]|\d+\.)\s+/, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*_`~]+/g, '').trim()
+  return String(text || '').split('\n').map(plain).find(Boolean) || ''
 }

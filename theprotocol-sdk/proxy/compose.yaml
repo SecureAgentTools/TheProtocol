@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+# TheProtocol Proxy beside a legacy system. Next to this file: proxy.yaml (see proxy.example.yaml) and the Agent Forge
+# starter's .env and .env.secret (the agent's DID and its credentials; compose reads them, the spec names them env:...).
+#   docker compose up -d       then: docker compose exec proxy tp-proxy status
+services:
+  proxy:
+    build:
+      context: ..
+      dockerfile: proxy/Dockerfile
+    image: theprotocol-proxy:dev
+    restart: unless-stopped
+    env_file: [.env, .env.secret]
+    volumes:
+      - ./proxy.yaml:/config/proxy.yaml:ro
+      - proxy-state:/data
+    ports:
+      # only for a webhook source the legacy system posts to (the proxy dials out for everything else)
+      - "8711:8711"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+volumes:
+  proxy-state: {}

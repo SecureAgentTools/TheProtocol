@@ -433,7 +433,9 @@ async def controls() -> Dict[str, List[Tuple[str, str]]]:
     base = "http://localhost:8000"
     dev = {"authorization": f"Bearer {DEV_TOKEN}"}   # V0538: each models the admin's own call, so it carries the admin's token
     return {
-        "missing_query": await validate("PUT", f"{base}/api/v1/admin/disputes/1/ruling", dev, b""),
+        # V0657 (a): the ruling route takes its ruling in the body too, so its query parameter is optional now; the ruling
+        # preview's is required (a missing one is still MISSING "query -> ruling")
+        "missing_query": await validate("GET", f"{base}/api/v1/admin/disputes/1/preview", dev, b""),
         "no_route": await validate("GET", f"{base}/api/v1/phase6-no-such-route", dev, b""),
         "missing_body_field": await validate("POST", f"{base}/api/v1/admin/fiat/flare/grant",
                                              {**dev, "content-type": "application/json"}, b'{"developer_id": 1}'),

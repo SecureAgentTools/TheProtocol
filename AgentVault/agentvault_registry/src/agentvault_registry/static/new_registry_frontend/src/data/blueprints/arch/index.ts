@@ -32,6 +32,11 @@ export const ARCH_LOADERS: Record<string, () => Promise<{ deep: BlueprintDeep }>
   hearth: () => import('./hearth'),
   canopy: () => import('./canopy'),
   cairn: () => import('./cairn'),
+  collegium: () => import('./collegium'),
+  lattice: () => import('./lattice'),
+  lodestar: () => import('./lodestar'),
+  alea: () => import('./alea'),
+  ancilla: () => import('./ancilla'),
 }
 
 export function hasDeep(id: string): boolean {

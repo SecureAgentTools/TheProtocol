@@ -47,6 +47,14 @@ CREATE TABLE IF NOT EXISTS listings (
 );
 CREATE INDEX IF NOT EXISTS listings_source ON listings(source);
 CREATE INDEX IF NOT EXISTS listings_symbol ON listings(symbol);
+-- V0657 (b), item 6: the organizations each registry LISTS (its GET /api/v1/organizations/public/listed), the
+-- addresses rebuilt from the registry's public URL (orgs_reader.py). Swept like listings: marked, never deleted.
+CREATE TABLE IF NOT EXISTS organizations (
+  id TEXT PRIMARY KEY, org_id TEXT, source TEXT, slug TEXT, name TEXT, description TEXT, website TEXT, logo TEXT,
+  page TEXT, member_count INTEGER, agent_count INTEGER, settled_work INTEGER,
+  reachable INTEGER NOT NULL DEFAULT 1, fetched_at REAL
+);
+CREATE INDEX IF NOT EXISTS organizations_source ON organizations(source);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
 
@@ -59,7 +67,11 @@ _ADDED = {
                    "membership_state": "TEXT", "membership_json": "TEXT", "membership_at": "REAL",
                    "membership_checked_at": "REAL", "membership_error": "TEXT",
                    "commons_state": "TEXT", "commons_json": "TEXT", "commons_at": "REAL",
-                   "commons_checked_at": "REAL", "commons_error": "TEXT"},
+                   "commons_checked_at": "REAL", "commons_error": "TEXT",
+                   "organizations_indexed": "INTEGER NOT NULL DEFAULT 0"},
+    # V0657 (b): the organization mark the agent's home states on its card (orgs_reader.org_mark_from_card)
+    # V0660 (a): the index of the quantum workload extension its card states (quantum_reader.facets_from_card)
+    "agents": {"org_json": "TEXT", "quantum_json": "TEXT"},
 }
 
 
@@ -126,7 +138,8 @@ class Store:
 
     def upsert_agent(self, **a: Any) -> None:
         cols = ["id", "did", "name", "hri", "description", "is_active", "updated_at", "source", "source_td", "issuer", "shape",
-                "home", "bond_json", "enforcement_json", "verified", "reachable", "fetched_at", "card_json"]
+                "home", "bond_json", "enforcement_json", "verified", "reachable", "fetched_at", "card_json", "org_json",
+                "quantum_json"]
         vals = [a.get(k) for k in cols]
         with self.lock, self._conn() as c:
             c.execute(f"INSERT INTO agents ({','.join(cols)}) VALUES ({','.join('?' * len(cols))}) "
@@ -155,6 +168,14 @@ class Store:
             c.execute(f"INSERT INTO listings ({','.join(cols)}) VALUES ({','.join('?' * len(cols))}) "
                       f"ON CONFLICT(id) DO UPDATE SET " + ",".join(f"{k}=excluded.{k}" for k in cols[1:]), vals)
 
+    def upsert_organization(self, **o: Any) -> None:
+        cols = ["id", "org_id", "source", "slug", "name", "description", "website", "logo", "page", "member_count",
+                "agent_count", "settled_work", "reachable", "fetched_at"]
+        vals = [o.get(k) for k in cols]
+        with self.lock, self._conn() as c:
+            c.execute(f"INSERT INTO organizations ({','.join(cols)}) VALUES ({','.join('?' * len(cols))}) "
+                      f"ON CONFLICT(id) DO UPDATE SET " + ",".join(f"{k}=excluded.{k}" for k in cols[1:]), vals)
+
     def sweep_source(self, table: str, source: str, seen_ids: List[str]) -> int:
         """A FULL pass is the only pass that can see something GO AWAY. Rows this source no longer publishes are
         marked unreachable, never deleted (his answer 3: outside the federation you stay discoverable, not
@@ -171,7 +192,7 @@ class Store:
         old form was already near SQLite's host-parameter ceiling, and the point of the walk is that
         a source may be arbitrarily large.
         """
-        assert table in ("agents", "listings")
+        assert table in ("agents", "listings", "organizations")
         with self.lock, self._conn() as c:
             c.execute("CREATE TEMP TABLE IF NOT EXISTS _seen (id TEXT PRIMARY KEY)")
             c.execute("DELETE FROM _seen")
@@ -189,7 +210,7 @@ class Store:
             return gone
 
     def count_for_source(self, table: str, source: str, reachable_only: bool = True) -> int:
-        assert table in ("agents", "listings")
+        assert table in ("agents", "listings", "organizations")
         q = f"SELECT count(*) FROM {table} WHERE source=?" + (" AND reachable=1" if reachable_only else "")
         with self._conn() as c:
             return c.execute(q, (source,)).fetchone()[0]
@@ -214,16 +235,29 @@ class Store:
 
     def list_agents(self, *, first: int = 50, after: Optional[str] = None, issuer: Optional[str] = None,
                     name_contains: Optional[str] = None, bonded_only: bool = False, source: Optional[str] = None,
-                    include_gone: bool = False) -> Dict[str, Any]:
+                    include_gone: bool = False, quantum: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """The page the public surface asks for is the LIVE set. §DARKSYNC (2026-09-22): `include_gone` is kept for a
         future admin or CLI reader and is passed by NO public caller — the GraphQL `agents` field no longer takes it,
-        because a gone row is indistinguishable from a card its home took dark on purpose."""
+        because a gone row is indistinguishable from a card its home took dark on purpose.
+
+        V0660 (a): `quantum` filters on the quantum workload index (quantum_reader.facets): only (a card that states
+        the extension), role, kind, modality, format, jurisdiction and rung (a member of that list) and min_qubits (the
+        most physical qubits of any backend). None, or every value empty, filters nothing."""
         where, args = ["1=1"], []
         if after: where.append("id > ?"); args.append(after)
         if issuer: where.append("issuer = ?"); args.append(issuer)
         if name_contains: where.append("lower(name) LIKE ?"); args.append(f"%{name_contains.lower()}%")
         if source: where.append("lower(source) = lower(?)"); args.append(source)
         if bonded_only: where.append("json_extract(bond_json, '$.is_bonded') = 1")
+        q = quantum or {}
+        if q.get("only"): where.append("quantum_json IS NOT NULL")
+        for key, path in (("role", "$.roles"), ("kind", "$.kinds"), ("modality", "$.modalities"),
+                          ("format", "$.formats"), ("jurisdiction", "$.jurisdictions"), ("rung", "$.rungs")):
+            if q.get(key) is not None and q.get(key) != "":
+                where.append(f"EXISTS (SELECT 1 FROM json_each(agents.quantum_json, '{path}') WHERE value = ?)")
+                args.append(q[key])
+        if q.get("min_qubits") is not None:
+            where.append("json_extract(quantum_json, '$.max_qubits') >= ?"); args.append(int(q["min_qubits"]))
         if not include_gone: where.append("reachable = 1")
         with self._conn() as c:
             total = c.execute(f"SELECT count(*) FROM agents WHERE {' AND '.join(where[1:] or ['1=1'])}", args[0 if not after else 1:]).fetchone()[0] if not after else None
@@ -252,11 +286,29 @@ class Store:
         rows = rows[:first]
         return {"rows": rows, "end_cursor": rows[-1]["id"] if rows else None, "has_next_page": has_next, "total": total}
 
+    def list_organizations(self, *, first: int = 50, after: Optional[str] = None, source: Optional[str] = None,
+                           name_contains: Optional[str] = None) -> Dict[str, Any]:
+        """The organizations the registries list now (a row its registry stopped listing is marked and left out)."""
+        where, args = ["1=1"], []
+        if after: where.append("id > ?"); args.append(after)
+        if source: where.append("lower(source) = lower(?)"); args.append(source)
+        if name_contains: where.append("lower(name) LIKE ?"); args.append(f"%{name_contains.lower()}%")
+        where.append("reachable = 1")
+        with self._conn() as c:
+            total = c.execute(f"SELECT count(*) FROM organizations WHERE {' AND '.join(where[1:] or ['1=1'])}",
+                              args[0 if not after else 1:]).fetchone()[0] if not after else None
+            rows = [dict(r) for r in c.execute(f"SELECT * FROM organizations WHERE {' AND '.join(where)} ORDER BY id LIMIT ?",
+                                               args + [first + 1])]
+        has_next = len(rows) > first
+        rows = rows[:first]
+        return {"rows": rows, "end_cursor": rows[-1]["id"] if rows else None, "has_next_page": has_next, "total": total}
+
     def counts(self) -> Dict[str, int]:
         with self._conn() as c:
             return {"agents": c.execute("SELECT count(*) FROM agents WHERE reachable=1").fetchone()[0],
                     "agents_including_gone": c.execute("SELECT count(*) FROM agents").fetchone()[0],
                     "listings": c.execute("SELECT count(*) FROM listings WHERE reachable=1").fetchone()[0],
+                    "organizations": c.execute("SELECT count(*) FROM organizations WHERE reachable=1").fetchone()[0],
                     "registries": c.execute("SELECT count(*) FROM registries").fetchone()[0],
                     "registries_verified": c.execute("SELECT count(*) FROM registries WHERE verified=1").fetchone()[0],
                     "agents_by_source": {r["source"]: r["n"] for r in c.execute("SELECT source, count(*) n FROM agents WHERE reachable=1 GROUP BY source")}}

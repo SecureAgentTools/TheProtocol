@@ -32,12 +32,15 @@
         <div class="drc-tabs" data-tour="dsp-tabs" role="tablist">
           <button type="button" role="tab" :aria-selected="activeTab === 'disputes'" :class="['drc-tab', activeTab === 'disputes'  && 'drc-tab--active']" @click="activeTab = 'disputes'">{{ t('disputesView.tabs.disputes') }}</button>
           <button type="button" role="tab" :aria-selected="activeTab === 'analytics'" :class="['drc-tab', activeTab === 'analytics' && 'drc-tab--active']" data-tour="dsp-analytics" @click="activeTab = 'analytics'">{{ t('disputesView.tabs.analytics') }}</button>
+          <!-- V0657 (a), item 3: the ruler's queue (every open record, and disputed orders and contracts with none) -->
+          <button v-if="isAdmin" type="button" role="tab" :aria-selected="activeTab === 'queue'" :class="['drc-tab', activeTab === 'queue' && 'drc-tab--active']" data-testid="dsp-tab-queue" @click="activeTab = 'queue'">{{ t('disputesView.v2.queueTab', 'Ruler\'s queue') }}</button>
         </div>
       </div>
     </div>
 
     <!-- ── Analytics View ──────────────────────────────────────────────────── -->
     <DisputeAnalytics v-if="activeTab === 'analytics'" />
+    <RulerQueue v-else-if="activeTab === 'queue' && isAdmin" class="drc-queue" @open="openById" />
 
     <!-- ── Disputes View ───────────────────────────────────────────────────── -->
     <div v-else>
@@ -132,7 +135,6 @@
           <select v-model="statusFilter" class="drc-select" :aria-label="t('disputesView.statusFilterAria', 'Filter disputes by status')">
             <option value="all">{{ t('disputesView.status.all') }}</option>
             <option value="open">{{ t('disputesView.status.open') }}</option>
-            <option value="investigating">{{ t('disputesView.status.investigating') }}</option>
             <option value="resolved">{{ t('disputesView.status.resolved') }}</option>
             <option value="dismissed">{{ t('disputesView.status.dismissed') }}</option>
           </select>
@@ -214,7 +216,6 @@
             <div class="drc-card__head-left">
               <span class="drc-card__id">#{{ dispute.id }}</span>
               <span :class="['drc-status-pill', `drc-status-pill--${dispute.status}`]">{{ fmtStatus(dispute.status) }}</span>
-              <span v-if="isPriority(dispute)" class="drc-priority-badge">{{ t('disputesView.highPriority') }}</span>
             </div>
             <div class="drc-card__date">
               <span>{{ fmtDate(dispute.created_at) }}</span>
@@ -229,12 +230,12 @@
           <div class="drc-card__parties">
             <div class="drc-party">
               <span class="drc-party__role">{{ t('disputesView.claimant') }}</span>
-              <span class="drc-party__did">{{ shortDid(dispute.claimant_did) }}</span>
+              <span class="drc-party__did" :title="dispute.claimant_did">{{ partyLabel(dispute.claimant_name, dispute.claimant_did) }}</span>
             </div>
             <div class="drc-party-sep">→</div>
             <div class="drc-party">
               <span class="drc-party__role">{{ t('disputesView.respondent') }}</span>
-              <span class="drc-party__did">{{ shortDid(dispute.respondent_did) }}</span>
+              <span class="drc-party__did" :title="dispute.respondent_did">{{ partyLabel(dispute.respondent_name, dispute.respondent_did) }}</span>
             </div>
           </div>
 
@@ -284,6 +285,13 @@
           <div v-if="detailTab === 'overview'" class="drc-detail-body">
             <div class="drc-detail-section">
               <div class="drc-kv"><span class="drc-kv__k">{{ t('disputesView.detail.description') }}</span><span class="drc-kv__v">{{ selectedDispute.description }}</span></div>
+              <!-- V0657 (a), items 10 and 11: why it opened and who filed it -->
+              <div v-if="selectedDispute.reason_text" class="drc-kv" data-testid="dispute-why"><span class="drc-kv__k">{{ t('disputesView.v2.why', 'Why it opened') }}</span><span class="drc-kv__v">{{ selectedDispute.reason_text }}<template v-if="selectedDispute.filed_by === 'system'"> · {{ t('disputesView.v2.filedBySystem', 'filed by the system: nobody accused anybody') }}</template></span></div>
+              <div v-if="selectedDispute.amount_claimed" class="drc-kv"><span class="drc-kv__k">{{ t('disputesView.v2.claimed', 'Amount claimed') }}</span><span class="drc-kv__v">{{ selectedDispute.amount_claimed }} {{ localCurrency }}</span></div>
+            </div>
+            <!-- V0657 (a), item 8: what the dispute is about, as evidence -->
+            <div v-if="selectedDispute.guild_order || selectedDispute.contract_ref" class="drc-detail-section">
+              <DisputeEvidence :dispute="selectedDispute" />
             </div>
             <!-- DF1: contract context — link to source contract if dispute came from /contracts/malpractice -->
             <div v-if="(selectedDispute as any).contract_id" class="drc-detail-section">
@@ -302,10 +310,12 @@
             <div class="drc-detail-section drc-detail-parties-grid">
               <div class="drc-detail-party-box">
                 <div class="drc-detail-party-box__role">{{ t('disputesView.claimant') }}</div>
+                <div v-if="selectedDispute.parties?.complainant?.name" class="drc-detail-party-box__name" data-testid="dispute-complainant-name">{{ selectedDispute.parties.complainant.name }}<span v-if="selectedDispute.parties.complainant.owner" class="drc-party-owner"> · {{ selectedDispute.parties.complainant.owner }}</span></div>
                 <div class="drc-detail-party-box__did">{{ selectedDispute.claimant_did }}</div>
               </div>
               <div class="drc-detail-party-box">
                 <div class="drc-detail-party-box__role">{{ t('disputesView.respondent') }}</div>
+                <div v-if="selectedDispute.parties?.defendant?.name" class="drc-detail-party-box__name" data-testid="dispute-defendant-name">{{ selectedDispute.parties.defendant.name }}<span v-if="selectedDispute.parties.defendant.owner" class="drc-party-owner"> · {{ selectedDispute.parties.defendant.owner }}</span></div>
                 <div class="drc-detail-party-box__did">{{ selectedDispute.respondent_did }}</div>
               </div>
             </div>
@@ -351,10 +361,29 @@
               <div class="drc-ruling-banner" :class="selectedDispute.status === 'resolved' ? 'drc-ruling-banner--resolved' : 'drc-ruling-banner--dismissed'">
                 <div class="drc-ruling-banner__label">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                  {{ selectedDispute.status === 'resolved' ? t('disputesView.ruling.inFavour') : t('disputesView.ruling.dismissed') }}
+                  {{ rulingWords(selectedDispute.ruling) }}
                 </div>
-                <div class="drc-ruling-banner__date">{{ fmtDate(selectedDispute.updated_at) }}</div>
+                <div class="drc-ruling-banner__date">{{ fmtDateTime(selectedDispute.ruled_at || selectedDispute.updated_at) }}</div>
               </div>
+              <!-- V0657 (a), items 5 and 22: the ruler's reason, and what the ruling did, kept with it -->
+              <div v-if="selectedDispute.ruling_note" class="drc-detail-section" data-testid="dispute-ruling-note">
+                <div class="drc-kv"><span class="drc-kv__k">{{ t('disputesView.v2.rulerReason', 'The ruler\'s reason') }}</span><span class="drc-kv__v">{{ selectedDispute.ruling_note }}</span></div>
+              </div>
+              <div v-if="outcomeLines.length" class="drc-detail-section" data-testid="dispute-outcome">
+                <div class="drc-kv__k">{{ t('disputesView.v2.didWhat', 'What the ruling did') }}</div>
+                <ul class="drc-outcome"><li v-for="(l, i) in outcomeLines" :key="i">{{ l }}</li></ul>
+              </div>
+              <div v-if="selectedDispute.corrections?.length" class="drc-detail-section" data-testid="dispute-corrections">
+                <div class="drc-kv__k">{{ t('disputesView.v2.corrections', 'Corrections') }}</div>
+                <ul class="drc-outcome">
+                  <li v-for="(c, i) in selectedDispute.corrections" :key="i" :data-status="c.status || 'applied'">
+                    {{ tp('disputesView.v2.corrLine', '{when}: {from} → {to}. {note}', { when: fmtDateTime(c.corrected_at || ''), from: rulingWords(c.from_ruling), to: rulingWords(c.to_ruling), note: c.note }) }}
+                    <strong v-if="c.status === 'applying'" class="drc-applying">{{ t('disputesView.v2.corrApplying', 'Still being applied: a failure stopped it midway. Finishing it does the steps it has not done, once.') }}</strong>
+                  </li>
+                </ul>
+              </div>
+              <button v-if="isAdmin && applyingCorrection" type="button" class="drc-btn drc-btn--success" data-testid="dispute-correction-finish" :disabled="finishing" @click="finishCorrection">{{ t('disputesView.v2.finishCorrection', 'Finish the correction') }}</button>
+              <button v-else-if="isAdmin" type="button" class="drc-btn drc-btn--ghost" data-testid="dispute-correct" @click="showCorrection = true">{{ t('disputesView.v2.correct', 'Correct the ruling') }}</button>
 
               <!-- Compensation -->
               <div v-if="selectedDispute.compensation?.applied" class="drc-comp-box">
@@ -392,6 +421,8 @@
                     <div class="drc-kv__mono">{{ (selectedDispute.compensation as any).settlement_id }}</div>
                   </div>
                 </div>
+                <!-- V0660 (k): what happens to it, in the registry's words (delivered, retried, not delivered, refused) -->
+                <p v-if="(selectedDispute.compensation as any).reason" class="drc-comp-tx" data-testid="drc-xreg-reason">{{ (selectedDispute.compensation as any).reason }}</p>
                 <div style="margin-top: 0.75rem;">
                   <router-link
                     :to="'/settlements'"
@@ -429,7 +460,7 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:32px;height:32px;color:#8193ab"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
               <p>{{ t('disputesView.ruling.noRuling') }}</p>
               <button
-                v-if="isAdmin && ['open','investigating'].includes(selectedDispute.status)"
+                v-if="isAdmin && selectedDispute.status === 'open'"
                 class="drc-btn drc-btn--success"
                 @click="openRuling"
               >{{ t('disputesView.ruling.makeRuling') }}</button>
@@ -442,7 +473,7 @@
               <button v-if="canSubmitEvidence(selectedDispute)" class="drc-btn drc-btn--primary" @click="openEvidence">{{ t('disputesView.evidenceTab.submitBtn') }}</button>
             </div>
             <div class="drc-detail-footer__right">
-              <button v-if="isAdmin && ['open','investigating'].includes(selectedDispute.status)" class="drc-btn drc-btn--success" @click="openRuling">{{ t('disputesView.ruling.makeRuling') }}</button>
+              <button v-if="isAdmin && selectedDispute.status === 'open'" class="drc-btn drc-btn--success" @click="openRuling">{{ t('disputesView.ruling.makeRuling') }}</button>
               <button class="drc-btn drc-btn--ghost" @click="showDetail = false">{{ t('disputesView.footer.close') }}</button>
             </div>
           </div>
@@ -459,6 +490,17 @@
             <button type="button" class="tp-modal-close" :aria-label="t('common.close', 'Close')" @click="showEvidenceModal = false"><span aria-hidden="true">✕</span></button>
           </div>
           <div class="tp-modal-body">
+            <div v-if="selectedEvidenceRoute?.route === 'owner'" class="tp-field" data-testid="dsp-ev-as">
+              <template v-if="selectedEvidenceRoute.parties.length > 1">
+                <label class="tp-label" for="dsp-ev-as">{{ t('disputesView.evidenceModal.asWhich', 'Add it as') }} <span style="color:#ef4444">*</span></label>
+                <select id="dsp-ev-as" v-model="evidenceForm.asDid" class="tp-select">
+                  <option value="" disabled>{{ t('disputesView.evidenceModal.asPick', 'Pick one of your agents in this dispute') }}</option>
+                  <option v-for="p in selectedEvidenceRoute.parties" :key="p" :value="p">{{ partyName(p) }}</option>
+                </select>
+              </template>
+              <p v-else-if="selectedEvidenceRoute.parties.length === 1" class="tp-hint">{{ tp('disputesView.evidenceModal.asOne', 'Added as {name}, your agent in this dispute.', { name: partyName(selectedEvidenceRoute.parties[0]) }) }}</p>
+              <p v-else class="tp-hint">{{ t('disputesView.evidenceModal.asYours', 'Added as your agent in this dispute.') }}</p>
+            </div>
             <div class="tp-field">
               <label class="tp-label" for="dsp-ev-type">{{ t('disputesView.evidenceModal.type') }}</label>
               <select id="dsp-ev-type" v-model="evidenceForm.type" class="tp-select">
@@ -478,7 +520,7 @@
           </div>
           <div class="tp-modal-footer">
             <button class="tp-btn tp-btn--ghost" @click="showEvidenceModal = false">{{ t('disputesView.evidenceModal.cancel') }}</button>
-            <button class="tp-btn tp-btn--primary" :disabled="!evidenceForm.content || submittingEvidence" @click="submitEvidence">
+            <button class="tp-btn tp-btn--primary" :disabled="!evidenceForm.content || evidenceNeedsParty || submittingEvidence" @click="submitEvidence">
               <span v-if="submittingEvidence"><span class="tp-spinner"></span> {{ t('disputesView.evidenceModal.submitting') }}</span>
               <span v-else>{{ t('disputesView.evidenceModal.submit') }}</span>
             </button>
@@ -496,30 +538,22 @@
             <button class="tp-modal-close" @click="showRulingModal = false">✕</button>
           </div>
           <div class="tp-modal-body">
-            <div class="tp-field">
-              <label class="tp-label">{{ t('disputesView.rulingModal.resolution') }} <span style="color:#ef4444">*</span></label>
-              <select v-model="rulingForm.resolution" class="tp-select">
-                <option value="">{{ t('disputesView.rulingModal.resolutionPlaceholder') }}</option>
-                <option value="resolved">{{ t('disputesView.rulingModal.resolutionResolved') }}</option>
-                <option value="dismissed">{{ t('disputesView.rulingModal.resolutionDismissed') }}</option>
-              </select>
-            </div>
-            <div class="tp-field">
-              <label class="tp-label">{{ t('disputesView.rulingModal.notes') }} <span style="color:#ef4444">*</span></label>
-              <textarea v-model="rulingForm.notes" class="tp-textarea" rows="5" :placeholder="t('disputesView.rulingModal.notesPh')" style="min-height:120px"></textarea>
-            </div>
-            <div class="tp-banner tp-banner--warn">
-              {{ t('disputesView.rulingModal.warnA') }}
-              {{ rulingForm.resolution === 'resolved' ? ' ' + t('disputesView.rulingModal.warnB') + ' ' : ' ' }}
-              {{ t('disputesView.rulingModal.warnC') }}
-            </div>
+            <RulingPanel v-if="selectedDispute" :dispute="selectedDispute" @cancel="showRulingModal = false" @done="onRuled" />
           </div>
-          <div class="tp-modal-footer">
-            <button class="tp-btn tp-btn--ghost" @click="showRulingModal = false">{{ t('disputesView.rulingModal.cancel') }}</button>
-            <button class="tp-btn tp-btn--success" :disabled="!rulingForm.resolution || !rulingForm.notes || submittingRuling" @click="submitRuling">
-              <span v-if="submittingRuling"><span class="tp-spinner"></span> {{ t('disputesView.rulingModal.applying') }}</span>
-              <span v-else>{{ t('disputesView.rulingModal.submit') }}</span>
-            </button>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- ── V0657 (a): Correct a ruling ─────────────────────────────────────── -->
+    <Teleport to="body">
+      <div v-if="showCorrection && selectedDispute" class="tp-overlay" @click.self="showCorrection = false">
+        <div class="tp-modal">
+          <div class="tp-modal-header">
+            <span class="tp-modal-title">{{ t('disputesView.v2.correct', 'Correct the ruling') }} #{{ selectedDispute.id }}</span>
+            <button class="tp-modal-close" @click="showCorrection = false">✕</button>
+          </div>
+          <div class="tp-modal-body">
+            <CorrectionPanel :dispute="selectedDispute" @cancel="showCorrection = false" @done="onCorrected" />
           </div>
         </div>
       </div>
@@ -538,11 +572,17 @@ import { useDisputesStore } from '@/stores/disputes'
 import { useAuthStore } from '@/stores/auth'
 import { useUIStore } from '@/stores/ui'
 import { useI18n } from '@/composables/useI18n'
-import type { Dispute } from '@/services/api/disputes'
+import { disputesApi, type Dispute } from '@/services/api/disputes'
 import DisputeTimeline from '@/components/DisputeTimeline.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import DisputeAnalytics from '@/components/DisputeAnalytics.vue'
 import FileDisputeModal from '@/components/disputes/FileDisputeModal.vue'
+import RulingPanel from '@/components/disputes/RulingPanel.vue'
+import CorrectionPanel from '@/components/disputes/CorrectionPanel.vue'
+import DisputeEvidence from '@/components/disputes/DisputeEvidence.vue'
+import RulerQueue from '@/components/disputes/RulerQueue.vue'
+import { evidenceRoute, type EvidenceRoute } from '@/services/disputes/evidenceAs'
+import { useRoute } from 'vue-router'
 import { useEscapeClose } from '@/composables/useEscapeClose'
 import '@/components/disputes/tp-disputes-modals.css'
 
@@ -557,7 +597,9 @@ const authStore    = useAuthStore()
 const uiStore      = useUIStore()
 
 // ── State ──────────────────────────────────────────────────────────────────
-const activeTab        = ref<'disputes' | 'analytics'>('disputes')
+const activeTab        = ref<'disputes' | 'analytics' | 'queue'>('disputes')
+const showCorrection   = ref(false)
+const route            = useRoute()
 const activeSmartFilter = ref<string | null>(null)
 const showFileModal    = ref(false)
 const showDetail       = ref(false)
@@ -569,10 +611,8 @@ useEscapeClose(() => showDetail.value && !!selectedDispute.value, () => { showDe
 useEscapeClose(showEvidenceModal, () => { showEvidenceModal.value = false })
 const detailTab        = ref('overview')
 const submittingEvidence = ref(false)
-const submittingRuling   = ref(false)
 
-const evidenceForm = ref({ type: 'text' as const, content: '', description: '' })
-const rulingForm   = ref({ resolution: '' as '' | 'resolved' | 'dismissed', notes: '' })
+const evidenceForm = ref({ type: 'text' as const, content: '', description: '', asDid: '' })
 
 // ── Computed ───────────────────────────────────────────────────────────────
 const loading          = computed(() => disputesStore.loading)
@@ -624,15 +664,6 @@ const smartFilters = computed(() => {
       apply: () => { disputesStore.setStatusFilter('open'); disputesStore.setSearchQuery('') }
     },
     {
-      id: 'high-priority',
-      label: t('disputesView.smartFilters.highPriority'),
-      count: all.filter(d => isPriority(d)).length,
-      apply: () => {
-        disputesStore.setStatusFilter('open')
-        disputesStore.setSearchQuery('')
-      }
-    },
-    {
       id: 'resolved',
       label: t('disputesView.smartFilters.resolved'),
       count: all.filter(d => d.status === 'resolved').length,
@@ -667,24 +698,107 @@ function openDetail(dispute: Dispute) {
 }
 
 function openEvidence() {
-  evidenceForm.value = { type: 'text', content: '', description: '' }
+  const r = selectedEvidenceRoute.value
+  evidenceForm.value = { type: 'text', content: '', description: '',
+                         asDid: r?.route === 'owner' && r.parties.length === 1 ? r.parties[0] : '' }
   showEvidenceModal.value = true
 }
 
 function openRuling() {
-  rulingForm.value = { resolution: '', notes: '' }
   showRulingModal.value = true
 }
+
+/** V0657 (a): after the ruling panel ruled: the answer re-read whole (the store did), shown on the ruling tab */
+function onRuled(result: any) {
+  showRulingModal.value = false
+  if (result?.dispute) {
+    selectedDispute.value = result.dispute
+    detailTab.value = 'ruling'
+  }
+}
+
+/** after a correction: the record re-read (its ruling, outcome and corrections changed) */
+async function onCorrected() {
+  showCorrection.value = false
+  if (!selectedDispute.value) return
+  const updated = await disputesStore.fetchDispute(selectedDispute.value.id)
+  if (updated) selectedDispute.value = updated
+  detailTab.value = 'ruling'
+}
+
+/** a correction a failure left 'applying' (session-lead's review, room seq 1597): finished, never redone */
+const applyingCorrection = computed(() => (selectedDispute.value?.corrections || []).find((c: any) => c.status === 'applying') || null)
+const finishing = ref(false)
+async function finishCorrection() {
+  const c: any = applyingCorrection.value
+  if (!selectedDispute.value || !c?.id) return
+  finishing.value = true
+  try {
+    await disputesApi.finishCorrection(String(selectedDispute.value.id), c.id)
+    await onCorrected()
+  } catch (e: any) {
+    uiStore.showError(t('disputesView.v2.finishFailed', 'The correction was not finished'), e?.response?.data?.detail || e?.message || '')
+  } finally {
+    finishing.value = false
+  }
+}
+
+/** open a dispute by its id: from the ruler's queue, and the deep link #/disputes?id=N (item 16) */
+async function openById(id: number | string) {
+  const want = String(id)
+  const found = disputesStore.disputes.find((d: any) => String(d.id) === want)
+  const full = await disputesStore.fetchDispute(want).catch(() => null)
+  const d = full || found
+  if (d) {
+    activeTab.value = 'disputes'
+    openDetail(d)
+  }
+}
+
+/** a party by name (its card's), its DID on hover; the DID's tail when no card names it (item 9) */
+function partyLabel(name: string | null | undefined, did: string) { return name || shortDid(did) }
+
+function rulingWords(r?: string | null) {
+  if (r === 'IN_FAVOR_OF_COMPLAINANT') return t('disputesView.v2.inFavourComplainant', 'In favour of the complainant')
+  if (r === 'IN_FAVOR_OF_DEFENDANT') return t('disputesView.v2.inFavourDefendant', 'In favour of the defendant')
+  if (r === 'DISMISSED') return t('disputesView.ruling.dismissed')
+  return r || '—'
+}
+
+/** what the ruling did, from the record's outcome (it survives a reload, item 22) */
+const outcomeLines = computed<string[]>(() => {
+  const o: any = (selectedDispute.value as any)?.outcome
+  if (!o) return []
+  const out: string[] = []
+  const p: any = (selectedDispute.value as any)?.parties || {}
+  const nameOf = (did: string) => (p.complainant?.did === did ? p.complainant?.name : p.defendant?.did === did ? p.defendant?.name : null) || shortDid(did)
+  for (const r of o.reputation || []) {
+    out.push(tp('disputesView.v2.repLine', '{who}: {change} reputation ({why})', { who: nameOf(r.did), change: r.change > 0 ? `+${r.change}` : String(r.change), why: r.why || '' }))
+  }
+  if (o.enforcement?.action) {
+    out.push(tp('disputesView.v2.enfDone', 'Enforcement on the defendant: {action} (level {level}, {status})', { action: o.enforcement.action, level: o.enforcement.escalation_level ?? '—', status: o.enforcement.status || '' }))
+  }
+  const m = o.money || {}
+  if (m.kind === 'guild_split') {
+    const sp = m.split
+    out.push(typeof sp === 'string' ? sp : tp('disputesView.v2.guildPaid', 'The order\'s escrow was split: the worker\'s share {share}', { share: m.worker_share }))
+  } else if (m.applied) {
+    out.push(tp('disputesView.v2.walletPaid', '{amount} moved from the defendant\'s wallet', { amount: m.amount }))
+  }
+  if (o.corrected) out.push(tp('disputesView.v2.correctedLine', 'Corrected from {from}: {note}', { from: rulingWords(o.corrected.from), note: o.corrected.note }))
+  return out
+})
 
 async function submitEvidence() {
   if (!selectedDispute.value || !evidenceForm.value.content) return
   submittingEvidence.value = true
   try {
+    const r = selectedEvidenceRoute.value
     await disputesStore.submitEvidence(selectedDispute.value.id, {
       type: evidenceForm.value.type,
       content: evidenceForm.value.content,
       description: evidenceForm.value.description || undefined
-    })
+    }, r?.route === 'owner' ? { agentDid: evidenceForm.value.asDid || undefined } : undefined)
     showEvidenceModal.value = false
     // Refresh the dispute in the list
     const updated = await disputesStore.fetchDispute(selectedDispute.value.id)
@@ -696,35 +810,25 @@ async function submitEvidence() {
   }
 }
 
-async function submitRuling() {
-  if (!selectedDispute.value || !rulingForm.value.resolution || !rulingForm.value.notes) return
-  submittingRuling.value = true
-  try {
-    const result = await disputesStore.updateRuling(
-      selectedDispute.value.id,
-      rulingForm.value.notes,
-      rulingForm.value.resolution
-    )
-    showRulingModal.value = false
-    if (result?.dispute) {
-      selectedDispute.value = result.dispute
-      detailTab.value = 'ruling'
-    }
-  } catch (e: any) {
-    uiStore.showError(t('disputesView.error.rulingFailed'), e.message || t('disputesView.error.rulingFailedMsg'))
-  } finally {
-    submittingRuling.value = false
-  }
+// V0658 (d), polish 15: acting as a party, the agent files as itself; otherwise the owner of a party files as it
+const ownedDids = computed(() => (authStore.availableAgents || []).map((a: any) => a?.did || a?.agent_did).filter(Boolean))
+function routeFor(d: Dispute): EvidenceRoute | null {
+  return evidenceRoute(d, { actingDid: myDid.value, ownedDids: ownedDids.value, isAdmin: !!isAdmin.value })
 }
+const selectedEvidenceRoute = computed(() => (selectedDispute.value ? routeFor(selectedDispute.value) : null))
+function partyName(did: string) {
+  const d = selectedDispute.value
+  if (d && did === d.claimant_did) return d.claimant_name || did
+  if (d && did === d.respondent_did) return d.respondent_name || did
+  return did
+}
+const evidenceNeedsParty = computed(() => {
+  const r = selectedEvidenceRoute.value
+  return r?.route === 'owner' && r.parties.length > 1 && !evidenceForm.value.asDid
+})
 
 function canSubmitEvidence(d: Dispute) {
-  if (d.status === 'resolved' || d.status === 'dismissed') return false
-  return d.claimant_did === myDid.value || d.respondent_did === myDid.value
-}
-
-function isPriority(d: Dispute) {
-  const age = dayjs().diff(dayjs(d.created_at), 'day')
-  return age > 7 || d.evidence.length > 3 || d.status === 'investigating'
+  return routeFor(d) !== null
 }
 
 function buildTimeline(d: Dispute) {
@@ -773,9 +877,11 @@ function fmtDate(d: string)   { return dayjs(d).format('MMM D, YYYY') }
 function timeAgo(d: string)   { return dayjs(d).fromNow() }
 function fmtStatus(s: string) { return s.charAt(0).toUpperCase() + s.slice(1) }
 function truncate(s: string, n: number) { return s.length > n ? s.slice(0, n) + '…' : s }
+function fmtDateTime(d: string) { return d ? dayjs(d).format('MMM D, YYYY HH:mm') : '—' }
 function shortDid(did: string) {
   if (!did) return t('disputesView.claimantUnknown')
-  const core = did.replace('did:cos:', '')
+  // V0657 (a), item 9: every DID method's prefix, not only the old did:cos: (every current DID read "did:theo…")
+  const core = did.replace(/^did:[a-z0-9]+:/i, '')
   return core.length > 16 ? core.slice(0, 8) + '…' + core.slice(-4) : core
 }
 
@@ -785,8 +891,12 @@ watch(() => authStore.activeAgent?.did || (authStore.activeAgent as any)?.agent_
   if (did && did !== prev) void refresh()
 })
 
+watch(() => route?.query?.id, (id) => { if (id) void openById(String(id)) })
+
 onMounted(async () => {
-  if (!authStore.activeAgent?.did && !(authStore.activeAgent as any)?.agent_did) return
+  // V0657 (a): a ruler opens a dispute from a link (#/disputes?id=N) without an active agent of their own
+  if (route?.query?.id) void openById(String(route.query.id))
+  if (!authStore.activeAgent?.did && !(authStore.activeAgent as any)?.agent_did && !isAdmin.value) return
   await refresh()
 
   // X3 fix: auto-open drawer if URL hash specifies a dispute (e.g., from
@@ -809,6 +919,12 @@ onUnmounted(() => clearInterval(timer))
 </script>
 
 <style scoped>
+/* V0657 (a): the parties by name, what the ruling did, the ruler's queue */
+.drc-detail-party-box__name { font-weight: 600; margin-bottom: 2px; }
+.drc-party-owner { font-weight: 400; opacity: .7; }
+.drc-outcome { margin: 4px 0 0; padding-left: 18px; }
+.drc-applying { display: block; color: var(--drc-amber, #f5b942); font-weight: 600; }
+.drc-queue { margin-top: 12px; }
 /* ── Theme tokens (mirrors AdminCanaries Phase 11 polish, 2026-05-06) ─────
    Brand-mapped accent so 'neural'/'sovereign' theme switches propagate.
    Semantic status colors stay fixed across themes.
@@ -1034,7 +1150,13 @@ onUnmounted(() => clearInterval(timer))
   min-width: 18px; text-align: center;
 }
 
-.drc-cmd-bar__right { display: flex; align-items: center; gap: 0.5rem; }
+/* V0660 (m): the command bar itself wraps, but this group did not, so on a 412 px phone the row stayed on one
+   line and the refresh button sat at 396..423 px — off the screen and unreachable (the console proof's red since
+   the V0658/V0659 nightlies). The group wraps now, and the 220 px search shrinks instead of pushing its
+   neighbours out; every control stays on the screen at 320 px. */
+.drc-cmd-bar__right { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end; }
+.drc-cmd-bar__right .drc-search-wrap { flex: 1 1 10rem; min-width: 0; }
+.drc-cmd-bar__right .drc-search { width: 100%; min-width: 0; }
 
 /* Harmonized 34px control height across the command bar so select / search /
    icon buttons / file-btn share the same baseline (was: icon-btn=34px while
@@ -1150,7 +1272,6 @@ onUnmounted(() => clearInterval(timer))
   border-color: rgba(var(--nc-primary-rgb),0.25);
 }
 .drc-card--open        { border-left-color: var(--drc-red); }
-.drc-card--investigating { border-left-color: #f59e0b; }
 .drc-card--resolved    { border-left-color: var(--drc-green); }
 .drc-card--dismissed   { border-left-color: #6b7280; }
 
@@ -1177,18 +1298,9 @@ onUnmounted(() => clearInterval(timer))
   padding: 0.2rem 0.6rem; border-radius: 9999px;
 }
 .drc-status-pill--open        { background: rgba(239,68,68,0.12); color: var(--drc-red); }
-.drc-status-pill--investigating { background: rgba(245,158,11,0.12); color: #f59e0b; }
 .drc-status-pill--resolved    { background: rgba(34,197,94,0.12); color: var(--drc-green); }
 .drc-status-pill--dismissed   { background: rgba(107,114,128,0.15); color: #9ca3af; }
 
-.drc-priority-badge {
-  font-size: 0.65rem; font-weight: 600;
-  padding: 0.2rem 0.55rem; border-radius: 9999px;
-  background: rgba(239,68,68,0.1);
-  color: var(--drc-red);
-  border: 1px solid rgba(239,68,68,0.25);
-  text-transform: uppercase; letter-spacing: 0.06em;
-}
 
 .drc-card__desc {
   font-size: 0.85rem; color: #8fa3be;

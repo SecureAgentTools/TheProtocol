@@ -237,6 +237,13 @@ def _etag_from_basis(
         "caps":     _build_capabilities_block(),
         "spire":    _spire_bundle_endpoint() or "",
     }
+    # V0660 (d): the quantum_workloads block (services/quantum_workloads.py) is derived from the environment like caps, so
+    # both paths read it the same way; it joins the basis only while QUANTUM_WORKLOADS_MODE is not off, so a frame with
+    # the switch off keeps the tag it had
+    from .quantum_workloads import quantum_workloads_block as _quantum_block
+    _quantum = _quantum_block()
+    if _quantum is not None:
+        basis["quantum"] = _quantum
     canonical = json.dumps(basis, sort_keys=True, separators=(",", ":"), default=str)
     return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -1804,6 +1811,13 @@ async def build_registry_card(
     }
     if compliance_block:
         card["compliance"] = compliance_block
+    # V0660 (d): whether this frame hosts quantum workloads and what a job settled here gets, from its own switches
+    # (services/quantum_workloads.py). Absent while QUANTUM_WORKLOADS_MODE is off; signed whole while present
+    # (registry_card_signer.signed_paths_for), and in the ETag basis (_etag_from_basis) by the same function.
+    from .quantum_workloads import quantum_workloads_block as _quantum_block
+    _quantum = _quantum_block()
+    if _quantum is not None:
+        card["quantum_workloads"] = _quantum
 
     etag = _compute_card_etag(card, operator_card, stock_digest=sc_digest, solvency_epoch_token=sv_token,
                               market_epoch_token=_market_epoch_token(),

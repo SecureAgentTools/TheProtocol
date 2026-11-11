@@ -361,6 +361,19 @@ class DisputeStatusUpdateResponse(BaseModel):
     updated_at: datetime = Field(..., description="Update timestamp")
 
 
+class DisputeWithdrawRequest(BaseModel):
+    """D6-825: the claimant's withdrawal of its own OPEN dispute; the reason is optional."""
+    reason: Optional[str] = Field(None, max_length=500, description="Why the claimant withdraws (optional)")
+
+
+class DisputeWithdrawResponse(BaseModel):
+    """D6-825: a withdrawn dispute."""
+    dispute_log_id: str = Field(..., description="Unique dispute log identifier")
+    status: str = Field(..., description="WITHDRAWN")
+    resolution_notes: str = Field(..., description="Who withdrew it, when, and the reason given")
+    withdrawn_at: datetime = Field(..., description="When it was withdrawn")
+
+
 class SystemMetricsResponse(BaseModel):
     """Response model for system metrics"""
     total_agents_with_balance: int = Field(..., description="Total number of agents with TEG balances")

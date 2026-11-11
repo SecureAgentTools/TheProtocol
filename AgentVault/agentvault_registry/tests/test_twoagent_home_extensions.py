@@ -156,11 +156,13 @@ def test_control_a_real_change_in_the_extensions_still_drifts():
 
 @pytest.fixture
 def states(monkeypatch):
-    """The three `card_state(s)` readers, replaced; `calls` counts every read so a test can prove who was asked."""
+    """The `card_state(s)` readers, replaced (the three, and the organization's since V0657 (b)); `calls` counts every
+    read so a test can prove who was asked."""
     from agentvault_registry.services import enforcement_propagation as ep
     from agentvault_registry.services import listing_propagation as lp
+    from agentvault_registry.services import org_mark as om
     from agentvault_registry.services import reputation_bond as rb
-    st = {"bond": {}, "enf": {}, "lst": {}, "calls": [], "boom": False}
+    st = {"bond": {}, "enf": {}, "lst": {}, "org": {}, "calls": [], "boom": False}
 
     def one(kind):
         async def f(db, did):
@@ -184,6 +186,8 @@ def states(monkeypatch):
     monkeypatch.setattr(rb, "card_states", many("bond"))
     monkeypatch.setattr(ep, "card_states", many("enf"))
     monkeypatch.setattr(lp, "card_states", many("lst"))
+    monkeypatch.setattr(om, "card_state", one("org"))
+    monkeypatch.setattr(om, "card_states", many("org"))
     monkeypatch.setattr(rb, "registry_display_name", lambda: "EU")
     return st
 
@@ -257,7 +261,7 @@ async def test_the_list_twin_asks_once_per_extension_for_the_page(states):
     assert items[2]["card_data"] is mirror
     assert _uris(items[3]["card_data"]) == []
     kinds = [k for k, _ in states["calls"]]
-    assert sorted(kinds) == ["bond", "enf", "lst"], states["calls"]
+    assert sorted(kinds) == ["bond", "enf", "lst", "org"], states["calls"]
     assert all(dids == tuple(sorted([DID, d2])) for _, dids in states["calls"]), states["calls"]
 
 

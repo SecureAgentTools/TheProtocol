@@ -243,9 +243,12 @@ import { usePocketLock, pocketCredentialId } from '@/composables/usePocketLock'
 import { liabilityApi } from '@/services/api/liability'
 import { devicePushApi } from '@/services/api/devicePush'
 import { useDeviceSigner } from '@/composables/useDeviceSigner'
+import { useThisDeviceApproval } from '@/composables/useThisDeviceApproval'
+import { parseStepUp } from '@/services/membership/membership'
 import DecisionQueue from '@/components/cockpit/DecisionQueue.vue'
 
 const lock = usePocketLock()
+const thisDevice = useThisDeviceApproval()
 
 // ── COCKPIT CARD confirmations ────────────────────────────────────────────────────────────
 const signer = useDeviceSigner()
@@ -299,12 +302,40 @@ async function enrolKey() {
     const ok = await lock.enroll()
     if (!ok) { confirmMsg.value = 'Biometric enrolment was cancelled.'; return }
     await loadConfirmations()
-    confirmMsg.value = deviceKeyEnrolled.value
+    // D6-850: the registry records a new device only once an enrolled one approved it (when the account has one)
+    const server = lock.serverEnrol?.value ?? { state: 'idle', note: '' }
+    confirmMsg.value = server.state === 'registered'
       ? 'Biometric signing enrolled. Confirmations now require your fingerprint.'
-      : 'Enrolled on this device, but the registry did not record it — try again.'
+      : ['refused', 'timed_out', 'needs_code'].includes(server.state) && server.note
+        ? `Enrolled on this device, but the registry did not record it: ${server.note}`
+        : 'Enrolled on this device, but the registry did not record it — try again.'
   } catch (e: any) {
     confirmMsg.value = e?.message || 'Could not enrol biometric signing.'
   } finally { enrolling.value = false }
+}
+
+// D6-850: while an enrolled device is asked to approve this new one, say where to look
+watch(() => lock.serverEnrol?.value, (v) => {
+  if (enrolling.value && v?.state === 'waiting_device') confirmMsg.value = v.note
+})
+
+/** D6-850: a live key goes with the account's second factor. This phone holds an enrolled key, so it confirms the
+ *  removal right here (the same consent as Approvals); otherwise the person approves it on another enrolled device. */
+async function revokeWithSecondFactor(target: number): Promise<boolean> {
+  try {
+    await liabilityApi.revokeDeviceKey(target)
+    return true
+  } catch (e: any) {
+    const step = e?.response?.status === 428 ? parseStepUp(e?.response?.data) : null
+    if (!step) throw e
+    if (!(await thisDevice.check())) {
+      confirmMsg.value = 'Confirm the removal in Approvals on an enrolled device (or with a code), then revoke again.'
+      return false
+    }
+    await thisDevice.approve(step)
+    await liabilityApi.revokeDeviceKey(target, { challenge_id: step.challengeId })
+    return true
+  }
 }
 
 async function revokeKey() {
@@ -317,7 +348,7 @@ async function revokeKey() {
     const mine = (devs.devices || []).find((d: any) => d.webauthn_credential_id === pocketCredentialId())
     const target = mine?.id ?? pushDeviceId.value
     if (!target) { confirmMsg.value = 'No signing key registered for this device.'; return }
-    await liabilityApi.revokeDeviceKey(target)
+    if (!(await revokeWithSecondFactor(target))) return
     // #PK32 — disable() refuses while the credential vault is sealed under this
     // fingerprint key (dropping the lock then would strand the vault's only key).
     const off = lock.disable()

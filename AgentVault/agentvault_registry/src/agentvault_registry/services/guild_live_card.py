@@ -3,14 +3,22 @@
 The sessions' room typed an order's lifecycle by hand (BID, AWARDED, DONE ...), ten messages per order. An order whose
 poster names a room (POST /guild/orders `room_id`, a thread the poster's agent takes part in and may post in) now has ONE
 `guild.order.live` card there, posted by the Guild rail when the order is posted and updated in place at each step of
-its lifecycle (posted, bid, awarded, delivered, settling, settled, disputed, cancelled). Settled or cancelled closes it.
+its lifecycle (posted, bid, awarded, delivered, settling, settled, disputed, cancelled, expired). Settled, cancelled or
+expired closes it.
 
-ONE writer path: routers/guild.py `_audit`, the one place every lifecycle event is written, asks for a refresh after it
-writes an event. The refresh runs in its own session after the event's transaction: it waits until that event is
-committed (an event that never commits, because its transaction rolled back, shows nothing), takes the order's lock for
-the card (a Postgres advisory lock, so two workers never write the card out of order), reads the order as it now is and
-renders the card from it; an older refresh that runs late renders the same latest state, so the card never goes back.
-Best effort: a card that fails to post or to update is logged and the order stands. Nothing here moves money.
+ONE writer path: routers/guild.py `_audit`, the one place a route writes a lifecycle event, asks for a refresh after it
+writes an event; the reaper (background_tasks/guild_order_reaper.py), which writes its own events, asks the same after
+each event it commits (V0659 (n): an order it expired, disputed, re-drove or reverted kept its card at its last state).
+The refresh runs in its own session after the event's transaction: it waits until that event is committed (an event
+that never commits, because its transaction rolled back, shows nothing), takes the order's lock for the card (a Postgres
+advisory lock, so two workers never write the card out of order), reads the order as it now is and renders the card from
+it; an older refresh that runs late renders the same latest state, so the card never goes back. Best effort: a card that
+fails to post or to update is logged and the order stands. Nothing here moves money.
+
+V0659 (n) gwo_54d9e9b56ff69609f5e8fbbe: a room can also be named after the order was posted (POST
+/guild/orders/{oid}/room, its poster, one room per order while the order runs; MCP guildSetOrderRoom). post_now() posts
+the card then, from the order as it is, and the order's later events keep it current like any other card; naming the
+same room again posts a card that was not posted.
 """
 from __future__ import annotations
 
@@ -157,11 +165,33 @@ async def refresh(order_id: str, seq: int) -> None:
         logger.warning("[GUILD] the room card of order %s was not kept current: %s", order_id, e)
 
 
+# The events after which the card is rendered again: the steps it shows, and the reaper's revert of a stuck resolution
+# (resolving back to resolved or disputed), a change of status the card does not list as a step (V0659 (n)).
+REFRESH_EVENT_TYPES = frozenset(lc.GUILD_EVENT_TYPES) | {"stuck_reverted"}
+
+
 def refresh_soon(order_id: str, seq: int, event_type: str) -> None:
-    """Ask for the card's refresh after event `seq` (only the lifecycle events a card shows; never raises)."""
-    if event_type not in lc.GUILD_EVENT_TYPES:
+    """Ask for the card's refresh after event `seq` (only the events that change what a card shows; never raises)."""
+    if event_type not in REFRESH_EVENT_TYPES:
         return
     try:
         cs.spawn(refresh(order_id, seq), what=f"the room card of guild order {order_id} after event {seq}")
     except Exception:  # noqa: BLE001 — no running loop (a script): no card, the order stands
         logger.debug("[GUILD] room card refresh for %s skipped", order_id, exc_info=True)
+
+
+async def post_now(order_id: str) -> Optional[str]:
+    """V0659 (n): the card of an order whose poster named its room after posting it (POST /guild/orders/{oid}/room),
+    posted now from the order as it is (its status, bids, worker and steps so far); its later events keep it current like
+    any card. Called after the naming committed, so there is no event to wait for. Returns the card's message id, or None
+    when it was not posted now (logged; naming the room again, or the order's next step, posts it). Never raises."""
+    await refresh(order_id, 0)
+    try:
+        from ..database import get_db_context
+        async with get_db_context() as db:
+            mid = (await db.execute(sa_text("SELECT announce_message_id FROM guild_work_orders WHERE id = :o"),
+                                    {"o": order_id})).scalar()
+        return str(mid) if mid else None
+    except Exception as e:  # noqa: BLE001 — the room is named; the card is a display of the order
+        logger.warning("[GUILD] the room card of order %s could not be read back: %s", order_id, e)
+        return None

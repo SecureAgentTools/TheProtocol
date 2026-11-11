@@ -133,6 +133,13 @@ def assert_callable_endpoint(url: str) -> str:
     The URL always comes from a REGISTERED agent card, never from the caller — but
     a card is developer-supplied data, so it is still untrusted input. https only,
     no credentials, and every resolved address must be a public unicast one.
+
+    V0660 (l): this check still earns its keep for the two rules the guard does not have, the https
+    scheme and embedded credentials. What it CANNOT do is bind its own answer to the connection: it
+    resolved the name, approved every address, and the client then resolved the name again and connected
+    to whatever it got that time. The caller now hands this a guarded client, which connects only to an
+    address it checked itself, so the window between the check and the connection is closed rather than
+    narrowed.
     """
     if not url or not isinstance(url, str):
         raise UnsafeEndpoint("Agent card declares no endpoint URL")

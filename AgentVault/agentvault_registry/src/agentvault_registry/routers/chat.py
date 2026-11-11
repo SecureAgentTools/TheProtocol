@@ -286,9 +286,21 @@ async def _send_and_fan_out(db: AsyncSession, conv, my_row, actor: cs.Actor,
 
     recipients = await cs.recipients_snapshot(db, conv, sender)
     owner_dev = await _sender_owner_dev_id(db, actor)
+    # V0659 (o): the developer whose agent sent the line reads his copy as his agent's. The sender is the poster except
+    # where a rail speaks for another agent (a service's answer, posted for the caller as the service agent).
+    agent_owner = None
+    if sender.ptype == "agent":
+        agent_owner = owner_dev if sender.key == actor.key else await _sender_owner_dev_id(db, sender)
+        if agent_owner is not None and agent_owner != owner_dev and \
+                agent_owner not in {r.get("owner_developer_id") for r in recipients}:
+            # he holds no copy of his own here, so the line reaches him only through his agent's seat, as his read does
+            # (the household rule asks for an ACTIVE seat): a service agent born 'left' brings its owner nothing
+            seat = await cs._my_row(db, conv.id, sender)
+            if seat is None or seat.state != "active":
+                agent_owner = None
     cs.deliver(
         conv.id, conv.kind, payload, recipients, sender.display_name,
-        is_ping=is_ping, sender_owner_dev_id=owner_dev)
+        is_ping=is_ping, sender_owner_dev_id=owner_dev, sender_agent_owner_dev_id=agent_owner)
 
     return payload
 
@@ -389,8 +401,11 @@ async def create_conversation(
             if away:
                 recipients = await cs.recipients_snapshot(
                     db, conv, cs.Actor("agent", agent_did=away.get("sender_id")))
+                # V0659 (o): the stand-in is his own agent (away_answer holds it to that), and its seat brings him the
+                # thread while it waits in his Requests: his copy of its answer, live and marked as his agent's
                 cs.deliver(
-                    conv.id, conv.kind, away, recipients, away.get("sender_name") or "")
+                    conv.id, conv.kind, away, recipients, away.get("sender_name") or "",
+                    sender_agent_owner_dev_id=int(t_raw))
 
     return {"conversation_id": conv.id, "kind": conv.kind, "created": created,
             "my_state": my_row.state, "first_message": first, "away_reply": away}
@@ -424,6 +439,13 @@ async def get_messages(
     actor_dict: dict = Depends(get_current_actor_for_read_or_key),
     db: AsyncSession = Depends(get_db),
 ):
+    """One page of a thread, oldest first.
+
+    Every message says `sender_is_my_agent`: true where the agent that sent it is one of yours (you created it), false
+    otherwise, and always false for an agent reading. A line you typed as one of your agents through your own session
+    also says `sent_by_owner`: that line is your own hand, and the console draws it as yours; a line your agent wrote
+    itself is drawn as your agent's.
+    """
     actor = cs.actor_from_auth(actor_dict)
     return await cs.list_messages(db, conversation_id, actor,
                                   before_seq=before_seq, limit=limit, join=join, mentions=mentions)
@@ -1170,6 +1192,10 @@ async def sync(
     Its `next_cursor` continues the filtered stream; `plain_cursor` is where it started, so a plain sync from there
     later loses nothing the filter left behind.
 
+    Every message says `sender_is_my_agent`, as the thread read does: true where the agent that sent it is one of
+    yours. With `sent_by_owner` it was you, typing as that agent through your own session. The feed carries no
+    sender names; the thread read does.
+
     \f
     V0650 (g), order gwo_e0c0c8b4d1a5c6a016077567: the long-poll (services.chat_service.sync_wait). While a call waits
     it holds no database connection and runs no query; fan_out_message wakes it, on any worker over Redis. A registry
@@ -1243,13 +1269,102 @@ async def open_org_room(
     actor = cs.actor_from_auth(actor_dict)
     conv, created, my_row = await cs.open_org_room(db, actor, org_id)
     my_org_role = await cs.actor_org_role(db, org_id, actor)
+    # V0657 (b), polish 11: the organization's LIVE name, as the thread read answers it (the room's title is the name it
+    # had when the room was born, so after a rename the two disagreed); and item 5's organization block
+    from agentvault_registry.services import org_mark as _om
+    org = await _om.room_org(db, org_id)
+    title = (org or {}).get("name") or conv.title
     return {"conversation_id": conv.id, "kind": conv.kind, "created": created,
-            "my_state": my_row.state, "title": conv.title,
-            "room": {"org_id": org_id, "title": conv.title,
+            "my_state": my_row.state, "title": title,
+            "room": {"org_id": org_id, "title": title, "org": org,
                      "mode": conv.mode, "topic": conv.topic, "genesis": conv.genesis,
                      "my_can_post": bool(getattr(my_row, "can_post", True)),
                      "my_org_role": my_org_role,
                      "my_is_operator": my_org_role in cs.ROOM_OPS_ROLES}}
+
+
+class RoomCreate(BaseModel):
+    """V0659 (f): a cross-frame room, hosted here and owned by the caller."""
+    title: str = Field(..., min_length=1, max_length=160)
+    topic: Optional[str] = Field(None, max_length=200)
+    join_rule: str = Field("invited", pattern="^(invited|request|anyone)$")
+
+
+class RoomMemberAct(BaseModel):
+    """V0659 (f): one operator act in a room this registry hosts. `member` is the key the host knows the member by:
+    dev:<id>, agt:<did> or a remote address (id@https://their.registry); `value` carries a rule, a topic or a title."""
+    action: str = Field(..., pattern="^(mute|unmute|remove|ban|accept|moderator|unmoderator|rule|topic|title)$")
+    member: Optional[str] = Field(None, max_length=320)
+    value: Optional[str] = Field(None, max_length=200)
+
+
+@router.post("/rooms", status_code=201)
+@chat_errors
+async def create_room(req: RoomCreate, actor_dict: dict = Depends(get_current_actor_for_read),
+                      db: AsyncSession = Depends(get_db)):
+    """Open a room hosted on this registry, owned by the caller (a developer or an agent). Its address,
+    room:<id>@<this registry>, is how members on other registries join it (under the join rule)."""
+    from ..services import chat_rooms as rooms
+    actor = cs.actor_from_auth(actor_dict)
+    conv = await rooms.create_room(db, actor, req.title, req.topic, req.join_rule)
+    return {"conversation_id": conv.id, "kind": conv.kind, "address": rooms.room_address(conv),
+            "title": conv.title, "topic": conv.topic, "join_rule": conv.join_rule}
+
+
+class RoomJoinByAddress(BaseModel):
+    """V0659 (f): a room's address, room:<id>@https://its.registry (hosted here or on a peer)."""
+    address: str = Field(..., min_length=10, max_length=400)
+
+
+@router.get("/rooms/{conversation_id}")
+@chat_errors
+async def room_info(conversation_id: str, actor_dict: dict = Depends(get_current_actor_for_read_or_key),
+                    db: AsyncSession = Depends(get_db)):
+    """A room as its members see it: its address, rule, title and topic, your seat, and its members (the key each goes
+    by, role, state, may post). On the host its operators also see the pending requests."""
+    from ..services import chat_rooms as rooms
+    return await rooms.room_info(db, cs.actor_from_auth(actor_dict), conversation_id)
+
+
+@router.post("/rooms/join")
+@chat_errors
+async def join_room_by_address(req: RoomJoinByAddress, actor_dict: dict = Depends(get_current_actor_for_read),
+                               db: AsyncSession = Depends(get_db)):
+    """Join a room by its address. A room on this registry is a local join; a room on a peer registry is asked of its
+    host, which seats you under its join rule, and this registry keeps your copy of the room. Answers the room's head
+    and your copy's conversation_id."""
+    from ..services import chat_rooms as rooms
+    return await rooms.join_by_address(db, cs.actor_from_auth(actor_dict), req.address)
+
+
+@router.post("/rooms/{conversation_id}/join")
+@chat_errors
+async def join_room(conversation_id: str, actor_dict: dict = Depends(get_current_actor_for_read),
+                    db: AsyncSession = Depends(get_db)):
+    """Join a room hosted on this registry, under its join rule: seated at once under 'anyone' or an invite, asked
+    under 'request', refused under 'invited' without an invite. Answers the room's head (address, rule, your seat)."""
+    from ..services import chat_rooms as rooms
+    return await rooms.join_local(db, cs.actor_from_auth(actor_dict), conversation_id)
+
+
+@router.post("/rooms/{conversation_id}/act")
+@chat_errors
+async def room_member_act(conversation_id: str, req: RoomMemberAct,
+                          actor_dict: dict = Depends(get_current_actor_for_read), db: AsyncSession = Depends(get_db)):
+    """One operator act in a room hosted here (its owner, or a moderator on a member of lower rank): mute, unmute,
+    remove, ban, accept a request, name or unname a moderator (the owner), set the join rule, the topic or the title.
+    Every act is a system row each member's copy shows, on every registry."""
+    from ..services import chat_rooms as rooms
+    actor = cs.actor_from_auth(actor_dict)
+    result = await rooms.room_action(db, conversation_id, actor, req.action, req.member, req.value)
+    conv = await cs._get_conversation(db, conversation_id)
+    payload = dict(result["system_message"])
+    payload["sender_name"] = actor.display_name
+    recipients = await cs.recipients_snapshot(db, conv, actor)
+    cs.deliver(conv.id, conv.kind, payload, recipients, actor.display_name,
+               sender_owner_dev_id=await _sender_owner_dev_id(db, actor))
+    result["system_message"] = payload
+    return result
 
 
 @router.post("/conversations/{conversation_id}/room")
@@ -2477,7 +2592,9 @@ async def approvals_waiting_for_me(
         conv, org = rooms[r.id]
         item = ca.serialize(r, now, requester_name=agents.get(r.requester_agent_did),
                             decider_name=devs.get(r.decided_by_developer_id))
-        item["room"] = {"conversation_id": conv.id, "title": conv.title or org.name, "org_id": org.id,
+        # V0658 (f): the organization's LIVE name, as the open-room route and the thread read answer it (conv.title is
+        # the name the room was born with, so after a rename the list named a room nobody could find)
+        item["room"] = {"conversation_id": conv.id, "title": org.name or conv.title, "org_id": org.id,
                         "org_name": org.name}
         items.append(item)
     return {"items": items, "count": len(items), "server_time": ca.iso(now)}
@@ -2681,7 +2798,10 @@ async def consume_approval(
             payload = cs.serialize_message(msg)
             payload["sender_name"] = actor.display_name
             recipients = await cs.recipients_snapshot(db, conv, actor)
-            cs.deliver(conv.id, conv.kind, payload, recipients, actor.display_name)
+            # V0659 (o): the agent's own line, delivered here rather than through the shared write path: its owner's
+            # copy says so, as every other line of his agent's does
+            cs.deliver(conv.id, conv.kind, payload, recipients, actor.display_name,
+                       sender_agent_owner_dev_id=await _sender_owner_dev_id(db, actor))
     except Exception as e:  # noqa: BLE001 — the use is committed; its line is a display
         logger.warning("[CHATAPPROVAL] the use line for %s was not posted: %s", row.id, e)
     # V0652 (aa): the decision's card shows its use on itself (used for <act> at <time>), kept in its history; once

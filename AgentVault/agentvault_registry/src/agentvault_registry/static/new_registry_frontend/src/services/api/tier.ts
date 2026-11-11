@@ -165,6 +165,8 @@ export function isAgentEndpoint(url?: string, method?: string): boolean {
   // admin-tier (slash settlement orchestration) — must NOT match the broad
   // /disputes/ rule. Build #12 (2026-05-07).
   if (url.includes('/federation/disputes/')) return false
+  // V0658 (d): an owner files evidence for their party with their own sign-in (the agent's route stays agent-tier)
+  if (url.includes('/disputes/') && url.includes('/evidence/as-owner')) return false
   if (url.includes('/disputes/')) return true
 
   // Funding endpoints — /funding/request and /funding/my-requests need agent JWT

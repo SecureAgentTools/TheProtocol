@@ -1,0 +1,53 @@
+# KEYSTONE (the construction blueprint): the site's sensor logger exports each test run as a CSV to an SFTP server; the
+# run's acceptance row (the measured result against its limit, for one contract milestone) is delivered as that
+# milestone's evidence on TheProtocol, by the contractor's agent, so the client releases the milestone payment on a
+# measurement rather than an e-mail. The measurement rows of the run stay in the export; only the acceptance row is
+# evidence, and only a passed run has one (a failed run's last row is a rejection).
+#
+# The logger side: runs-<run>.csv in /exports on the SFTP server, each with a .done marker once complete
+# (fake/fake_logger.py writes such runs). The contract and its milestone are named in the export's acceptance row.
+version: 1
+name: keystone-sensors
+registry: https://api.theprotocol.cloud
+identity:
+  agent_did: env:AGENT_DID
+  client_id: env:CLIENT_ID
+  client_secret: env:CLIENT_SECRET
+state: /data/keystone-state.db
+sources:
+  logger:
+    type: sftp
+    config:
+      host: sftp.site.local
+      port: 22
+      username: tp-proxy
+      private_key: file:/run/secrets/sftp_key
+      known_hosts: /run/secrets/sftp_known_hosts
+      path: /exports
+      suffix: .csv
+      require_marker: .done          # a run is read only once the logger has written its .done marker
+      id_field: row_id
+actions:
+  deliver:
+    type: milestone_evidence
+    config: {}                       # the contract and the milestone come from the acceptance row
+    limits: {per_minute: 30}
+sinks: {}
+mappings:
+  - name: acceptance
+    version: 1
+    from: logger
+    to: deliver
+    when: {path: $.payload.data.kind, equals: acceptance}
+    fields:
+      contract_id: $.payload.data.contract_id
+      seq: $.payload.data.milestone
+      test: $.payload.data.test
+      result: $.payload.data.result
+      measured: $.payload.data.value
+      limit: $.payload.data.limit
+      unit: $.payload.data.unit
+      run: $.payload.data.run_id
+      at: $.payload.data.at
+retry: {first_s: 5, max_s: 600, attempts: 8}
+service: {listen: "127.0.0.1:9108"}

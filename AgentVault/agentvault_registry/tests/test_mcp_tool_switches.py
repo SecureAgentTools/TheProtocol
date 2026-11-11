@@ -60,8 +60,9 @@ def test_staking_on_payouts_off_lists_the_lock_start_only(switches):
     assert "lock_units" in {p["name"] for p in prompts.list_prompts()["prompts"]}
 
 
-def test_both_on_lists_everything(switches):
+def test_both_on_lists_everything(switches, monkeypatch):
     switches(True, True)
+    monkeypatch.setenv("QUANTUM_WORKLOADS_MODE", "on")   # V0660 (a): the quantum reads have their own switch
     listed = _listed()
     assert (tool_switches.NEEDS_STAKING | tool_switches.NEEDS_STAKING_PAYOUTS) <= listed
     assert len(listed) == len(server.ALL_TOOL_SCHEMAS)

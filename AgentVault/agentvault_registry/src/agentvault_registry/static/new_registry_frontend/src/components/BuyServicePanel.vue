@@ -327,7 +327,8 @@ watch(() => (auth as any).activeAgent?.did, (did) => { if (did && !quote.value &
 }
 .bsp-ok { color: #4ade80; }
 .bsp-warn { color: #fbbf24; font-weight: 600; }
-.bsp-token { opacity: 0.7; }
+/* V0658 (v): the receipt's muted colour, not faded (opacity 0.7 read 3.31:1 on the agent modal; this is 5.3:1) */
+.bsp-token { color: var(--nc-text-muted, #94a3b8); }
 .bsp-again {
   min-height: 32px; padding: 0.2rem 0.6rem; border-radius: 0.3rem; cursor: pointer;
   font-size: 0.72rem; border: 1px solid rgba(var(--nc-primary-rgb), 0.4);

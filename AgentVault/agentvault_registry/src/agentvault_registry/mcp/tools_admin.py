@@ -2156,18 +2156,28 @@ async def cloud_operator_self_restart(auth: MCPAuthContext, service: Optional[st
     return await _admin_post(auth, "/api/v1/admin/cloud-operators/self-restart", json_body=body)
 
 
-async def update_dispute_ruling(auth: MCPAuthContext, dispute_id: str, ruling: str) -> Dict[str, Any]:
-    """DESTRUCTIVE: admin updates a dispute ruling (IN_FAVOR_OF_COMPLAINANT / IN_FAVOR_OF_DEFENDANT / DISMISSED). Triggers enforcement on the loser. Admin only."""
+async def update_dispute_ruling(auth: MCPAuthContext, dispute_id: str, ruling: str, note: Optional[str] = None,
+                                worker_share: Optional[float] = None) -> Dict[str, Any]:
+    """DESTRUCTIVE: admin rules on a dispute (IN_FAVOR_OF_COMPLAINANT / IN_FAVOR_OF_DEFENDANT / DISMISSED). V0657 (a):
+    with the ruler's reason (`note`, kept and told to both parties) and, for a dispute about a Guild order, the worker's
+    share of its escrow (0..1). A dispute about an escrow settles that escrow; a ruling for the complainant may open
+    enforcement on the defendant. Admin only."""
     if not dispute_id or not ruling:
         return {"error": "dispute_id and ruling are required"}
     require_admin_auth(auth)
     effective_token = _get_effective_jwt(auth)
+    body: Dict[str, Any] = {"ruling": ruling}
+    if note:
+        body["note"] = note
+    if worker_share is not None:
+        body["worker_share"] = worker_share
     try:
         async with httpx.AsyncClient(timeout=HTTPX_TIMEOUT, verify=get_httpx_verify()) as client:
-            # the route reads the ruling from the query string, not a body
+            # the ruling also travels as the query parameter, so an older registry (before V0657) still reads it
             r = await client.put(
                 f"{REGISTRY_SELF_URL}/api/v1/admin/disputes/{seg(dispute_id)}/ruling",
                 params={"ruling": ruling},
+                json=body,
                 headers={"Authorization": f"Bearer {effective_token}"},
             )
         if r.status_code in (200, 201, 204):
@@ -2252,6 +2262,48 @@ async def teg_cross_teg_fund(
 async def get_enforcement_policy_defaults(auth: MCPAuthContext) -> Dict[str, Any]:
     """Get factory default enforcement policy (baseline thresholds before admin overrides). Admin only."""
     return await _admin_get(auth, "/api/v1/admin/enforcement/policy/defaults")
+
+
+async def _admin_put(auth: MCPAuthContext, path: str, json_body: Optional[Dict[str, Any]] = None,
+                     timeout: float = HTTPX_TIMEOUT) -> Dict[str, Any]:
+    """Internal helper: PUT against registry API with admin JWT."""
+    require_admin_auth(auth)
+    effective_token = _get_effective_jwt(auth)
+    try:
+        async with httpx.AsyncClient(timeout=timeout, verify=get_httpx_verify()) as client:
+            r = await client.put(
+                f"{REGISTRY_SELF_URL}{path}",
+                json=json_body or {},
+                headers={"Authorization": f"Bearer {effective_token}", "Content-Type": "application/json"},
+            )
+        if r.status_code in (200, 201, 204):
+            try:
+                return r.json()
+            except Exception:
+                return {"status": "ok"}
+        return {"error": f"HTTP {r.status_code}: {refusal_reason(r)}"}
+    except Exception as e:
+        logger.error(f"_admin_put({path}) error: {e}", exc_info=True)
+        return {"error": format_tool_exception(e)}
+
+
+_SLASH_ORDER_SECTION = "/api/v1/admin/enforcement/policy/section/slash_waterfall"
+
+
+async def get_slash_order(auth: MCPAuthContext) -> Dict[str, Any]:
+    """V0658 (k): the order every slash on this registry drains (the enforcement policy's slash_waterfall section: bond,
+    stake, liquid and the cascade to the owner's other agents, each with its max_percent and enabled), with the
+    factory default and whether this registry set its own. Admin only (admin_enforcement)."""
+    return await _admin_get(auth, _SLASH_ORDER_SECTION)
+
+
+async def update_slash_order(auth: MCPAuthContext, order: List[Dict[str, Any]], reason: str) -> Dict[str, Any]:
+    """V0658 (k), DESTRUCTIVE: replace the slash order every slash on this registry drains (validated: each source once,
+    max_percent 0..100, enabled a boolean, the cascade last, at least one of the agent's own steps on), a new policy
+    version, audited, SlashWaterfallChanged on the ledger. Admin only."""
+    if not isinstance(order, list) or not order or not reason:
+        return {"error": "order (a non-empty list of steps) and reason are required"}
+    return await _admin_put(auth, _SLASH_ORDER_SECTION, json_body={"value": order, "reason": reason})
 
 
 async def update_enforcement_policy(auth: MCPAuthContext, policy_json: Dict[str, Any], reason: str) -> Dict[str, Any]:
@@ -4440,7 +4492,7 @@ ADMIN_TOOL_SCHEMAS = [
     {"name": "theprotocol_teardownCloudOperator", "description": "HIGHLY DESTRUCTIVE: tear down cloud-op registry. Real infra. Admin only.", "inputSchema": {"type": "object", "properties": {"application_id": {"type": "string"}}, "required": ["application_id"]}},
     {"name": "theprotocol_getCloudOperatorSelfLogs", "description": "Answers an error to every MCP caller: the route reads a cloud operator's own logs through that operator's federation licence (the X-Federation-License header), which this tool does not send (401 on a frame, 404 mainframe_only on an operator, where the route does not run). A frame admin reads an operator's logs with getCloudOperatorLogs; an operator's own admin with operatorPortalSelfLogs.", "inputSchema": {"type": "object", "properties": {"lines": {"type": "integer", "default": 100}}}},
     {"name": "theprotocol_cloudOperatorSelfRestart", "description": "Answers an error to every MCP caller: the route restarts a cloud operator's service through that operator's own federation licence (X-Federation-License), which this tool does not send (401 on a frame, 404 mainframe_only on an operator). A frame admin restarts one with restartCloudOperatorService; an operator's own admin with operatorPortalSelfRestart.", "inputSchema": {"type": "object", "properties": {"service": {"type": "string"}}}},
-    {"name": "theprotocol_updateDisputeRuling", "description": "DESTRUCTIVE: admin updates dispute ruling. Triggers enforcement. Admin only.", "inputSchema": {"type": "object", "properties": {"dispute_id": {"type": "integer"}, "ruling": {"type": "string", "enum": ["IN_FAVOR_OF_COMPLAINANT", "IN_FAVOR_OF_DEFENDANT", "DISMISSED"]}}, "required": ["dispute_id", "ruling"]}},
+    {"name": "theprotocol_updateDisputeRuling", "description": "DESTRUCTIVE: admin rules on a dispute, with the ruler's reason (kept and told to both parties) and, for a dispute about a Guild order, the worker's share of its escrow. A dispute about an escrow settles that escrow. Triggers enforcement. Admin only.", "inputSchema": {"type": "object", "properties": {"dispute_id": {"type": "integer"}, "ruling": {"type": "string", "enum": ["IN_FAVOR_OF_COMPLAINANT", "IN_FAVOR_OF_DEFENDANT", "DISMISSED"]}, "note": {"type": "string", "maxLength": 4000, "description": "Why: kept on the record and told to both parties"}, "worker_share": {"type": "number", "minimum": 0, "maximum": 1, "description": "A Guild order's dispute only: the worker's share of the escrow (the rest goes back to the poster); unset, the ruling decides it"}}, "required": ["dispute_id", "ruling"]}},
     {"name": "theprotocol_getEventStoreCrossFramePeers", "description": "Cross-frame peers in EventStore (sovereign-mainframe-only). Admin only.", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "theprotocol_getEventStoreFederationOperators", "description": "Federation operators in EventStore (sovereign-mainframe-only). Admin only.", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "theprotocol_compositeHealthCheck", "description": "Composite health check (dev + agent auth combined). Admin only.", "inputSchema": {"type": "object", "properties": {"agent_token": {"type": "string", "description": "an agent JWT (getAgentToken) to include the agent-auth leg"}}}},
@@ -4450,6 +4502,8 @@ ADMIN_TOOL_SCHEMAS = [
     {"name": "theprotocol_tegCrossTegFund", "description": "HIGHLY DESTRUCTIVE: fund satellite TEG treasury from origin. Admin only.", "inputSchema": {"type": "object", "properties": {"target_registry": {"type": "string"}, "amount": {"type": "string"}, "reason": {"type": "string"}, "correlation_id": {"type": "string"}}, "required": ["target_registry", "amount", "reason"]}},
     {"name": "theprotocol_getEnforcementPolicyDefaults", "description": "Factory default enforcement policy. Admin only.", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "theprotocol_updateEnforcementPolicy", "description": "HIGHLY DESTRUCTIVE: replace active enforcement policy fleet-wide. Admin only.", "inputSchema": {"type": "object", "properties": {"policy_json": {"type": "object"}, "reason": {"type": "string"}}, "required": ["policy_json", "reason"]}},
+    {"name": "theprotocol_getSlashOrder", "description": "The order every slash on this registry drains (its bond, its locked units, its liquid units, and the cascade to the same developer's other agents, never a service account's), each step's max_percent and enabled, the factory default and whether this registry set its own. Admin only.", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "theprotocol_updateSlashOrder", "description": "DESTRUCTIVE: replace the slash order every slash on this registry drains. Each step names its source (the bond, the locked units, the liquid units, or the cascade to the same developer's other agents; each once), its max_percent (0-100, of the requested amount) and whether it is enabled. The cascade must be the last step and is off unless listed. A new policy version, audited, SlashWaterfallChanged on the ledger. Admin only.", "inputSchema": {"type": "object", "properties": {"order": {"type": "array", "description": "the steps in order", "items": {"type": "object", "properties": {"source": {"type": "string", "enum": ["bond", "stake", "liquid", "cascade"]}, "max_percent": {"type": "number", "minimum": 0, "maximum": 100}, "enabled": {"type": "boolean"}}, "required": ["source"]}}, "reason": {"type": "string", "minLength": 1, "maxLength": 500, "description": "why the order changes (kept in the audit log and on the ledger)"}}, "required": ["order", "reason"]}},
     {"name": "theprotocol_quarantineRegistry", "description": "DESTRUCTIVE: quarantine a federated registry. Reversible. Admin only.", "inputSchema": {"type": "object", "properties": {"peer_id": {"type": "string"}, "reason": {"type": "string"}, "grace_hours": {"type": "integer"}}, "required": ["peer_id", "reason"]}},
     {"name": "theprotocol_liftQuarantine", "description": "DESTRUCTIVE: lift quarantine after corrected policy. Admin only.", "inputSchema": {"type": "object", "properties": {"peer_id": {"type": "string"}, "new_policy_hash": {"type": "string"}}, "required": ["peer_id", "new_policy_hash"]}},
     {"name": "theprotocol_acceptComplianceBaseline", "description": "Accept a federated peer's CURRENT policy as its compliance baseline after reviewing a drift (its hash moved, e.g. a release changed a shipped default). Refused unless expected_hash is exactly the hash the peer publishes now (read it from the peer's compliance detail or the drift event); the reason is recorded on the ledger. A quarantined peer returns through liftQuarantine instead. Admin only.", "inputSchema": {"type": "object", "properties": {"peer_id": {"type": "string", "description": "The peer_registries id"}, "expected_hash": {"type": "string", "description": "The 64-character lowercase hex policy hash you reviewed"}, "reason": {"type": "string", "description": "Why this policy is accepted (kept on the ledger)"}}, "required": ["peer_id", "expected_hash", "reason"]}},

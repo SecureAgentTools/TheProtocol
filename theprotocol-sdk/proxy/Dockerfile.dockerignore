@@ -1,0 +1,8 @@
+# what the proxy image is built from: the package and nothing else (BuildKit reads this file for proxy/Dockerfile)
+*
+!pyproject.toml
+!README.md
+!LICENSE
+!src/
+**/__pycache__
+**/*.pyc

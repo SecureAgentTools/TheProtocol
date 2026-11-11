@@ -104,6 +104,19 @@ def settlement_of(r: Any) -> Dict[str, Any]:
     return inner if isinstance(inner, dict) else r
 
 
+def undelivered(comp: Any) -> Optional[str]:
+    """V0660 (k), Guild order gwo_9230be3d156cc3ce58699aaf: the ruling frame sends no slash request where
+    CROSS_REGISTRY_SETTLEMENT_DELIVERY is off or it has no dialable federation address, and its ruling's compensation
+    says so (settlement_status "not_delivered", with the reason). The home's half of the path cannot run there: the
+    precondition the flow is NOT MEASURED on, in words the skip code reads (settlement_origin_internal); None when the
+    request went out."""
+    if not (isinstance(comp, dict) and comp.get("settlement_status") == "not_delivered"):
+        return None
+    return (f"{_A} did not deliver the settlement's slash request ({str(comp.get('reason') or 'no reason given')[:240]}): "
+            f"CROSS_REGISTRY_SETTLEMENT_DELIVERY is off there, or it has no dialable federation address, so the "
+            f"home's half of the path cannot run here")
+
+
 def _num(v: Any) -> Optional[float]:
     try:
         return None if v is None else float(str(v))
@@ -146,6 +159,9 @@ async def test_xframe_settlement_reject(rig: FederationTestRig) -> AssertionResu
             # the origin takes the dispute once it knows the defendant: a mirrored card (routers/disputes.py)
             r, why = await _call(rig, _A, "submitDispute", {
                 "agent_jwt": complainant["jwt"], "defendant_did": defendant["did"],
+                # V0657 (a) item 2: the compensation is the complainant's explicit claim, made when filing; an amount in
+                # evidence is no longer read (the pair proof of 2026-11-07, room seq 1929)
+                "amount_claimed": str(amount),
                 "description": "federation suite: a cross-frame settlement the home rejects"})
             if why and "not known to this registry" in why:
                 return None
@@ -166,6 +182,9 @@ async def test_xframe_settlement_reject(rig: FederationTestRig) -> AssertionResu
         ruled, why = await _call(rig, _ADMIN[_A], "updateDisputeRuling",
                                  {"dispute_id": dispute_id, "ruling": "IN_FAVOR_OF_COMPLAINANT"})
         comp = (ruled or {}).get("compensation") if isinstance(ruled, dict) else None
+        off = None if why else undelivered(comp)
+        if off:
+            raise PreconditionUnmet(off)
         sent = isinstance(comp, dict) and comp.get("settlement_status") == "pending_remote_slash"
         if not legs.check("the_origin_rules_for_the_complainant", not why and sent,
                           {"refused": why, "compensation": comp}):

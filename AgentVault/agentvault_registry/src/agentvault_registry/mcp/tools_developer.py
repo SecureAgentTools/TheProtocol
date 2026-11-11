@@ -235,9 +235,14 @@ async def submit_dispute(
     description: str = "",
     complainant_did: str = "",
     evidence: Optional[Dict[str, Any]] = None,
+    amount_claimed: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     File a dispute against another agent, as the calling agent. Routes through /disputes/.
+
+    V0657 recut: `amount_claimed` is the claim a ruling for the complainant may move and the offence's slash is computed
+    from (V0657 (a) item 2: set at filing, never read from evidence). It is passed to the route as written, and the
+    route's bounds decide; the result names the claim the route recorded.
     Requires agent authentication. The description is optional: the dispute itself has no field for one.
 
     D6-784 (2026-10-17): the route files the dispute as the agent of the token and has no complainant field, so
@@ -255,6 +260,8 @@ async def submit_dispute(
         return {"error": "No authentication token available"}
 
     body: Dict[str, Any] = {"defendant_did": defendant_did}
+    if amount_claimed is not None and str(amount_claimed).strip():
+        body["amount_claimed"] = str(amount_claimed).strip()
 
     try:
         async with mcp_http_client(timeout=HTTPX_TIMEOUT_MUTATE) as client:
@@ -303,6 +310,7 @@ async def submit_dispute(
                 "complainant_did": filed_as,
                 "defendant_did": data.get("defendant_did") or defendant_did,
                 "created_at": data.get("created_at", ""),
+                "amount_claimed": data.get("amount_claimed"),   # the claim the route recorded, None when none
                 "description_recorded_as_evidence": evidence_recorded and bool(description),
                 "evidence_recorded": evidence_recorded,
                 "next_steps": (
@@ -1139,11 +1147,16 @@ async def add_team_member(
     )
 
 
-async def assign_agent_to_org(auth: MCPAuthContext, org_id: str, agent_did: str) -> Dict[str, Any]:
-    """Assign one of your agents (by DID) to an organization. The agent must already be owned by you."""
+async def assign_agent_to_org(auth: MCPAuthContext, org_id: str, agent_did: str,
+                              leave_organization_id: Optional[str] = None) -> Dict[str, Any]:
+    """Assign one of your agents (by DID) to an organization. The agent must already be owned by you. An agent belongs to
+    one organization: one that is in another organization moves only when leave_organization_id names that one (V0658
+    (s); without it the registry refuses with a 409 naming the organization it is in)."""
     if not org_id or not agent_did:
         return {"error": "org_id and agent_did are required"}
-    return await _dev_request(auth, "POST", f"/api/v1/organizations/{seg(org_id)}/agents/{seg(agent_did)}/assign")
+    body = {"leave_organization_id": leave_organization_id} if leave_organization_id else None
+    return await _dev_request(auth, "POST", f"/api/v1/organizations/{seg(org_id)}/agents/{seg(agent_did)}/assign",
+                              json_body=body)
 
 
 async def get_organization_by_slug(auth: MCPAuthContext, slug: str) -> Dict[str, Any]:
@@ -1618,28 +1631,28 @@ async def get_transactions_analytics(auth: MCPAuthContext) -> Dict[str, Any]:
 
 
 async def get_agent_rewards_history(auth: MCPAuthContext, agent_did: str) -> Dict[str, Any]:
-    """Lifetime history of an agent's payouts on locked units as the TEG reports it (any agent DID)."""
+    """Lifetime history of an agent's payouts on locked units as the TEG reports it (of an agent you created; a treasury administrator reads any agent's)."""
     if not agent_did:
         return {"error": "agent_did is required"}
     return await _dev_request(auth, "GET", f"/api/v1/teg/rewards/history/{seg(agent_did)}")
 
 
 async def get_agent_pending_rewards(auth: MCPAuthContext, agent_did: str) -> Dict[str, Any]:
-    """Pending rewards of an agent as the TEG reports them (any agent DID)."""
+    """Pending rewards of an agent as the TEG reports them (of an agent you created; a treasury administrator reads any agent's)."""
     if not agent_did:
         return {"error": "agent_did is required"}
     return await _dev_request(auth, "GET", f"/api/v1/teg/rewards/pending/{seg(agent_did)}")
 
 
 async def get_agent_staking_balance(auth: MCPAuthContext, agent_did: str) -> Dict[str, Any]:
-    """Locked balance of an agent as the TEG reports it (any agent DID)."""
+    """Locked balance of an agent as the TEG reports it (of an agent you created; a treasury administrator reads any agent's)."""
     if not agent_did:
         return {"error": "agent_did is required"}
     return await _dev_request(auth, "GET", f"/api/v1/teg/staking/balance/{seg(agent_did)}")
 
 
 async def get_agent_staking_history(auth: MCPAuthContext, agent_did: str) -> Dict[str, Any]:
-    """Lock and release history of an agent as the TEG reports it (any agent DID)."""
+    """Lock and release history of an agent as the TEG reports it (of an agent you created; a treasury administrator reads any agent's)."""
     if not agent_did:
         return {"error": "agent_did is required"}
     return await _dev_request(auth, "GET", f"/api/v1/teg/staking/history/{seg(agent_did)}")
@@ -2064,6 +2077,18 @@ async def reject_dispute_settlement(auth: MCPAuthContext, settlement_id: str) ->
     if not settlement_id:
         return {"error": "settlement_id is required"}
     return await _dev_request(auth, "POST", f"/api/v1/federation/disputes/settlements/{seg(settlement_id)}/reject")
+
+
+async def close_dispute_settlement(auth: MCPAuthContext, settlement_id: str, reason: str) -> Dict[str, Any]:
+    """DESTRUCTIVE: close a cross-frame dispute settlement no peer holds (V0660 (k)): one never delivered, refused by
+    every peer, or left waiting with no peer holding it. Nothing moves; the reason is kept on the settlement and in the
+    audit log. Refused (409, in words) for a settlement a peer holds or one that moved money."""
+    if not settlement_id:
+        return {"error": "settlement_id is required"}
+    if not (reason or "").strip():
+        return {"error": "reason is required"}
+    return await _dev_request(auth, "POST", f"/api/v1/federation/disputes/settlements/{seg(settlement_id)}/close",
+                              json_body={"reason": reason})
 
 
 async def get_peer_slash_config(auth: MCPAuthContext) -> Dict[str, Any]:
@@ -2956,7 +2981,8 @@ DEVELOPER_TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "complainant_did": {"type": "string", "description": "Not used: a dispute is always filed as the calling agent. Accepted so that older callers are not refused; the result says when it named another DID"},
                 "defendant_did": {"type": "string", "description": "DID of the accused agent"},
                 "description": {"type": "string", "description": "Optional: the grievance in your words. The dispute itself has no description field, so it is recorded as the dispute's first evidence"},
-                "evidence": {"type": "object", "description": "Optional additional evidence data, recorded with the description", "default": {}}
+                "evidence": {"type": "object", "description": "Optional additional evidence data, recorded with the description", "default": {}},
+                "amount_claimed": {"type": ["string", "number"], "description": "Optional: the amount you claim, in the frame's units (a numeric string such as '12.5', or a number). A ruling in your favour may move it from the defendant's wallet, and the offence's slash is computed from it. Only this moves money: an amount named in the description or the evidence moves nothing"}
             },
             "required": ["defendant_did"]
         }
@@ -3393,12 +3419,17 @@ DEVELOPER_TOOL_SCHEMAS: List[Dict[str, Any]] = [
     },
     {
         "name": "theprotocol_assignAgentToOrg",
-        "description": "Assign one of your agents (by DID) to an organization. The agent must already be owned by you.",
+        "description": "Assign one of your agents (by DID) to an organization. The agent must already be owned by you. "
+                       "An agent belongs to one organization: one that is in another organization moves only when "
+                       "leave_organization_id names that one (otherwise the answer is a 409 naming it).",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "org_id": {"type": "string"},
-                "agent_did": {"type": "string"}
+                "agent_did": {"type": "string"},
+                "leave_organization_id": {"type": "string", "maxLength": 255,
+                                          "description": "The organization the agent leaves, when it is in another "
+                                                         "one (the refusal names it); omit it otherwise"}
             },
             "required": ["org_id", "agent_did"]
         }
@@ -3661,10 +3692,10 @@ DEVELOPER_TOOL_SCHEMAS: List[Dict[str, Any]] = [
     {"name": "theprotocol_updateMyDeveloperLocation", "description": "Update authenticated developer's location for globe visualization. location_data MUST include `latitude` and `longitude` (decimal degrees). Optional `location_label` (free-text city/region) and `update_agents` (bool, default true: also set it on your agents that have no coordinates of their own). Requires developer JWT.", "inputSchema": {"type": "object", "properties": {"location_data": {"type": "object", "properties": {"latitude": {"type": "number"}, "longitude": {"type": "number"}, "location_label": {"type": "string"}, "update_agents": {"type": "boolean"}}, "required": ["latitude", "longitude"]}}, "required": ["location_data"]}},
     # ─── §pass70 Sprint 11 (Tier 3 — 7 new) ───────────────────────────────
     {"name": "theprotocol_getTransactionsAnalytics", "description": "Aggregate transaction analytics for your dev account.", "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "theprotocol_getAgentPayoutHistory", "description": "Lifetime history of an agent's payouts on locked units as the TEG reports it (any agent DID). Requires developer JWT.", "inputSchema": {"type": "object", "properties": {"agent_did": {"type": "string"}}, "required": ["agent_did"]}},
-    {"name": "theprotocol_getAgentPendingPayouts", "description": "Pending payouts on locked units of an agent as the TEG reports them (any agent DID). Requires developer JWT.", "inputSchema": {"type": "object", "properties": {"agent_did": {"type": "string"}}, "required": ["agent_did"]}},
-    {"name": "theprotocol_getAgentLockedBalance", "description": "Locked balance of an agent as the TEG reports it (any agent DID). Requires developer JWT.", "inputSchema": {"type": "object", "properties": {"agent_did": {"type": "string"}}, "required": ["agent_did"]}},
-    {"name": "theprotocol_getAgentLockHistory", "description": "Lock and release history of an agent as the TEG reports it (any agent DID). Requires developer JWT.", "inputSchema": {"type": "object", "properties": {"agent_did": {"type": "string"}}, "required": ["agent_did"]}},
+    {"name": "theprotocol_getAgentPayoutHistory", "description": "Lifetime history of an agent's payouts on locked units as the TEG reports it (of an agent you created; a treasury administrator reads any agent's). Requires developer JWT.", "inputSchema": {"type": "object", "properties": {"agent_did": {"type": "string"}}, "required": ["agent_did"]}},
+    {"name": "theprotocol_getAgentPendingPayouts", "description": "Pending payouts on locked units of an agent as the TEG reports them (of an agent you created; a treasury administrator reads any agent's). Requires developer JWT.", "inputSchema": {"type": "object", "properties": {"agent_did": {"type": "string"}}, "required": ["agent_did"]}},
+    {"name": "theprotocol_getAgentLockedBalance", "description": "Locked balance of an agent as the TEG reports it (of an agent you created; a treasury administrator reads any agent's). Requires developer JWT.", "inputSchema": {"type": "object", "properties": {"agent_did": {"type": "string"}}, "required": ["agent_did"]}},
+    {"name": "theprotocol_getAgentLockHistory", "description": "Lock and release history of an agent as the TEG reports it (of an agent you created; a treasury administrator reads any agent's). Requires developer JWT.", "inputSchema": {"type": "object", "properties": {"agent_did": {"type": "string"}}, "required": ["agent_did"]}},
     {"name": "theprotocol_listTegPolicies", "description": "List active TEG governance/compliance policies.", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "theprotocol_getTegPoliciesComplianceDashboard", "description": "TEG policy compliance dashboard.", "inputSchema": {"type": "object", "properties": {}}},
     # ─── §pass70 Sprint 12 (Tier 3 — 15 new: federation + auth + bundle) ──
@@ -3705,6 +3736,7 @@ DEVELOPER_TOOL_SCHEMAS: List[Dict[str, Any]] = [
     {"name": "theprotocol_getFederationDisputeSettlement", "description": "Get a single federation dispute settlement.", "inputSchema": {"type": "object", "properties": {"settlement_id": {"type": "string"}}, "required": ["settlement_id"]}},
     {"name": "theprotocol_approveDisputeSettlement", "description": "DESTRUCTIVE: approve cross-frame dispute settlement (triggers cross-frame slash).", "inputSchema": {"type": "object", "properties": {"settlement_id": {"type": "string"}}, "required": ["settlement_id"]}},
     {"name": "theprotocol_rejectDisputeSettlement", "description": "Reject cross-frame dispute settlement.", "inputSchema": {"type": "object", "properties": {"settlement_id": {"type": "string"}}, "required": ["settlement_id"]}},
+    {"name": "theprotocol_closeDisputeSettlement", "description": "DESTRUCTIVE: close a cross-frame dispute settlement no peer holds (never delivered, refused by every peer, or left waiting); nothing moves, the reason is recorded. Refused for one a peer holds or one that moved money.", "inputSchema": {"type": "object", "properties": {"settlement_id": {"type": "string"}, "reason": {"type": "string", "minLength": 1, "maxLength": 500}}, "required": ["settlement_id", "reason"]}},
     {"name": "theprotocol_getPeerSlashConfig", "description": "Per-peer slash configuration (max amounts, callbacks, TTL).", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "theprotocol_updatePeerSlashConfig", "description": "DESTRUCTIVE: update peer slash configuration.", "inputSchema": {"type": "object", "properties": {"peer_id": {"type": "string"}, "config": {"type": "object"}}, "required": ["peer_id", "config"]}},
     {"name": "theprotocol_getFederationPeerByID", "description": "Get federation peer detail by id.", "inputSchema": {"type": "object", "properties": {"peer_id": {"type": "string"}}, "required": ["peer_id"]}},

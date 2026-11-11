@@ -226,6 +226,8 @@ from .tools_admin import (
     teg_cross_teg_fund,
     get_enforcement_policy_defaults,
     update_enforcement_policy,
+    get_slash_order,
+    update_slash_order,
     quarantine_registry,
     lift_quarantine,
     accept_compliance_baseline,
@@ -589,6 +591,8 @@ ADMIN_TOOL_DISPATCH: Dict[str, Any] = {
     "theprotocol_tegCrossTegFund":              teg_cross_teg_fund,
     "theprotocol_getEnforcementPolicyDefaults": get_enforcement_policy_defaults,
     "theprotocol_updateEnforcementPolicy":      update_enforcement_policy,
+    "theprotocol_getSlashOrder":                get_slash_order,      # V0658 (k)
+    "theprotocol_updateSlashOrder":             update_slash_order,   # V0658 (k)
     "theprotocol_quarantineRegistry":           quarantine_registry,
     "theprotocol_liftQuarantine":               lift_quarantine,
     "theprotocol_acceptComplianceBaseline":     accept_compliance_baseline,

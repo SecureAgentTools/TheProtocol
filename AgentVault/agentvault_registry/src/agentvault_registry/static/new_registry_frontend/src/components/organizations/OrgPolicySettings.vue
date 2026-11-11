@@ -32,7 +32,12 @@ const props = defineProps<{
   /** Optional explicit edit permission. When omitted, the form is editable
    *  unless the load (or a save) returns 403, at which point it goes read-only. */
   canEdit?: boolean
+  /** V0658 (r): the organization's listing as the page holds it. A listing made elsewhere on the page (the notice's "List
+   *  this organization publicly") shows in the switch without reloading the form, so nothing typed and not saved is lost. */
+  listed?: boolean
 }>()
+/** V0658 (r): the stored settings after a save, so the page re-reads what depends on them (the listing's notice) */
+const emit = defineEmits<{ (e: 'saved', settings: OrgPolicySettings): void }>()
 
 // ── State ──────────────────────────────────────────────────────────────────────
 const loading = ref(true)
@@ -46,8 +51,8 @@ const settings = ref<OrgPolicySettings>({})
 const catalog = ref<OrgSettingsCatalogEntry[]>([])
 const registry = ref<OrgRegistryPosture | null>(null)
 
-/** Form values keyed by the catalog's dotted key (e.g. 'liability.mode'). */
-const form = reactive<Record<string, string>>({})
+/** Form values keyed by the catalog's dotted key (e.g. 'liability.mode'). A switch holds a boolean (V0658 (r)). */
+const form = reactive<Record<string, string | boolean>>({})
 
 // ── Mode ordering (off < shadow < enforce; higher = stricter) ──────────────────
 const MODE_ORDER = ['off', 'shadow', 'enforce']
@@ -93,7 +98,9 @@ function hydrateForm() {
   for (const entry of formEntries.value) {
     const own = readSetting(entry.key)
     if (own !== undefined && own !== null && own !== '') {
-      form[entry.key] = String(own)
+      // V0658 (r): a switch as a boolean. Read back as the string 'true' it went out as false on the next save (the
+      // patch sends `=== true`), so saving the policy for another field unlisted a listed organization; 'false' read On.
+      form[entry.key] = entry.type === 'bool' ? own === true : String(own)
       continue
     }
     // No org override — seed with the current registry-effective value so the
@@ -165,7 +172,7 @@ function buildPatch(): OrgPolicySettings {
       v = Number(v)
       if (Number.isNaN(v)) continue
     }
-    if (entry.type === 'bool') v = v === true   /* §OCOPTIN: send a real boolean */
+    if (entry.type === 'bool') v = v === true || v === 'true'   /* §OCOPTIN: send a real boolean, as it is stored */
     const parts = entry.key.split('.')
     let node = patch
     for (let i = 0; i < parts.length - 1; i++) {
@@ -210,6 +217,7 @@ async function save() {
     settings.value = res.settings || settings.value
     hydrateForm()
     saved.value = true
+    emit('saved', settings.value)
     uiStore.showSuccess(
       t('orgPolicySettings.savedTitle', 'Policy updated'),
       t('orgPolicySettings.savedBody', 'Organization policy saved.'),
@@ -229,6 +237,16 @@ async function save() {
 
 watch(() => props.orgId, () => { load() })
 onMounted(load)
+
+// V0658 (r): the page's listing changed (the notice listed the organization): the switch and the stored value follow it,
+// and nothing else in the form moves. A switch the person changed and has not saved already reads the new value (a switch
+// has two), so following it never overrides a choice.
+watch(() => props.listed, (now) => {
+  if (typeof now !== 'boolean' || loading.value) return
+  if ((settings.value.public_listing === true) === now) return
+  settings.value = { ...settings.value, public_listing: now }
+  if (formEntries.value.some((e) => e.key === 'public_listing')) form.public_listing = now
+})
 </script>
 
 <template>

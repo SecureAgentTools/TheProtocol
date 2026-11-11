@@ -52,7 +52,10 @@ def rig(tmp_path, monkeypatch):
     def fake_run(cmd, **kw):
         if cmd[:2] == ["docker", "ps"]:
             world["ps"].append(cmd)
-            project = next(a[len("label=com.docker.compose.project="):] for a in cmd if a.startswith("label=com.docker.compose.project="))
+            # V0660 (j): a default, so a `docker ps` filtered another legitimate way (project.working_dir, which
+            # _operator_container uses) answers "no rows" instead of raising StopIteration out of the fake.
+            project = next((a[len("label=com.docker.compose.project="):] for a in cmd
+                            if a.startswith("label=com.docker.compose.project=")), None)
             return subprocess.CompletedProcess(cmd, 0, "".join(f"{i}\n" for i in world["containers"].get(project, [])), "")
         if cmd[:2] == ["docker", "compose"]:
             world["compose"].append((cmd, kw))

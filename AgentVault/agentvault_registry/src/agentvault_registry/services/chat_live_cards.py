@@ -155,8 +155,9 @@ def card_changes(old: Any, new: Any) -> List[Dict[str, Any]]:
 # The Guild's order card: built from the order and its events (the rail's one renderer)
 # ---------------------------------------------------------------------------
 
+# V0659 (n): "expired" too, the reaper's end of an open order past its deadline (its card showed "open" for good)
 GUILD_EVENT_TYPES = ("posted", "bid", "awarded", "submitted", "settling", "verified", "disputed", "resolving",
-                     "settled", "cancelled")
+                     "settled", "cancelled", "expired")
 
 
 def guild_order_card(order: Dict[str, Any], events: List[Dict[str, Any]], *, bid_count: int,

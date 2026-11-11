@@ -3999,7 +3999,7 @@ async def lifecycle_misc_safe(rpc: RpcCall, parse: ParseResult,
     await _ef.refusal_step(rpc, parse, "theprotocol_updatePeerSlashConfig", "3",
                            {"peer_id": "phase5-no-such-peer", "config": {"max_slash_amount": 100}},
                            dev_jwt, outcomes, "a peer id that is not a number", codes=(422,), text="valid integer")
-    # approveDisputeSettlement / rejectDisputeSettlement / getFederationDisputeSettlement: NOT MEASURED on their own
+    # approveDisputeSettlement / rejectDisputeSettlement / closeDisputeSettlement / getFederationDisputeSettlement: NOT MEASURED on their own
     # rows, their refusals refusal rows (earned_agent_public.NOT_DRIVEN, §MCPTEST30 V0641: no run makes a settlement)
     await _exec_step(rpc, parse, "theprotocol_getFederationDisputeSettlements", "3",
                       {}, dev_jwt, outcomes, expect_status="any")

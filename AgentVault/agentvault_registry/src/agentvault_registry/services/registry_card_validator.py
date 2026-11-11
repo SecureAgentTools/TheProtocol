@@ -57,6 +57,16 @@ def validate_payload(card: Dict[str, Any], raw_body_bytes: int) -> Optional[str]
         return "missing registry_card_version"
     if not isinstance(card.get("identity"), dict):
         return "missing identity block"
+    if "quantum_workloads" in card:
+        # V0660 (d): a frame publishes the block only while it hosts quantum workloads, always as an object with its
+        # status. A status this release does not know (a later mode) is kept, not refused: refusing would freeze the
+        # peer's whole card at the last copy accepted; a reader treats any status but shadow or on as not hosting
+        quantum = card["quantum_workloads"]
+        if not isinstance(quantum, dict):
+            return "quantum_workloads is not an object"
+        status = quantum.get("status")
+        if not isinstance(status, str) or not 1 <= len(status) <= 32:
+            return f"quantum_workloads.status={status!r} is not a status (a string of 1 to 32 characters)"
     visual = card.get("visual") or {}
     for color_key in ("orb_color", "orb_glow_color"):
         v = visual.get(color_key)

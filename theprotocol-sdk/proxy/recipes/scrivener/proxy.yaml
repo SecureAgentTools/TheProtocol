@@ -1,0 +1,50 @@
+# SCRIVENER (the legal-services blueprint): the practice-management system posts each matter event (opened, a filing
+# made, a deadline met, closed) to the proxy; every event becomes a signed attestation on TheProtocol, and the document
+# management system's import folder receives the hash-chained, signed evidence of the matter's history, checked offline
+# with tp-proxy verify (a court or an auditor needs no network and no trust in the firm's own systems).
+#
+# The practice-management side: POST /in/matters, HMAC-signed with PMS_HMAC (fake/fake_pms.py). The DMS side reads
+# /data/dms-import; mirror it to an SFTP server with the evidence sink's mirror setting (the proxy-sftp extra).
+version: 1
+name: scrivener-matters
+registry: https://api.theprotocol.cloud
+identity:
+  agent_did: env:AGENT_DID
+  client_id: env:CLIENT_ID
+  client_secret: env:CLIENT_SECRET
+state: /data/scrivener-state.db
+sources:
+  pms:
+    type: webhook
+    config: {listen: "0.0.0.0:8711", path: /in/matters, id_field: event_id, secret: env:PMS_HMAC}
+actions:
+  attest:
+    type: attestation
+    config: {attestation_type: scrivener.matter_event}
+    limits: {per_minute: 120}
+sinks:
+  dms:
+    type: evidence
+    config: {dir: /data/dms-import, signing_key: file:/run/secrets/evidence.pem}
+mappings:
+  - name: matter-event
+    version: 1
+    from: pms
+    to: attest
+    fields:
+      matter: $.payload.matter_id
+      event: $.payload.type
+      document: {path: $.payload.document_sha256, default: null}
+      by: $.payload.fee_earner
+      at: $.payload.at
+  - name: matter-evidence
+    version: 1
+    from: pms
+    to: dms
+    fields:
+      matter: $.payload.matter_id
+      event: $.payload.type
+      document: {path: $.payload.document_sha256, default: null}
+      at: $.payload.at
+retry: {first_s: 2, max_s: 300, attempts: 8}
+service: {listen: "127.0.0.1:9108"}

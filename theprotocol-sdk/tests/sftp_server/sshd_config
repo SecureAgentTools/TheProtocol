@@ -1,0 +1,14 @@
+# The test SFTP server's sshd configuration, mounted over /etc/ssh/sshd_config by run.sh beside this file: atmoz/sftp's
+# own settings, its host key the one run.sh makes, and one account ("twofa") that takes the login key only as a first
+# step and then asks for a password, for the test that such an account is refused without anyone being prompted.
+HostKey /etc/ssh/ssh_host_ed25519_key
+UseDNS no
+PermitRootLogin no
+X11Forwarding no
+AllowTcpForwarding no
+Subsystem sftp internal-sftp
+ForceCommand internal-sftp
+ChrootDirectory %h
+
+Match User twofa
+    AuthenticationMethods publickey,password

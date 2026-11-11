@@ -62,11 +62,62 @@ loglevel = os.getenv("GUNICORN_LOGLEVEL", "info")
 accesslog = os.getenv("GUNICORN_ACCESSLOG", "-") or None
 
 
+def _metrics_multiproc():
+    """V0657 (c): the TEG's copy of the registry's metrics module (src/teg_core_service/core/metrics_multiproc.py,
+    byte for byte), loaded by its path: this file runs in the arbiter whether the app is imported as
+    src.teg_core_service (the composes) or as teg_core_service (PYTHONPATH=/app/src). Registered in sys.modules
+    before it runs, as a module with a dataclass must be."""
+    import importlib.util
+    import sys
+    name = "teg_gunicorn_metrics_multiproc"
+    mod = sys.modules.get(name)
+    if mod is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "src", "teg_core_service", "core", "metrics_multiproc.py")
+        spec = importlib.util.spec_from_file_location(name, path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        try:
+            spec.loader.exec_module(mod)
+        except Exception:
+            sys.modules.pop(name, None)
+            raise
+    return mod
+
+
+def on_starting(server):
+    """V0657 (c): the metrics directory starts empty. prometheus_client requires it to be wiped between runs, and a
+    directory that outlives a run (anything but a fresh tmpfs) would hand the new workers the old values of whatever
+    pids they are given. A re-exec'd master (USR2, GUNICORN_PID set) skips it: the old master's workers still write
+    there."""
+    if getattr(server, "master_pid", 0):
+        return
+    try:
+        mm = _metrics_multiproc()
+        path = mm.multiproc_dir()
+        n = mm.wipe(path)
+        if n:
+            server.log.info("metrics: %d value files an earlier run left in %s removed", n, path)
+    except Exception as exc:  # noqa: BLE001 - a directory not wiped must not stop the TEG from starting
+        server.log.warning("metrics: the metrics directory was not wiped at start: %s", exc)
+
+
 def child_exit(server, worker):
-    """Clean up a dead worker's Prometheus multiprocess metric files so /metrics
-    stays correct across recycles. No-op (guarded) if multiprocess mode is off."""
+    """A dead worker's Prometheus files. mark_process_dead removes its live gauges; V0657 (c) folds the rest (counters,
+    histograms, summaries, the other gauges) into one archive per kind and removes them, so a worker's death no longer
+    leaves a worker's worth of files in the 16 MB tmpfs (the registry's twin wedged sbx-alpha for 11 h, 2026-11-06).
+    No-op if multiprocess mode is off."""
     try:
         from prometheus_client import multiprocess
         multiprocess.mark_process_dead(worker.pid)
     except Exception:
         pass
+    try:
+        mm = _metrics_multiproc()
+        rep = mm.fold_dead_workers(mm.multiproc_dir(), live_pids=list(server.WORKERS))
+        if rep.lost or rep.busy:
+            server.log.warning("metrics: worker %s exited; its value files: %s", worker.pid, rep.line())
+        elif rep:
+            server.log.info("metrics: worker %s exited; its value files: %s", worker.pid, rep.line())
+    except Exception as exc:  # noqa: BLE001 - the arbiter goes on; the next worker exit folds what this one did not
+        server.log.warning("metrics: worker %s exited; its value files were not folded: %s", worker.pid, exc)

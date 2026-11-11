@@ -235,6 +235,12 @@ services:
       SAGA_ADAPTIVE_CONC_ENABLED: "true"
       REACTOR_CREDIT_ASYNC_BULK_ENABLED: "true"
       REACTOR_CREDIT_ASYNC_FLUSH_MS: "200"
+    # V0657 (c): the metrics directory is a tmpfs of its own, as on the frames: wiped with every start of the container,
+    # held in memory, and a mount whose fill the registry reports (prometheus_multiproc_dir_fill_ratio, alerted on). It
+    # sat in the container's layer on the host disk: no room of its own, so no fill to report. 128m, as the frames have
+    # since V0657: a 16m one wedged sbx-alpha's registry for 11 h (2026-11-06).
+    tmpfs:
+      - /tmp/prom_multiproc:size=128m,mode=1777
     # §pass66 (2026-05-22) — Bug B + Bug C structural fix. The bundle template
     # now SHIPS with `migration_bridge → alembic upgrade head → operator_seed →
     # uvicorn` natively. Previously this command was `create_all + stamp heads`
@@ -302,6 +308,9 @@ services:
     # the gap was invisible to functional probes.
     ports:
       - "127.0.0.1:12080:8080"
+    # V0657 (c): the metrics directory is a tmpfs of its own, as the registry's above (same reasons, same size).
+    tmpfs:
+      - /tmp/prom_multiproc:size=128m,mode=1777
     # §pass66 (2026-05-22) — workers 4→8 baked into template for parity with
     # the registry command. cloud_provisioner used to runtime-replace this;
     # the replace stays in place as safety net for old cached bundles.

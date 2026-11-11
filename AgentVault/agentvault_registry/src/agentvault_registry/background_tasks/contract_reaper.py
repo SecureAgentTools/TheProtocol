@@ -100,13 +100,15 @@ async def _sweep_stuck_releasing(db) -> int:
 
 
 async def _sweep_deadline_disputes(db) -> int:
-    hours = int(os.getenv("CONTRACT_DEADLINE_GRACE_HOURS", "24"))
-    rows = (await db.execute(text(f"""
+    # V0658 (e): one grace rule with the Guild's (services/deadline_grace), a bound parameter, not text in the SQL
+    from agentvault_registry.services.deadline_grace import grace_hours
+    hours = grace_hours()
+    rows = (await db.execute(text("""
         UPDATE contracts SET status='disputed', updated_at=now()
         WHERE status IN ('agreed','in_progress') AND deadline IS NOT NULL
-          AND deadline < now() - interval '{hours} hours'
+          AND deadline < now() - make_interval(hours => :grace_h)
         RETURNING id, client_did, provider_did
-    """))).fetchall()
+    """), {"grace_h": hours})).fetchall()
     for cid, client, provider in rows:
         await cs.audit(db, cid, await cs.next_seq(db, cid), "disputed", "reaper",
                        {"reason": f"deadline exceeded by >{hours}h"})
@@ -146,6 +148,7 @@ async def remind_deadlines() -> int:
     """V0652 (af): contract.deadline_soon, a day before an agreed contract's deadline (24 h after it, the reaper takes
     it to a dispute): both parties hear it. Once per contract and deadline. Not for a Guild order's mirror (the Guild's
     own reminder tells its worker) nor a legacy contract. Its own read and its own claims: it never touches the sweeps."""
+    from agentvault_registry.services.deadline_grace import grace_words   # V0658 (e): the one grace rule
     from agentvault_registry.background_tasks import push_notify
     told = 0
     try:
@@ -163,7 +166,7 @@ async def remind_deadlines() -> int:
             await push_notify.notify_agent_owners(
                 "contract.deadline_soon", [d for d in (c["client_did"], c["provider_did"]) if d],
                 title="A contract's deadline is near",
-                message=f"\u201c{title}\u201d is due {when}; a day after it, an unfinished contract goes to a dispute.",
+                message=f"\u201c{title}\u201d is due {when}; {grace_words()} after it, an unfinished contract goes to a dispute.",
                 tags="hourglass", click="/ui#/contracts")
             told += 1
     except Exception as exc:  # noqa: BLE001 — a reminder never stops the reaper

@@ -1,0 +1,8 @@
+{
+  "protocolVersion": "1.0",
+  "name": "My Agent",
+  "description": "An agent on TheProtocol, built on the SDK's starter.",
+  "supportedInterfaces": [{"url": "http://localhost:8055/a2a", "protocolBinding": "JSONRPC", "protocolVersion": "1.0"}],
+  "capabilities": {"streaming": false},
+  "skills": []
+}

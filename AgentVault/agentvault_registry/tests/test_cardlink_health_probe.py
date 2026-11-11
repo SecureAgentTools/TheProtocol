@@ -23,13 +23,19 @@ class _Resp:
 
 
 class _Client:
-    """Answers per (method, url); anything unnamed raises, which is a transport failure."""
+    """Answers per (method, url); anything unnamed raises, which is a transport failure.
+
+    ⚠ V0660 (l): production hands this worker a `GuardedClient` (core.outbound_guard), so the method the
+    probe calls is `fetch(method, url, max_redirects=n)` and not `request`. A double that offered only
+    `request` would pass while the real client raised AttributeError, so `fetch` is the method here too;
+    these fixtures answer no redirect, which is the whole of what `fetch` adds over one send.
+    """
 
     def __init__(self, answers):
         self.answers = answers
         self.seen = []
 
-    async def request(self, method, url, **kw):
+    async def fetch(self, method, url, *, max_redirects=0, **kw):
         self.seen.append((method, url))
         key = (method, url)
         if key in self.answers:
@@ -38,8 +44,11 @@ class _Client:
             return _Resp(self.answers[url])
         raise ConnectionError("no route to host")
 
+    async def request(self, method, url, **kw):
+        return await self.fetch(method, url, **kw)
+
     async def get(self, url, **kw):
-        return await self.request("GET", url, **kw)
+        return await self.fetch("GET", url, **kw)
 
 
 URL = "https://eu.theprotocol.cloud/agents/weather-agent/a2a"

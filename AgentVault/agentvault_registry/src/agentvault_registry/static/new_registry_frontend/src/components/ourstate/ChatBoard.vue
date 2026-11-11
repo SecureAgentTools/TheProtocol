@@ -7,7 +7,7 @@
   someone else's landed is refused by the registry, and this says so and shows the board as it now is.
 -->
 <template>
-  <div class="cbd" :class="{ 'cbd--strip': strip }" data-testid="ost-board">
+  <div class="cbd" :class="{ 'cbd--strip': strip, 'cbd--capped': capped }" data-testid="ost-board">
     <button v-if="strip" type="button" class="cbd-strip-head" :aria-expanded="open ? 'true' : 'false'"
             data-testid="ost-board-toggle" @click="toggle">
       <span class="cbd-lbl">{{ t('ourstate.board.title', 'Status board') }}</span>
@@ -100,6 +100,7 @@ import { chatApi } from '@/services/api/chat'
 import { organizationService } from '@/services/api/organizationService'
 import { appLocale } from '@/services/appLocale'
 import { renderMarkdown } from '@/services/chat/messageText'
+import { boardFirstLine } from '@/services/chat/sidePanel'
 import { useEscapeClose } from '@/composables/useEscapeClose'
 import { useI18n } from '@/composables/useI18n'
 
@@ -121,7 +122,9 @@ const props = withDefaults(defineProps<{
   strip?: boolean
   /** whose fold state the strip keeps (per person on this device) */
   viewerKey?: string
-}>(), { orgId: '', strip: false, viewerKey: 'me' })
+  /** V0657 (h): in the side panel, the text keeps its own scroll under a height cap, so what follows stays in view */
+  capped?: boolean
+}>(), { orgId: '', strip: false, viewerKey: 'me', capped: false })
 const emit = defineEmits<{ (e: 'update', board: RoomBoard): void }>()
 const { t, tp } = useI18n()
 
@@ -129,10 +132,8 @@ const text = computed(() => String(props.board?.text || ''))
 const canEdit = computed(() => !!props.board?.can_edit)
 const isOwner = computed(() => Array.isArray(props.board?.editors))
 const html = computed(() => (text.value ? renderMarkdown(text.value) : ''))
-/* the strip's folded line: the board's first line as plain text (no heading, list, emphasis or link syntax) */
-const plain = (l: string) => l.replace(/^\s*(?:#{1,6}|>|[-*+]|\d+\.)\s+/, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-  .replace(/[*_`~]+/g, '').trim()
-const firstLine = computed(() => text.value.split('\n').map(plain).find(Boolean) || '')
+/* the strip's folded line: the board's first line as plain text (one rule with the side panel's folded line) */
+const firstLine = computed(() => boardFirstLine(text.value))
 
 const FOLD_KEY = () => `ourchat.board.v1.${props.viewerKey || 'me'}`
 /* the strip starts folded to its first line (beside the pinned approvals a phone has little height left); opened, it
@@ -228,6 +229,8 @@ defineExpose({ startEdit })
 .cbd--strip { flex: 0 1 auto; min-height: 0; overflow-y: auto; margin: 0 12px 8px; padding: 6px 10px;
   border: 1px solid var(--nc-border, rgba(255, 255, 255, .14)); border-radius: 10px; background: var(--nc-surface, rgba(255, 255, 255, .04)); }
 .cbd--strip .cbd-body { max-height: min(28vh, 240px); overflow-y: auto; }
+/* V0657 (h): in the side panel a long board scrolls inside itself; its buttons and the sections below stay in view */
+.cbd--capped .cbd-text { max-height: min(32vh, 280px); overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
 .cbd-strip-head { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0; border: 0; background: none;
   color: inherit; cursor: pointer; text-align: left; }
 .cbd-lbl { flex: none; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .62rem; letter-spacing: .17em;

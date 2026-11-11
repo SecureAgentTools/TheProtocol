@@ -1,0 +1,66 @@
+# TRUNK (the telecom blueprint): the mediation system rates each interconnect event and writes it to its settlement
+# table; every rated event is settled on TheProtocol as it happens, a payment to the partner carrier's agent under the
+# operator's Cockpit mandate (nothing is paid without one, and never above the action's max_amount or the mandate's
+# limits), and finance gets a CSV journal (or camt.053, for systems that read bank statements) of what SETTLED: each
+# line comes from TheProtocol's own payment.settled notice (the registry's webhook) and names its settlement, so a
+# payment refused or held back (over max_amount, outside the mandate) has no line. An event the mediation system
+# disputes (status DISPUTED) is neither paid nor booked.
+#
+# The mediation side: the table settlement_events, its cursor column event_seq (fake/fake_mediation.py writes such
+# rows into an SQLite file; PostgreSQL, MySQL and SQL Server work the same with the proxy-sql extras). The mandate: the
+# operator's owner issues it in the console (Cockpit, a2a.pay) and names it here; the agent's IRONKEY spend cap must
+# sit at or under it, or the payment action does not start.
+version: 1
+name: trunk-settlement
+registry: https://api.theprotocol.cloud
+identity:
+  agent_did: env:AGENT_DID
+  client_id: env:CLIENT_ID
+  client_secret: env:CLIENT_SECRET
+state: /data/trunk-state.db
+sources:
+  mediation:
+    type: sqlpoll
+    config: {engine: sqlite, path: /data/mediation.db, table: settlement_events, cursor: event_seq, poll_seconds: 5}
+  theprotocol:
+    # the registry's webhook (console: Developer, Webhooks; event payment.settled) for the journal: it books what
+    # settled, never what was only rated (a payment refused or held back has no line)
+    type: theprotocol_events
+    config: {listen: "0.0.0.0:8712", path: /in/theprotocol, secret: env:TP_WEBHOOK_SECRET, events: [payment.settled]}
+actions:
+  settle:
+    type: payment
+    # your mandate's id (lm_...), from the console; max_amount: the most one event may settle
+    config: {mandate: lm_yourmandate, max_amount: 25, per_day: 2000}
+    limits: {per_minute: 120}
+sinks:
+  finance:
+    type: journal
+    config: {dir: /data/finance-journal, format: csv, account: {id: TRUNK-INTERCONNECT, currency: ECU}}
+mappings:
+  - name: settle-event
+    version: 1
+    from: mediation
+    to: settle
+    when: {path: $.payload.status, equals: RATED}
+    fields:
+      payee: $.payload.partner_agent_did
+      amount: $.payload.charge
+      event: $.payload.event_id
+      partner: $.payload.partner_code
+      minutes: $.payload.minutes
+  - name: book-settled
+    version: 1
+    from: theprotocol
+    to: finance
+    # the owner's webhook carries every payment of the owner's agents: book this proxy's agent's own (its DID here)
+    when: {path: $.payload.caller_did, equals: "did:theprotocol:your-proxy-agent"}
+    fields:
+      amount: $.payload.amount
+      direction: debit
+      currency: $.payload.currency
+      counterparty: $.payload.target_agent_did
+      text: $.payload.settlement_tx_id
+retry: {first_s: 5, max_s: 600, attempts: 8}
+breaker: {refusals: 3, failures: 10, cooldown_s: 60}
+service: {listen: "127.0.0.1:9108"}

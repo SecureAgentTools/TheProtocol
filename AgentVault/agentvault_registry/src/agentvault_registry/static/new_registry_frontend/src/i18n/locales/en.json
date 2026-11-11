@@ -874,7 +874,8 @@
   },
   "adminSettlementsView": {
     "actions": {
-      "clear": "Clear"
+      "clear": "Clear",
+      "close": "Close"
     },
     "error": {
       "retry": "Retry"
@@ -887,7 +888,15 @@
       "lead": "Cross-registry dispute settlements between federated peers. Approve, reject, retry — bulk operations supported."
     },
     "modal": {
-      "reasonPh": "(optional) Reason for audit trail"
+      "reasonPh": "(optional) Reason for audit trail",
+      "closeTitle": "Close this settlement",
+      "closeReasonPh": "Why this settlement is closed",
+      "closeReasonLabel": "Reason (required)",
+      "working": "Working…",
+      "closeConfirm": "Close settlement",
+      "closeRefused": "The registry did not close it:",
+      "closeBody": "No peer holds its slash request. Closing it ends it for good: nothing moves, and the complainant is not paid through it. The reason is kept on the settlement and in the audit log.",
+      "cancel": "Cancel"
     },
     "row": {
       "errorLabel": "Error"
@@ -897,6 +906,50 @@
       "requested": "REQUESTED",
       "settlements": "SETTLEMENTS",
       "slashed": "SLASHED"
+    },
+    "peerSlash": {
+      "auto": "Automatic",
+      "lead": "A request from a peer with automatic slashing on, up to its amount, is taken at once in the slash order above; any other request waits here for an administrator.",
+      "none": "No active peers.",
+      "readFailed": "The peers' settings could not be read just now.",
+      "retry": "Read again",
+      "title": "Slash requests from each peer",
+      "upTo": "up to"
+    },
+    "slashOrder": {
+      "bond": "Bond",
+      "bondHint": "The reputation bond the registry holds for the agent. The treasury already holds it, so taking it moves nothing.",
+      "cascade": "The owner's other agents",
+      "cascadeHint": "What the agent cannot cover, from the same developer's other agents on this registry: the most held first, at most 25, each through the steps above. Never the agents of a service account or of an administrator.",
+      "confirm": "Save the order",
+      "confirmTitle": "Change how a slash is taken",
+      "earlier": "Take earlier",
+      "factory": "The factory order",
+      "last": "always last",
+      "later": "Take later",
+      "lead": "Every slash on this registry, a ruling here or a peer's accepted request, takes these steps in this order. Each step takes at most its share of the amount, and never more than the agent holds on the ledger.",
+      "liquid": "Liquid units",
+      "liquidHint": "The agent's liquid units, moved to the treasury.",
+      "locks": "Locked units",
+      "locksHint": "The agent's locked units, released early and moved to the treasury. The 10% penalty for the early release comes on top of the slash.",
+      "ofTheAmount": "% of the amount",
+      "off": "Off",
+      "on": "On",
+      "own": "This registry's order, policy version {v}",
+      "problemNoOwnStep": "Keep at least one of the bond, locked units or liquid units on.",
+      "problemPercent": "Each share is a number from 0 to 100.",
+      "readFailed": "The slash order could not be read just now.",
+      "reading": "Reading the slash order…",
+      "reasonPh": "Why the order changes (kept in the audit log and on the ledger)",
+      "save": "Save the order…",
+      "saveFailed": "The order was not saved.",
+      "saved": "Saved: policy version {v}.",
+      "saving": "Saving…",
+      "title": "How a slash is taken",
+      "unchanged": "unchanged",
+      "undo": "Undo changes",
+      "upTo": "up to",
+      "upToPercent": "up to {p}%"
     }
   },
   "adminTreasuryView": {
@@ -1514,9 +1567,9 @@
             "tagline": "Dashboard, wallet, missions, live feed"
           },
           "minimal": {
-            "description": "Just the SDK + A2A payment middleware. You write the agent loop in any language. Lowest resource footprint.",
-            "name": "Minimal SDK",
-            "tagline": "Lightweight, bring-your-own runtime"
+            "description": "Your agent on your own machine, built on the SDK: its card, an A2A endpoint, one example skill, the payment check of every paid call and the bond step, with a Dockerfile, a compose file and the instructions. The best starting point.",
+            "name": "Starter Agent",
+            "tagline": "An external agent on the SDK, ready to run and be paid"
           },
           "ppao": {
             "description": "Personal Paid Agent Orchestrator — your agent dispatches A2A-paid sub-tasks to specialist agents, settles automatically. Pairs with Claude Desktop via MCP.",
@@ -2510,7 +2563,8 @@
       "loading": "Loading contracts…",
       "noMatch": "No contracts match your filters.",
       "railNone": "Your acting agent has no contracts on the contract rail yet.",
-      "none": "No contracts yet. Propose one to an agent, or accept an open proposal when one appears here."
+      "none": "No contracts yet. Propose one to an agent, or accept an open proposal when one appears here.",
+      "railNoneOwned": "None of your agents has a contract on the contract rail yet."
     },
     "error": {
       "loadFailed": "Load Failed",
@@ -2590,7 +2644,16 @@
       "acceptSwitch": "The registry accepts only for the agent you act as. Switch agents in the header to accept as another.",
       "approveRelease": "Approving releases the {amount} {ccy} held in escrow since the contract was accepted to the upgrader. There is no undo.",
       "acceptAs": "Your acting agent accepts as the upgrader"
-    }
+    },
+    "replicaStripOwned": "Cross-registry contracts for your agents",
+    "partyRole": {
+      "client": "client",
+      "provider": "provider"
+    },
+    "railHereHeadOwned": "Contracts on this registry for your agents",
+    "railNotParty": "The acting agent is not a party to this contract.",
+    "railOwnerOrgNote": "{name}, an agent of your organization {org}, is the {role} on this contract. Acting on it needs that agent.",
+    "railOwnerNote": "Your agent {name} is the {role} on this contract. Select it in the agent switcher (top right) to act on it."
   },
   "cta": {
     "apply": "Apply",
@@ -2667,7 +2730,10 @@
       "localOnly": "Local",
       "tag": "Tag",
       "whatsThis": "what do these mean?",
-      "includeUnbondedRefused": "Not applied: this registry lists only agents with a bond, and only its admin can include the others."
+      "includeUnbondedRefused": "Not applied: this registry lists only agents with a bond, and only its admin can include the others.",
+      "firms": "Firms",
+      "hideFirms": "Hide the Firms strip",
+      "hideFirmsTitle": "Hide the strip of firms above the agents. The choice is kept in this browser and in the address."
     },
     "hero": {
       "title": "AGENT DISCOVERY MARKETPLACE",
@@ -2837,7 +2903,9 @@
     "openAgent": "View {name}",
     "readFailed": "The agent list could not be read just now.",
     "readFailedHint": "Nothing was filtered out. Try again in a moment.",
-    "retry": "Try again"
+    "retry": "Try again",
+    "firmsHidden": "The Firms strip is hidden by your filter.",
+    "showFirms": "Show it"
   },
   "disputesView": {
     "claimant": "Claimant",
@@ -2882,7 +2950,11 @@
       "type": "Type",
       "typeDoc": "Document Reference",
       "typeLink": "Link / URL",
-      "typeText": "Text Description"
+      "typeText": "Text Description",
+      "asWhich": "Add it as",
+      "asPick": "Pick one of your agents in this dispute",
+      "asYours": "Added as your agent in this dispute.",
+      "asOne": "Added as {name}, your agent in this dispute."
     },
     "evidenceTab": {
       "empty": "No evidence submitted yet",
@@ -2979,6 +3051,98 @@
     "list": {
       "newestOf": "Showing the newest {n} of {total} disputes; the counts above cover them all.",
       "showMore": "Show {n} more"
+    },
+    "v2": {
+      "award": "Awarded bid",
+      "awardLine": "{price} {cur}, {eta}",
+      "awardedAt": "on {when}",
+      "bounty": "bounty {b}",
+      "claimed": "Amount claimed",
+      "collateral": "The worker's collateral ({amount}) goes to {to}.",
+      "confirm": "Rule",
+      "contract": "Contract {ref}",
+      "contractSettled": "The contract is not disputed any more: this ruling moves no money.",
+      "contractSplit": "The contract's unreleased escrow ({rem}): the provider gets {p}, the client gets {c}.",
+      "corApplied": "Applied",
+      "corConfirm": "Correct the ruling",
+      "corDone": "Ruling corrected",
+      "corEnf": "{who}: the {action} is reversed (the offense leaves the count)",
+      "corFailed": "The ruling was not corrected",
+      "corNoMoney": "A correction moves no money: the escrow settled when it settled.",
+      "corNothing": "Nothing to undo.",
+      "corNow": "Ruled now: {words}",
+      "corRep": "{who}: {change} reputation given back",
+      "corTo": "Correct it to",
+      "corUndone": "Undone",
+      "corWhy": "Why the ruling is corrected (at least 10 characters)",
+      "corrLine": "{when}: {from} → {to}. {note}",
+      "correct": "Correct the ruling",
+      "correctedLine": "Corrected from {from}: {note}",
+      "corrections": "Corrections",
+      "deadline": "Deadline",
+      "deliverable": "What was handed in",
+      "didWhat": "What the ruling did",
+      "dismiss": "Dismiss the complaint",
+      "enfDone": "Enforcement on the defendant: {action} (level {level}, {status})",
+      "enfHead": "Enforcement on {who}: offense {n}, level {level}, {action}",
+      "enfPause": "payouts paused {days} days",
+      "enfReview": "an administrator approves it first",
+      "enfSlash": "a slash of {amount}",
+      "enfSuspends": "the agent is suspended",
+      "escrow": "Escrow held",
+      "etaDays": "{n} days",
+      "etaHours": "{n} hours",
+      "events": "The order's events ({n})",
+      "fileFailed": "No record was filed",
+      "fileRecord": "Give it a record",
+      "filedBySystem": "filed by the system: nobody accused anybody",
+      "forComplainant": "In favour of the complainant ({who})",
+      "forDefendant": "In favour of the defendant ({who})",
+      "guildPaid": "The order's escrow was split: the worker's share {share}",
+      "guildSplit": "The order's escrow ({escrow}): the worker gets {worker}, the poster gets {poster}. No fee.",
+      "handIn": "Handed in",
+      "inFavourComplainant": "In favour of the complainant",
+      "inFavourDefendant": "In favour of the defendant",
+      "kindContract": "Contract, no record",
+      "kindDispute": "Dispute",
+      "kindGuild": "Guild order, no record",
+      "noEnforcement": "No enforcement step.",
+      "noEta": "no time given",
+      "noLink": "This dispute names no order or contract.",
+      "noMoney": "This ruling moves no money.",
+      "noReputation": "No reputation changes.",
+      "nothingHandedIn": "Nothing was handed in.",
+      "open": "Open",
+      "openThread": "Open the thread",
+      "pick": "Pick a ruling to see what it does.",
+      "preview": "What this ruling does",
+      "previewFailed": "The preview could not be read; nothing was ruled.",
+      "previewLoading": "Reading what it would do…",
+      "queueEmpty": "Nothing waits for a ruling.",
+      "queueFailed": "The queue could not be read.",
+      "queueHead": "{n} waiting for a ruling",
+      "queueLoading": "Reading the queue…",
+      "queueTab": "Ruler's queue",
+      "reason": "Your reason (kept on the record; both parties read it)",
+      "refresh": "Refresh",
+      "repLine": "{who}: {change} reputation ({why})",
+      "rulerReason": "The ruler's reason",
+      "ruling": "Ruling",
+      "rulingBusy": "Ruling…",
+      "spec": "The order's spec",
+      "splitOn": "Set the split of the order's escrow myself",
+      "splitWorker": "Worker {pct}%, poster {rest}%",
+      "system": "the system",
+      "thread": "Room thread",
+      "wallet": "{amount} moves from the defendant's wallet to the complainant (the amount claimed when it was filed).",
+      "walletPaid": "{amount} moved from the defendant's wallet",
+      "why": "Why it opened",
+      "wordsComplainant": "in favour of the complainant",
+      "wordsDefendant": "in favour of the defendant",
+      "wordsDismissed": "dismissed",
+      "corrApplying": "Still being applied: a failure stopped it midway. Finishing it does the steps it has not done, once.",
+      "finishCorrection": "Finish the correction",
+      "finishFailed": "The correction was not finished"
     }
   },
   "eigenTrustView": {
@@ -6761,7 +6925,8 @@
       "frameKit": "Your frame",
       "releaseChannel": "Releases",
       "consoleSuite": "Console Suite",
-      "emissionPolicy": "Emission Policy"
+      "emissionPolicy": "Emission Policy",
+      "firms": "Firms"
     }
   },
   "navigation": {
@@ -7832,7 +7997,16 @@
       "creatorLeft": "Creator is no longer a member",
       "authorityLive": "Holds this org's authority",
       "authorityRevoked": "Org authority revoked",
-      "removeAria": "Remove {name} from the organization"
+      "removeAria": "Remove {name} from the organization",
+      "markFailed": "Not changed",
+      "markHidden": "Its card does not name the organization",
+      "markShown": "Its card shows the organization",
+      "markWaiting": "Its card will show the organization once it is listed",
+      "movedBody": "{agent} moved out of {from} and assigned to this organization",
+      "moveBusy": "Moving…",
+      "moveTitle": "Move the agent to this organization?",
+      "moveConfirm": "Move it",
+      "moveBody": "{agent} is in the organization {from}. An agent belongs to one organization: assigning it to {to} takes it out of that one."
     },
     "capacity": {
       "members": "MEMBERS",
@@ -8224,7 +8398,9 @@
       "sentWithKeyTitle": "Sent with an API key (a connector, a bridge or a script), not typed in a signed-in console or Pocket",
       "byYourAssistant": "written by your assistant",
       "byAssistant": "written by the assistant",
-      "byAssistantTitle": "Written by the owner’s personal assistant and posted by the registry at the owner’s request, not typed by hand"
+      "byAssistantTitle": "Written by the owner’s personal assistant and posted by the registry at the owner’s request, not typed by hand",
+      "yourAgent": "your agent",
+      "yourAgentTitle": "Written by one of your agents, not by you"
     },
     "trust": {
       "cross": "{n} cross-registry",
@@ -8287,7 +8463,41 @@
         "wakeOffSelf": "{target} is off: nothing in this room wakes it",
         "wakeListen": "{by} set {target} to listen to the room again",
         "wakeListenSelf": "{target} listens to the room again"
-      }
+      },
+      "openGo": "Open the room",
+      "notAnAddress": "That is not a room's address: it reads room:<id>@https://its.registry",
+      "muted": "muted",
+      "actUnmute": "Unmute",
+      "joinFailed": "You did not join: the room's host refused or could not be reached.",
+      "shareHow": "Someone on another registry pastes this address under \"Join a room\" in OurChat there.",
+      "actUnmoderator": "Remove moderator",
+      "untitled": "Room",
+      "actAccept": "Accept",
+      "joinGo": "Join",
+      "joinDoor": "Join a room",
+      "ruleInvited": "by invitation",
+      "copied": "Copied",
+      "memberCount": "{n} members",
+      "actModerator": "Make moderator",
+      "hostedAt": "hosted at {host}",
+      "joinRule": "Who may join",
+      "title": "Room name",
+      "waiting": "Asked: the room's operators decide, and it shows here once they accept.",
+      "asks": "asks to join",
+      "address": "Address to share",
+      "ruleRequest": "joining asks the operators",
+      "copy": "Copy",
+      "ruleAnyone": "anyone with the address joins",
+      "actMute": "Mute",
+      "actFailed": "That did not go through.",
+      "openDoor": "Open a room",
+      "remote": "another registry",
+      "addressIn": "The room's address",
+      "moderator": "moderator",
+      "actBan": "Ban",
+      "owner": "owner",
+      "actRemove": "Remove",
+      "openFailed": "The room could not be opened."
     },
     "here": {
       "titleRoom": "Everyone who opened this room",
@@ -9035,7 +9245,11 @@
       "workCredsHint": "reputation that traveled home",
       "workingAs": "Working as",
       "yourPrice": "Your price",
-      "yourWork": "Your work"
+      "yourWork": "Your work",
+      "ownerAgent": "Your agent {name} is the {role} on this order. Choose it under Working as to act on it.",
+      "bidsRead": "Bids",
+      "ownerOrg": "{name}, an agent of your organization {org}, is the {role} on this order. Acting on it needs that agent.",
+      "forFirm": "Reserved for a firm: only that organization's agents can bid."
     },
     "guild": {
       "action": {
@@ -9633,6 +9847,145 @@
       "loading": "Loading templates…",
       "noMatch": "No templates match this filter."
     }
+  },
+  "quantumCard": {
+    "age": {
+      "d": "d",
+      "h": "h",
+      "m": "min",
+      "read": "read {n} {u} ago",
+      "s": "s"
+    },
+    "backends": "Backends",
+    "check": {
+      "problems": "{n} problems found here",
+      "shadow": "(shadow)",
+      "unread": "Not checked: no answer",
+      "valid": "Checked here",
+      "validTitle": "This registry checked the extension against the spec and found no problem."
+    },
+    "eyebrow": "Quantum workload",
+    "fact": {
+      "calibration": "Calibration (median)",
+      "depth": "depth {n}",
+      "dynamic": "dynamic circuits",
+      "err1q": "1q error {p}",
+      "err2q": "2q error {p}",
+      "formats": "Formats",
+      "gates": "Native gates",
+      "jurisdiction": "jurisdiction {j}",
+      "kind": "Kind",
+      "limits": "Limits",
+      "location": "Location",
+      "logical": "{n} logical ({code})",
+      "midCircuit": "mid-circuit measurement",
+      "operator": "Operator",
+      "physical": "{n} physical",
+      "qubits": "Qubits",
+      "queue": "Queue",
+      "readout": "readout {p}",
+      "shots": "{n} shots",
+      "snapshot": "Signed snapshot",
+      "snapshotOnly": "snapshot only",
+      "t1": "T1 {n} µs",
+      "t2": "T2 {n} µs",
+      "topology": "Topology",
+      "wait": "about {n} s wait",
+      "width": "width {n}"
+    },
+    "filters": {
+      "any": "Any",
+      "format": "Format",
+      "jurisdiction": "Jurisdiction",
+      "kind": "Kind",
+      "maxHere": "up to {n} here",
+      "minQubits": "At least this many qubits",
+      "modality": "Modality",
+      "only": "Only agents with the quantum extension",
+      "role": "Role",
+      "rung": "Verification rung",
+      "title": "Quantum workloads"
+    },
+    "kind": {
+      "emulator": "Emulator",
+      "qpu": "QPU",
+      "simulator": "Simulator"
+    },
+    "lattice": {
+      "capped": "The first {d} of {n} qubits are drawn.",
+      "complete": "{n} qubits, all-to-all: every pair is coupled.",
+      "completeNotDrawn": "{n} qubits, all-to-all: every pair is coupled ({e} pairs, too many to draw).",
+      "digest": "{n} qubits, {topo}. The coupling map is published only as a digest, so no coupling is drawn.",
+      "digestCount": "{n} qubits, {topo}. The coupling map ({e} couplings) is published only as a digest, so no coupling is drawn.",
+      "none": "{n} qubits, {topo}. The card states no coupling map, so no coupling is drawn."
+    },
+    "modality": {
+      "annealer": "annealer",
+      "neutralAtom": "neutral atom",
+      "photonic": "photonic",
+      "simulator": "simulator",
+      "spin": "spin",
+      "superconducting": "superconducting",
+      "trappedIon": "trapped ion"
+    },
+    "moreBackends": "+{n} more on the agent page",
+    "pricing": {
+      "perBackendSecond": "per second of backend time",
+      "perGateShot": "per gate and shot",
+      "perQpuSecond": "per QPU second",
+      "perShot": "per shot",
+      "perSimulatorSecond": "per simulator second",
+      "perTask": "per task"
+    },
+    "reading": "Reading the backend's facts…",
+    "receipts": {
+      "ledger": "The ledger keeps {k}, never circuits.",
+      "metering": "Use is metered against {c}.",
+      "pricing": "Priced {model}. The amount is in the card's payment terms.",
+      "registry": "This registry names receipts of schema {v}, signed with {algs}.",
+      "residency": "Data stays in {r}.",
+      "retention": "Circuits are kept {c} days, results {r} days.",
+      "signed": "Each job receipt is signed with {alg} (receipt schema {v}).",
+      "title": "Receipts and data"
+    },
+    "role": {
+      "compiler": "compiler",
+      "meter": "meter",
+      "mitigator": "mitigator",
+      "provider": "provider",
+      "router": "router",
+      "verifier": "verifier"
+    },
+    "rungs": {
+      "claimsOnly": "Signed claims only. Nothing here checks them.",
+      "falseAccept": "false accept {p}",
+      "falseReject": "false reject {p}",
+      "name1": "Check the answer",
+      "name2": "Hidden test circuits or an independent repeat",
+      "name3": "Signed claims",
+      "offered": "The agent offers it. This registry settles no verdict at this rung.",
+      "or": " or ",
+      "railGuild": "a Guild work order's verify step",
+      "railMilestone": "a contract milestone",
+      "rung": "Rung {n}",
+      "settlesHere": "Settles here through {rails}.",
+      "shortClaims": "signed claims only",
+      "shortHere": "settles here",
+      "shortOffered": "offered, not settled here",
+      "title": "What a buyer can get"
+    },
+    "status": {
+      "maintenance": "maintenance",
+      "offline": "offline",
+      "online": "online",
+      "paused": "paused",
+      "retired": "retired"
+    },
+    "summary": {
+      "backends": "{n} backends",
+      "qubits": "up to {n} qubits"
+    },
+    "unread": "The backend's facts could not be read here just now."
   },
   "register": {
     "acceptTerms": "I agree to the Terms and Privacy Policy",
@@ -10532,7 +10885,11 @@
       "rejectBody": "The origin registry will be notified that this slash request was refused.",
       "rejectTitle": "Reject Slash Request",
       "settlementLabel": "Settlement",
-      "working": "Working…"
+      "working": "Working…",
+      "closeReasonLabel": "Reason (required, kept on the settlement and in the audit log)",
+      "closeBody": "No peer holds its slash request. Closing it ends it for good: nothing moves, and the complainant is not paid through it. The reason is kept on the settlement and in the audit log.",
+      "confirmClose": "Close settlement",
+      "closeTitle": "Close this settlement"
     },
     "defendant": "Defendant",
     "disputeLinkTitle": "View dispute #{id}",
@@ -10584,7 +10941,8 @@
       "body": "These settlements have passed their saga_timeout_at without finalizing. The reconciliation worker will retry, but admin review may be needed."
     },
     "timeline": "Timeline",
-    "upTo": "Up to"
+    "upTo": "Up to",
+    "close": "Close"
   },
   "sidebar": {
     "brandSub": "REGISTRY",
@@ -11342,7 +11700,9 @@
       "unknown": "not checked from this registry",
       "deadNote": "This registry dialled this address and nothing answered there. It is shown so you can see what the card claims, it is not a working call.",
       "more": "{n} more on this agent"
-    }
+    },
+    "providerSaysHint": "What the card's author wrote. A registry checks the organization mark, not this.",
+    "providerSays": "says: {name}"
   },
   "chatdesk": {
     "tr": {
@@ -11402,7 +11762,10 @@
     "recordsOnly": "records only",
     "noRecords": "No work records yet.",
     "older": "Older records",
-    "pick": "Pick a firm to watch its records."
+    "pick": "Pick a firm to watch its records.",
+    "recordsSub": "The records-only feeds of the organizations that opened their books.",
+    "records": "Work records",
+    "pickerAria": "Organizations with open books"
   },
   "orgPolicySettings": {
     "perMemberPointer": "Per-member — edit in the Members tab (Procurement column)."
@@ -11450,7 +11813,13 @@
     "engage": "Engage",
     "engageTip": "Open the firm's intake agent",
     "bounty": "Post a bounty to this firm",
-    "voiceMiss": "No firm here matched"
+    "voiceMiss": "No firm here matched",
+    "readFailed": "The firms on this registry could not be read just now.",
+    "asFirm": "As the firm",
+    "memberTip": "Guild work the firm's member agents settled as themselves, not as the firm. Shown apart from the firm's own count, never added to it.",
+    "memberJob": "job settled",
+    "memberJobs": "jobs settled",
+    "memberLabel": "Its agents, on their own"
   },
   "fundamentals": {
     "loading": "Loading records…",
@@ -13410,7 +13779,20 @@
     "bidOverBounty": "Your price cannot exceed the bounty.",
     "deadlineInvalid": "The deadline is a whole number of hours, at least 1.",
     "signInToAct": "Sign in to post tasks or bid on work.",
-    "signInToBid": "Sign in to bid on network tasks."
+    "signInToBid": "Sign in to bid on network tasks.",
+    "rejectPlaceholder": "What is missing or wrong in the delivery",
+    "rejectSend": "Send to dispute",
+    "rejectWhy": "Why do you reject it? Your words open the dispute.",
+    "rejectBack": "Back",
+    "delivered": "Delivered",
+    "mine": {
+      "none": "None of your agents or organizations has posted or won an order yet.",
+      "party": "{name} · {role}"
+    },
+    "owner": {
+      "agentParty": "Your agent {name} is the {role} on this order. Select it in the agent switcher (top right) to act on it.",
+      "orgParty": "{name}, an agent of your organization {org}, is the {role} on this order. Acting on it needs that agent."
+    }
   },
   "services": {
     "optionAria": "Option"
@@ -14241,5 +14623,100 @@
     "done": "Done",
     "noUnlock": "This device has no fingerprint or face unlock. A device key still protects copied storage; it is weaker.",
     "insecure": "This page is not served over HTTPS, so this browser can lock nothing here: the secret stays unencrypted."
+  },
+  "orgMark": {
+    "title": "Organization {name}, stated by its home registry {home}"
+  },
+  "orgRequests": {
+    "title": "Join requests",
+    "refresh": "Refresh",
+    "subAdmin": "Agents that asked to join, and agents their creators proposed. Accepting brings the agent in as its owner's assign would.",
+    "subMember": "Propose an agent you created, or follow the requests you made. An administrator decides.",
+    "loading": "Reading the requests…",
+    "empty": "No open request.",
+    "askedItself": "the agent asked",
+    "proposed": "proposed by its creator",
+    "accept": "Accept",
+    "decline": "Decline",
+    "withdraw": "Withdraw",
+    "proposeLabel": "Propose one of your agents",
+    "pick": "Choose an agent",
+    "notePh": "Why it should join (optional)",
+    "send": "Send the request",
+    "failed": "The requests could not be read.",
+    "decideFailed": "The request was not decided",
+    "withdrawFailed": "The request was not withdrawn",
+    "proposeFailed": "The request was not sent",
+    "moveBusy": "Moving…",
+    "moveTitle": "Move the agent into this organization?",
+    "moveConfirm": "Accept and move it",
+    "moveBody": "{agent} is in the organization {from}. An agent belongs to one organization: accepting the request brings it into this one and takes it out of that one.",
+    "moveBodyUnnamed": "{agent} is in {from}. An agent belongs to one organization: accepting the request brings it into this one and takes it out of that one."
+  },
+  "orgFace": {
+    "title": "The organization in public",
+    "listed": "Listed. Its name, logo, description and website are in the list of organizations across the federation, and its agents' cards show its mark, here and on every peer (each agent can hide it).",
+    "unlisted": "Not listed. Nothing about the organization leaves this registry, and no agent's card names it. \"List this organization publicly\" in the settings below turns it on.",
+    "replace": "Replace the logo",
+    "upload": "Upload a logo",
+    "remove": "Remove the logo",
+    "hint": "A PNG or a JPEG, at most 256 KB. This registry hosts it, so a viewer's browser calls no other site.",
+    "tooBig": "A logo is at most 256 KB.",
+    "wrongType": "A logo is a PNG or a JPEG.",
+    "failed": "The logo was not saved."
+  },
+  "orgDirectory": {
+    "title": "Organizations",
+    "here": "On this registry{home}",
+    "loading": "Reading the list…",
+    "failed": "The list could not be read just now.",
+    "noneHere": "No organization of this registry is listed. An organization lists itself in its settings.",
+    "federation": "Across the federation",
+    "noIndex": "This registry reads no federated index, so only its own organizations are listed here.",
+    "indexOld": "The federated index does not list organizations yet.",
+    "indexFailed": "The federated index could not be read just now.",
+    "noneElsewhere": "No other registry lists an organization yet.",
+    "members": "{n} members",
+    "agents": "{n} agents",
+    "work": "{n} jobs settled as the firm",
+    "memberTip": "Guild work its member agents settled as themselves, not as the firm. Shown apart from the firm's own count, never added to it.",
+    "memberWorkOne": "Its agents, on their own: 1 job settled",
+    "workOne": "1 job settled as the firm",
+    "memberWork": "Its agents, on their own: {n} jobs settled"
+  },
+  "orgMarkWhy": {
+    "listFailed": "The organization was not listed.",
+    "noLogo": "No logo is hosted here. Only a logo this registry hosts is shown: a PNG or a JPEG of at most 256 KB.",
+    "after": "Once it is listed and has a logo hosted here, its agents' cards show the logo and name, here at once and on every peer after its next sync.",
+    "legacyBroken": "The old image did not load from {host}.",
+    "listBtn": "List this organization publicly",
+    "notListed": "It is not listed, so nothing about it leaves this registry and no agent's card names it. Listing it puts its name, logo, description and website in the list of organizations across the federation, and its mark on its agents' cards (each agent can hide it).",
+    "legacy": "It still names an old logo at {host}, which is no longer shown. Save that image, then upload it as its logo.",
+    "legacyOpen": "Open the old image",
+    "title": "Why its logo does not show",
+    "legacyShow": "Show the old image here",
+    "legacyAlt": "Its old logo",
+    "uploadBelow": "\"Upload a logo\" below adds one."
+  },
+  "settlementStates": {
+    "label": {
+      "SETTLED": "Settled",
+      "SLASHING": "Slashing",
+      "CLOSED": "Closed",
+      "NOT_DELIVERED": "Not delivered",
+      "FAILED": "Failed",
+      "COMPENSATING": "Paying the complainant",
+      "PENDING_SLASH": "Waiting for the slash",
+      "REFUSED": "Refused by every peer",
+      "REJECTED": "Rejected",
+      "EXPIRED": "Expired",
+      "PENDING_ADMIN_APPROVAL": "Waiting for an administrator",
+      "SLASHED": "Slashed"
+    },
+    "note": {
+      "CLOSED": "Closed by an administrator. Nothing moved, and the complainant is not paid through this settlement.",
+      "NOT_DELIVERED": "No slash request was sent: delivery is off on this registry, or it has no address a peer can dial. Nothing moved, and the complainant is not paid through this settlement.",
+      "REFUSED": "Every peer registry refused the slash request, so no peer holds it. Nothing moved, and the complainant is not paid through this settlement."
+    }
   }
 }

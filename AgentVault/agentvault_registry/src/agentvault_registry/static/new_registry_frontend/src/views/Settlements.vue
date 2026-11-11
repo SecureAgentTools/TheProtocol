@@ -207,6 +207,7 @@
         v-for="s in filteredSettlements"
         :key="s.id"
         class="bg-gray-800 rounded-lg border transition-all hover:border-gray-600 overflow-hidden"
+        :data-settlement="s.id"
         :class="statusBorderColor(s.status)"
       >
         <!-- Card Header -->
@@ -227,6 +228,8 @@
               >
                 {{ s.status }}
               </span>
+              <!-- V0660 (k): an end state says itself in plain words -->
+              <span v-if="ENDED_STATES.has(s.status)" class="ml-2 text-xs text-gray-300" data-testid="stl-state-words">{{ stateLabel(s.status) }}</span>
               <span
                 v-if="s.is_partial"
                 class="ml-2 px-2 py-0.5 rounded-sm text-xs font-medium bg-yellow-900/50 text-yellow-400 border border-yellow-700"
@@ -326,6 +329,23 @@
           </div>
         </div>
 
+        <!-- V0660 (k): what an end state means, and Close where the registry closes it -->
+        <div
+          v-if="stateNote(s.status) || canClose(s)"
+          class="px-6 py-3 bg-gray-900/40 border-t border-gray-700/50 flex items-center gap-4"
+        >
+          <p v-if="stateNote(s.status)" class="text-sm text-gray-300" data-testid="stl-state-note">{{ stateNote(s.status) }}</p>
+          <button
+            v-if="canClose(s)"
+            @click="openDecision('close', s.id)"
+            class="ml-auto px-4 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-all"
+            :disabled="approving === s.id"
+            data-testid="stl-close"
+          >
+            {{ t('settlementsView.close', 'Close') }}
+          </button>
+        </div>
+
         <!-- Error Message -->
         <div
           v-if="s.error_message"
@@ -393,11 +413,16 @@
       >
         <div class="bg-gray-900 border border-gray-700 rounded-lg p-6 w-[min(480px,96vw)]">
           <h3 class="text-lg font-semibold text-white mb-2">
-            {{ decisionModal.action === 'approve' ? t('settlementsView.decision.approveTitle') : t('settlementsView.decision.rejectTitle') }}
+            {{ decisionModal.action === 'approve' ? t('settlementsView.decision.approveTitle')
+              : decisionModal.action === 'close' ? t('settlementsView.decision.closeTitle', 'Close this settlement')
+              : t('settlementsView.decision.rejectTitle') }}
           </h3>
           <p class="text-sm text-gray-400 mb-4">
             <template v-if="decisionModal.action === 'approve'">
               {{ t('settlementsView.decision.approveBody') }}
+            </template>
+            <template v-else-if="decisionModal.action === 'close'">
+              {{ t('settlementsView.decision.closeBody', 'No peer holds its slash request. Closing it ends it for good: nothing moves, and the complainant is not paid through it. The reason is kept on the settlement and in the audit log.') }}
             </template>
             <template v-else>
               {{ t('settlementsView.decision.rejectBody') }}
@@ -405,9 +430,10 @@
             {{ t('settlementsView.decision.settlementLabel') }}: <code class="text-cyan-400">{{ decisionModal.settlementId }}</code>
           </p>
           <label class="block text-xs text-gray-400 uppercase tracking-wider mb-1">
-            {{ t('settlementsView.decision.reasonLabel') }}
+            {{ decisionModal.action === 'close' ? t('settlementsView.decision.closeReasonLabel', 'Reason (required, kept on the settlement and in the audit log)') : t('settlementsView.decision.reasonLabel') }}
           </label>
           <textarea
+            data-testid="stl-decision-reason"
             v-model="decisionModal.reason"
             rows="3"
             maxlength="500"
@@ -423,7 +449,8 @@
             </button>
             <button
               @click="confirmDecision"
-              :disabled="approving === decisionModal.settlementId"
+              data-testid="stl-decision-confirm"
+              :disabled="approving === decisionModal.settlementId || (decisionModal.action === 'close' && !decisionModal.reason.trim())"
               :class="[
                 'px-4 py-2 rounded-sm text-white text-sm font-medium',
                 decisionModal.action === 'approve'
@@ -434,7 +461,9 @@
             >
               {{ approving === decisionModal.settlementId
                 ? t('settlementsView.decision.working')
-                : (decisionModal.action === 'approve' ? '✓ ' + t('settlementsView.decision.confirmApproval') : '✗ ' + t('settlementsView.decision.confirmRejection')) }}
+                : decisionModal.action === 'approve' ? '✓ ' + t('settlementsView.decision.confirmApproval')
+                : decisionModal.action === 'close' ? t('settlementsView.decision.confirmClose', 'Close settlement')
+                : '✗ ' + t('settlementsView.decision.confirmRejection') }}
             </button>
           </div>
         </div>
@@ -455,6 +484,7 @@ import { useI18n } from '@/composables/useI18n'
 import { useCurrency } from '@/composables/useCurrency'
 import { useFrameManifest } from '@/composables/useFrameManifest'
 import { settlementUnit } from '@/services/frameManifest'
+import { ENDED_STATES, canClose, stateLabel, stateNote } from '@/services/settlementStates'
 
 const { t } = useI18n()
 const { localCurrency } = useCurrency()
@@ -493,7 +523,7 @@ const peerConfigsExpanded = ref(false)
 // Approve/reject modal (S15 — admin reason capture)
 const decisionModal = ref<{
   open: boolean
-  action: 'approve' | 'reject' | null
+  action: 'approve' | 'reject' | 'close' | null
   settlementId: string | null
   reason: string
 }>({ open: false, action: null, settlementId: null, reason: '' })
@@ -517,6 +547,9 @@ function statusIcon(status: string): string {
     FAILED: '✕',
     REJECTED: '⊘',
     EXPIRED: '◌',
+    NOT_DELIVERED: '◌',
+    REFUSED: '⊘',
+    CLOSED: '■',
   }
   return icons[status] || '·'
 }
@@ -531,6 +564,9 @@ function statusBorderColor(status: string): string {
     FAILED: 'border-red-700/40',
     REJECTED: 'border-red-800/40',
     EXPIRED: 'border-gray-600',
+    NOT_DELIVERED: 'border-gray-600',
+    REFUSED: 'border-red-800/40',
+    CLOSED: 'border-gray-600',
   }
   return colors[status] || 'border-gray-700'
 }
@@ -545,6 +581,9 @@ function statusBadgeClass(status: string): string {
     FAILED: 'bg-red-900/50 text-red-400 border border-red-700',
     REJECTED: 'bg-red-900/50 text-red-300 border border-red-800',
     EXPIRED: 'bg-gray-700/50 text-gray-400 border border-gray-600',
+    NOT_DELIVERED: 'bg-gray-700/50 text-gray-300 border border-gray-600',
+    REFUSED: 'bg-red-900/50 text-red-300 border border-red-800',
+    CLOSED: 'bg-gray-700/50 text-gray-300 border border-gray-600',
   }
   return classes[status] || 'bg-gray-700 text-gray-400'
 }
@@ -574,7 +613,7 @@ function formatTime(iso: string | null): string {
 }
 
 // SF6+SF7+S15: thin wrappers that delegate to the store + open the reason modal
-function openDecision(action: 'approve' | 'reject', settlementId: string) {
+function openDecision(action: 'approve' | 'reject' | 'close', settlementId: string) {
   decisionModal.value = { open: true, action, settlementId, reason: '' }
 }
 
@@ -589,6 +628,10 @@ async function confirmDecision() {
   try {
     if (m.action === 'approve') {
       await settlementsStore.approve(m.settlementId, m.reason || undefined)
+    } else if (m.action === 'close') {
+      // V0660 (k): a reason is required; a refusal leaves the registry's words in the store's error, shown below
+      if (!m.reason.trim()) return
+      await settlementsStore.close(m.settlementId, m.reason.trim())
     } else {
       await settlementsStore.reject(m.settlementId, m.reason || undefined)
     }
@@ -634,7 +677,7 @@ function sagaPillLabel(s: Settlement): string | null {
 
 function sagaIsStuck(s: Settlement): boolean {
   if (!s.saga_timeout_at) return false
-  const terminal = ['SETTLED', 'EXPIRED', 'REJECTED', 'FAILED'].includes(s.status)
+  const terminal = ['SETTLED', 'EXPIRED', 'REJECTED', 'FAILED', 'NOT_DELIVERED', 'REFUSED', 'CLOSED'].includes(s.status)
   if (terminal) return false
   return new Date(s.saga_timeout_at).getTime() < Date.now()
 }

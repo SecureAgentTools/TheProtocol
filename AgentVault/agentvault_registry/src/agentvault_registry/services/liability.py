@@ -437,6 +437,25 @@ def _dec(v, default=None):
         return default
 
 
+def mandate_limits_refuse(limits: Optional[dict], *, amount: Any, currency: Optional[str]) -> list:
+    """V0658 (o): what a mandate's own limits refuse in this action (empty: nothing). The limits clamp; they never grant:
+    an amount above `max_per_tx`, or an action in another `currency` than the limits name, is outside the mandate,
+    whatever its scope, its standing consent or a presence proof. A limit the action does not carry (no amount, no
+    currency) does not apply to it."""
+    lim = limits or {}
+    out = []
+    if lim.get("max_per_tx") is not None and amount is not None:
+        cap, got = _dec(lim.get("max_per_tx")), _dec(amount)
+        if cap is None:
+            out.append("mandate_limit_unreadable:max_per_tx")      # a money limit nobody can read refuses, never waves
+        elif got is None or got > cap:
+            out.append(f"over_mandate_max_per_tx:{lim.get('max_per_tx')}")
+    want = str(lim.get("currency") or "").upper()
+    if want and currency and str(currency).upper() != want:
+        out.append(f"mandate_currency:{want}")
+    return out
+
+
 def ceiling_of(limits: Optional[dict]) -> Optional[dict]:
     """The `auto_ceiling` block on a mandate's limits, or None."""
     if not isinstance(limits, dict):
@@ -734,10 +753,16 @@ async def check_liability_gate(db: AsyncSession, agent_did: str, needed: str, *,
                                counterparty_did: Any = _UNSET,
                                counterparty_home_registry: Optional[str] = None,
                                acting_hand_did: Optional[str] = None,
-                               presence: Optional[dict] = None) -> None:
+                               presence: Optional[dict] = None,
+                               mandate_id: Optional[str] = None) -> None:
     """Registry-policy gate: when LIABILITY_MODE=enforce, an agent performing a gated action
     must be underwritten by a live mandate whose CURRENT effective scope covers `needed`.
     shadow → [LIABILITY-SHADOW] log line only (byte-cheap); off → no-op.
+
+    V0659 (c): `mandate_id` is a mandate the CALLER named (X-Liability-Mandate): the agent asks to be held to it. The
+    gate then runs as enforce for this call, whatever the registry's or the organization's mode, against that one
+    mandate (it must underwrite this agent), and the mandate's own limits clamp the action: an amount above its
+    `max_per_tx`, or in another `currency` than it names, is refused. It only tightens, and only for a caller who asks.
 
     Call BEFORE the caller's state claim: enforce-block raises 403 with its evidence committed;
     enforce-pass evidence rides the caller's own commit (atomic with the action it records)."""
@@ -751,6 +776,8 @@ async def check_liability_gate(db: AsyncSession, agent_did: str, needed: str, *,
     # (org_policy.OrgSettingsUnavailable, §SECFIX D6-491: it fell back to the registry default).
     _org_settings = await _op.get_org_settings(db, agent_did)
     mode, thr = _op.effective_liability(reg_mode, presence_threshold(), _org_settings)
+    if mandate_id:
+        mode = "enforce"        # the caller named its mandate: held to it, whatever the mode
     if mode not in ("shadow", "enforce"):
         return
     # §29 OPA I5 `liability_composition_ok` — LIVE CALL SITE. Python owns the per-mandate decision;
@@ -767,10 +794,17 @@ async def check_liability_gate(db: AsyncSession, agent_did: str, needed: str, *,
         pass
     from types import SimpleNamespace
     from agentvault_registry import models as _m
-    mrow = (await db.execute(text(
-        "SELECT id, developer_id, agent_did, tier, scope, limits, status, expires_at "
-        "FROM liability_mandates WHERE agent_did = CAST(:a AS VARCHAR) AND status = 'signed' "
-        "ORDER BY issued_at DESC LIMIT 1"), {"a": agent_did})).mappings().first()
+    if mandate_id:
+        # the named mandate, whatever its status (resolve_mandate says revoked or expired), and only this agent's
+        mrow = (await db.execute(text(
+            "SELECT id, developer_id, agent_did, tier, scope, limits, status, expires_at "
+            "FROM liability_mandates WHERE id = CAST(:m AS VARCHAR) AND agent_did = CAST(:a AS VARCHAR)"),
+            {"m": mandate_id, "a": agent_did})).mappings().first()
+    else:
+        mrow = (await db.execute(text(
+            "SELECT id, developer_id, agent_did, tier, scope, limits, status, expires_at "
+            "FROM liability_mandates WHERE agent_did = CAST(:a AS VARCHAR) AND status = 'signed' "
+            "ORDER BY issued_at DESC LIMIT 1"), {"a": agent_did})).mappings().first()
     ok, reasons, mid, dev = False, ["no_mandate"], None, None
     if mrow:
         mid = mrow["id"]
@@ -778,6 +812,11 @@ async def check_liability_gate(db: AsyncSession, agent_did: str, needed: str, *,
         res = await resolve_mandate(db, SimpleNamespace(**dict(mrow)), dev)
         ok = res["valid"] and needed in set(res["effective_scope"])
         reasons = res["reasons"] or ([] if ok else [f"scope_missing:{needed}"])
+        if ok:
+            # V0658 (o): the mandate's own limits narrow what it conveys, on every call it underwrites
+            over = mandate_limits_refuse(mrow["limits"], amount=amount, currency=currency)
+            if over:
+                ok, reasons = False, over
     # §CEILING (P7) — a live standing consent turns an ASK into a RECEIPT. It never turns
     # it into silence (I6): a covered action still writes `gate_pass`, and that row names
     # the ceiling that paid for it, so "why was I not asked about this?" is answerable

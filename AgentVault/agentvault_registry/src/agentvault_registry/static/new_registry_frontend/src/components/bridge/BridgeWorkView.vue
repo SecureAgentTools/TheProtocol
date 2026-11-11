@@ -263,7 +263,7 @@ async function guildAward(bidId: number): Promise<void> {
 const evForm = ref({ type: 'text' as 'text' | 'link', content: '', description: '' })
 const evBusy = ref(false)
 const evNote = ref<string | null>(null)
-const disputeActive = (d: any) => ['open', 'investigating'].includes(String(d?.status || ''))
+const disputeActive = (d: any) => String(d?.status || '') === 'open'
 async function submitEv(): Promise<void> {
   const id = detail.value?.id
   const content = evForm.value.content.trim()

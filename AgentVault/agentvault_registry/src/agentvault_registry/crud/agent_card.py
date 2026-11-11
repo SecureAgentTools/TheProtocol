@@ -82,6 +82,10 @@ async def create_agent_card(
     # by the owner; a copy in the submitted card is dropped here (`services/home_extensions.py`).
     from ..services.home_extensions import strip_home_extensions
     validated_data = strip_home_extensions(validated_data)
+    # V0660 (a): the quantum workload extension under the frame switch (services/quantum_agent_card.gate): off reads
+    # nothing; shadow logs and counts what on would refuse; on refuses with the sentences (the route answers 422).
+    from ..services import quantum_agent_card as _qac
+    _qac.gate(validated_data, where="create")
     # ── Strict field validation (beyond Pydantic schema) ──────────────────
     # Reject whitespace-only, empty, or missing critical fields.
     _errors = []
@@ -392,6 +396,9 @@ async def update_agent_card(
         # §TWOAGENT #10: an update that echoes a read (which states the home extensions) must not persist them.
         from ..services.home_extensions import strip_home_extensions
         validated_data = strip_home_extensions(validated_data)
+        # V0660 (a): the merged card passes the same quantum workload check as a new one (off reads nothing).
+        from ..services import quantum_agent_card as _qac
+        _qac.gate(validated_data, where="update", name=db_card.name)
         db_card.card_data = validated_data
         try:
             db_card.name = validated_data.get("name")

@@ -263,7 +263,7 @@ async def test_a_rejected_delivery_is_told_to_the_local_worker(g, monkeypatch):
     async def _load(db, oid):
         return _order(status="submitted", worker_did=LOCAL_WORKER)
 
-    async def _ddr(db, a, b):
+    async def _ddr(db, a, b, **kw):   # V0657 (a): the filing also names its order, why and who
         return "ddr-1"
     monkeypatch.setattr(g, "_load", _load)
     monkeypatch.setattr(g, "_file_ddr_dispute", _ddr)

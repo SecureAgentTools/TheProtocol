@@ -272,4 +272,26 @@ export const chatApi = {
     return call('POST', `/conversations/${conversationId}/approvals/decide`, token, body)
   },
 
+  // ── V0659 (f): cross-frame rooms (routers/chat.py, the /rooms family) ──────────────────────────────────────────
+  /** Open a room hosted on this registry, owned by the speaking principal. */
+  createRoom(token: string, body: { title: string; topic?: string; join_rule: RoomJoinRule }) {
+    return call('POST', '/rooms', token, body)
+  },
+  /** Join a room by its address (room:<id>@https://its.registry), here or on a peer registry. */
+  joinRoom(token: string, address: string) { return call('POST', '/rooms/join', token, { address }) },
+  /** A room as its members see it: head, your seat, its members (and, for its operators, the requests). */
+  roomInfo(token: string, conversationId: string) {
+    return call('GET', `/rooms/${encodeURIComponent(conversationId)}`, token)
+  },
+  /** One operator act (the owner, or a moderator on a lower rank), in a room hosted here. */
+  roomAct(token: string, conversationId: string, body: { action: RoomAction; member?: string; value?: string }) {
+    return call('POST', `/rooms/${encodeURIComponent(conversationId)}/act`, token, body)
+  },
+
 }
+
+/** V0659 (f): a room's join rule, set by its owner. */
+export type RoomJoinRule = 'invited' | 'request' | 'anyone'
+/** V0659 (f): the operator acts a room's host takes. */
+export type RoomAction = 'invite' | 'mute' | 'unmute' | 'remove' | 'ban' | 'accept' | 'moderator' | 'unmoderator'
+  | 'rule' | 'topic' | 'title'

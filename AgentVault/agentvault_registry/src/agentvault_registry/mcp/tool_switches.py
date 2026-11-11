@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Iterable, List
 
 from ..core import legacy_surfaces, staking_gate
+from ..core.quantum_mode import quantum_workloads_mode
 
 _P = "theprotocol_"
 
@@ -34,6 +35,12 @@ NEEDS_STAKING_PROMPTS = frozenset({"lock_units"})
 # not listed there (2026-10-25); the route refuses with the surface's sentence.
 NEEDS_ARENA_BETTING = frozenset({_P + "getArenaMatchBets"})
 
+# V0660 (a): the quantum workload extension's reads are listed where QUANTUM_WORKLOADS_MODE is shadow or on (core/
+# quantum_mode.py); under off, the source default, the listing is what it was before V0660 and the routes refuse.
+NEEDS_QUANTUM_WORKLOADS = frozenset(_P + n for n in (
+    "discoverQuantumAgents", "getQuantumWorkload", "getQuantumWorkloadSchema",
+))
+
 
 def listed(name: str) -> bool:
     if name in NEEDS_STAKING:
@@ -42,6 +49,8 @@ def listed(name: str) -> bool:
         return staking_gate.staking_rewards_enabled()
     if name in NEEDS_ARENA_BETTING:
         return legacy_surfaces.surface_enabled("ARENA_BETTING_ENABLED")
+    if name in NEEDS_QUANTUM_WORKLOADS:
+        return quantum_workloads_mode() != "off"
     return True
 
 

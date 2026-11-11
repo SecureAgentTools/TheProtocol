@@ -1,0 +1,42 @@
+# TheProtocol Proxy, an example of the outbound direction: TheProtocol's events, as the registry's webhooks deliver
+# them, into an evidence export anyone can check offline (tp-proxy verify) and into the bank-statement format an ERP
+# ingests (ISO 20022 camt.053). The owner registers https://<this host>:8712/in/theprotocol as a webhook in the console
+# (Developer, Webhooks) and keeps its secret in TP_WEBHOOK_SECRET; tp-proxy keygen writes the export's signing key.
+version: 1
+name: ledger-out
+registry: https://api.theprotocol.cloud
+identity:
+  agent_did: env:AGENT_DID
+  client_id: env:CLIENT_ID
+  client_secret: env:CLIENT_SECRET
+state: /data/proxy-state.db
+sources:
+  events:
+    type: theprotocol_events
+    config: {listen: "0.0.0.0:8712", path: /in/theprotocol, secret: env:TP_WEBHOOK_SECRET,
+             events: [payment.settled, contract.milestone_released]}
+actions: {}
+sinks:
+  evidence:
+    type: evidence
+    config: {dir: /data/evidence, signing_key: file:/run/secrets/evidence.pem, registry_card: true}
+  bank:
+    type: journal
+    config: {dir: /data/statements, format: camt053, account: {id: "did:theprotocol:ledger-out", currency: ECU}}
+mappings:
+  - name: evidence
+    version: 1
+    from: events
+    to: evidence
+    fields: {amount: {path: $.payload.amount, default: null}, counterparty: {path: $.payload.payee, default: null}}
+  - name: statement
+    version: 1
+    from: events
+    to: bank
+    when: {path: $.meta.event_type, equals: payment.settled}
+    fields:
+      amount: $.payload.amount
+      direction: credit
+      counterparty: {path: $.payload.payer, default: ""}
+      text: {path: $.payload.memo, default: settlement}
+service: {listen: "127.0.0.1:9108"}

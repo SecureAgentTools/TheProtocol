@@ -40,6 +40,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy import text as _text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..core.outbound_guard import guarded_client
 from .. import models
 from ..database import get_db_context
 from ..event_emitter import get_event_emitter
@@ -200,7 +201,7 @@ def _stamp_attempt(row: Any, status: str, ok: bool, now: Optional[datetime.datet
     row.last_pull_attempt_at = now
     row.last_pull_status = str(status)[:16]
     row.pull_failures = 0 if ok else int(getattr(row, "pull_failures", 0) or 0) + 1
-    if not ok and row.pull_failures == UNREACHABLE_NOTICE_AT and str(status) not in ("skipped", "refused"):
+    if not ok and row.pull_failures == UNREACHABLE_NOTICE_AT and str(status) not in ("skipped", "refused", "quantum_refused"):
         _tell_unreachable(row, str(status))
 
 
@@ -721,10 +722,13 @@ class AgentCardPullSync(BackgroundWorker):
                 # §FEDSYNCTRUTH — fetches run `_CONCURRENCY` at a time; every row mutation
                 # (the stamp, the merge) happens on the task that fetched it, with no session
                 # I/O of its own, and the single commit below writes them all.
-                async with httpx.AsyncClient(
+                # V0660 (l): the guard decides and PINS each address, which _redirect_hop_ok could not do:
+                # it checked the name, and the client then resolved it again. fetch_agent_card still walks
+                # the hops itself, so its own FetchRefused reasons survive for the callers that read them.
+                async with guarded_client(
+                    "agent_card_pull",
                     timeout=_FETCH_TIMEOUT_SEC,
                     verify=True,  # public agent well-known; system CA only.
-                    follow_redirects=False,  # §SSRFGUARD: fetch_agent_card follows them, asking about every hop.
                 ) as client:
                     sem = asyncio.Semaphore(_CONCURRENCY)
 
@@ -999,6 +1003,19 @@ class AgentCardPullSync(BackgroundWorker):
             pass
 
         merged, drifted = _merge_pulled_card(row.card_data, fresh)
+        # V0660 (a): a pulled card that would change what is stored passes the same quantum workload check as an owner's
+        # write (services/quantum_agent_card.gate: off reads nothing; shadow logs; on keeps the stored card and says why).
+        if drifted:
+            try:
+                from ..services import quantum_agent_card as _qac
+                _qac.gate(merged, where="pullsync", name=getattr(row, "name", None))
+            except ValueError as _qe:
+                stats["refused"] = stats.get("refused", 0) + 1
+                # the card was read (a 200 that parsed): the cursor moves and no backoff builds, so a provider that
+                # fixes its card is read again at the next cycle; last_pull_status says why nothing was taken
+                _stamp_attempt(row, "quantum_refused", True, now)
+                logger.warning(f"[AgentCardPullSync] {row.agent_did}: the published card was not taken: {_qe}")
+                return
         if _sync_listed_columns(row, merged):
             stats["listed_synced"] = stats.get("listed_synced", 0) + 1
 
@@ -1099,8 +1116,8 @@ async def trigger_pull_for_did(agent_did: str) -> Dict[str, Any]:
             if row.last_pulled_etag:
                 headers["If-None-Match"] = row.last_pulled_etag
 
-            async with httpx.AsyncClient(
-                timeout=_FETCH_TIMEOUT_SEC, verify=True, follow_redirects=False  # §SSRFGUARD: hops are asked below
+            async with guarded_client(
+                "agent_card_pull", timeout=_FETCH_TIMEOUT_SEC, verify=True  # V0660 (l): hops asked AND pinned
             ) as client:
                 try:
                     resp = await fetch_agent_card(client, well_known, headers)
@@ -1147,6 +1164,12 @@ async def trigger_pull_for_did(agent_did: str) -> Dict[str, Any]:
 
             merged, drifted = _merge_pulled_card(row.card_data, fresh)
             new_etag = resp.headers.get("etag")
+            if drifted:   # V0660 (a): the same quantum workload check as the cycle above
+                try:
+                    from ..services import quantum_agent_card as _qac
+                    _qac.gate(merged, where="pullsync", name=getattr(row, "name", None))
+                except ValueError as _qe:
+                    return {"status": "quantum_refused", "reason": str(_qe), "url": well_known, "http": 200}
             listed = _sync_listed_columns(row, merged)
 
             if drifted:

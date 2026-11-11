@@ -12,6 +12,7 @@ import {
   type SettlementStats,
   type PeerSlashConfig,
 } from '@/services/api/settlements'
+import { refusalWords } from '@/services/settlementStates'
 
 export const useSettlementsStore = defineStore('settlements', () => {
   // -- state --
@@ -39,7 +40,9 @@ export const useSettlementsStore = defineStore('settlements', () => {
       return settlements.value.filter(s => ['SETTLED', 'SLASHED'].includes(s.status))
     }
     if (f === 'failed') {
-      return settlements.value.filter(s => ['FAILED', 'EXPIRED', 'REJECTED'].includes(s.status))
+      // V0660 (k): with the end states of a settlement no peer holds
+      return settlements.value.filter(s =>
+        ['FAILED', 'EXPIRED', 'REJECTED', 'NOT_DELIVERED', 'REFUSED', 'CLOSED'].includes(s.status))
     }
     return settlements.value
   })
@@ -51,7 +54,7 @@ export const useSettlementsStore = defineStore('settlements', () => {
       if (!s.saga_timeout_at) return false
       const terminal = ['SETTLED', 'FINALIZED', 'ROLLED_BACK', 'REJECTED', 'EXPIRED'].includes(
         s.saga_state || ''
-      ) || ['SETTLED', 'EXPIRED', 'REJECTED'].includes(s.status)
+      ) || ['SETTLED', 'EXPIRED', 'REJECTED', 'NOT_DELIVERED', 'REFUSED', 'CLOSED'].includes(s.status)
       if (terminal) return false
       return new Date(s.saga_timeout_at).getTime() < now
     })
@@ -105,6 +108,18 @@ export const useSettlementsStore = defineStore('settlements', () => {
       await fetchSettlements()
     } catch (e: any) {
       error.value = e?.message || 'Failed to reject settlement'
+      throw e
+    }
+  }
+
+  /** V0660 (k): close a settlement no peer holds; on a refusal `error` holds the registry's own words */
+  async function close(id: string, reason: string) {
+    error.value = null
+    try {
+      await settlementsApi.close(id, reason)
+      await fetchSettlements()
+    } catch (e: any) {
+      error.value = refusalWords(e)
       throw e
     }
   }
@@ -173,6 +188,7 @@ export const useSettlementsStore = defineStore('settlements', () => {
     fetchPeerConfigs,
     approve,
     reject,
+    close,
     togglePeerAutoSlash,
     updatePeerThreshold,
     setFilter,

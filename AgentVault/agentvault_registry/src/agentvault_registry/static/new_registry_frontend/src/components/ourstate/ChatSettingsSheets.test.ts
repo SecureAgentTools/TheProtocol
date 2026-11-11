@@ -13,7 +13,15 @@ import { muteInEffect, muteUntil } from '@/services/chat/notifyLevel'
  * is discarded (13). BASE (V0651): none of these exist (a 0.9 s pointer-only hold with no sentence; a bare mute flip).
  */
 const stubs = { global: { stubs: { Icon: true, RouterLink: true, 'router-link': true } }, attachTo: document.body }
-afterEach(() => { vi.useRealTimers(); document.body.innerHTML = '' })
+// The sheet speaks the reader's own clock (the zone the process runs in), so a test of its wording sets that zone itself and
+// never inherits the host's: this one failed only on the Europe/Berlin host, where 23:35Z is already the next day (V0659,
+// session-tester 2026-11-08, session-lead seq 2460). Node follows a TZ set at run time for Date and Intl alike.
+const HOST_TZ = process.env.TZ
+const inZone = (zone: string) => { process.env.TZ = zone }
+afterEach(() => {
+  vi.useRealTimers(); document.body.innerHTML = ''
+  if (HOST_TZ === undefined) delete process.env.TZ; else process.env.TZ = HOST_TZ
+})
 
 describe('burn for you', () => {
   it('names the thread\'s host and its copies, never a literal', () => {
@@ -92,6 +100,7 @@ describe('notifications here', () => {
   })
 
   it('a mute for 8 hours ends then, and says so with its day when that is not today', async () => {
+    inZone('UTC')                                                         // 23:35 on Oct 31: eight hours on is tomorrow
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-10-31T23:35:00Z'))
     const w = mount(ChatNotifySheet, { props: { kind: 'room', muted: false }, ...stubs })
@@ -105,6 +114,21 @@ describe('notifications here', () => {
     expect(v.muted).toBe(true)
     expect(v.until).toBe('2026-11-01T07:35:00.000Z')
     expect(v.keep).toBe(false)
+  })
+
+  it('a mute that ends later the same day names no day', async () => {
+    inZone('Europe/Berlin')                                               // the same instant is 00:35 on Nov 1 there: it ends 08:35 today
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-31T23:35:00Z'))
+    const w = mount(ChatNotifySheet, { props: { kind: 'room', muted: false }, ...stubs })
+    await w.find('[data-testid="cns-level-muted"]').trigger('click')
+    await w.find('[data-testid="cns-for-8h"]').trigger('click')
+    const line = w.find('[data-testid="cns-until"]').text()
+    expect(line).toMatch(/Muted until .*\d{1,2}[:.]\d{2}( ?[AP]M)?, then mentions and asks again\./)
+    expect(line).not.toMatch(/Nov|Oct/)                                   // today: no day named
+    await w.find('[data-testid="cns-done"]').trigger('click')
+    const [[v]] = w.emitted('save') as any
+    expect(v.until).toBe('2026-11-01T07:35:00.000Z')                     // the instant is the same in every zone
   })
 
   it('done without a change changes nothing', async () => {

@@ -118,6 +118,10 @@ ROLE_PERMISSIONS: dict[str, Set[str]] = {
     # sending a seller's proceeds home), so under enforce it needs exactly this. Granted at birth and healed by
     # services/exchange_passport.ensure_gateway_role. The same authority as `canary`, named for what it is.
     "gateway": BASE_PERMISSIONS | {"teg.transfer", "teg.transfer_xreg"},
+    # V0659 (a): a proxy that turns a legacy system's records into attestations (TheProtocol Proxy's attestation
+    # action) needs reputation.signal, which only service-provider carried, with the right to collect payments,
+    # engage contracts, file disputes and enroll for mTLS. This is that permission and nothing else.
+    "attestor": BASE_PERMISSIONS | {"reputation.signal"},
     # Grandfather role assigned to all existing agents by migration 0107 — every
     # grantable permission. The ratchet to least-privilege replaces it explicitly.
     "legacy-full": set(ALL_PERMISSIONS),

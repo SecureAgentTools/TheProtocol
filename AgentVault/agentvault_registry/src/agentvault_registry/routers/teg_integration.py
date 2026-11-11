@@ -18,7 +18,7 @@ import uuid
 from typing import Optional, List, Dict, Any, Tuple
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 import httpx
 from ..es_ssl_helper import get_httpx_verify, spire_trust_loaded, svid_stamp
 from ..core.network_profile import money_knob  # §MONEY-M2: the profile owns this amount
@@ -3541,6 +3541,70 @@ async def log_dispute(
                 detail="TEG service unavailable"
             )
 
+class TEGDisputeWithdrawRequest(BaseModel):
+    """D6-825: why the claimant withdraws its TEG dispute (optional)."""
+    reason: Optional[str] = Field(None, max_length=500, description="Why the claimant withdraws it (optional)")
+
+
+# D6-825 (V0658): the TEG's own route (POST /api/v1/disputes/{id}/withdraw) answers 404 "Dispute not found" for a dispute
+# it does not hold; a TEG image older than the route answers FastAPI's bare "Not Found".
+_TEG_DISPUTE_NOT_FOUND = "Dispute not found"
+
+
+@router.post("/disputes/{dispute_log_id}/withdraw", response_model=Dict[str, Any], summary="Withdraw My Open TEG Dispute")
+async def withdraw_dispute(
+    dispute_log_id: str,
+    body: Optional[TEGDisputeWithdrawRequest] = None,
+    current_agent: models.Agent = Security(require_agent_permission("disputes.file")),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Withdraw a TEG dispute the calling agent filed, while it is still OPEN: its status becomes WITHDRAWN, with no ruling,
+    no penalty and no money moved. Only the dispute's claimant withdraws it (403 for anyone else, 409 once it is no
+    longer OPEN, 404 for a dispute the TEG does not hold). The withdrawal is audited as the agent.
+
+    \f
+    D6-825 (V0658): the TEG's own route does the withdrawal (one guarded update, OPEN to
+    WITHDRAWN, on the claimant's own row); this relays it with the agent's TEG token, as /disputes/log relays the filing,
+    and writes the registry's audit row (security_audit_logs, teg_dispute.withdraw) for a withdrawal the TEG made.
+    """
+    agent_did = current_agent.did
+    teg_token = await get_teg_token_for_agent(current_agent.id, agent_did)
+    payload = {"reason": body.reason} if body is not None and body.reason else {}
+    async with httpx.AsyncClient(verify=get_httpx_verify()) as client:
+        try:
+            response = await client.post(
+                f"{TEG_API_BASE_URL}{TEG_API_V1_PREFIX}/disputes/{seg(dispute_log_id)}/withdraw",
+                json=payload,
+                headers=prepare_teg_headers(teg_token),
+                timeout=10.0,
+            )
+        except httpx.RequestError as e:
+            logger.error(f"TEG API connection error: {e}")
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="TEG service unavailable")
+    if response.status_code == 200:
+        data = response.json()
+        from ..services.admin_audit import _log_action
+        await _log_action(db, prefix="teg_dispute", action="withdraw", actor_type="agent", actor_id=agent_did,
+                          target_type="teg_dispute", target_id=dispute_log_id,
+                          details={"status": data.get("status"), "reason": (payload.get("reason") or "")[:500]})
+        return data
+    if response.status_code == 401:
+        _teg_token_cache.pop(current_agent.id, None)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="TEG authentication failed")
+    try:
+        detail = (response.json() or {}).get("detail")
+    except Exception:  # noqa: BLE001
+        detail = None
+    if response.status_code in (404, 405) and detail != _TEG_DISPUTE_NOT_FOUND:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="This registry's TEG does not take a withdrawal yet: its image predates the route")
+    if response.status_code in (403, 404, 409, 422) and detail:
+        raise HTTPException(status_code=response.status_code, detail=detail)
+    logger.error(f"TEG API dispute withdraw failed: {response.status_code} - {response.text[:300]}")
+    raise _teg_refusal(response, "Unable to withdraw the dispute at this time")
+
+
 @router.get("/disputes", response_model=list[TEGDisputeQueryResponse], summary="List My TEG Disputes")
 async def list_my_disputes(
     status_filter: Optional[str] = None,
@@ -3693,14 +3757,36 @@ async def get_dispute_details(
 @router.post("/attestations/submit", response_model=TEGAttestationResponse, summary="Submit TEG Attestation")
 async def submit_attestation(
     request: TEGAttestationRequest,
-    current_agent: models.Agent = Security(require_agent_permission("reputation.signal"))
+    current_agent: models.Agent = Security(require_agent_permission("reputation.signal")),
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key",
+        description="Optional: a retry under the same key answers the first answer (Idempotent-Replayed: true) "
+                    "for 24 hours instead of submitting again"),
+    http_response: Response = None,
 ):
     """
     Submit an attestation to the TEG Layer.
-    
+
     Attestations are cryptographic claims about agents that can be used
     for reputation, verification, and trust establishment.
+
+    An `Idempotency-Key` header is kept for 24 hours: a retry with the same key and body answers the first answer
+    (marked `Idempotent-Replayed: true`) without submitting again. Without one, a second copy of the same data is
+    refused by the TEG (409, "Attestation already submitted").
     """
+    # V0659 (a): a kept attempt. TheProtocol Proxy sends each record's call with the record's key and sends it again
+    # when an answer is lost. Any error answer gives the key back: an attestation moves nothing (no reward without a
+    # real verifier, §ATTESTREWARD), and the TEG refuses a second copy of the same data, so running it again is safe.
+    from agentvault_registry.services.idempotency.cache import agent_caller, begin_attempt, mark_replayed, run_kept
+    attempt = await begin_attempt("teg.attestation-submit", idempotency_key, request.model_dump(mode="json"),
+                                  principal=agent_caller(current_agent.did))
+    if attempt.replay is not None:
+        mark_replayed(http_response)
+        return attempt.replay
+    return await run_kept(attempt, lambda: _submit_attestation_run(request, current_agent, attempt),
+                          error_moved_nothing=lambda _status, _detail: True)
+
+
+async def _submit_attestation_run(request: TEGAttestationRequest, current_agent: models.Agent, attempt):
     # Use proper agent DID
     submitter_agent_did = current_agent.did
     
@@ -3721,7 +3807,8 @@ async def submit_attestation(
                 "attestation_hash": attestation_hash,
                 "storage_pointer": request.evidence_url or f"registry://attestation/{attestation_hash[:16]}"
             }
-            
+
+            attempt.mark_dispatched()
             response = await client.post(
                 f"{TEG_API_BASE_URL}{TEG_API_V1_PREFIX}/attestation/submit",
                 json=teg_request,
@@ -4021,17 +4108,31 @@ async def unstake_tokens_proxy(
             )
 
 
+# D6-055 (V0658): the four reads of an agent's locks and payouts below are its owner's. A developer reads
+# them for the agents it created; a treasury administrator reads every agent's: the rule of SEC-01's ledger reads
+# (teg_transactions.reads_every_ledger), refused before the TEG is asked.
+async def _require_reads_agent_ledger(db: AsyncSession, developer: models.Developer, agent_did: str) -> None:
+    from .teg_transactions import NOT_YOUR_LEDGER, _owns_agent, reads_every_ledger
+    if reads_every_ledger(developer):
+        return
+    if not await _owns_agent(db, getattr(developer, "id", None), agent_did):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=NOT_YOUR_LEDGER)
+
+
 @router.get("/staking/balance/{agent_did}", response_model=StakeBalanceResponse, summary="Get Locked Balance")
 async def get_staking_balance_proxy(
     agent_did: str,
-    current_developer: models.Developer = Depends(security.get_current_developer)
+    current_developer: models.Developer = Depends(security.get_current_developer),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Get the locked balance of an agent from the TEG, the ledger service.
     
-    Requires developer authentication. Returns the locked balance and the active locks of the
-    specified agent. Uses service token for TEG queries.
+    Requires developer authentication: the agent's owner reads it, and a treasury administrator reads any agent's (403
+    for another's agent). Returns the locked balance and the active locks of the specified agent. Uses service token
+    for TEG queries.
     """
+    await _require_reads_agent_ledger(db, current_developer, agent_did)
     # User must be authenticated, but we use service token for TEG
     async with httpx.AsyncClient(verify=get_httpx_verify()) as client:
         try:
@@ -4075,14 +4176,17 @@ async def get_staking_history_proxy(
     agent_did: str,
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
-    current_developer: models.Developer = Depends(security.get_current_developer)
+    current_developer: models.Developer = Depends(security.get_current_developer),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Get the lock and release history of an agent from the TEG, the ledger service.
     
-    Requires developer authentication. Returns a paginated list of the lock and release transactions
-    of the specified agent. Uses service token for TEG queries.
+    Requires developer authentication: the agent's owner reads it, and a treasury administrator reads any agent's (403
+    for another's agent). Returns a paginated list of the lock and release transactions of the specified agent. Uses
+    service token for TEG queries.
     """
+    await _require_reads_agent_ledger(db, current_developer, agent_did)
     # User must be authenticated, but we use service token for TEG
     async with httpx.AsyncClient(verify=get_httpx_verify()) as client:
         try:
@@ -4232,14 +4336,17 @@ async def claim_rewards_proxy(
 @router.get("/rewards/pending/{agent_did}", response_model=PendingRewardsResponse, summary="Pending payouts on locked units")
 async def get_pending_rewards_proxy(
     agent_did: str,
-    current_developer: models.Developer = Depends(security.get_current_developer)  # Require developer auth
+    current_developer: models.Developer = Depends(security.get_current_developer),  # Require developer auth
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Get the pending payouts for an agent from TEG Layer.
     
+    The agent's owner reads them, and a treasury administrator reads any agent's (403 for another's agent).
     NOTE: This endpoint uses service-to-service authentication with TEG.
     The developer must be authenticated, but we use service token for TEG.
     """
+    await _require_reads_agent_ledger(db, current_developer, agent_did)
     # User must be authenticated, but we use service token for TEG
     async with httpx.AsyncClient(verify=get_httpx_verify()) as client:
         try:
@@ -4284,14 +4391,17 @@ async def get_rewards_history_proxy(
     agent_did: str,
     limit: int = Query(100, ge=1, le=1000),
     offset: int = Query(0, ge=0),
-    current_developer: models.Developer = Depends(security.get_current_developer)  # Require developer auth
+    current_developer: models.Developer = Depends(security.get_current_developer),  # Require developer auth
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Get the payout history for an agent from TEG Layer.
     
+    The agent's owner reads it, and a treasury administrator reads any agent's (403 for another's agent).
     NOTE: This endpoint uses service-to-service authentication with TEG.
     The developer must be authenticated, but we use service token for TEG.
     """
+    await _require_reads_agent_ledger(db, current_developer, agent_did)
     # This endpoint is already working, but let's ensure it uses the right auth
     async with httpx.AsyncClient(verify=get_httpx_verify()) as client:
         try:
@@ -7657,16 +7767,19 @@ def _fx_route_peer_headers(origin_agent_spiffe: str = "") -> Dict[str, str]:
 async def _fx_route_delegate(peer_url: str, body: dict) -> Optional[dict]:
     """POST /api/v1/teg/fx/route-hop to a peer reserve frame over the EXISTING federation channel, with
     _fx_route_peer_headers() and this node's mTLS client cert (verify=get_httpx_verify()). Returns the
-    parsed JSON on 200, else None. NEVER uses an admin key."""
+    parsed JSON on 200, else None. NEVER uses an admin key. A dry run (D6-830) waits FX_ROUTE_DRY_RUN_TIMEOUT_S, and a
+    gateway that does not answer it is logged as information: the route then goes ahead as before."""
     if not peer_url:
         return None
     url = peer_url.rstrip("/") + "/api/v1/teg/fx/route-hop"
     headers = _fx_route_peer_headers(str(body.get("origin_agent_spiffe", "") or ""))
+    dry = body.get("dry_run") is True
+    _log = logger.info if dry else logger.error
     try:
         c = _get_teg_client()  # pooled keep-alive + SVID self-heal (biggest win: cross-frame mTLS reuse)
-        r = await c.post(url, json=body, headers=headers, timeout=90.0)
+        r = await c.post(url, json=body, headers=headers, timeout=(FX_ROUTE_DRY_RUN_TIMEOUT_S if dry else 90.0))
     except httpx.RequestError as e:
-        logger.error(f"[FX-ROUTE] delegate {url} unreachable: {e}")
+        _log(f"[FX-ROUTE] {'dry run' if dry else 'delegate'} {url} unreachable: {e}")
         return None
     if r.status_code != 200:
         _d = _fx_safe_detail(r)
@@ -7675,7 +7788,7 @@ async def _fx_route_delegate(peer_url: str, body: dict) -> Optional[dict]:
             _whole = str(_jd.get("detail") or _jd.get("message") or _jd) if isinstance(_jd, dict) else str(_jd)
         except Exception:  # noqa: BLE001
             _whole = getattr(r, "text", "") or ""
-        logger.error(f"[FX-ROUTE] delegate {url} → {r.status_code}: {_d}")
+        _log(f"[FX-ROUTE] {'dry run' if dry else 'delegate'} {url} → {r.status_code}: {_d}")
         # §FXSTRAND (2026-09-07) — return WHAT the peer said, not a bare None. The origin has to decide
         # whether the ingress it already moved was compensated, and a None makes every refusal look the
         # same: before this it assumed compensation always happened and emitted FxRouteRefunded saying
@@ -8292,6 +8405,109 @@ async def _fx_route_hop_execute_inner(
             "dest_teg": onward.get("dest_teg", gd_teg), "hops": hops}
 
 
+# D6-830 (V0658): a cloud operator asks its gateway before any money moves. Its transfer to a receiver it cannot place
+# went up to the gateway's @fx_router first (the ingress), and only the gateway then learned that nobody knew the
+# receiver: the route returned the payment and the operator answered 409, where a frame refuses 400 up front. The
+# operator now sends the route hop a dry run first (the same call, so no proxy needs a new path): the hop's own decisions
+# up to its first leg, read only. A dry-run body names no route and no amount, so a gateway on an older image refuses it
+# at validation (422) and never runs a hop; the operator then goes ahead as before. The compensation stays the fail-safe
+# for a route that fails after the dry run said it could go.
+FX_ROUTE_DRY_RUN_TIMEOUT_S = 15.0
+# The only fields a dry run sends. Never a route_id or an amount: a gateway that does not know the dry run would run them.
+FX_ROUTE_DRY_RUN_FIELDS = ("dry_run", "final_receiver_did", "origin_did", "origin_frame", "origin_teg_id",
+                           "origin_registry_id", "origin_agent_spiffe")
+# Why a dry run says the hop could not go, one word each (the origin words its refusal by it).
+FX_ROUTE_RECEIVER_UNKNOWN = "receiver_unknown"
+
+
+def _fx_route_dry_run_body(final_receiver_did: str, origin_did: str, origin_agent_spiffe: str = "") -> dict:
+    """The route hop's dry-run body: FX_ROUTE_DRY_RUN_FIELDS and nothing else."""
+    body = {"dry_run": True, "final_receiver_did": final_receiver_did, "origin_did": origin_did,
+            "origin_frame": os.environ.get("SPIRE_TRUST_DOMAIN", ""), "origin_teg_id": _get_local_teg_id(),
+            "origin_registry_id": _get_local_registry_id(), "origin_agent_spiffe": origin_agent_spiffe}
+    return body
+
+
+async def _fx_route_hop_plan(db: AsyncSession, *, final_receiver_did: str, presenter: str = "") -> dict:
+    """The route hop's dry run (D6-830): whether this frame could deliver to `final_receiver_did`, decided the way
+    _fx_route_hop_execute_inner decides before its first leg (the route switch, this frame's @fx_router, the presenter's
+    standing, the receiver's home and currency, a gateway for that currency). Reads only; nothing moves, nothing is
+    refunded, no event. {"dry_run": True, "routable": True, "route", "dest_currency"}, or {"dry_run": True,
+    "routable": False, "refusal", "detail"} with the sentence the hop would refuse with."""
+    def _no(refusal: str, detail: str) -> dict:
+        return {"dry_run": True, "routable": False, "refusal": refusal, "detail": detail}
+
+    if not _fx_route_enabled():
+        return _no("route_disabled", "FX route disabled on this frame (FX_ROUTE_ENABLED=false)")
+    local_router = _fx_route_local_router_did()
+    if not local_router:
+        return _no("no_router", "FX route: this frame holds no @fx_router (FX_ROUTER_DID unset)")
+    router_agent = (await db.execute(
+        select(models.Agent).where(models.Agent.did == local_router)
+    )).scalar_one_or_none()
+    if router_agent is None:
+        return _no("no_router", f"FX route: local @fx_router {local_router} not found")
+    if presenter:
+        from agentvault_registry.services.federation_license_gate import quarantine_reason, quarantined_presenter
+        _presenter_q = await quarantined_presenter(db, presenter)
+        if _presenter_q is not None:
+            return _no("quarantined", f"FX route refused: {quarantine_reason(*_presenter_q)}")
+    local_ccy = _local_frame_currency()
+    rtid, rrid = await _resolve_receiver_registry(db, final_receiver_did)
+    recv_peer = await _fx_route_find_active_peer(db, rrid) if rrid else None
+    dest_ccy = (await _resolve_peer_currency(db, target_peer=recv_peer)) or local_ccy
+    if dest_ccy == local_ccy:
+        if rtid:
+            return {"dry_run": True, "routable": True, "route": "egress", "dest_currency": dest_ccy}
+        _local_rcv = (await db.execute(
+            select(models.Agent).where(models.Agent.did == final_receiver_did)
+        )).scalar_one_or_none()
+        if _local_rcv is None:
+            return _no(FX_ROUTE_RECEIVER_UNKNOWN,
+                       f"FX route egress: cannot resolve {final_receiver_did} from this frame "
+                       f"(its card has not propagated here)")
+        return {"dry_run": True, "routable": True, "route": "egress-local", "dest_currency": dest_ccy}
+    gd = _fx_route_gateway_for_currency(dest_ccy)
+    if not gd:
+        return _no("no_gateway", f"FX route: no reserve gateway configured for {dest_ccy} (FX_ROUTE_PEERS)")
+    gd_reg = str(gd.get("registry_id", "")).strip()
+    if await _fx_route_find_active_peer(db, gd_reg) is None:
+        return _no("no_gateway", f"FX route: GD peer {gd_reg} not ACTIVE on this frame")
+    return {"dry_run": True, "routable": True, "route": "cross-currency", "dest_currency": dest_ccy}
+
+
+async def _fx_route_gateway_refusal(db: AsyncSession, gw: dict, gw_url: str, receiver_did: str, origin_did: str,
+                                    origin_agent_spiffe: str = "") -> Optional[HTTPException]:
+    """D6-830: the 400 an operator answers, with nothing moved, when its gateway's dry run says the route cannot go. None
+    when the gateway says it can, or gave no dry-run answer (an older image refuses the body with 422, an unreachable
+    gateway, any other answer): the route then goes ahead as before. A gateway this registry holds in quarantine is not
+    asked, and neither is one whose standing cannot be read: the ingress refuses both before anything is sent."""
+    if not gw_url:
+        return None
+    from agentvault_registry.services.federation_license_gate import quarantined_registry
+    try:
+        if await quarantined_registry(db, gw["registry_id"]) is not None:
+            return None
+    except Exception as e:  # noqa: BLE001  the ingress reads it again and refuses, nothing sent
+        logger.warning(f"[FX-ROUTE-ORIGIN] the standing of {gw['registry_id']} could not be read: no dry run ({e})")
+        return None
+    plan = await _fx_route_delegate(gw_url, _fx_route_dry_run_body(receiver_did, origin_did, origin_agent_spiffe))
+    if not (isinstance(plan, dict) and plan.get("dry_run") is True and plan.get("routable") is False):
+        return None
+    why = str(plan.get("detail") or "no reason given")[:300]
+    logger.info(f"[FX-ROUTE-ORIGIN] {origin_did} → {receiver_did}: gateway {gw['registry_id']} cannot deliver ({why}); "
+                f"refused before the ingress")
+    if plan.get("refusal") == FX_ROUTE_RECEIVER_UNKNOWN:
+        return HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(f"Cannot resolve registry for receiver {receiver_did}: neither this registry nor its FX gateway "
+                    f"{gw['registry_id']} knows it. For cross-registry transfers, the receiver must be a federated "
+                    f"agent from an active peer registry {NO_FUNDS_MOVED}."))
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"The FX gateway {gw['registry_id']} cannot route this transfer: {why} {NO_FUNDS_MOVED}.")
+
+
 async def _fx_route_origin(db: AsyncSession, current_agent: "models.Agent",
                            xfer_req: "CrossRegistryTransferRequest") -> Optional["CrossRegistryTransferResponse"]:
     """Source-side origin of an op→op FX route (invoked when normal resolution fails + FX_ROUTE_ENABLED
@@ -8312,6 +8528,12 @@ async def _fx_route_origin(db: AsyncSession, current_agent: "models.Agent",
     gw_url = gw["url"] or (getattr(gw_peer, "base_url", "") or "")
     logger.info(f"[FX-ROUTE-ORIGIN] route={route_id} {sender_did} → {xfer_req.receiver_did} "
                 f"via gateway {gw['registry_id']} ({gw['router_did']})")
+
+    # D6-830 (V0658): the gateway's dry run first. A route it cannot deliver is refused here, before the ingress.
+    _gw_refusal = await _fx_route_gateway_refusal(db, gw, gw_url, xfer_req.receiver_did, sender_did,
+                                                  origin_agent_spiffe)
+    if _gw_refusal is not None:
+        raise _gw_refusal
 
     # INGRESS — 1:1 current_agent → gateway @fx_router (explicit target; pre-FX → compensatable).
     ing_ok, ing_err, ing_credited, ing_tx = await _fx_route_1to1_2pc(
@@ -8601,10 +8823,11 @@ async def _fx_route_origin_reserve(
 
 
 class FxRouteHopRequest(BaseModel):
-    """Delegation RPC body for one hop of the op→op FX route."""
-    route_id: str
+    """Delegation RPC body for one hop of the op→op FX route. With `dry_run` (D6-830, V0658) the hop only says whether it
+    could deliver to the receiver, and moves nothing: such a body names no route and no amount (FX_ROUTE_DRY_RUN_FIELDS)."""
+    route_id: str = ""
     final_receiver_did: str
-    amount: str
+    amount: str = ""
     hop_budget: int = 4
     origin_did: str = ""
     origin_frame: str = ""
@@ -8622,6 +8845,18 @@ class FxRouteHopRequest(BaseModel):
     # converted money parked). The caller records the parking (post_conversion_remote) and this frame's keeper
     # re-delivers to the receiver. Absent (an older caller) = False = the old behaviour.
     post_conversion: bool = False
+    # D6-830 (V0658): True = the origin's question before its ingress, answered by _fx_route_hop_plan. Absent = False.
+    dry_run: bool = False
+
+    @model_validator(mode="after")
+    def _a_hop_names_its_route_and_amount(self):
+        """A hop that moves money names its route and its amount, as both were required fields before the dry run: such a
+        body without either is refused at validation (422), exactly as before."""
+        if not self.dry_run:
+            missing = [f for f in ("route_id", "amount") if f not in self.model_fields_set]
+            if missing:
+                raise ValueError(f"a route hop needs {' and '.join(missing)} (only a dry run names neither)")
+        return self
 
 
 @router.get("/fx/ledger", summary="Internal: can this frame's ledger record a movement now (federation-authed)")
@@ -8652,7 +8887,13 @@ async def fx_route_hop(
     """Federation-authed (mTLS, internal secret or license; NOT the admin key) delegation RPC for the
     op→op (any-depth) cross-currency FX route. Called by the source op's parent gateway, and
     recursively between reserve frames. Runs on a frame holding `amount` of its local currency at
-    its @fx_router; converts once at the local↔GD boundary then delegates egress onward."""
+    its @fx_router; converts once at the local↔GD boundary then delegates egress onward.
+
+    With `dry_run` (D6-830, V0658) the hop moves nothing: it answers 200 with whether it could deliver to the receiver
+    (_fx_route_hop_plan), the question a cloud operator asks before its ingress."""
+    if req.dry_run:
+        logger.info(f"[FX-ROUTE-HOP] peer={_peer_identity} dry run → {req.final_receiver_did}")
+        return await _fx_route_hop_plan(db, final_receiver_did=req.final_receiver_did, presenter=_peer_identity)
     if not _fx_route_enabled():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                             detail="FX route disabled on this frame (FX_ROUTE_ENABLED=false)")
@@ -9176,7 +9417,7 @@ class TreasuryFundAgentRequest(BaseModel):
     """Request to fund an agent from the treasury via TEG."""
     target_agent_did: str = Field(..., max_length=120, description="Target agent DID to fund")
     amount: str = Field(..., description="Amount to transfer, in the frame's unit (string for precision)")
-    reason: str = Field(..., max_length=100, description="Reason, a code: `genesis_grant`, `dispute_compensation`, `reward` (a payout), `tutorial_grant`, `admin_grant`")
+    reason: str = Field(..., max_length=100, description="Reason, a code: `genesis_grant`, `dispute_compensation`, `reward` (a payout), `tutorial_grant`, `admin_grant`, or `allocation:<id>` (a grant under a declared allocation, held against its cap while QUANTUM_WORKLOADS_MODE is shadow or on)")
     reference_id: Optional[str] = Field(None, max_length=200, description="External reference (e.g., dispute ID)")
 
     @field_validator('target_agent_did')
@@ -9423,7 +9664,12 @@ async def _fund_agent_from_treasury_internal(
         f"(reason: {request.reason}, ref: {request.reference_id}, actor: {actor_label})"
     )
 
-    async with httpx.AsyncClient(verify=get_httpx_verify()) as client:
+    # V0660 (d): a grant whose reason names a declared allocation (`allocation:<id>`) is held against that allocation's
+    # cap before the TEG is asked (services/quantum_workloads.allocation_grant_hold); any other grant, or any grant while
+    # QUANTUM_WORKLOADS_MODE is off, holds nothing and reads nothing
+    from agentvault_registry.services.quantum_workloads import allocation_grant_hold
+    async with (allocation_grant_hold(request.reason, request.target_agent_did, request.amount) as _alloc_hold,
+                httpx.AsyncClient(verify=get_httpx_verify()) as client):
         try:
             _hdrs = {"Authorization": f"Bearer {TEG_ADMIN_API_KEY}"}
             if idempotency_key:
@@ -9532,12 +9778,19 @@ async def _fund_agent_from_treasury_internal(
                 _refusal = ledger_refusal(response)
                 if _refusal is not None:
                     logger.warning("[Treasury Fund] the TEG refused the funding: its ledger cannot record it right now")
+                    _alloc_hold.nothing_moved()
                     raise _refusal
                 error_detail = response.text[:500]
                 logger.warning(
                     f"[Treasury Fund] TEG returned {response.status_code} - {error_detail}. "
                     f"Verifying actual balance (TEG may process transfers despite error responses)..."
                 )
+                # V0660 (d): an allocation's room comes back only on the TEG's own account of what it moved (an exhausted
+                # waterfall names its funded amount); the balance read below is never that evidence
+                try:
+                    _alloc_hold.teg_account(response.json())
+                except ValueError:
+                    pass
 
                 # TEG sometimes returns 400 yet still processes the transfer.
                 # Verify by checking the agent's actual TEG balance and syncing if it changed.
@@ -9591,6 +9844,8 @@ async def _fund_agent_from_treasury_internal(
                 
         except httpx.RequestError as e:
             logger.error(f"[Treasury Fund] TEG connection error: {e}")
+            if _never_sent(e):
+                _alloc_hold.nothing_moved()       # no connection was made, so the request reached nothing
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="TEG treasury service unavailable"

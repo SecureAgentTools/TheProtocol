@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Security
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 from starlette.status import (
-    HTTP_400_BAD_REQUEST, HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND,
+    HTTP_400_BAD_REQUEST, HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND, HTTP_409_CONFLICT,
     HTTP_201_CREATED
 )
 
@@ -22,6 +22,8 @@ from .schemas import (
     DisputeQueryResponse,
     DisputeStatusUpdateRequest,
     DisputeStatusUpdateResponse,
+    DisputeWithdrawRequest,
+    DisputeWithdrawResponse,
     ErrorResponse
 )
 
@@ -192,6 +194,61 @@ async def resolve_dispute(
         "penalty_transaction_id": penalty_tx_id,
         "resolved_at": dispute.updated_at.isoformat()
     }
+
+
+# D6-825 (V0658): a claimant withdraws its own OPEN dispute. There was no way to close a
+# dispute short of an admin's ruling, so every dispute filed stayed OPEN (the MCP tester's fixture alone was 187 of the
+# 319 OPEN disputes on sbx-alpha's TEG, 2026-10-24). The withdrawal moves nothing (no ruling, no penalty): one guarded
+# update, OPEN to WITHDRAWN, that only the claimant's own row can take, so a second withdrawal, or a withdrawal racing an
+# admin's ruling, finds the row no longer OPEN and is refused. The row records it: who withdrew it, when, and the reason
+# given (resolution_notes); the registry that relays it audits it as the agent.
+WITHDRAW_NOTE = "Withdrawn by its claimant {did} at {at}"
+
+
+@router.post(
+    "/{dispute_log_id}/withdraw",
+    response_model=DisputeWithdrawResponse,
+    responses={
+        401: {"model": ErrorResponse, "description": "Unauthorized"},
+        403: {"model": ErrorResponse, "description": "Not the dispute's claimant"},
+        404: {"model": ErrorResponse, "description": "Not Found"},
+        409: {"model": ErrorResponse, "description": "The dispute is no longer OPEN"},
+    },
+    summary="Withdraw your own open dispute",
+    description="The dispute's claimant withdraws it while it is OPEN: its status becomes WITHDRAWN, with no ruling, no "
+                "penalty and no money moved.",
+)
+async def withdraw_dispute(
+    dispute_log_id: str,
+    agent_id: Annotated[str, Security(verify_agent_token)],
+    request: Optional[DisputeWithdrawRequest] = None,
+    db: Session = Depends(get_db),
+):
+    """The claimant withdraws its own OPEN dispute (D6-825)."""
+    from ...database.models import TEGDisputeLog
+    now = datetime.now(timezone.utc)
+    reason = ((request.reason if request is not None else None) or "").strip()
+    note = WITHDRAW_NOTE.format(did=agent_id, at=now.isoformat()) + (f": {reason}" if reason else "")
+    claimed = db.query(TEGDisputeLog).filter(
+        TEGDisputeLog.dispute_log_id == dispute_log_id,
+        TEGDisputeLog.claimant_agent_did == agent_id,
+        TEGDisputeLog.status == DisputeStatus.OPEN,
+    ).update({TEGDisputeLog.status: DisputeStatus.WITHDRAWN, TEGDisputeLog.resolution_notes: note[:2000],
+              TEGDisputeLog.updated_at: now}, synchronize_session=False)
+    if claimed != 1:
+        db.rollback()
+        dispute = DisputeCRUD.get_dispute_by_id(db, dispute_log_id)
+        if dispute is None:
+            raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Dispute not found")
+        if dispute.claimant_agent_did != agent_id:
+            raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Only the dispute's claimant can withdraw it")
+        current = dispute.status.value if hasattr(dispute.status, "value") else str(dispute.status)
+        raise HTTPException(status_code=HTTP_409_CONFLICT,
+                            detail=f"Only an OPEN dispute can be withdrawn; this one is {current}")
+    db.commit()
+    logger.info(f"[TEG-DISPUTE] dispute {dispute_log_id} withdrawn by its claimant {agent_id}")
+    return DisputeWithdrawResponse(dispute_log_id=dispute_log_id, status=DisputeStatus.WITHDRAWN.value,
+                                   resolution_notes=note[:2000], withdrawn_at=now)
 
 
 @router.get(

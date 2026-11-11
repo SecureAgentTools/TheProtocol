@@ -66,6 +66,8 @@ PAGED_PUBLIC: Tuple[Tuple[str, str, Dict[str, str]], ...] = (
     ("theprotocol_listMyAttestations", "3", {}),
     ("theprotocol_getMyAgentLogs", "3", {"agent_did": "${sentinel_did}"}),
     ("theprotocol_getFederationDisputeSettlements", "3", {}),
+    # V0660 (a): the quantum workload search pages discovery's quantum population (listed where the mode serves it)
+    ("theprotocol_discoverQuantumAgents", "1", {}),
 )
 PAGED_ADMIN: Tuple[Tuple[str, str, Dict[str, Any]], ...] = (
     ("theprotocol_getAdminAgents", "admin", {}),

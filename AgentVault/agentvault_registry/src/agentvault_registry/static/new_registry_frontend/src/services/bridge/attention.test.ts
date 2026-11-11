@@ -53,9 +53,9 @@ describe('attention derivation', () => {
     expect(milestonesAwaiting(rows, null)).toEqual([])
   })
 
-  it('disputes: open and investigating count, resolved does not', () => {
+  it('disputes: open counts, resolved and dismissed do not (the server has no other state, V0658 (f))', () => {
     expect(openDisputeCount([
-      { status: 'open' }, { status: 'investigating' }, { status: 'resolved' }, { status: 'dismissed' },
+      { status: 'open' }, { status: 'open' }, { status: 'resolved' }, { status: 'dismissed' },
     ])).toBe(2)
   })
 })

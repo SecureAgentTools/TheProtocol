@@ -42,7 +42,7 @@ There are two kinds of proposal:
 A diff can change what the policy document declares, within the bounds the network sets. Among them:
 
 - **Governance**: the quorum and pass percentages of both kinds of proposal, and the locked balance needed to propose where votes count by locks (`governance.*`).
-- **Enforcement and disputes**: the offence ladder (`dispute_escalation`), the order in which a slash drains bond, locked and liquid units (`slash_waterfall`), and the bond's maturity rules (`enforcement.bond_maturity_*`).
+- **Enforcement and disputes**: the offence ladder (`dispute_escalation`), the order in which a slash drains bond, locked and liquid units and, where it lists the cascade, the owner's other agents (`slash_waterfall`), and the bond's maturity rules (`enforcement.bond_maturity_*`).
 - **Peer trust**: what the registry does about a peer it distrusts (`peer_trust.*`, chapter 05).
 
 The diff is checked when the proposal opens, so a vote never runs on a change that would be refused if it won:

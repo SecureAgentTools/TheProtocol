@@ -3,8 +3,19 @@
 // gap): slash, offense ladder, reward pauses, policy editor and the two-man
 // pending queue were MCP/curl-only. apiClient baseURL is /api/v1.
 import { apiClient } from './client'
+import type { SlashStep } from '@/services/slashOrder'
 
 const BASE = '/admin/enforcement'
+
+/** GET /admin/enforcement/policy/section/slash_waterfall: the order this registry runs, the factory order, the policy
+ *  version, and whether the order is this registry's own ('policy') or the factory's ('default'). */
+export interface SlashOrderSection {
+  section: string
+  value: SlashStep[] | null
+  default: SlashStep[]
+  version: number
+  source: 'policy' | 'default'
+}
 
 export interface SlashPreview {
   agent_did?: string
@@ -96,6 +107,14 @@ export const enforcementAdmin = {
   },
   async updatePolicy(policy_json: Record<string, unknown>, reason: string) {
     return (await apiClient.put(`${BASE}/policy`, { policy_json, reason })).data
+  },
+  // V0658 (k): the slash order every slash on this registry drains (the policy's slash_waterfall section), read and
+  // replaced on its own: validated, versioned and audited like any policy change, SlashWaterfallChanged on the ledger.
+  async getSlashOrder(): Promise<SlashOrderSection> {
+    return (await apiClient.get(`${BASE}/policy/section/slash_waterfall`)).data
+  },
+  async updateSlashOrder(order: SlashStep[], reason: string): Promise<{ version?: number; slash_waterfall_changed?: boolean }> {
+    return (await apiClient.put(`${BASE}/policy/section/slash_waterfall`, { value: order, reason })).data
   },
   async listPending(): Promise<{ pending?: PendingAction[]; actions?: PendingAction[]; [k: string]: unknown }> {
     return (await apiClient.get(`${BASE}/pending`)).data

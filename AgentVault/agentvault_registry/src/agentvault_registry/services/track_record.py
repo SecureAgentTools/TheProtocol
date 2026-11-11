@@ -38,6 +38,8 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agentvault_registry.services.org_policy import sql_listed_public
+
 logger = logging.getLogger(__name__)
 
 RECEIPT_KIND = "guild.receipt.v1"
@@ -707,3 +709,63 @@ async def org_track_record(db: AsyncSession, org_id: str) -> Dict[str, Any]:
         "commissioned": commissioned,
         "attribution": "snapshot-at-verification: payee_org_id is written when the work settles; departures do not rewrite history",
     }
+
+
+# V0658 (v), item 6 (the maintainer's review, sessions' room seq 2181): a firm's counts read only the work commissioned
+# or delivered AS the firm (payee_org_id; the org treasury as poster), so a firm whose agents work as themselves read 0
+# beside agents holding 52 verified jobs. The firm's own count stays what it is; this is the other half, answered apart:
+# the settled Guild work the organization's ACTIVE agents did ON THEIR OWN, that is paid to no organization (work done
+# as this firm is already the firm's, work done as another firm is that firm's), here and, through their verified travel
+# credentials, on other registries (the same two books an agent's own track record reads). It is never added into the
+# firm's number: the reads carry it as its own field, `member_work`.
+#
+# Two rules from the review of 4914af776:
+#  - only an affiliation this registry already states in public is counted (services/org_mark.py, V0657 (b), privacy
+#    first): the organization active and listed, the agent showing it (`agents.show_org`), on every call. Every agent's
+#    own job count is public on its card, so a line that counted a hidden agent, or the agents of an unlisted
+#    organization, would tie them to an organization they never named in public;
+#  - a travel credential is the agent's own work only when its SIGNED claim names no payee firm: a host signs
+#    `payee_org_id` and the firm's treasury (`payee_did`) into it when the agent worked as a firm through the firm-remote
+#    bid (services/guild_reputation.issue_work_credential). The local rule (`payee_org_id IS NULL`), read from the claim;
+#    a credential from a host that predates the payee fields carries neither and stays the agent's own.
+_MEMBER_WORK_SQL = """
+    WITH members AS (
+        SELECT a.did, a.organization_id AS org_id
+        FROM agents a
+        JOIN organizations o ON o.id = a.organization_id
+        WHERE a.organization_id IN :ids AND a.status = 'active'
+          AND a.show_org = TRUE AND o.is_active = TRUE AND @@LISTED@@
+    ), own_work AS (
+        SELECT m.org_id, count(*) AS jobs
+        FROM guild_work_orders w
+        JOIN members m ON m.did = w.worker_did
+        WHERE w.status = 'settled' AND w.payee_org_id IS NULL
+        GROUP BY m.org_id
+        UNION ALL
+        SELECT m.org_id, count(*) AS jobs
+        FROM guild_travel_credentials c
+        JOIN members m ON m.did = c.worker_did
+        WHERE c.verified
+          AND COALESCE(c.bundle->>'payee_org_id', '') = ''
+          AND COALESCE(c.bundle->>'payee_did', c.worker_did) = c.worker_did
+        GROUP BY m.org_id
+    )
+    SELECT org_id, sum(jobs)::bigint AS jobs
+    FROM own_work
+    GROUP BY org_id
+""".replace("@@LISTED@@", sql_listed_public("o"))
+
+
+async def member_agents_work(db: AsyncSession, org_ids: List[Any]) -> Dict[str, Dict[str, int]]:
+    """{org_id: {"jobs": n}} for a page of organizations, one statement: the settled Guild work their active member
+    agents did on their own (see _MEMBER_WORK_SQL), counted only where this registry states the affiliation in public.
+    The rule is the statement's own; a caller cannot widen or narrow it. An organization with none is absent (the
+    caller states that zero, having asked, and only for an organization it names in public). The number of agents
+    behind the jobs is read by no surface, so it is not answered. Raises on a failed read: the caller decides what an
+    unknown means on its surface."""
+    ids = sorted({str(i) for i in org_ids if i})
+    if not ids:
+        return {}
+    rows = (await db.execute(text(_MEMBER_WORK_SQL).bindparams(bindparam("ids", expanding=True)),
+                             {"ids": ids})).mappings().all()
+    return {str(r["org_id"]): {"jobs": int(r["jobs"] or 0)} for r in rows}

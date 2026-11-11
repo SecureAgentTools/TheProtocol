@@ -138,6 +138,37 @@ async def state_change(
         raise HTTPException(status_code=e.status_code, detail=e.detail)
 
 
+class RoomJoin(BaseModel):
+    """V0659 (f): a resident's home carries one of its own principals' join to a room this registry hosts."""
+    room_ref: str = Field(..., max_length=64, description="The HOST's conversation id of the room")
+    participant_key: str = Field(..., max_length=320, description="id@https://their.registry (the caller's own)")
+    participant_display: Optional[str] = Field(None, max_length=200)
+
+
+@router.post("/rooms/join")
+async def room_join(
+    req: RoomJoin,
+    peer: str = Depends(require_peer_registry_identity),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    A resident's home asks for its principal to join a room this registry hosts: seated active under the room's rule
+    'anyone' (or an invite already seated), pending under 'request', refused under 'invited'. Answers the room's head.
+    Peer registries only (mTLS); the calling registry may join only its own residents.
+
+    \f
+    V0659 (f): the binding rule (session-lead, room seq 2201) is chat_rooms.seat_remote's first check: the key's origin
+    must be the authenticated peer, so one registry cannot join a room, or dodge its ban, in another's name.
+    """
+    if not fed.federation_enabled():
+        raise HTTPException(status_code=501, detail="cross-registry chat is not enabled on this registry")
+    from agentvault_registry.services import chat_rooms as rooms
+    try:
+        return await rooms.seat_remote(db, req.room_ref, req.participant_key, req.participant_display, peer)
+    except cs.ChatError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+
+
 class RelaySend(BaseModel):
     conversation_ref: str = Field(..., max_length=64,
                                   description="The HOST's conversation id")
@@ -201,6 +232,12 @@ async def relay_send(
                             detail=f"'{req.sender_key}' is not a participant in that thread")
     if part.state == "left":
         raise HTTPException(status_code=409, detail="that participant has left the thread")
+    # V0659 (f): in a room, the host's own gates (seated and active, not muted, not banned) before any seq is taken
+    from agentvault_registry.services import chat_rooms as rooms
+    try:
+        await rooms.relay_gate(db, conv, part)
+    except cs.ChatError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
 
     actor = cs.Actor("remote", display_name=req.sender_display or req.sender_key)
     # Actor has no 'remote' branch by design (it models THIS registry's

@@ -92,6 +92,149 @@ audit_task: Optional[asyncio.Task] = None
 track_task: Optional[asyncio.Task] = None   # §MEMBERSHIP D1: the track record's observe loop (never raises)
 maintenance_state: dict = {}
 
+# ── The stats cache (2026-11-07) ─────────────────────────────────────────
+# `db.get_stats()` is SIX full scans of audit_history, and that table is
+# 11.9 GB over 1,352,138 rows. One of the six is worse than a scan: the
+# consecutive-OK streak is read by walking rows backwards until a non-OK one
+# appears, and the streak was 274,906 rows on the day this was written. It
+# grows by one every clean cycle, so the cost of answering grows WHILE THE
+# INVARIANT HOLDS — which is why /metrics took 9-10 s in September 2026 and
+# 42 s in November with no change to the code.
+#
+# /metrics must therefore never touch the database: a scrape that times out
+# leaves auditor_delta, auditor_status and auditor_last_cycle_age_seconds
+# with no series at all, and then every auditor_* alert is blind — the
+# supply-breach ones included. That happened on 2026-11-07 between 15:49Z
+# and 16:13Z. The audit loop refreshes this cache instead, and the readers
+# serve it.
+#
+# The floor is deliberate. AUDIT_INTERVAL is 60 s and a refresh takes tens
+# of seconds, so refreshing on every cycle would hold a core for as long as
+# the process lives. The floor decouples the two: the loop refreshes at most
+# this often, and nothing waits on it.
+STATS_CACHE_MIN_INTERVAL_SEC = int(os.getenv("STATS_CACHE_MIN_INTERVAL_SEC", "300"))
+_stats_cache: dict[str, dict] = {}        # scope key -> the stats dict
+_stats_cache_at: dict[str, float] = {}    # scope key -> time.time() of that value
+_stats_streak: dict[str, int] = {}        # scope key -> the consecutive-OK streak, maintained per row
+_stats_refresh_lock: "asyncio.Lock" = asyncio.Lock()
+
+# The streak is the one part of get_stats whose cost GROWS WHILE THE INVARIANT
+# HOLDS: it is read by walking rows backwards until a non-OK one appears, and
+# that was 274,906 rows on 2026-11-07. So it is read from the database ONCE per
+# scope, at the cold start, and maintained here afterwards — +1 on a clean row,
+# 0 on any other — which is exactly what the walk computes. A refresh of a scope
+# that already has a maintained streak passes with_streak=False and the walk
+# never runs again.
+
+
+def _stats_scope_key(frame: Optional[str] = None, frames: Optional[list] = None) -> str:
+    """One key per scope get_stats can be asked for. Order-insensitive for `frames`."""
+    if frames:
+        return "frames:" + ",".join(sorted(frames))
+    if frame:
+        return f"frame:{frame}"
+    return "all"
+
+
+def cached_stats(frame: Optional[str] = None, frames: Optional[list] = None) -> Optional[dict]:
+    """The cached stats for a scope, or None if it has never been computed.
+
+    None is a real answer and callers must render it as one: a reader that
+    substitutes zeros here would publish `uptime 0%` and `0 audits` as though
+    they had been measured.
+    """
+    return _stats_cache.get(_stats_scope_key(frame, frames))
+
+
+def cached_stats_age(frame: Optional[str] = None, frames: Optional[list] = None) -> Optional[float]:
+    at = _stats_cache_at.get(_stats_scope_key(frame, frames))
+    return None if at is None else max(0.0, time.time() - at)
+
+
+def _scope_covers(key: str, frame_id: str) -> bool:
+    """Does this scope's number include a row from this frame?"""
+    if key == "all":
+        return True
+    if key.startswith("frame:"):
+        return key.split(":", 1)[1] == frame_id
+    if key.startswith("frames:"):
+        return frame_id in key.split(":", 1)[1].split(",")
+    return False
+
+
+def note_audit_row(frame_id: str, row: dict) -> None:
+    """Carry one recorded audit row into the cached numbers.
+
+    The streak is maintained exactly: the predicate is `db.counts_ok`, the same
+    one OK_SQL uses on the row, so this and a cold read of the database cannot
+    disagree. A row the database's own filter excludes (`source='public'`) is
+    not passed here at all.
+
+    Only the streak is maintained. Everything else in the cached dict is as of
+    the last refresh and auditor_stats_cache_age_seconds says how long ago that
+    was; a reader that needs a live count asks the database.
+    """
+    ok = db.counts_ok(row.get("status"), row.get("atomic_status"), row.get("maintenance"))
+    for key in list(_stats_cache.keys()):
+        if not _scope_covers(key, frame_id):
+            continue
+        if key not in _stats_streak:
+            continue                      # no cold read yet: nothing to carry forward
+        _stats_streak[key] = _stats_streak[key] + 1 if ok else 0
+        cached = _stats_cache.get(key)
+        if cached is not None:
+            cached["consecutive_ok"] = _stats_streak[key]
+
+
+async def _compute_stats_into_cache(frame: Optional[str] = None, frames: Optional[list] = None) -> dict:
+    """Run the real query for one scope and store it. The caller holds the lock."""
+    key = _stats_scope_key(frame, frames)
+    known = _stats_streak.get(key)
+    t0 = time.time()
+    stats = await db.get_stats(frame=frame, frames=frames, with_streak=known is None)
+    if known is None:
+        # The cold read: seed the counter from the walk, once.
+        _stats_streak[key] = int(stats.get("consecutive_ok") or 0)
+    else:
+        stats["consecutive_ok"] = known
+    _stats_cache[key] = stats
+    _stats_cache_at[key] = time.time()
+    logger.info(f"[STATS-CACHE] scope={key} refreshed in {time.time() - t0:.1f}s "
+                f"(streak {'read' if known is None else 'carried'}={_stats_streak[key]})")
+    return stats
+
+
+async def refresh_stats_cache(force: bool = False) -> None:
+    """Refresh the scopes already in use, called once per audit cycle.
+
+    Only the scopes somebody has asked for are kept warm, plus the unscoped
+    one that /metrics needs. Priming every scope the dashboard COULD ask for
+    would be eight of these queries per pass.
+
+    If a refresh is already running this returns at once rather than queueing:
+    two overlapping passes would each scan the whole table.
+    """
+    if _stats_refresh_lock.locked():
+        return
+    async with _stats_refresh_lock:
+        scopes = set(_stats_cache.keys()) | {"all"}
+        for key in sorted(scopes):
+            if not force:
+                at = _stats_cache_at.get(key)
+                if at is not None and (time.time() - at) < STATS_CACHE_MIN_INTERVAL_SEC:
+                    continue
+            frame = frames = None
+            if key.startswith("frame:"):
+                frame = key.split(":", 1)[1]
+            elif key.startswith("frames:"):
+                frames = key.split(":", 1)[1].split(",")
+            try:
+                await _compute_stats_into_cache(frame=frame, frames=frames)
+            except Exception as e:
+                # A failed refresh keeps the previous value and says so. It must
+                # never take the audit loop down with it.
+                logger.error(f"[STATS-CACHE] scope={key} refresh failed: {e}")
+
 # asyncpg pools, lazily created per frame (None until first success).
 _pools: dict[str, "asyncpg.Pool"] = {}
 # Separate read-only pools to each frame's REGISTRY Postgres (AGORA share cap table).
@@ -1870,6 +2013,10 @@ async def _do_audit(frame: dict) -> Optional[dict]:
             consecutive_ok[frame_id] = 0
 
     total_audits += 1
+    if not public_only:
+        # The cached streak follows the rows, so the backward walk is never run again.
+        # A public reading is excluded by the database's own filter, so it is excluded here.
+        note_audit_row(frame_id, result)
     latest_results[frame_id] = result
 
     # Independent solvency-incident tracking (kind='solvency'); a reserve BELOW its
@@ -2034,6 +2181,9 @@ async def _audit_loop() -> None:
                     logger.error(f"Audit gather exception for {f['id']}: {r}")
         except Exception as e:
             logger.error(f"Audit loop exception: {e}", exc_info=True)
+        # The readers (/metrics, /api/auditor/stats) serve this cache and never
+        # query. Its own floor decides whether this pass does any work.
+        await refresh_stats_cache()
         await asyncio.sleep(AUDIT_INTERVAL)
 
 
@@ -2065,11 +2215,14 @@ async def lifespan(app: FastAPI):
     await _load_maintenance()
     logger.info(f"Maintenance state loaded: active={maintenance_state.get('active')}")
 
-    # Restore stats from DB (combined)
-    stats = await db.get_stats()
+    # Restore stats from DB (combined). These scans are the boot cost and are
+    # paid once; what is new is that their answers go into the stats cache, so
+    # /metrics can publish the history gauges from the first scrape instead of
+    # omitting them until the loop's first refresh.
+    stats = await _compute_stats_into_cache()
     total_audits = stats["total_audits"]
     for f in FRAMES:
-        frame_stats = await db.get_stats(frame=f["id"])
+        frame_stats = await _compute_stats_into_cache(frame=f["id"])
         consecutive_ok[f["id"]] = frame_stats["consecutive_ok"]
 
     audit_task = asyncio.create_task(_audit_loop())
@@ -2331,7 +2484,18 @@ async def api_stats(
     # Mode-scope the headline stats (audits / uptime / max-Δ) to the active
     # environment so they match the frames rendered below them.
     frames_in_mode = [f["id"] for f in FRAMES if f["mode"] == mode] if mode else None
-    return await db.get_stats(frame=frame, frames=frames_in_mode)
+    stats = cached_stats(frame=frame, frames=frames_in_mode)
+    if stats is not None:
+        return stats
+    # A scope nobody has asked for yet is computed once, here, under the same
+    # lock the loop uses, and is kept warm from then on. This endpoint is read
+    # by a person looking at the dashboard; /metrics is read by a scraper with a
+    # timeout, which is why only this one is allowed to wait.
+    async with _stats_refresh_lock:
+        again = cached_stats(frame=frame, frames=frames_in_mode)
+        if again is not None:
+            return again
+        return await _compute_stats_into_cache(frame=frame, frames=frames_in_mode)
 
 
 @app.get("/api/auditor/breaches")
@@ -2930,16 +3094,28 @@ async def metrics():
         if f.get("mode") in ATTEST_MODES:
             lines.append(f'auditor_attestations_emitted_total{{frame="{f["id"]}"}} {attest_counts.get(f["id"], 0)}')
 
-    stats = await db.get_stats()
+    # THIS ROUTE DOES NO DATABASE WORK, deliberately: see the stats cache above.
+    # A scrape of this endpoint that times out costs every auditor_* alert its
+    # series, so the two history gauges are served from the cache or left out.
+    stats = cached_stats()
+    age = cached_stats_age()
     lines.extend([
-        "# HELP auditor_total_audits Total number of audits performed",
-        "# TYPE auditor_total_audits counter",
-        f'auditor_total_audits {stats["total_audits"]}',
-        "# HELP auditor_uptime_pct Uptime percentage (truth-based)",
-        "# TYPE auditor_uptime_pct gauge",
+        "# HELP auditor_stats_cache_age_seconds Age of the cached audit-history stats; absent means never computed",
+        "# TYPE auditor_stats_cache_age_seconds gauge",
     ])
-    if stats["uptime_pct"] is not None:   # §MTLSHOPS (a): None means only public readings, so uptime is not measured
-        lines.append(f'auditor_uptime_pct {stats["uptime_pct"]}')
+    if age is not None:
+        lines.append(f"auditor_stats_cache_age_seconds {age:.1f}")
+    if stats is not None:
+        lines.extend([
+            "# HELP auditor_total_audits Total number of audits performed",
+            "# TYPE auditor_total_audits counter",
+            f'auditor_total_audits {stats["total_audits"]}',
+            "# HELP auditor_uptime_pct Uptime percentage (truth-based)",
+            "# TYPE auditor_uptime_pct gauge",
+        ])
+        # §MTLSHOPS (a): None means only public readings, so uptime is not measured
+        if stats["uptime_pct"] is not None:
+            lines.append(f'auditor_uptime_pct {stats["uptime_pct"]}')
     lines.append("")
     return PlainTextResponse("\n".join(lines), media_type="text/plain; version=0.0.4")
 

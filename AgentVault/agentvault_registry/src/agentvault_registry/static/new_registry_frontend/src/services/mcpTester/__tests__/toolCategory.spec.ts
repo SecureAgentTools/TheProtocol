@@ -16,6 +16,9 @@ describe('the category of a row in the All tools list', () => {
     expect(categorizeTool('theprotocol_getCollusionRings', 'admin')).toBe(ADMIN + 'Collusion')
     expect(categorizeTool('theprotocol_bridgeTransfer', 'agent')).toBe('Bridges')
     expect(categorizeTool('theprotocol_authorizePayment', 'agent')).toBe('A2A Payment')
+    // V0658 (c): the TEG dispute tools, filing and withdrawing, are filed together
+    expect(categorizeTool('theprotocol_logTegDispute', 'agent')).toBe('TEG')
+    expect(categorizeTool('theprotocol_withdrawTegDispute', 'agent')).toBe('TEG')
   })
 
   it('lets the row\'s own tier decide Admin: six public tools the name rule filed under it are not admin tools', () => {

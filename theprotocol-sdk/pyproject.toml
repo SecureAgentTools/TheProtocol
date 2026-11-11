@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "theprotocol-sdk"
-version = "0.7.6"
+version = "0.8.0"
 description = "Build sovereign AI agents with DID identity on TheProtocol. Speaks the A2A protocol (v1.0) natively, with bridges for Google A2A, ANP, and MCP. Works with Vertex AI, AWS AgentCore, LangGraph, CrewAI."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -37,14 +37,45 @@ dependencies = [
 server = ["fastapi>=0.111"]
 keyring = ["keyring>=24"]
 anp = ["cryptography>=42.0"]
-all = ["theprotocol-sdk[server,keyring,anp]"]
+# TheProtocol Proxy (theprotocol.proxy, the tp-proxy command): the spec's YAML and its schema, the HTTP listeners, and
+# the evidence export's signatures; an evidence export mirrored to SFTP or S3 adds one of the two below
+proxy = ["pyyaml>=6.0", "jsonschema>=4.18", "aiohttp>=3.9", "cryptography>=42.0"]
+# The QPU recipe (theprotocol.proxy.quantum): its simulator is pure python and needs nothing beyond the
+# proxy extra. There is deliberately no accelerated-simulator extra here: an accelerated path we cannot
+# run cannot be tested, so a bigger simulator or a real QPU client is installed by whoever has it and
+# named in the spec as "module:Class" (see proxy/proxy.quantum.example.yaml).
+proxy-quantum = ["theprotocol-sdk[proxy]"]
+# The proxy's SFTP poll source (theprotocol.proxy.sources.sftp) and the evidence export's SFTP mirror: the SSH
+# client, and XML read through defusedxml (the two proxy-sftp definitions joined, cut note 1)
+proxy-sftp = ["theprotocol-sdk[proxy]", "paramiko>=3.4", "defusedxml>=0.7"]
+proxy-s3 = ["theprotocol-sdk[proxy]", "boto3>=1.34"]
+# the proxy's MQTT source (theprotocol.proxy.sources.mqtt): paho-mqtt 2 (its v2 callbacks and manual acknowledgement)
+proxy-mqtt = ["theprotocol-sdk[proxy]", "paho-mqtt>=2.0,<3"]
+# The proxy's SQL poll source (V0659 (m)): one database driver per engine, so a proxy installs only the one it reads
+# (SQLite needs none). proxy-sql brings all three.
+proxy-postgresql = ["theprotocol-sdk[proxy]", "psycopg[binary]>=3.1"]
+proxy-mysql = ["theprotocol-sdk[proxy]", "pymysql[rsa]>=1.1"]          # rsa: MySQL 8.4's caching_sha2 login
+proxy-sqlserver = ["theprotocol-sdk[proxy]", "pymssql>=2.3"]
+proxy-sql = ["theprotocol-sdk[proxy-postgresql,proxy-mysql,proxy-sqlserver]"]
+all = ["theprotocol-sdk[server,keyring,anp,proxy]"]
 test = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
     "respx>=0.20",
     "cryptography>=42.0",
     "httpx>=0.27",
+    # V0660 (a): the quantum workload models are checked against the shipped JSON Schema itself
+    "jsonschema>=4.18",
 ]
+
+[project.scripts]
+tp-proxy = "theprotocol.proxy.cli:main"
+
+# TheProtocol Proxy's sources found by their entry points, the way a community plugin is found (V0659 (m)). The core
+# also knows its own as built-ins (theprotocol.proxy.plugins.BUILTINS), for a source checkout with nothing installed;
+# an entry point that names the same class as a built-in is the same plugin.
+[project.entry-points."theprotocol.proxy.sources"]
+sqlpoll = "theprotocol.proxy.sources.sqlpoll:SqlPollSource"
 
 [project.urls]
 Homepage = "https://theprotocol.cloud"

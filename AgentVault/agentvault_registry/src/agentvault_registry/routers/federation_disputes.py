@@ -3,15 +3,17 @@ OWL25: Federation Dispute Settlement Router
 ============================================
 Sovereign Settlement Protocol endpoints for cross-registry dispute compensation.
 
-Two endpoints:
+Endpoints:
 1. POST /slash-request   — Receives request from origin registry, auto-slashes local defendant
-2. POST /slash-confirmation — Receives confirmation from defendant's registry, auto-mints for local complainant
+2. POST /slash-confirmation: receives confirmation from defendant's registry, pays the local complainant from this
+   registry's payout funding (a transfer, never an issuance)
+3. POST /settlements/{id}/close (V0660 (k)): an administrator closes a settlement no peer holds
 """
 
 import logging
 import uuid
 import httpx
-from ..es_ssl_helper import get_httpx_verify
+from ..es_ssl_helper import get_httpx_verify  # noqa: F401 (V0658 (k): the TEG moves are services/slash_order's now)
 from datetime import datetime, timezone
 from typing import Dict, Any, Tuple
 
@@ -28,6 +30,7 @@ from agentvault_registry.config import settings
 from agentvault_registry.identity import svid_client
 from agentvault_registry import security
 from agentvault_registry.core.federation_auth import get_federation_identity
+from agentvault_registry.core import settlement_origin as _origin   # V0660 (k): the end states of a settlement
 # D6-060 (2026-10-25): a slash or a settlement message names the unit of the registry that writes it (the defendant's home
 # slashes in its own unit, the origin pays the complainant in its own), never a literal AVT: EU and ASIA settle in ECU and ACU.
 from agentvault_registry.core.frame_currency import frame_currency
@@ -118,6 +121,37 @@ class SettlementApproveBody(BaseModel):
     reason: str | None = Field(None, max_length=500, description="Admin note explaining decision")
 
 
+class SettlementCloseBody(BaseModel):
+    """V0660 (k): closing a settlement needs the administrator's reason; it is kept on the row and in the audit log."""
+    reason: str = Field(..., min_length=1, max_length=500, description="Why the settlement is closed")
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_has_words(cls, v: str) -> str:
+        if not (v or "").strip():
+            raise ValueError("a reason is required")
+        return v.strip()
+
+
+# V0660 (k): a confirmation never claims a settlement that is completed, being compensated, or ended without a peer
+# holding it (core/settlement_origin.ENDED): the claim excluded only SETTLED and COMPENSATING, so a confirmation would
+# have paid a closed settlement.
+UNCLAIMABLE = ("SETTLED", "COMPENSATING", *_origin.ENDED)
+# A settlement an administrator may not close: it moved money, is moving it, or is closed already. Nor one a peer
+# holds (its defendant_registry_url is set): that home may still slash and confirm.
+NOT_CLOSABLE = ("SETTLED", "COMPENSATING", "SLASHED", "SLASHING", _origin.CLOSED)
+
+
+# V0660 (k) review: the states in which no slash request reached any peer (none went out, or every peer refused it):
+# these close without asking the event store. Any other closable settlement closes only after it shows no slash.
+NO_REQUEST_TAKEN = (_origin.NOT_DELIVERED, _origin.REFUSED)
+
+
+def closable(s) -> bool:
+    """Whether close_settlement takes this settlement (the console offers Close only where it does)."""
+    return (s.status not in NOT_CLOSABLE) and not (getattr(s, "defendant_registry_url", "") or "").strip()
+
+
 # --- The addresses a slash route names are its caller's own ---
 
 def _norm_addr(url) -> str:
@@ -169,6 +203,34 @@ def _bind_confirmation_to_caller(confirmation: "SlashConfirmation", settlement, 
         )
 
 
+# --- V0658 (k): what a slash drained, in the settlement's words ---
+
+def _slash_outcome(drained, requested) -> Tuple[int, str, str, int]:
+    """(units slashed, the slash type, the TEG's words for the moves it did not confirm, the units it did not confirm)
+    for a drain of this registry's slash order (services/slash_order). A slash amount is a whole number of units."""
+    moved = int(drained.moved)
+    if moved >= int(requested):
+        kind = "full"
+    elif moved > 0:
+        kind = "partial"
+    elif drained.failed:
+        kind = "unconfirmed"
+    else:
+        kind = "insufficient"
+    return moved, kind, drained.teg_error, int(drained.unconfirmed)
+
+
+def _partial_words(drained, moved: int, requested) -> str:
+    """The record of a partial slash: what the order took, from which steps, and the shortfall."""
+    words = (f"Partial slash: {moved}/{requested} {frame_currency()} after the slash order ({drained.sources()}): "
+             f"shortfall {int(drained.shortfall)}.")
+    if drained.failed:
+        words += f" Not confirmed by the TEG: {drained.teg_error}."
+    if drained.cascade_on and drained.cascade_refused:
+        words += f" No cascade: {drained.cascade_refused}."
+    return words
+
+
 # --- Endpoint 1: Receive Slash Request (defendant's home registry) ---
 
 @router.post("/slash-request", response_model=Dict[str, Any])
@@ -180,8 +242,10 @@ async def receive_slash_request(
     """
     This registry is the defendant's home. It records a settlement for a slash the complainant's home registry
     requests (a replayed request answers 409). When the requesting peer allows auto-slash and the amount is within
-    its threshold, the defendant's units are moved to this registry's treasury (the whole amount, or what the
-    balance holds) and the origin is called back; otherwise the settlement waits for an administrator's approval.
+    its threshold, the amount is drained in this registry's slash order (its bond, its locked units, its liquid units,
+    and the owner's other agents where the order lists the cascade) into this registry's treasury (the whole amount,
+    or what the order holds) and the origin is called back; otherwise the settlement waits for an administrator's
+    approval.
     Auth: the origin registry's federation identity (mTLS). The request names its own registry: `origin_registry_url`
     must be the address of the registry presenting it, and `callback_url` must lie under it (403 otherwise).
 
@@ -194,8 +258,9 @@ async def receive_slash_request(
     Flow:
     1. Verify defendant exists locally
     2. Verify ruling is valid
-    3. Deduct from defendant's Agent.liquid_balance in DB
-    4. Emit DisputeSlash event to EventStore (real, balance-affecting)
+    3. Drain this registry's slash order (services/slash_order: bond, locks, liquid, and the cascade where the order
+       lists it), each step's capacity read from the TEG, each move to the treasury on the TEG (V0658 (k))
+    4. Emit DisputeSlash event to EventStore (an audit record under the single writer)
     5. Callback origin registry with confirmation
     """
     logger.info(
@@ -394,107 +459,26 @@ async def receive_slash_request(
             )
         }
     
-    # Step 4: Auto-slash — OWL26: Route through TEG treasury/receive
-    # OWL25 Phase 2: Proper partial slash handling (logic preserved)
-    available_balance = max(defendant.liquid_balance or 0, 0)
-    
-    if available_balance >= request.amount:
-        # Full slash — defendant has sufficient funds
-        actual_slash = request.amount
-        slash_type = "full"
-    elif available_balance > 0:
-        # Partial slash — defendant has some but not enough
-        actual_slash = available_balance
-        slash_type = "partial"
+    # Step 4: Auto-slash. V0658 (k): the request drains this registry's slash order (services/slash_order, the order a
+    # local ruling drains: bond, then locks, then liquid by default, and a cascade to the owner's other agents where
+    # the order lists one), each step's capacity read from the TEG, each move to the treasury through the TEG's
+    # treasury receive under its own key. It took only the defendant's cached liquid balance before. The defendant's
+    # own liquid move keeps the key it always had (dispute-slash-<settlement>), and its D6-441 rule holds for every
+    # move: a lost answer is asked once more under the same key, and a move the TEG did not confirm is not counted.
+    from agentvault_registry.services import slash_order
+    drained = await slash_order.drain(
+        db, defendant, request.amount, ref=f"dispute-slash-{request.settlement_id}",
+        liquid_key=f"dispute-slash-{request.settlement_id}", reason="dispute_slash",
+        reference_id=f"dispute-{request.dispute_id}", actor="federation_slash_request",
+        why=f"dispute {request.dispute_id} slash requested by {request.origin_registry_url}")
+    actual_slash, slash_type, teg_error, unconfirmed = _slash_outcome(drained, request.amount)
+    if slash_type == "partial":
         logger.warning(
-            f"Partial slash for {request.defendant_did}: "
-            f"requested {request.amount}, available {available_balance}, "
-            f"slashing {actual_slash} (shortfall: {request.amount - actual_slash})"
+            f"Partial slash for {request.defendant_did}: requested {request.amount}, "
+            f"slashed {actual_slash} (shortfall: {drained.shortfall})"
         )
-    else:
-        # Zero balance — cannot slash, report failure
-        actual_slash = 0
-        slash_type = "insufficient"
-        logger.warning(
-            f"Cannot slash {request.defendant_did}: "
-            f"balance is {defendant.liquid_balance}, requested {request.amount}"
-        )
-    
-    # OWL26: Route slash through TEG treasury/receive (agent -> treasury)
-    teg_slash_success = False
-    teg_error = ""
-    teg_unknown = False   # §DOCSFIX review: the TEG's answer was lost, so it may have moved the units
-    if actual_slash > 0:
-        from ..services.payout_outcome import never_sent
-        teg_url = settings.TEG_API_BASE_URL.rstrip('/')
-        teg_admin_key = settings.TEG_ADMIN_API_KEY
-        # §DOCSFIX review (D6-441): an answer other than a confirmation does not say the slash failed once the request
-        # reached the TEG: a lost answer (a timeout after the request went out, a 5xx, the key still held by the first
-        # request) says nothing, and /treasury/receive answers 400 "Treasury receive failed" for an error that came
-        # after its transfer committed. The TEG is asked once more under the same key, which answers a slash it already
-        # made from its record (it never debits twice), refuses again what it refused, and makes a slash that never
-        # ran; only a slash still unconfirmed after that is a failed slash, and a lost answer says its outcome is not
-        # known. A request that never reached the TEG (no connection) is not asked again.
-        for _ask in (1, 2):
-            reached = True
-            try:
-                async with httpx.AsyncClient(timeout=15.0, verify=get_httpx_verify()) as teg_client:
-                    teg_resp = await teg_client.post(
-                        f"{teg_url}/api/v1/admin/treasury/receive",
-                        json={
-                            "source_agent_id": request.defendant_did,
-                            # §MONEY-R15: str(float(Decimal)) truncates; the TEG takes a Decimal.
-                            "amount": str(actual_slash),
-                            "reason": "dispute_slash",
-                            "reference_id": f"dispute-{request.dispute_id}"
-                        },
-                        headers={
-                            "Authorization": f"Bearer {teg_admin_key}",
-                            "Content-Type": "application/json",
-                            # Durable TEG-rail dedup: a retried slash with this key returns the
-                            # cached result and debits the defendant exactly once.
-                            "Idempotency-Key": f"dispute-slash-{request.settlement_id}"
-                        }
-                    )
-            except Exception as e:  # noqa: BLE001
-                reached = not never_sent(e)
-                if reached or _ask == 1:
-                    teg_error = type(e).__name__
-                if reached:
-                    teg_unknown = True
-                # a second ask that never reached the TEG learns nothing: a first answer that was lost stays unknown
-                logger.error(
-                    f"TEG slash connection failed (ask {_ask}): {e}. "
-                    f"Not falling back to direct DB balance update — TEG is source of truth."
-                )
-            else:
-                if teg_resp.status_code in (200, 201):
-                    teg_slash_success, teg_unknown = True, False
-                    try:
-                        from decimal import Decimal
-                        defendant.liquid_balance = Decimal(str(
-                            (teg_resp.json() or {}).get("new_source_balance", 0)
-                        ))
-                    except Exception as e:  # noqa: BLE001 — the TEG moved the units; the cached balance can wait
-                        logger.warning(f"TEG slash answer unreadable after the move ({e}); cached balance not updated")
-                    break
-                teg_error = f"HTTP {teg_resp.status_code}"
-                teg_unknown = teg_resp.status_code >= 500 or teg_resp.status_code == 409
-                logger.error(
-                    f"TEG slash failed ({teg_resp.status_code}, ask {_ask}): "
-                    f"{teg_resp.text[:200]}. "
-                    f"Not falling back to direct DB balance update — TEG is source of truth."
-                )
-            if not reached:
-                break
-        if teg_unknown:
-            teg_error = f"{teg_error}; outcome not known, it may have moved the units"
-    # §DOCSFIX D6-441: a slash the TEG did not confirm is a failed slash: FAILED, no DisputeSlash for its amount and
-    # "failed" to the origin. It was reported SLASHED, and the complainant's registry paid compensation for units that
-    # never moved.
-    unconfirmed = 0
-    if actual_slash > 0 and not teg_slash_success:
-        unconfirmed, actual_slash, slash_type = actual_slash, 0, "unconfirmed"
+    elif slash_type == "insufficient":
+        logger.warning(f"Cannot slash {request.defendant_did}: nothing in the slash order, requested {request.amount}")
 
     settlement.slashed_amount = actual_slash
     
@@ -502,7 +486,7 @@ async def receive_slash_request(
     
     logger.info(
         f"Auto-slashed {actual_slash} AVT from {request.defendant_did} "
-        f"(type: {slash_type}, teg={teg_slash_success}, "
+        f"(type: {slash_type}, plan={drained.plan()}, "
         f"new balance: {defendant.liquid_balance})"
     )
     
@@ -514,7 +498,7 @@ async def receive_slash_request(
         success = await event_emitter.emit_dispute_slash(
             dispute_id=request.dispute_id,
             defendant_did=request.defendant_did,
-            amount=actual_slash,
+            amount=int(actual_slash),
             origin_registry_url=request.origin_registry_url,
             slash_tx_id=slash_tx_id
         )
@@ -538,13 +522,10 @@ async def receive_slash_request(
         settlement.saga_state = "SLASH_FAILED"
         settlement.saga_last_step_at = datetime.now(timezone.utc)
     if slash_type == "partial":
-        settlement.error_message = (
-            f"Partial slash: {actual_slash}/{request.amount} {frame_currency()}. "
-            f"Defendant had insufficient balance ({available_balance} available)."
-        )
+        settlement.error_message = _partial_words(drained, actual_slash, request.amount)
     elif slash_type == "insufficient":
         settlement.error_message = (
-            f"Slash failed: defendant has 0 available balance. "
+            f"Slash failed: the slash order ({drained.sources()}) held nothing of the defendant's. "
             f"Requested {request.amount} {frame_currency()}."
         )
     elif slash_type == "unconfirmed":
@@ -559,7 +540,7 @@ async def receive_slash_request(
     confirmation = {
         "settlement_id": request.settlement_id,
         "status": callback_status,
-        "amount": actual_slash,
+        "amount": int(actual_slash),
         "slash_event_id": "",
         "slash_tx_id": slash_tx_id if actual_slash > 0 else "",
         "error_message": "" if slash_type == "full" else (
@@ -643,15 +624,16 @@ async def receive_slash_confirmation(
     \f
     Receive slash confirmation from the defendant's home registry.
     
-    This registry is the COMPLAINANT'S HOME. Now that the defendant
-    has been slashed, we auto-mint compensation for our local complainant.
-    
+    This registry is the COMPLAINANT'S HOME. Now that the defendant has been slashed, the complainant is paid from this
+    registry's payout funding (services/reward_funding: the fee collector, then the treasury; a transfer, never an
+    issuance).
+
     Flow:
     1. Find the local settlement record
     2. Verify the slash confirmation
-    3. Mint AVT for complainant via TEG admin endpoint
+    3. Pay the complainant through the reward funding waterfall
     4. Update complainant's Agent.liquid_balance in DB
-    5. Emit DisputeCompensationMinted event to EventStore
+    5. Emit DisputeCompensationMinted event to EventStore (the record's name is historical: it records the transfer)
     6. Mark settlement as SETTLED
     """
     logger.info(
@@ -721,6 +703,14 @@ async def receive_slash_confirmation(
             "status": "already_settled",
             "message": "This settlement has already been completed"
         }
+    if settlement.status in _origin.ENDED:
+        # V0660 (k): no peer held its slash request (never delivered, refused by every peer, or closed by an
+        # administrator): it pays nothing
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(f"Settlement {confirmation.settlement_id} is {settlement.status}: no peer held its slash request, "
+                    f"so it pays nothing"),
+        )
 
     # Atomic claim (2026-07-24 $-audit): only ONE concurrent confirmation reaches the money
     # leg. The NOT-IN guard lets a FAILED/mint-pending settlement retry; SETTLED/COMPENSATING
@@ -730,7 +720,7 @@ async def receive_slash_confirmation(
         update(CrossRegistrySettlement)
         .where(
             CrossRegistrySettlement.id == confirmation.settlement_id,
-            CrossRegistrySettlement.status.notin_(["SETTLED", "COMPENSATING"]),
+            CrossRegistrySettlement.status.notin_(UNCLAIMABLE),
         )
         .values(status="COMPENSATING")
     )
@@ -829,7 +819,7 @@ async def receive_slash_confirmation(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=(
-                f"Settlement partially complete: slash succeeded but the issuance failed. "
+                f"Settlement partially complete: slash succeeded but the payment failed. "
                 f"Reconciliation worker will retry."
             )
         )
@@ -900,7 +890,7 @@ async def receive_slash_confirmation(
         "mint_tx_id": mint_tx_id,
         "teg_mint_success": teg_mint_success,
         "message": (
-            f"Settlement complete: {slashed_amount} {frame_currency()} issued for "
+            f"Settlement complete: {slashed_amount} {frame_currency()} paid to "
             f"{settlement.complainant_did} (evidence: slash {confirmation.slash_tx_id})"
         )
     }
@@ -932,6 +922,10 @@ async def list_settlements(
         "slashed": sum(1 for s in settlements if s.status == "SLASHED"),
         "failed": sum(1 for s in settlements if s.status == "FAILED"),
         "expired": sum(1 for s in settlements if s.status == "EXPIRED"),
+        # V0660 (k): the end states of a settlement no peer holds
+        "not_delivered": sum(1 for s in settlements if s.status == _origin.NOT_DELIVERED),
+        "refused": sum(1 for s in settlements if s.status == _origin.REFUSED),
+        "closed": sum(1 for s in settlements if s.status == _origin.CLOSED),
         "total_requested_avt": sum(s.requested_amount or 0 for s in settlements),
         "total_slashed_avt": sum(s.slashed_amount or 0 for s in settlements),
         "total_minted_avt": sum(s.minted_amount or 0 for s in settlements),
@@ -997,6 +991,8 @@ def _serialize_settlement(s: CrossRegistrySettlement) -> Dict[str, Any]:
         "slashed_at": s.slashed_at.isoformat() if s.slashed_at else None,
         "settled_at": s.settled_at.isoformat() if s.settled_at else None,
         "error_message": s.error_message,
+        # V0660 (k): whether close_settlement takes it (the console offers Close only then)
+        "closable": closable(s),
         # TITANIUM VAULT D3: Saga state tracking
         "saga_state": getattr(s, 'saga_state', 'LEGACY'),
         "saga_timeout_at": (
@@ -1087,67 +1083,31 @@ async def approve_settlement(
         await db.commit()
         raise HTTPException(status_code=404, detail="Defendant agent not found")
     
-    # Execute the slash (OWL26: via TEG treasury/receive)
-    available_balance = max(defendant.liquid_balance or 0, 0)
-    if available_balance >= settlement.requested_amount:
-        actual_slash = settlement.requested_amount
-        slash_type = "full"
-    elif available_balance > 0:
-        actual_slash = available_balance
-        slash_type = "partial"
-    else:
-        actual_slash = 0
-        slash_type = "insufficient"
-    
-    # OWL26: Route through TEG treasury/receive
-    # S6 FIX (2026-05-06): no fallback to direct DB add — TEG is source of truth.
-    teg_slash_succeeded = False
-    if actual_slash > 0:
-        try:
-            teg_url = settings.TEG_API_BASE_URL.rstrip('/')
-            teg_admin_key = settings.TEG_ADMIN_API_KEY
-            async with httpx.AsyncClient(timeout=15.0, verify=get_httpx_verify()) as tc:
-                tr = await tc.post(
-                    f"{teg_url}/api/v1/admin/treasury/receive",
-                    json={
-                        "source_agent_id": settlement.defendant_did,
-                        # §MONEY-R15: str(float(Decimal)) truncates; the TEG takes a Decimal.
-                        "amount": str(actual_slash),
-                        "reason": "dispute_slash",
-                        "reference_id": f"dispute-{settlement.dispute_id}"
-                    },
-                    headers={
-                        "Authorization": f"Bearer {teg_admin_key}",
-                        "Idempotency-Key": f"settlement-approve-{settlement.id}"
-                    }
-                )
-                if tr.status_code in (200, 201):
-                    from decimal import Decimal
-                    td = tr.json()
-                    defendant.liquid_balance = Decimal(
-                        str(td.get("new_source_balance", 0))
-                    )
-                    teg_slash_succeeded = True
-                else:
-                    logger.error(
-                        f"TEG approve-slash failed: HTTP {tr.status_code} {tr.text[:200]}. "
-                        f"Settlement will stay PENDING_ADMIN_APPROVAL for retry."
-                    )
-        except Exception as e:
-            logger.error(f"TEG approve-slash exception: {e}")
-
-        if not teg_slash_succeeded:
-            # Bail out with clear error — admin can retry
-            settlement.error_message = (
-                f"Approve failed: TEG slash unsuccessful. Settlement remains "
-                f"PENDING_ADMIN_APPROVAL. Admin {current_admin.email} attempted "
-                f"approval, reason={admin_reason or '(none)'}"
-            )
-            await db.commit()
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="TEG slash failed; settlement still pending. Retry possible."
-            )
+    # Execute the slash. V0658 (k): the request drains this registry's slash order (services/slash_order), as an
+    # automatic one does: its bond, its locked units, its liquid units and, where the order lists it, the owner's other
+    # agents, each step's capacity read from the TEG, each move under its own key (settlement-approve-<id>-...), so an
+    # approval the administrator retries moves nothing twice. S6 FIX (2026-05-06): TEG is source of truth, no DB write
+    # stands in for a move.
+    from agentvault_registry.services import slash_order
+    drained = await slash_order.drain(
+        db, defendant, settlement.requested_amount, ref=f"settlement-approve-{settlement.id}",
+        reason="dispute_slash", reference_id=f"dispute-{settlement.dispute_id}",
+        actor=f"admin:{getattr(current_admin, 'id', '') or ''}",
+        why=f"dispute {settlement.dispute_id} slash approved by an administrator")
+    actual_slash, slash_type, _teg_error, _unconfirmed = _slash_outcome(drained, settlement.requested_amount)
+    if slash_type == "unconfirmed":
+        # nothing moved and the TEG did not confirm a move: bail out with a clear error, the admin can retry
+        logger.error(f"TEG approve-slash unconfirmed: {_teg_error}. Settlement stays PENDING_ADMIN_APPROVAL for retry.")
+        settlement.error_message = (
+            f"Approve failed: TEG slash unsuccessful. Settlement remains "
+            f"PENDING_ADMIN_APPROVAL. Admin {current_admin.email} attempted "
+            f"approval, reason={admin_reason or '(none)'}"
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="TEG slash failed; settlement still pending. Retry possible."
+        )
 
     settlement.slashed_amount = actual_slash
     settlement.status = "SLASHED" if actual_slash > 0 else "FAILED"
@@ -1159,6 +1119,7 @@ async def approve_settlement(
     settlement.error_message = (
         f"Approved by admin {current_admin.email}. "
         f"Slash type: {slash_type}, amount: {actual_slash}/{settlement.requested_amount}"
+        + (f". {_partial_words(drained, actual_slash, settlement.requested_amount)}" if slash_type == "partial" else "")
         + (f". Reason: {admin_reason}" if admin_reason else "")
     )
 
@@ -1263,6 +1224,136 @@ async def reject_settlement(
                    f"origin_not_notified: Settlement rejected. The origin registry was not told ({how}); it ends the "
                    "settlement at its own timeout."
     }
+
+
+@router.post("/settlements/{settlement_id}/close", response_model=Dict[str, Any])
+async def close_settlement(
+    settlement_id: str,
+    body: SettlementCloseBody,
+    current_admin: Developer = Security(security.require_admin_flag("admin_enforcement")),
+    db: AsyncSession = Depends(get_db)
+) -> Dict[str, Any]:
+    """An administrator closes a cross-registry settlement no peer holds (V0660 (k), Guild order
+    gwo_9230be3d156cc3ce58699aaf): one never delivered, refused by every peer, or left waiting or expired with no peer
+    holding its slash request (sbx-beta 24ca7222). It moves to CLOSED with who, when and why, on the row and in the
+    admin audit log. Nothing moves. Review of 0d6b7ff9e: NOT_DELIVERED and REFUSED close at once (no peer took a
+    request); any other state closes only once the reconciliation's event store check finds no DisputeSlash for it
+    (one found: 409; a store that cannot be read: 503). The close is committed before its audit row. Refused (409, in
+    words): a settlement a peer holds (that home may still slash and confirm), and one that moved money, is moving it,
+    or is closed already. The confirmation's claim refuses CLOSED, so a late confirmation pays nothing.
+
+    S4: SELECT FOR UPDATE, as approve and reject: a retry that records the registry it asks waits for this lock, and
+    sends nothing once the settlement no longer waits (crud_disputes.record_registry_asked).
+    """
+    result = await db.execute(
+        select(CrossRegistrySettlement).where(
+            CrossRegistrySettlement.id == settlement_id
+        ).with_for_update()
+    )
+    settlement = result.scalar_one_or_none()
+    if not settlement:
+        raise HTTPException(status_code=404, detail="Settlement not found")
+    if settlement.status in NOT_CLOSABLE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(f"Settlement {settlement_id} is {settlement.status}: a settlement that moved money, is moving it, or "
+                    f"is closed already is not closed"),
+        )
+    held = (settlement.defendant_registry_url or "").strip()
+    if held:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(f"{held} holds this settlement's slash request and may still slash and confirm it, so it is not "
+                    f"closed here (its home's administrator approves or rejects it)"),
+        )
+
+    if settlement.status not in NO_REQUEST_TAKEN:
+        # V0660 (k) review: a request may have reached a peer (its answer lost, or a peer took it and the settlement
+        # outlived it): the reconciliation's own event store check first, and never a close blind
+        await _refuse_close_if_a_peer_may_have_slashed(settlement)
+
+    previous = settlement.status
+    now = datetime.now(timezone.utc)
+    who = getattr(current_admin, "email", None) or f"developer {getattr(current_admin, 'id', '')}"
+    settlement.status = _origin.CLOSED
+    settlement.error_message = (
+        f"Closed by admin {who} at {now.isoformat()} (was {previous}). Reason: {body.reason}. Nothing moved."
+        + (f" Before: {settlement.error_message}" if settlement.error_message else "")
+    )[:2000]
+    settlement.saga_state = "ROLLED_BACK"
+    settlement.saga_last_step_at = now
+
+    # V0660 (k) review: the close is committed first and read back; the audit row is written after it, so an audit
+    # write that fails never undoes the close nor answers for a close that did not happen
+    await db.commit()
+    await db.refresh(settlement)
+    stored = settlement.status
+    logger.warning(f"Settlement {settlement_id} {stored} by {email_for_log(who)} (was {previous})")
+
+    from agentvault_registry.services import admin_audit
+    audit_recorded = True
+    try:
+        await admin_audit.log_admin_action(
+            db, action="federation.settlement.closed", actor_id=str(getattr(current_admin, "id", "") or ""),
+            target_type="cross_registry_settlement", target_id=str(settlement_id), severity="warning",
+            details={"reason": body.reason, "previous_status": previous, "dispute_id": settlement.dispute_id,
+                     "requested_amount": str(settlement.requested_amount)},
+        )
+    except Exception as e:  # noqa: BLE001: the close is committed; the missing audit row is said, not raised
+        audit_recorded = False
+        logger.error(f"Settlement {settlement_id} closed, but its admin audit row was not written: {type(e).__name__}")
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+
+    return {
+        "settlement_id": settlement_id,
+        "status": stored,
+        "previous_status": previous,
+        "closed_by": who,
+        "closed_at": now.isoformat(),
+        "reason": body.reason,
+        "audit_recorded": audit_recorded,
+        "message": (("Settlement closed. Nothing moved, and the complainant is not paid through this settlement."
+                     if stored == _origin.CLOSED else f"The settlement reads {stored} after the close.")
+                    + ("" if audit_recorded else " Its admin audit row could not be written; the close stands.")),
+    }
+
+
+async def _refuse_close_if_a_peer_may_have_slashed(settlement) -> None:
+    """409 when the event store holds this settlement's DisputeSlash (a peer slashed the defendant: the complainant is
+    owed, so it is not closed), 409 when it records no origin (no slash of it can be matched), 503 when the event store
+    cannot be read (whether a peer slashed is not known). The check is the reconciliation's own
+    (tasks/settlement_reconciliation.find_slash_on_eventstore)."""
+    from agentvault_registry.tasks import settlement_reconciliation as _rec
+    sid = settlement.id
+    if not (getattr(settlement, "origin_registry_url", "") or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(f"Settlement {sid} records no origin address, so the event store cannot show whether a peer "
+                    f"slashed the defendant for it: it is not closed"),
+        )
+    try:
+        slash = await _rec.find_slash_on_eventstore(settlement)
+    except Exception as e:  # noqa: BLE001: EventStoreUnreadable, or anything else that kept the answer away
+        why = str(e) if isinstance(e, _rec.EventStoreUnreadable) else type(e).__name__
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(f"The event store cannot be read now ({why}), so whether a peer slashed the defendant for "
+                    f"settlement {sid} is not known: it is not closed. Try again when the event store answers."),
+        )
+    if slash:
+        then = ("The periodic reconciliation pays the complainant from that slash."
+                if settlement.status in ("PENDING_SLASH", "SLASHING") else
+                f"A {settlement.status} settlement is not reconciled again: an administrator settles it from that "
+                f"evidence.")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(f"The event store holds a DisputeSlash for settlement {sid} (slash "
+                    f"{slash.get('slash_tx_id') or slash.get('event_id') or 'recorded'}): a peer slashed the "
+                    f"defendant, so it is not closed. {then}"),
+        )
 
 
 # --- OWL25 Phase 3: Per-Peer Auto-Slash Configuration ---

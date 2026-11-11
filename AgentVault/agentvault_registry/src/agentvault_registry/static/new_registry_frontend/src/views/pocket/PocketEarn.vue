@@ -135,7 +135,26 @@
           <div v-if="detLoading" class="pe-skel" style="height:56px"></div>
           <p v-else-if="detErr" class="pe-ord-err" data-testid="pe-det-err">{{ detErr }} <button class="pe-retry" @click="loadDetail">{{ t('cta.retry', 'Retry') }}</button></p>
           <template v-else>
-            <p v-if="!gate.actions.length && gate.note" class="pe-ord-note" data-testid="pe-ord-note">{{ noteText(gate) }}</p>
+            <p v-if="!gate.actions.length && gate.note && !ownerOf" class="pe-ord-note" data-testid="pe-ord-note">{{ noteText(gate) }}</p>
+            <!-- V0658 (q): reading follows ownership. An order of your agent (or your organization's) shows in full whichever
+                 agent you work as, and says which agent may act on it; acting still needs that agent. -->
+            <p v-if="ownerOf" class="pe-ord-note pe-ord-owner" data-testid="pe-ord-owner">{{ ownerLine }}</p>
+            <template v-if="ownerOf && !canDo('award') && (det?.bids || []).length">
+              <label class="pe-lab">{{ t('pocket.earn.bidsRead', 'Bids') }}</label>
+              <ul class="pe-ord-bids" data-testid="pe-ord-bids-read">
+                <li v-for="b in det?.bids || []" :key="b.id" class="pe-ord-bid">
+                  <div class="pe-ord-bid-body">
+                    <span class="pe-ord-bidder">{{ shortDid(b.bidder_did) }}</span>
+                    <span class="pe-ord-price">{{ fmt(b.price) }} <small>{{ orderSheet.currency || frameCcy }}</small></span>
+                    <p v-if="b.pitch" class="pe-ord-pitch">{{ b.pitch }}</p>
+                  </div>
+                </li>
+              </ul>
+            </template>
+            <div v-if="ownerOf && !canDo('verify') && deliverableText" class="pe-ord-deliv" data-testid="pe-ord-deliv-read">
+              <label class="pe-lab">{{ t('pocket.earn.delivered', 'Delivered') }}</label>
+              <p>{{ deliverableText }}</p>
+            </div>
             <!-- §POCKETBRIDGE5 A' — a disputed engagement doors into the
                  dispute record (the WORK modal), never a dead status chip. -->
             <button v-if="det?.order?.status === 'disputed'" class="pe-btn pe-ghost pe-wide" data-testid="pe-ord-dispute-door" @click="goDisputeRecord">
@@ -218,6 +237,10 @@
           <ActingContextNotice strong />
           <label class="pe-lab">{{ t('pocket.earn.jobTitle', 'Title') }}</label>
           <input v-model.trim="postForm.title" class="pe-in" data-testid="pe-post-title" :placeholder="t('pocket.earn.jobTitlePlaceholder', 'What needs doing?')" maxlength="140" />
+          <!-- V0658 (v): a bounty for a firm (Discovery's Firms strip, on a phone) stays reserved for its agents, as on the Guild board -->
+          <p v-if="postForm.forOrg" class="pe-firm-reserved" data-testid="pe-post-fororg">
+            <Icon name="mdi:office-building" /> {{ t('pocket.earn.forFirm', 'Reserved for a firm: only that organization\'s agents can bid.') }}
+          </p>
           <label class="pe-lab">{{ t('pocket.earn.details', 'Details (optional)') }}</label>
           <input v-model.trim="postForm.spec" class="pe-in" :placeholder="t('pocket.earn.detailsPlaceholder', 'Spec / acceptance criteria')" maxlength="500" />
           <label class="pe-lab">{{ t('pocket.earn.bounty', 'Bounty') }}</label>
@@ -247,12 +270,14 @@ import { useAuthStore } from '@/stores/auth'
 import { usePocketAgent } from '@/composables/usePocketAgent'
 import { usePullToRefresh } from '@/composables/usePullToRefresh'
 import { guildApi } from '@/services/api/guild'
+import { disputeDoorQuery } from '@/services/guild/disputeOf'
 import { useCurrency } from '@/composables/useCurrency'
 import { useActingContext } from '@/composables/useActingContext'
 // §FOREIGNACT — where this agent's money actually lives (null-not-guessed for a
 // foreign agent whose registry card has not answered yet).
 const { actingCurrencyLabel } = useActingContext()
 import { actionsFor, type GuildActionOffer } from '@/services/guildActions'
+import { ownerParty, partyName } from '@/services/ownerParties'
 import { usePocketLock } from '@/composables/usePocketLock'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from '@/composables/useI18n'
@@ -360,6 +385,19 @@ const stars = ref(5)
 
 const gate = computed(() => actionsFor(det.value?.order || orderSheet.value, agentDid.value || null))
 const canDo = (k: GuildActionOffer['key']) => gate.value.actions.some(a => a.key === k)
+// V0658 (q): the developer's own party on this order (his agent, or his organization's) when the agent he works as is
+// not a party: the sheet shows the order to him and names the agent that may act on it
+const ownerOf = computed(() => ownerParty(det.value?.order, agentDid.value || null))
+const ownerLine = computed(() => {
+  const p = ownerOf.value
+  if (!p) return ''
+  if (p.via === 'organization') {
+    return tp('pocket.earn.ownerOrg', '{name}, an agent of your organization {org}, is the {role} on this order. Acting on it needs that agent.',
+      { name: partyName(p), org: p.organization_name || '', role: roleLabel(p.role) })
+  }
+  return tp('pocket.earn.ownerAgent', 'Your agent {name} is the {role} on this order. Choose it under Working as to act on it.',
+    { name: partyName(p), role: roleLabel(p.role) })
+})
 const deliverableText = computed(() => {
   const d = det.value?.order?.deliverable
   if (!d) return ''
@@ -375,7 +413,7 @@ function openOrder(o: any) {
 }
 function closeOrder() { orderSheet.value = null }
 // §POCKETBRIDGE5 A' — the shell owns the WORK modal; the query is the door.
-function goDisputeRecord() { closeOrder(); router.push({ query: { ...route.query, work: 'disputes' } }).catch(() => {}) }
+function goDisputeRecord() { const q = disputeDoorQuery(route.query, det.value?.events, det.value?.order); closeOrder(); router.push({ query: q }).catch(() => {}) }
 async function loadDetail() {
   if (!orderSheet.value) return
   detLoading.value = true; detErr.value = ''
@@ -410,9 +448,9 @@ const router = useRouter()
 const postOpen = ref(false)
 const posting = ref(false)
 const postResult = ref<{ ok: boolean; msg: string } | null>(null)
-const postForm = ref({ title: '', spec: '', bounty: '' })
-function openPost(prefill?: { title?: string; bounty?: string }) {
-  postForm.value = { title: prefill?.title || '', spec: '', bounty: prefill?.bounty || '' }
+const postForm = ref({ title: '', spec: '', bounty: '', forOrg: '' })
+function openPost(prefill?: { title?: string; bounty?: string; forOrg?: string }) {
+  postForm.value = { title: prefill?.title || '', spec: '', bounty: prefill?.bounty || '', forOrg: prefill?.forOrg || '' }
   postResult.value = null
   postOpen.value = true
 }
@@ -431,7 +469,10 @@ async function doPost() {
     if (lock.enabled.value && !(await lock.verify().catch(() => false))) {
       postResult.value = { ok: false, msg: t('pocket.earn.bioFailedEscrow', 'Biometric confirmation failed — nothing was escrowed.') }; return
     }
-    await guildApi.post({ title, spec: postForm.value.spec.trim() || undefined, bounty, currency: frameCcy.value || undefined })
+    // V0658 (v): a firm's bounty carries the Guild board's reservation, the `for-org:<id>` tag (only its agents may bid)
+    const forOrg = postForm.value.forOrg
+    await guildApi.post({ title, spec: postForm.value.spec.trim() || undefined, bounty, currency: frameCcy.value || undefined,
+                          ...(forOrg ? { required_skills: [`for-org:${forOrg}`] } : {}) })
     postResult.value = { ok: true, msg: tp('pocket.earn.posted', 'Posted — {amount} escrowed. Workers can now bid; award one to start.',
                                             { amount: `${fmt(bounty)}${frameCcy.value ? ' ' + frameCcy.value : ''}` }) }
     try { (navigator as any).vibrate?.([10, 30, 10]) } catch { /* haptics optional */ }
@@ -444,10 +485,12 @@ async function doPost() {
 function openPostFromQuery() {
   // Voice/assistant door: /pocket/payments?post=1&title=…&bounty=… — prefill only,
   // the human confirms. The query is consumed so back/refresh cannot re-open it.
+  // V0658 (v): &for_org=<id> is the firm bounty door (Discovery's Firms strip on a phone): the post stays reserved for it.
   if (String(route.query.post || '') !== '1') return
-  openPost({ title: String(route.query.title || ''), bounty: String(route.query.bounty || '') })
+  const forOrg = typeof route.query.for_org === 'string' ? route.query.for_org.slice(0, 64) : ''
+  openPost({ title: String(route.query.title || ''), bounty: String(route.query.bounty || ''), forOrg })
   const q: Record<string, any> = { ...route.query }
-  delete q.post; delete q.title; delete q.bounty
+  delete q.post; delete q.title; delete q.bounty; delete q.for_org
   router.replace({ query: q }).catch(() => { /* aborted nav is fine */ })
 }
 watch(() => route.query.post, () => openPostFromQuery())
@@ -504,6 +547,8 @@ onMounted(async () => {
 .pe-ord-meta { display: flex; align-items: center; gap: 0.6rem; margin: 0.2rem 0 0.7rem; flex-wrap: wrap; }
 .pe-ord-err { color: #ff9a9a; font-size: 0.8rem; }
 .pe-ord-note { font-size: 0.78rem; opacity: 0.65; margin: 0.4rem 0; }
+/* V0658 (q): the owner's line, a solid colour (no fading) at well over 4.5:1 on the sheet */
+.pe-ord-note.pe-ord-owner { opacity: 1; color: #6ee7b7; }
 .pe-ord-bids { list-style: none; margin: 0 0 0.6rem; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .pe-ord-bid { display: flex; align-items: center; gap: 0.6rem; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 0.6rem 0.7rem; }
 .pe-ord-bid-body { flex: 1 1 auto; min-width: 0; }
@@ -577,6 +622,9 @@ onMounted(async () => {
 .pe-bid-task { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.4rem; }
 .pe-bid-host { font-size: 0.74rem; color: #7dd3fc; background: rgba(125,211,252,0.07); border: 1px solid rgba(125,211,252,0.2); border-radius: 10px; padding: 0.5rem 0.65rem; margin-bottom: 0.5rem; display: flex; gap: 0.35rem; align-items: flex-start; }
 .pe-bid-host :deep(svg) { width: 0.9rem; height: 0.9rem; flex-shrink: 0; margin-top: 1px; }
+/* V0658 (v): the firm reservation, the Guild board's own note (gld-firm-reserved) in Pocket's sheet */
+.pe-firm-reserved { font-size: 0.74rem; color: #fbbf24; display: flex; gap: 0.35rem; align-items: flex-start; margin: 0.35rem 0 0; }
+.pe-firm-reserved :deep(svg) { width: 0.9rem; height: 0.9rem; flex-shrink: 0; margin-top: 1px; }
 .pe-amt-row { position: relative; }
 .pe-amt { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; padding-right: 3.5rem; }
 .pe-amt-ccy { position: absolute; right: 0.9rem; top: 50%; transform: translateY(-50%); font-size: 0.82rem; font-weight: 600; opacity: 0.55; }

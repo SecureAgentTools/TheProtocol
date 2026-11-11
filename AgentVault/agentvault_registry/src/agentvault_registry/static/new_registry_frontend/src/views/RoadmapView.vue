@@ -139,6 +139,7 @@
               <svg viewBox="0 0 12 12" class="rm-glyph" :class="`rm-glyph--${s.key}`" aria-hidden="true">
                 <circle cx="6" cy="6" r="4.6" class="rm-glyph-ring" />
                 <path v-if="s.key === 'preparing'" d="M6 1.4a4.6 4.6 0 0 1 0 9.2z" class="rm-glyph-core" />
+                <circle v-if="s.key === 'built'" cx="6" cy="6" r="2.1" class="rm-glyph-core" />
               </svg>{{ s.label }}
             </li>
           </ul>
@@ -150,6 +151,7 @@
                   <svg viewBox="0 0 12 12" class="rm-glyph rm-stream-node" :class="`rm-glyph--${w.status}`" aria-hidden="true">
                     <circle cx="6" cy="6" r="4.6" class="rm-glyph-ring" />
                     <path v-if="w.status === 'preparing'" d="M6 1.4a4.6 4.6 0 0 1 0 9.2z" class="rm-glyph-core" />
+                    <circle v-if="w.status === 'built'" cx="6" cy="6" r="2.1" class="rm-glyph-core" />
                   </svg>
                   <div class="rm-stream-head">
                     <h3 class="rm-h3">{{ w.title }}</h3>
@@ -277,10 +279,12 @@
 import { onMounted, onUnmounted } from 'vue'
 import originalPdf from '@/assets/papers/quantum-classical-interface-2025.pdf?url'
 
-type Status = 'live' | 'preparing' | 'designed' | 'planned' | 'idea'
+type Status = 'live' | 'built' | 'preparing' | 'designed' | 'planned' | 'idea'
 
 const statuses: Array<{ key: Status; label: string }> = [
   { key: 'live', label: 'Live' },
+  // Built: in the release and switched off by default, so it says more than Designed and less than Live.
+  { key: 'built', label: 'Built' },
   { key: 'preparing', label: 'In preparation' },
   { key: 'designed', label: 'Designed' },
   { key: 'planned', label: 'Planned' },
@@ -363,22 +367,25 @@ const horizons: Array<{ when: string; streams: Stream[] }> = [
           'Updates through the signed release channel',
         ],
       },
-    ],
-  },
-  {
-    when: 'THEN',
-    streams: [
       {
+        // Built in V0660 (the Commander, 2026-11-09): in the code and switched off by default; a frame turns it on, and it
+        // runs on simulators until a provider brings hardware. Built is not Live: nothing runs it on production yet.
         title: 'Accountable compute',
-        status: 'designed',
-        text: 'Quantum jobs become contracts. The design is ready for partners who know the quantum side.',
+        status: 'built',
+        text: 'Quantum jobs become contracts. Built in V0660 and switched off by default: a frame turns it on, and it runs on simulators until a provider brings hardware.',
         items: [
+          'A quantum agent card, proposed as a standard',
           'Acceptance tests agreed before a run',
           'Providers metered against committed logs',
           'Allocation networks for research centres, without money changing hands',
         ],
         link: { to: '/whitepaper/quantum', label: 'Read the whitepaper' },
       },
+    ],
+  },
+  {
+    when: 'THEN',
+    streams: [
       {
         title: 'Track records that travel',
         status: 'designed',
@@ -664,6 +671,7 @@ onUnmounted(() => observer?.disconnect())
 .rm-glyph-core { fill: var(--accent); }
 .rm-glyph--live .rm-glyph-ring { fill: var(--accent); }
 .rm-glyph--live { filter: drop-shadow(0 0 5px rgba(var(--nc-primary-rgb), 0.85)); }
+.rm-glyph--built .rm-glyph-ring { stroke: var(--accent); }
 .rm-glyph--designed .rm-glyph-ring { stroke: rgba(var(--nc-primary-rgb), 0.8); }
 .rm-glyph--planned .rm-glyph-ring { stroke: var(--accent); stroke-width: 1.4; stroke-dasharray: 2 1.8; }
 .rm-glyph--idea .rm-glyph-ring { stroke: rgba(var(--nc-primary-rgb), 0.7); stroke-dasharray: 0.4 2.1; stroke-linecap: round; }

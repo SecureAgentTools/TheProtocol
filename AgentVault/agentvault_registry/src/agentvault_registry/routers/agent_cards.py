@@ -6,6 +6,7 @@ import json
 import os
 from agentvault_registry.services import reputation_bond as _rb
 from agentvault_registry.services import enforcement_propagation as _ep  # §ENFPROP
+from agentvault_registry.services import quantum_agent_card as _qac  # V0660 (a): the quantum workload extension
 import re
 import time
 from typing import Optional, List, Dict, Any, Tuple, Annotated
@@ -223,6 +224,37 @@ async def _inject_flare_into_card_data_batch(
 # The bond, enforcement and listing states are this registry's to state, from its own rows, the same way the card-export
 # and the federation export state them. A read that served stored card_data stated nothing (the federated Directory
 # indexes exactly these reads), and stored card_data is owner content. A mirror keeps its home's copy.
+from ..services.home_extensions import is_native as _he_is_native   # ONE native rule for this module
+
+
+def mirror_write_refusal(card_data: Any) -> Optional[str]:
+    """None when this card is ours to write, else why it is not — for every OWNER-SCOPED write.
+
+    A mirror belongs to the registry that minted it; we hold a copy so our own readers can see it. The three writes
+    below (listing, update, delete) checked `developer_id` and nothing else, and the federated insert could put a
+    mirror on a LOCAL account whose id happened to equal the remote developer_id — so an id match was not evidence of
+    ownership at all. session-lead measured 47 such mirrors on 8 real accounts on EU and 66 on 7 on ASIA, one of the
+    accounts an outsider's.
+
+    The refusal NAMES the home registry, because "not yours" is not actionable and "this card belongs to <peer>" is:
+    the owner has to go there to change it.
+    """
+    from ..services.home_extensions import is_native as _is_native
+    # TWO REFUSALS, NAMED APART (session-lead's review). A card whose data cannot be read is refused too — ownership
+    # cannot be established and a write is not the place to guess — but it must not be TOLD it is a mirror. The first
+    # version said "a federated mirror held from another registry" to None, to a string and to an empty list: a
+    # statement of fact about data nobody could read.
+    if not isinstance(card_data, dict):
+        return ("This card's data cannot be read, so it is not possible to establish whether this registry owns it. "
+                "The write is refused rather than guessed. Ask an administrator to look at the stored card.")
+    if _is_native(card_data):
+        return None
+    fm = card_data.get("federation_metadata") or {}
+    home = fm.get("source_registry") or fm.get("first_synced_from") or "another registry"
+    return (f"This card is a federated mirror held from {home}. Only its home registry can change it; "
+            f"edit it there and the change arrives here on the next sync.")
+
+
 async def _state_home_extensions(db: AsyncSession, response_dict: dict, db_card: models.AgentCard) -> None:
     from ..services.home_extensions import derive_for_read
     response_dict["card_data"] = await derive_for_read(
@@ -395,7 +427,7 @@ async def _list_focused_subset(
         # cards carry origin_registry_name='<own name>' in their stamp, and the
         # old check read that as "federated from Registry-A" → the Distinguished
         # grid badged the registry's own agents as foreign mirrors of itself.
-        if not (fm.get("source_registry") or fm.get("first_synced_from")):
+        if _he_is_native(cd):                       # ONE rule (services/home_extensions.is_native)
             return local_ccy, local_td, "Local"
         origin = fm.get("origin_registry_name") or fm.get("source_registry") or ""
         r = peer_ccy_map.get(origin) or peer_ccy_map.get(fm.get("source_registry") or "")
@@ -579,8 +611,7 @@ async def list_agent_cards(
         def _native_card(it: Any) -> bool:
             """A card is native to THIS registry iff it has no federation source."""
             cd = (getattr(it, "card_data", None) if not isinstance(it, dict) else it.get("card_data")) or {}
-            fm = cd.get("federation_metadata") or {} if isinstance(cd, dict) else {}
-            return not (fm.get("source_registry") or fm.get("first_synced_from"))
+            return _he_is_native(cd)                 # ONE rule (services/home_extensions.is_native)
 
         def _peer_card_ccy(c: Any) -> Optional[str]:
             """settlement_currency from a peer's cached signed registry card (fees block)."""
@@ -1279,6 +1310,39 @@ def _render_discover_cte(template: str) -> str:
 
 _DISCOVER_SLIM_CTE = _render_discover_cte(_DISCOVER_SLIM_CTE_TEMPLATE)
 
+
+def _quantum_cte_template(template: str) -> str:
+    """V0660 (a): the discover CTE that also carries each card's quantum workload extension (s.quantum_ext) and the
+    quantum filters (services/quantum_agent_card.SQL_FILTERS), built from the same template with two asserted edits.
+    It runs only where the frame serves the extension (QUANTUM_WORKLOADS_MODE shadow or on); under off the page is
+    read with _DISCOVER_SLIM_CTE, byte for byte the statement it was before."""
+    anchor = "        @@PAY_EXT@@ AS pay_ext\n    FROM agent_cards c"
+    if template.count(anchor) != 1:
+        raise RuntimeError("the discover CTE template lost its pay_ext anchor; the quantum variant cannot be built")
+    out = template.replace(anchor, "        @@PAY_EXT@@ AS pay_ext,\n        " + _qac.sql_extension("c")
+                           + " AS quantum_ext\n    FROM agent_cards c")
+    head, sep, tail = out.rpartition("\n)\n")
+    if not sep or tail.strip():
+        raise RuntimeError("the discover CTE template no longer ends with its base CTE; the quantum filters cannot be added")
+    return head + _qac.SQL_FILTERS + "\n)\n"
+
+
+_DISCOVER_SLIM_CTE_QUANTUM = _render_discover_cte(_quantum_cte_template(_DISCOVER_SLIM_CTE_TEMPLATE))
+# Documented in the OpenAPI schema only where the frame serves the extension (read when this module loads: a flip
+# takes effect on recreate, like every switch the schema follows).
+_QUANTUM_DOCUMENTED = _qac.served()
+
+
+# The columns the page projection carries where the frame serves the quantum extension (the payload reads both; a
+# column the payload reads and the projection does not carry is a 500, tests/test_discover_projection_carries_...).
+_DISCOVER_QUANTUM_COLUMNS = ("quantum_ext,\n                   (SELECT j FROM qfacet) AS quantum_facets_json,\n"
+                             "                   ")
+
+
+def _quantum_param(v: Any) -> Optional[str]:
+    """A quantum discovery parameter as the caller sent it, or None (a direct call passes FastAPI's Query default)."""
+    return v if isinstance(v, str) else None
+
 # §MCPTEST30 V0614 (2026-10-14) — the facet and tag sets as SELECT bodies over `base`: the page statement carries them
 # as CTEs (one statement, one snapshot), and an empty page, which has no row to carry them, reads them with this same text.
 _DISCOVER_FACET_SELECT = """
@@ -1421,6 +1485,26 @@ async def discover_agent_cards(
     limit: int = Query(30, ge=1, le=120),
     offset: int = Query(0, ge=0),
     viewer: Optional[models.Developer] = Depends(get_current_developer_optional),
+    # V0660 (a): the quantum workload extension's filters. Read only where QUANTUM_WORKLOADS_MODE is shadow or on (they
+    # are checked by services/quantum_agent_card.discover_filters there, never by FastAPI, so under off a page with
+    # any of them is the page it was before, and they are not documented).
+    quantum_only: Optional[str] = Query(None, include_in_schema=_QUANTUM_DOCUMENTED,
+                                        description="true: only agents whose card carries the quantum workload extension."),
+    quantum_role: Optional[str] = Query(None, include_in_schema=_QUANTUM_DOCUMENTED,
+                                        description="provider, compiler, mitigator, verifier, router or meter."),
+    quantum_kind: Optional[str] = Query(None, include_in_schema=_QUANTUM_DOCUMENTED,
+                                        description="A backend of this kind: qpu, simulator or emulator."),
+    quantum_modality: Optional[str] = Query(None, include_in_schema=_QUANTUM_DOCUMENTED,
+                                            description="A backend of this modality (superconducting, trapped-ion, "
+                                                        "neutral-atom, photonic, spin, annealer, simulator)."),
+    quantum_min_qubits: Optional[str] = Query(None, include_in_schema=_QUANTUM_DOCUMENTED,
+                                              description="A backend with at least this many physical qubits."),
+    quantum_format: Optional[str] = Query(None, include_in_schema=_QUANTUM_DOCUMENTED,
+                                          description="A backend that takes this format (openqasm3, qir, ...)."),
+    quantum_jurisdiction: Optional[str] = Query(None, include_in_schema=_QUANTUM_DOCUMENTED,
+                                                description="A backend under this jurisdiction code (DE, US-CA, EU)."),
+    quantum_rung: Optional[str] = Query(None, include_in_schema=_QUANTUM_DOCUMENTED,
+                                        description="A verification rung the agent offers: 1, 2 or 3."),
 ):
     t_start = time.monotonic()
     # §DISCREFINE: discovery stays PUBLIC — the optional dependency never 401s, it
@@ -1477,6 +1561,19 @@ async def discover_agent_cards(
     # over a page the filter never widened (it binds for admins only). Echo what bound; null = not asked.
     if include_unbonded is not None:
         applied_filters["include_unbonded"] = bool(base_params["include_unbonded"])
+    # V0660 (a): the quantum workload filters, read and echoed only where the frame serves the extension. Under off
+    # nothing here runs: no parameter is read, no key joins the echo, the facets or an item.
+    _q_served = _qac.served()
+    if _q_served:
+        _q_binds, _q_applied, _q_problems = _qac.discover_filters({
+            "quantum_only": _quantum_param(quantum_only), "quantum_role": _quantum_param(quantum_role),
+            "quantum_kind": _quantum_param(quantum_kind), "quantum_modality": _quantum_param(quantum_modality),
+            "quantum_min_qubits": _quantum_param(quantum_min_qubits), "quantum_format": _quantum_param(quantum_format),
+            "quantum_jurisdiction": _quantum_param(quantum_jurisdiction), "quantum_rung": _quantum_param(quantum_rung)})
+        if _q_problems:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="; ".join(_q_problems))
+        applied_filters.update(_q_applied)
+        base_params.update(_q_binds)
 
     # Peer name → (settlement currency, trust domain) from the cached signed
     # registry cards — enriches federated items whose card_data lacks the fees
@@ -1500,8 +1597,11 @@ async def discover_agent_cards(
     origin_list = [o.strip().lower() for o in (origins or "").split(",") if o.strip()]
     if foreign_only:
         if not foreign_origins:
+            _facets_none = {"total": 0, "live_24h": 0, "paid": 0, "free": 0, "origins": [], "tags": []}
+            if _q_served:
+                _facets_none["quantum"] = _qac.facets_block(None)
             return {"items": [], "total": 0, "has_more": False,
-                    "facets": {"total": 0, "live_24h": 0, "paid": 0, "free": 0, "origins": [], "tags": []},
+                    "facets": _facets_none,
                     "applied_filters": applied_filters,
                     "generated_in_ms": round((time.monotonic() - t_start) * 1000, 1)}
         origin_list = [o for o in origin_list if o in foreign_origins] if origin_list else foreign_origins
@@ -1560,12 +1660,18 @@ async def discover_agent_cards(
         # §REPBOND — a bonded provider ranks first (shadow and enforce; off = untouched).
         if _bond_mode != "off" and sort in ("relevance", "proven"):
             sort_sql = sort_sql.replace("ORDER BY ", "ORDER BY is_bonded DESC, ", 1)
+        # V0660 (a): where the frame serves the quantum extension, the page carries each card's extension and the
+        # quantum facets of the population (one statement, one snapshot); under off all three are empty strings and
+        # the statement is the one before V0660, byte for byte.
+        _slim_cte = _DISCOVER_SLIM_CTE_QUANTUM if _q_served else _DISCOVER_SLIM_CTE
+        _q_cte = f", qfacet AS ({_qac.SQL_FACETS})" if _q_served else ""
+        _q_cols = _DISCOVER_QUANTUM_COLUMNS if _q_served else ""
         page_sql = text(
-            _DISCOVER_SLIM_CTE
+            _slim_cte
             + f"""
             , facet AS ({_DISCOVER_FACET_SELECT}
             ), tagc AS ({_DISCOVER_TAG_SELECT}
-            )
+            ){_q_cte}
             SELECT id, agent_did, name, description, created_at, updated_at,
                    developer_id, is_local, origin, reputation_score, last_active_at,
                    developer_verified, is_paid, is_live, unlisted,
@@ -1588,7 +1694,7 @@ async def discover_agent_cards(
                    COALESCE(card_data#>>'{{pricing,currency}}',
                             pay_ext->'params'->>'currency')            AS pricing_ccy,
                    card_data#>>'{{federation_metadata,source_registry}}' AS source_registry,
-                   COUNT(*) OVER () AS full_total,
+                   {_q_cols}COUNT(*) OVER () AS full_total,
                    (SELECT COALESCE(jsonb_agg(jsonb_build_object('origin', f.origin, 'count', f.count,
                                                                  'live_24h', f.live_24h, 'paid', f.paid)
                                               ORDER BY f.count DESC), '[]'::jsonb)
@@ -1610,16 +1716,22 @@ async def discover_agent_cards(
             "page_limit": limit, "page_offset": offset,
         })).mappings().all()
 
+        quantum_facets_raw = None
         if page_rows:
             # the facets over the origin-UNfiltered set and the top tags, from the page's own snapshot
             facet_rows = _json_list(page_rows[0]["facets_json"])
             tag_rows = _json_list(page_rows[0]["tags_json"])
+            if _q_served:
+                quantum_facets_raw = page_rows[0]["quantum_facets_json"]
         else:
             # an empty page carries no row: the facets and the tags in two statements of their own, as before V0614
-            facet_rows = (await db.execute(text(_DISCOVER_SLIM_CTE + _DISCOVER_FACET_SELECT + "    ORDER BY count DESC\n"),
+            facet_rows = (await db.execute(text(_slim_cte + _DISCOVER_FACET_SELECT + "    ORDER BY count DESC\n"),
                                            dict(base_params))).mappings().all()
-            tag_rows = (await db.execute(text(_DISCOVER_SLIM_CTE + _DISCOVER_TAG_SELECT),
+            tag_rows = (await db.execute(text(_slim_cte + _DISCOVER_TAG_SELECT),
                                          dict(base_params))).mappings().all()
+            if _q_served:
+                _qrow = (await db.execute(text(_slim_cte + _qac.SQL_FACETS), dict(base_params))).mappings().first()
+                quantum_facets_raw = _qrow["j"] if _qrow else None
     except Exception:
         logger.exception("discover_agent_cards query failed")
         raise HTTPException(
@@ -1708,6 +1820,22 @@ async def discover_agent_cards(
                 tr_by_did[_d] = _att
     except Exception as tr_e:  # noqa: BLE001 — attestation must never break discovery
         logger.warning(f"discover track-record enrichment failed: {tr_e}")
+    # V0657 (b), item 4: the organization each agent's HOME states (services/org_mark.py): a native agent's from the
+    # rows here (only while its organization is listed and it shows it), a mirror's as its home stated it on the card.
+    # In a savepoint, so a failed read leaves the page's transaction usable; it never breaks discovery.
+    org_by_did: Dict[str, dict] = {}
+    try:
+        from agentvault_registry.services import org_mark as _om
+        async with db.begin_nested():
+            org_by_did = await _om.card_states(
+                db, [r["agent_did"] for r in page_rows if r["is_local"] and r["agent_did"]])
+        for _r in page_rows:
+            if not _r["is_local"] and _r["agent_did"] and _r["agent_did"] not in org_by_did:
+                _m = _om.extension_from_card(_r["card_data"] if "card_data" in _r.keys() else None)
+                if _m:
+                    org_by_did[_r["agent_did"]] = _m
+    except Exception as _om_e:  # noqa: BLE001
+        logger.warning(f"discover organization marks failed: {_om_e}")
 
     def _spiffe_host(spiffe: Optional[str]) -> Optional[str]:
         if not isinstance(spiffe, str):
@@ -1762,6 +1890,7 @@ async def discover_agent_cards(
             "icon_url": r["icon_url"],
             "flare": flare,
             "track_record": tr_by_did.get(r["agent_did"]),
+            "org": org_by_did.get(r["agent_did"]),   # V0657 (b): the organization its home states, or null
             # §REPBOND
             "is_bonded": bool(r["is_bonded"]),
             "is_enforced": bool(r["is_enforced"]),
@@ -1777,6 +1906,10 @@ async def discover_agent_cards(
                       or _spiffe_host(r["source_registry"]))
             ),
         })
+        if _q_served:
+            # V0660 (a): what the card's quantum workload extension says, as the index reads it (null when none)
+            _qe = _jsonb(r["quantum_ext"])
+            items[-1]["quantum"] = _qac.facets(_qe.get("params")) if isinstance(_qe, dict) else None
 
     total = int(page_rows[0]["full_total"]) if page_rows else 0
     origins_out = []
@@ -1792,19 +1925,22 @@ async def discover_agent_cards(
                 "paid": int(fr["paid"]),
             })
 
+    facets_out = {
+        "total": facet_total["count"],
+        "live_24h": facet_total["live_24h"],
+        "paid": facet_total["paid"],
+        "free": facet_total["count"] - facet_total["paid"],
+        "origins": origins_out,
+        "tags": [{"name": tr["tag"], "count": int(tr["count"])} for tr in tag_rows],
+    }
+    if _q_served:
+        facets_out["quantum"] = _qac.facets_block(quantum_facets_raw)   # V0660 (a)
     return {
         "items": items,
         "total": total,
         "has_more": offset + len(items) < total,
         "ranking": ranking_meta,
-        "facets": {
-            "total": facet_total["count"],
-            "live_24h": facet_total["live_24h"],
-            "paid": facet_total["paid"],
-            "free": facet_total["count"] - facet_total["paid"],
-            "origins": origins_out,
-            "tags": [{"name": tr["tag"], "count": int(tr["count"])} for tr in tag_rows],
-        },
+        "facets": facets_out,
         "applied_filters": applied_filters,
         "generated_in_ms": round((time.monotonic() - t_start) * 1000, 1),
     }
@@ -2052,6 +2188,12 @@ async def set_agent_card_listing(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to change the listing of this agent card",
         )
+    # V0659: an id match is not ownership. A mirror can sit on a local account (the federated insert could claim a
+    # local developer whose id equalled the remote one), so a write is refused on WHOSE CARD it is, not on the row's
+    # developer_id alone.
+    _mirror = mirror_write_refusal(db_card.card_data)
+    if _mirror:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_mirror)
 
     # §REPBOND — listing (unlisted → listed) is a provider act: the bond gate applies.
     if not body.unlisted and db_card.agent_did:
@@ -2129,6 +2271,12 @@ async def update_agent_card(
     if db_card.developer_id != current_developer.id:
         logger.warning(f"Developer {current_developer.id} attempted to update agent card {card_id} owned by {db_card.developer_id}")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update this agent card")
+    # V0659: an id match is not ownership. A mirror can sit on a local account (the federated insert could claim a
+    # local developer whose id equalled the remote one), so a write is refused on WHOSE CARD it is, not on the row's
+    # developer_id alone.
+    _mirror = mirror_write_refusal(db_card.card_data)
+    if _mirror:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_mirror)
 
     # §REPBOND — declaring a price on the card is a provider act: the bond gate applies.
     if db_card.agent_did and getattr(card_in, "card_data", None) and _rb.is_paid_card(card_in.card_data):
@@ -2227,6 +2375,12 @@ async def delete_agent_card(
     if db_card.developer_id != current_developer.id:
         logger.warning(f"Developer {current_developer.id} attempted to delete agent card {card_id} owned by {db_card.developer_id}")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to delete this agent card")
+    # V0659: an id match is not ownership. A mirror can sit on a local account (the federated insert could claim a
+    # local developer whose id equalled the remote one), so a write is refused on WHOSE CARD it is, not on the row's
+    # developer_id alone.
+    _mirror = mirror_write_refusal(db_card.card_data)
+    if _mirror:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_mirror)
 
     # Store name before deletion for notification
     agent_name = db_card.name

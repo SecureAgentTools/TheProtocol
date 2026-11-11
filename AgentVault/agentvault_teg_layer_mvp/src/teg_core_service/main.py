@@ -746,7 +746,12 @@ Instrumentator(
     should_ignore_untemplated=True,
     should_group_untemplated=True,
     excluded_handlers=["/metrics", "/health", "/docs", "/redoc", "/openapi.json"],
-).instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+).instrument(app)
+# V0657 (c): our own /metrics in place of the instrumentator's expose(), which builds a MultiProcessCollector we cannot
+# reach: this one reads the worker files under the lock the arbiter's fold takes (a dead worker's values are never
+# counted twice or not at all) and adds the directory's fill (core/metrics_multiproc.py, the registry's file).
+from .core.metrics_multiproc import metrics_endpoint
+app.add_api_route("/metrics", metrics_endpoint, methods=["GET"], include_in_schema=False)
 logger.info("prometheus_instrumentation_enabled - endpoint: /metrics")
 
 

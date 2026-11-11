@@ -4478,6 +4478,14 @@ async def _phase3_teardown(target, bag: McpFixtureBag) -> None:
         await _call("theprotocol_deleteWebhook", {"webhook_id": fv["webhook_id"]}, bag.developer_jwt)
     if fv.get("bundle_id"):
         await _call("theprotocol_deleteBundle", {"bundle_id": fv["bundle_id"]}, bag.developer_jwt)
+    # V0658 (c), D6-825: the TEG dispute phase 4 filed (step 12), when the dispute lifecycle did not withdraw it already
+    # (earned_agent_public.lifecycle_earned_disputes): its claimant, the sentinel, withdraws it, so no run leaves an OPEN
+    # dispute on the TEG
+    if fv.get("dispute_id") and fv.get("teg_dispute_withdrawn") != fv.get("dispute_id"):
+        await _call("theprotocol_withdrawTegDispute",
+                    {"agent_jwt": bag.sentinel_jwt, "dispute_log_id": str(fv["dispute_id"]),
+                     "reason": "MCP tester phase-4 fixture, withdrawn by its claimant at the end of the run"},
+                    bag.developer_jwt)
     if fv.get("organization_id"):
         async def _c(tool, args):
             return await _mcp_rpc_call(target, tool, args, jwt=bag.developer_jwt, timeout=20)

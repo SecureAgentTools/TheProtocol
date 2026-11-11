@@ -18,6 +18,7 @@ import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agentvault_registry.core.outbound_guard import guarded_client
 from agentvault_registry.database import AsyncSessionLocal
 from ._worker_base import BackgroundWorker
 
@@ -87,12 +88,17 @@ def _origin_is_dedicated(url: str) -> bool:
 #   no answer at all (DNS/connect/timeout)       -> unreachable
 # The origin `/health` survives only as a FALLBACK and only for a DEDICATED host, which is the
 # §COCKPITA case it was written for (sovereign subdomains) and never the shared-frame case.
+# V0660 (l): how many hops a probe follows. The guard refuses follow_redirects= outright, because a hop
+# the client takes on its own is a destination nobody checked; fetch() follows this many, checking each.
+_PROBE_MAX_REDIRECTS = 3
+
+
 async def _probe_declared(client, url: str):
     """(verdict, detail) read from the declared address, never from something easier."""
     last = None
     for method in ("HEAD", "GET"):
         try:
-            resp = await client.request(method, url, follow_redirects=True)
+            resp = await client.fetch(method, url, max_redirects=_PROBE_MAX_REDIRECTS)
         except Exception as exc:
             last = ("unreachable", f"{method} {type(exc).__name__}")
             continue
@@ -289,7 +295,7 @@ async def _check_all_agents() -> tuple:
             if not agents:
                 return 0, 0, 0, 0, 0, 0, 0
 
-            async with httpx.AsyncClient(timeout=PING_TIMEOUT) as client:
+            async with guarded_client("agent_health", timeout=PING_TIMEOUT) as client:
                 for agent_id, agent_did, last_health, url in agents:
                     checked += 1
                     try:
@@ -304,7 +310,7 @@ async def _check_all_agents() -> tuple:
                             # consulted at all — that substitution is the bug this closes.
                             for _alt in (_origin_health(url_str), f"{url_str.rstrip('/')}/health"):
                                 try:
-                                    resp = await client.get(_alt, follow_redirects=True)
+                                    resp = await client.fetch("GET", _alt, max_redirects=_PROBE_MAX_REDIRECTS)
                                 except Exception:
                                     continue
                                 if 200 <= resp.status_code < 400:

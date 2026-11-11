@@ -69,8 +69,12 @@ def test_liability_mode_reads_one_answer(monkeypatch, raw, mode):
 
 DEVICE_KEY_ROUTES = {
     "/api/v1/liability/webauthn/options", "/api/v1/liability/webauthn/register",
+    "/api/v1/liability/devices/{device_id}/revoke-key",
+}
+# D6-850: the per-device enrolment trio answers 410 on every registry (no gate at all: nothing behind it runs)
+RETIRED_DEVICE_KEY_ROUTES = {
     "/api/v1/liability/devices/{device_id}/webauthn/options", "/api/v1/liability/devices/{device_id}/webauthn/register",
-    "/api/v1/liability/devices/{device_id}/enroll-key", "/api/v1/liability/devices/{device_id}/revoke-key",
+    "/api/v1/liability/devices/{device_id}/enroll-key",
 }
 
 
@@ -91,9 +95,11 @@ def _routes() -> dict:
 def test_the_device_key_routes_work_where_liability_is_off(monkeypatch):
     routes = _routes()
     keyed = {k: g for k, g in routes.items() if k.split(" ", 1)[1] in DEVICE_KEY_ROUTES}
-    assert len(keyed) == 6, sorted(keyed)
+    assert len(keyed) == 3, sorted(keyed)
     for k, g in keyed.items():
         assert g == {"_require_enabled_for_device_keys"}, f"{k} still waits on LIABILITY_MODE: {g}"
+    retired = {k: g for k, g in routes.items() if k.split(" ", 1)[1] in RETIRED_DEVICE_KEY_ROUTES}
+    assert len(retired) == 3 and all(g == set() for g in retired.values()), retired
     from agentvault_registry.routers import liability as L
     monkeypatch.setattr(L.settings, "LIABILITY_MODE", "off", raising=False)
     assert L._require_enabled_for_device_keys() is None

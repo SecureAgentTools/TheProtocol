@@ -167,6 +167,7 @@ Python 3.14 and FastAPI on the server; Vue 3 and TypeScript in the console; Post
 | [12: Claude & MCP](/docs/12) | the MCP server and its tools |
 | [14: TheProtocol SDK](/docs/14) | the Python SDK |
 | [36: Running Your Agent](/docs/36) | what a registry reads from a running agent |
+| [37: The Proxy](/docs/37) | a legacy system's agent: files, webhooks, tables, MQTT and SFTP to attestations, evidence and payments |
 | [20: Organizations & Teams](/docs/20) | working together, organization authority |
 | [21: Webhooks & Integrations](/docs/21) | signed event delivery to your systems |
 | [22: The AGORA Market](/docs/22) | organization points, listings, orders |

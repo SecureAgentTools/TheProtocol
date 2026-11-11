@@ -30,6 +30,11 @@ import { orrery } from './orrery'
 import { hearth } from './hearth'
 import { canopy } from './canopy'
 import { cairn } from './cairn'
+import { collegium } from './collegium'
+import { lattice } from './lattice'
+import { lodestar } from './lodestar'
+import { alea } from './alea'
+import { ancilla } from './ancilla'
 
 import type { Blueprint } from './types'
 
@@ -50,10 +55,18 @@ export const BLUEPRINTS: Blueprint[] = [
   canopy,                              // 26: carbon removal and attestation
   enclave,                             // 27: data clean rooms
   cairn,                               // 28: off-world sites beyond live contact
+  // The quantum wave (V0660 (f)): the workload is quantum, the rails under it are the live ones, and
+  // every step that needs a real device is marked DESIGNED.
+  collegium,                           // 29: research allocation networks
+  lattice,                             // 30: computational chemistry and materials
+  lodestar,                            // 31: optimisation and scheduling
+  alea,                                // 32: randomness beacons and public draws
+  ancilla,                             // 33: the AI services around a quantum computer
 ]
 
 export { RAILS, RAIL_BY_ID } from './rails'
 export * from './types'
+export { PROXY_DOCS_URL, PROXY_RECIPES_URL, PROXY_RECIPE_IDS, proxyRecipeUrl } from './proxy'
 
 /** Sectors we can see but have not drafted (strategy §6, The Vault). */
 export const VAULT: string[] = [

@@ -77,3 +77,44 @@ describe('the org Setup Guide', () => {
     expect(w.find('[data-testid="osg-policy"]').classes()).toContain('osg-step--done')
   })
 })
+
+// V0658 (r), met by its browser load: the guide shows to owners and admins only, but it read its five things on every
+// mount, a member's too, and one of them (GET /organizations/{id}/agents/authority) is admin-only: a 403 and a console
+// error on every member's visit to the organization's page. It reads for the people it shows to; the role is read after
+// the page mounts, so it reads when it learns the person may manage.
+describe('the guide reads only for the people it shows to', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    try { localStorage.clear() } catch { /* storage blocked */ }
+    answers()
+  })
+  const reads = () => ['getOrgSettings', 'listMembers', 'listOrganizationAgents', 'getOrgAuthorityGrants', 'getOrgTreasuryAccount']
+    .map((k) => h.svc[k].mock.calls.length)
+
+  it('a member\'s guide reads nothing, the admin-only authority read least of all', async () => {
+    const w = mount(OrgSetupChecklist, { props: { orgId: 'org-1', canManage: false } })
+    await flushPromises()
+    expect(reads(), 'no read at all').toEqual([0, 0, 0, 0, 0])
+    expect(w.find('[data-testid="org-setup-guide"]').exists()).toBe(false)
+  })
+
+  it('it reads once the page learns the person may manage, and again for another organization', async () => {
+    const w = mount(OrgSetupChecklist, { props: { orgId: 'org-1', canManage: false } })
+    await flushPromises()
+    expect(reads(), 'nothing while the role is not known to allow it').toEqual([0, 0, 0, 0, 0])
+    await w.setProps({ canManage: true })
+    await flushPromises()
+    expect(reads(), 'one read of each').toEqual([1, 1, 1, 1, 1])
+    expect(h.svc.getOrgAuthorityGrants).toHaveBeenLastCalledWith('org-1')
+    expect(w.find('[data-testid="org-setup-guide"]').exists()).toBe(true)
+    await w.setProps({ orgId: 'org-2' })
+    await flushPromises()
+    expect(reads()).toEqual([2, 2, 2, 2, 2])
+    expect(h.svc.getOrgAuthorityGrants).toHaveBeenLastCalledWith('org-2')
+  })
+
+  it('an owner\'s guide reads on mount, as before', async () => {
+    await guide()
+    expect(reads()).toEqual([1, 1, 1, 1, 1])
+  })
+})

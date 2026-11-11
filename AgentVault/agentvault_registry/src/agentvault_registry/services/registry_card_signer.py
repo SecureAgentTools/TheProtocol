@@ -14,7 +14,7 @@ NB: do NOT add `from __future__ import annotations` here — same reason as
 serve_well_known_card (FastAPI handler introspection).
 """
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -68,6 +68,18 @@ SIGNED_CANONICAL_PATHS = [
     "federation.licence.operator.hash",
 ]
 
+# V0660 (d): blocks a card signs only while it carries them, appended in this order after the list above. A frame whose
+# QUANTUM_WORKLOADS_MODE is off serves no quantum_workloads block, so it declares and signs exactly the list above, as it
+# did before the block existed; a frame that serves one signs the block whole (like capabilities), so a peer that removes
+# or edits it breaks the signature. Verifiers read the card's own signed_canonical, so the longer list needs nothing new.
+OPTIONAL_SIGNED_PATHS = ["quantum_workloads"]
+
+
+def signed_paths_for(card: Dict[str, Any]) -> List[str]:
+    """The paths this card is signed over: SIGNED_CANONICAL_PATHS, then each optional block the card carries."""
+    return [*SIGNED_CANONICAL_PATHS, *(p for p in OPTIONAL_SIGNED_PATHS if p.split(".", 1)[0] in card)]
+
+
 # AUDIT cross-cutting #4 — signature freshness window (replay/rollback defense).
 # Peers re-pull every ~5min, so a 1h validity gives ~12× margin against clock
 # skew / pull latency while still rejecting a stale replayed card.
@@ -94,7 +106,7 @@ def extract_paths(card: Dict[str, Any], paths) -> Dict[str, Any]:
 
 def extract_canonical_payload(card: Dict[str, Any]) -> Dict[str, Any]:
     """Pull only the signed paths out of a card, in deterministic order."""
-    return extract_paths(card, SIGNED_CANONICAL_PATHS)
+    return extract_paths(card, signed_paths_for(card))
 
 
 async def sign_registry_card(
@@ -139,11 +151,12 @@ async def sign_registry_card(
         "alg":               "EdDSA",
         "kid":               f"{spiffe_id}#{key_row.rotation_seq}",
         "jwks_url":          "/.well-known/registry-jwks.json",
-        "signed_canonical":  SIGNED_CANONICAL_PATHS,
+        "signed_canonical":  signed_paths_for(card),
         "signed_at":         signed_at,
         "expires_at":        expires_at,
         "value":             signature_value,
     }
 
 
-__all__ = ["sign_registry_card", "extract_canonical_payload", "SIGNED_CANONICAL_PATHS"]
+__all__ = ["sign_registry_card", "extract_canonical_payload", "SIGNED_CANONICAL_PATHS", "OPTIONAL_SIGNED_PATHS",
+           "signed_paths_for"]

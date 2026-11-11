@@ -22,12 +22,14 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentvault_registry import models, schemas
+from agentvault_registry.core.outbound_guard import inspect_destination, record_refusal
 from agentvault_registry.config import settings
 from agentvault_registry.database import get_db
 from agentvault_registry.security import get_current_developer, presented_api_key_id
 from agentvault_registry.services.device_key_link import (
     PREFS_KEY, client_prefs, paired_key_id, revoke_paired_key,
 )
+from agentvault_registry.services.device_enrollment import StepUpProofIn
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +82,16 @@ async def webpush_subscribe(body: WebPushSubscribeIn,
     auth = (body.keys or {}).get("auth")
     if not p256dh or not auth:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="keys.p256dh and keys.auth are required")
+    # V0660 (l): the endpoint comes from the subscriber's own browser, so it is a destination a user
+    # sets. pywebpush does the sending, not httpx, so the guard cannot be the client here: it is ASKED
+    # instead, at the moment the address is stored, which is the cheapest place to refuse it.
+    verdict = await inspect_destination(body.endpoint)
+    if verdict.refusal:
+        # Counted in the guard's own series under this site, so a refusal here and a skip in the sender
+        # (background_tasks/push_notify) are one series: whichever half refuses, the operator sees one number.
+        record_refusal("webpush", verdict.refusal)
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail=f"push_endpoint_refused: {verdict.refusal}")
     row = (await db.execute(text(
         "SELECT id FROM device_push_registrations WHERE developer_id=:d AND rail='webpush' AND target=:t"
     ), {"d": dev.id, "t": body.endpoint})).first()
@@ -103,11 +115,15 @@ async def webpush_subscribe(body: WebPushSubscribeIn,
 async def webpush_unsubscribe(body: WebPushSubscribeIn,
                               dev: models.Developer = Depends(get_current_developer),
                               db: AsyncSession = Depends(get_db)):
-    await db.execute(text(
-        "DELETE FROM device_push_registrations WHERE developer_id=:d AND rail='webpush' AND target=:t"
-    ), {"d": dev.id, "t": body.endpoint})
+    # D6-850: a phone keeps ONE row for push and signing, so turning notifications off takes the push half only; a
+    # row that also holds a live credential stays as a credential-only row (services.device_enrollment).
+    from agentvault_registry.services import device_enrollment as de
+    rows = (await db.execute(text(
+        "SELECT id FROM device_push_registrations WHERE developer_id=:d AND rail='webpush' AND target=:t"
+    ), {"d": dev.id, "t": body.endpoint})).fetchall()
+    kept = [int(r[0]) for r in rows if await de.drop_push_keep_credential(db, int(r[0]))]
     await db.commit()
-    return {"ok": True}
+    return {"ok": True, "credential_kept": bool(kept)}
 
 
 @router.post("/register", summary="Register (or refresh) a push device")
@@ -201,16 +217,42 @@ async def list_my_devices(
 @router.delete("/{device_id}", summary="Remove one of my push devices")
 async def unregister_device(
     device_id: int,
+    proof: Optional[StepUpProofIn] = None,
     current: models.Developer = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db),
 ):
+    # D6-850: a device row holding a live signing credential goes, like revoke-key, signed in and with the account's
+    # second factor (428 step_up_required names the challenge; send this again with challenge_id or totp_code in the
+    # BODY, never the query string, which lands in the access log). Any other row goes at once, as before: the first
+    # DELETE leaves only a row with a live credential behind.
+    totp_code = getattr(proof, "totp_code", None)
+    challenge_id = getattr(proof, "challenge_id", None)
+    from agentvault_registry.services import device_enrollment as de
     res = await db.execute(text(
-        "DELETE FROM device_push_registrations WHERE id = :i AND developer_id = :dev RETURNING id, prefs"
+        "DELETE FROM device_push_registrations WHERE id = :i AND developer_id = :dev "
+        f"AND NOT ({de.LIVE_CREDENTIAL_SQL}) RETURNING id, prefs"
     ), {"i": device_id, "dev": current.id})
     row = res.first()
     if not row:
-        await db.rollback()
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Device not found (or not yours)")
+        held = (await db.execute(text(
+            "SELECT id, developer_id, label, webauthn_public_key, pubkey_jwk, key_revoked_at "
+            "FROM device_push_registrations WHERE id = :i AND developer_id = :dev"
+        ), {"i": device_id, "dev": current.id})).first()
+        if held is None:
+            await db.rollback()
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Device not found (or not yours)")
+        de.refuse_api_key("A device holding a signing key is removed")
+        ok, step_up = await de.removal_step_up(db, current, held, totp_code=totp_code, challenge_id=challenge_id)
+        if not ok:
+            await db.commit()   # the challenge must outlive this refusal: the phone looks it up
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=428, content=step_up)
+        row = (await db.execute(text(
+            "DELETE FROM device_push_registrations WHERE id = :i AND developer_id = :dev RETURNING id, prefs"
+        ), {"i": device_id, "dev": current.id})).first()
+        if not row:
+            await db.rollback()
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Device not found (or not yours)")
     # §POCKETPAIR (2026-10-15): a phone paired by POCKET FRAME registered with its own key; removing the phone revokes
     # that key in the same transaction, so a lost or retired phone stops being a credential the moment it is removed.
     revoked = await revoke_paired_key(db, current.id, paired_key_id(row.prefs))

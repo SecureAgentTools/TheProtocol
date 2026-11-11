@@ -37,17 +37,20 @@ def test_a_topic_is_readable_only_by_whom_it_belongs_to():
 
 async def test_a_refused_subscription_holds_nothing_and_says_so(monkeypatch):
     from agentvault_registry.routers import websocket as ws
-    subs, sent = [], []
-    fake = types.SimpleNamespace(subscribe=lambda u, t: subs.append((u, t)))
+    subs, sent, socks = [], [], []
+    # V0658 (n): the subscription and the reply are the asking socket's (a user may hold several)
+    fake = types.SimpleNamespace(subscribe=lambda u, t, w=None: (subs.append((u, t)), socks.append(w)))
 
-    async def _send(msg, uid):
+    async def _send(msg, uid, w=None):
         sent.append((uid, msg["type"], msg["data"].get("topic")))
+        socks.append(w)
     fake.send_personal_message = _send
     monkeypatch.setattr(ws, "manager", fake)
     assert await ws._subscribe_checked("7", {"id": "7"}, "chat:dev:8") is False
     assert subs == [] and sent == [("7", "error", "chat:dev:8")]
-    assert await ws._subscribe_checked("7", {"id": "7"}, "agent:did:theprotocol:x") is True
+    assert await ws._subscribe_checked("7", {"id": "7"}, "agent:did:theprotocol:x", "sock-a") is True
     assert subs == [("7", "agent:did:theprotocol:x")] and sent[-1] == ("7", "subscribed", "agent:did:theprotocol:x")
+    assert socks[-2:] == ["sock-a", "sock-a"]       # the subscribe and its reply both name the socket that asked
 
 
 def _calls(path: pathlib.Path, attr: str):

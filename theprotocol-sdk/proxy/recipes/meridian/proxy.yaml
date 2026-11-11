@@ -1,0 +1,53 @@
+# MERIDIAN (the industrial-procurement blueprint): the order-management system drops its order intents as JSON files;
+# each intent becomes a signed attestation on TheProtocol, and the ERP's import folder receives the hash-chained,
+# signed evidence of every intent the proxy carried (checked offline with tp-proxy verify).
+#
+# The OMS side: an export job writes intents-<batch>.json (a JSON array) into /data/oms-out; the fake in fake/ does
+# the same. The ERP side reads /data/erp-in. Credentials come from the agent's starter files, never this file.
+version: 1
+name: meridian-oms
+registry: https://api.theprotocol.cloud
+identity:
+  agent_did: env:AGENT_DID
+  client_id: env:CLIENT_ID
+  client_secret: env:CLIENT_SECRET
+state: /data/meridian-state.db
+sources:
+  oms:
+    type: filedrop
+    # settle_seconds: an export is read only once the file has stopped growing
+    config: {path: /data/oms-out, format: json, suffix: .json, id_field: intent_id, settle_seconds: 2}
+actions:
+  attest:
+    type: attestation
+    config: {attestation_type: meridian.order_intent}
+    limits: {per_minute: 120}
+sinks:
+  erp:
+    type: evidence
+    config: {dir: /data/erp-in, signing_key: file:/run/secrets/evidence.pem}
+mappings:
+  - name: intent
+    version: 1
+    from: oms
+    to: attest
+    when: {path: $.payload.data.status, equals: RELEASED}
+    fields:
+      intent: $.payload.data.intent_id
+      order: $.payload.data.order_no
+      buyer: $.payload.data.buyer
+      sku: $.payload.data.sku
+      quantity: $.payload.data.qty
+      released_at: $.payload.data.released_at
+  - name: intent-evidence
+    version: 1
+    from: oms
+    to: erp
+    when: {path: $.payload.data.status, equals: RELEASED}
+    fields:
+      intent: $.payload.data.intent_id
+      order: $.payload.data.order_no
+      sku: $.payload.data.sku
+      quantity: $.payload.data.qty
+retry: {first_s: 2, max_s: 300, attempts: 8}
+service: {listen: "127.0.0.1:9108"}

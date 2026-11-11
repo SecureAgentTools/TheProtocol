@@ -46,10 +46,16 @@ def main(tmp_path, monkeypatch):
 
 
 def _metrics(main, monkeypatch, uptime):
-    async def stats(*_a, **_k):
-        return {"total_audits": 1, "uptime_pct": uptime}
+    # 2026-11-07: /metrics no longer calls db.get_stats — it serves the stats
+    # cache and does no database work at all. Patching get_stats here would
+    # leave both tests below passing because the value never arrives, which
+    # is passing for the wrong reason, so the value is seeded into the cache.
+    def stats(*_a, **_k):
+        raise AssertionError("/metrics must not query the database")
 
     monkeypatch.setattr(main.db, "get_stats", stats)
+    main._stats_cache["all"] = {"total_audits": 1, "uptime_pct": uptime}
+    main._stats_cache_at["all"] = main.time.time()
     return asyncio.run(main.metrics()).body.decode()
 
 
@@ -70,6 +76,9 @@ def test_red_an_uptime_that_is_not_measured_is_left_out_of_the_metrics(main, mon
     text = _metrics(main, monkeypatch, None)
     assert "auditor_uptime_pct None" not in text
     assert not any(line.startswith("auditor_uptime_pct ") for line in text.splitlines())
+    # The control for the seeding above: a MEASURED uptime does reach the page,
+    # so the assertion over None is about the None and not about the cache.
+    assert "auditor_uptime_pct 100.0" in _metrics(main, monkeypatch, 100.0)
 
 
 def test_red_the_modes_list_the_slot_shapes_and_the_frames_mark_a_public_only_frame(main):

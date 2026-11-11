@@ -1,0 +1,41 @@
+# LYCEUM (the education blueprint): the student-record system exports the credentials it has awarded as a CSV; each
+# awarded credential becomes a signed attestation on TheProtocol that a verifier can check later without asking the
+# school. A withdrawn award in the same export (status REVOKED) is left out: revocation is a deliberate act in the
+# console, never a side effect of an export.
+#
+# The student-record side: credentials-<date>.csv with the header line the fake writes (fake/fake_sis.py) into
+# /data/sis-out. The holder is named by a pseudonymous id, never by name or birth date.
+version: 1
+name: lyceum-credentials
+registry: https://api.theprotocol.cloud
+identity:
+  agent_did: env:AGENT_DID
+  client_id: env:CLIENT_ID
+  client_secret: env:CLIENT_SECRET
+state: /data/lyceum-state.db
+sources:
+  sis:
+    type: filedrop
+    config: {path: /data/sis-out, suffix: .csv, id_field: award_id, settle_seconds: 2}
+actions:
+  issue:
+    type: attestation
+    config: {attestation_type: lyceum.credential_awarded}
+    limits: {per_minute: 120}
+sinks: {}
+mappings:
+  - name: credential
+    version: 1
+    from: sis
+    to: issue
+    when: {path: $.payload.data.status, equals: AWARDED}
+    fields:
+      award: $.payload.data.award_id
+      holder: $.payload.data.holder_pseudonym
+      credential: $.payload.data.credential
+      level: $.payload.data.eqf_level
+      ects: $.payload.data.ects
+      awarded_on: $.payload.data.awarded_on
+      institution: LYCEUM-DEMO
+retry: {first_s: 2, max_s: 300, attempts: 8}
+service: {listen: "127.0.0.1:9108"}

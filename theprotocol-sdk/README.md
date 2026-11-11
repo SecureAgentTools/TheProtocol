@@ -8,6 +8,7 @@ Build and call AI agents on [TheProtocol](https://theprotocol.cloud). Speaks the
 pip install theprotocol-sdk              # Client only (call agents)
 pip install theprotocol-sdk[server]      # + FastAPI router (build agents)
 pip install theprotocol-sdk[anp]         # + Ed25519 crypto for ANP DID:WBA
+pip install theprotocol-sdk[proxy]       # + TheProtocol Proxy (tp-proxy): a legacy system's agent on TheProtocol
 pip install theprotocol-sdk[all]         # Everything
 ```
 
@@ -133,16 +134,40 @@ enrollment = await iron.enroll(agent_jwt)
 
 if enrollment.delivery == "inline":          # your own infrastructure
     client = MtlsAgentClient(cert_dir=iron.cert_dir)
-    task = iron.start_auto_rotate(agent_jwt)  # SVIDs are short-lived by design
+    # SVIDs are short-lived by design; pass a function that returns the current agent token: the loop outlives a token
+    task = iron.start_auto_rotate(current_agent_token)
 elif enrollment.delivery == "workload_api":   # co-located with the registry
     ...                                       # fetch from the socket instead
 ```
 
 The private key is written `0600` into a `0700` directory, via a temp file and rename so a reader never sees it half-written. A registry that cannot issue a certificate says so and raises `IronhandUnavailableError` rather than leaving you believing you have an identity: nothing is enrolled in that case, and agent-JWT plus payment-token auth continue to work. Enrollment needs the `identity.mtls` permission, which rides the `client` and `service-provider` roles.
 
+## TheProtocol Proxy
+
+A small process beside a legacy system (an ERP, a scale, a meter, a terminal operating system) that gives it an agent
+identity on TheProtocol and translates in both directions, from one spec file: sources read the system, mappings turn
+its records into actions on TheProtocol (an attestation, a task, a payment under a mandate), and sinks deliver
+TheProtocol's events back. A durable outbox and exactly-once keys mean a record is sent once however often it is read,
+`--dry-run` sends nothing, and refused records wait in the dead letters for `tp-proxy replay`.
+
+```bash
+pip install "theprotocol-sdk[proxy]"
+tp-proxy init --from ./my-agent     # the Agent Forge starter's download: a proxy.yaml that names its credentials
+tp-proxy run my-agent/proxy.yaml --dry-run
+```
+
+Connectors are plugins on a published interface (`theprotocol.proxy.plugins`) with contract tests
+(`theprotocol.proxy.testing`). The image, the compose example and the full guide are in `proxy/`.
+
 ## Changelog
 
-**0.7.6** (2026-10-16, in the source; not built or uploaded yet)
+**0.8.0** (V0659 and V0660: TheProtocol Proxy and the quantum workload pieces; uploaded to PyPI with V0660's roll)
+- TheProtocol Proxy: the module `theprotocol.proxy`, the `tp-proxy` command and the `[proxy]` extra (PyYAML, jsonschema, aiohttp, cryptography). The core: the spec, the plugin interface, the agent identity, the durable outbox with exactly-once keys, the dead letters and replay, dry runs, the breaker, the rate limits, `/health` and `/metrics`, and redacted JSON logs.
+- The proxy's built-in parts. Sources: `webhook`, `filedrop`, `logtail`, `mqtt`, `sftp`, `sqlpoll` and `theprotocol_events`. Actions: `attestation`, `a2a_task`, `payment`, `milestone_evidence` and `chat_message`. Sinks: `webhook`, `journal`, `calendar`, `email_digest` and `evidence`. A part that needs a client library has its own extra, imported only when it starts: `[proxy-mqtt]` (paho-mqtt 2), `[proxy-sftp]` (paramiko, defusedxml; the SFTP source and the evidence mirror to SFTP), `[proxy-s3]` (boto3; the evidence mirror to S3), and, for the SQL poll, `[proxy-postgresql]`, `[proxy-mysql]`, `[proxy-sqlserver]` or all three as `[proxy-sql]`. Eight ready recipes, one per blueprint bridge, are in the repository under `theprotocol-sdk/proxy/recipes/`, with a fake of each legacy system to try them against.
+- Quantum workloads (V0660). `theprotocol.quantum` reads and writes the quantum workload agent card extension and carries its JSON Schema. `theprotocol.quantum.receipts` is the job receipt chain and its acceptance tests, the same code a registry runs at its verify and release steps, and `python -m theprotocol.quantum.verify` checks a job offline, with no registry. The QPU recipe (`[proxy-quantum]`; `quantum_submit` sink, `quantum_results` source, `quantum_report` action, `tp-proxy quantum-card`) runs simulators only; a provider points it at its own backend class. These need a registry with the quantum mode on, and it is off by default. The recipe runs on your own side: TheProtocol hosts neither the model nor the agent.
+- `IronhandClient.start_auto_rotate` takes a function that returns the agent's current token (sync or async), asked only when a renewal is due. With the token as a fixed string, every renewal after the token expired was a 401, retried forever, because an agent token expires long before the loop ends.
+
+**0.7.6** (2026-10-20)
 - `PaymentVerifier` and `AgentJwtVerifier` receive the request when FastAPI calls them. Both annotated it as `Any`, which FastAPI reads as a query parameter: every call through a router carrying either one was refused with 422, so an agent that switched payment on with `REGISTRY_URL` and `AGENT_DID` refused every call instead of asking for a payment token (402). Calling them directly, as the unit tests did, was not affected. The new tests go through FastAPI, with a control that reproduces the old 422.
 - `KeyManager` reads a name=value key file as it reads the environment: both lines of an OAuth pair come back (0.7.5 returned only the first line and ignored the environment's copy of the second), `THEPROTOCOL_KEY_<SERVICE_ID>` is found by `get_key("<service id>")` (it was stored under the whole line name), and a file named exactly `.env` is read (pathlib gives it no suffix, so it was skipped). A key file that is neither `.env` nor `.json` is reported in the log instead of being skipped in silence.
 - `A2AClient` asks a registry's agent token route (`/api/v1/auth/agent/token`, what a registry's own agent cards name as their token URL) for a token with the form that route reads: `grant_type=password`, the client id as `username`, the client secret as `password`. 0.7.5 sent the client-credentials form there and got 422. Every other token URL still gets the client-credentials form.

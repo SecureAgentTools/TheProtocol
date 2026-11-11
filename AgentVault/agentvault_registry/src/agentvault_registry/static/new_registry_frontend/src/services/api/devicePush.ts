@@ -52,8 +52,10 @@ class DevicePushApi {
     return data
   }
 
-  async remove(deviceId: number): Promise<{ ok: boolean; id: number; paired_key_revoked?: boolean }> {
-    const { data } = await apiClient.delete(`/devices/${deviceId}`)
+  /** D6-850: a device that holds a signing key goes with the account's second factor (a 428 step_up_required names the
+   *  challenge; the proof rides the second call, in the BODY: a query string lands in the access log). */
+  async remove(deviceId: number, proof?: { challenge_id?: string; totp_code?: string }): Promise<{ ok: boolean; id: number; paired_key_revoked?: boolean }> {
+    const { data } = await apiClient.delete(`/devices/${deviceId}`, proof ? { data: proof } : undefined)
     return data
   }
   /** WEB PUSH — the app's own channel (no second app). */

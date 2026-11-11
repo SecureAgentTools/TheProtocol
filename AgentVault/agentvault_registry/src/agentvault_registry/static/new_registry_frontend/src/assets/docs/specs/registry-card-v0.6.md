@@ -1,6 +1,6 @@
 # TheProtocol registry card, version 0.6
 
-Version 0.6, 30 September 2026, revised 16 October 2026
+Version 0.6, 30 September 2026, revised 16 October 2026 and 8 November 2026 (the `quantum_workloads` block, section 4.15)
 
 This specification is licensed under the Creative Commons Attribution 4.0 International License (CC BY 4.0, https://creativecommons.org/licenses/by/4.0/). Copyright 2025-2026 Raphael Zbigniew Jeziorny.
 
@@ -73,6 +73,7 @@ A card is a JSON object with these top-level keys. The reference implementation 
 | `commitments` | SHOULD | editable | no |
 | `lifecycle` | MUST | derived | `card_etag` |
 | `compliance` | MAY | derived | `digest` (section 5) |
+| `quantum_workloads` | MAY | derived | the whole block, when present (section 4.15) |
 | `signature` | MUST when a signing key exists | derived | not applicable |
 
 "Derived" means the registry computes the value from its own state; the operator cannot set it. "Editable" means the operator states it.
@@ -301,6 +302,22 @@ When the operator has stated no commitments at all, the reference implementation
 
 The reference implementation always publishes `status` `active` with a null `quarantine_reason`.
 
+### 4.15 `quantum_workloads` (MAY, signed as a whole block)
+
+Whether the registry hosts quantum workloads, and what a job settled on it gets. The block is derived from the registry's own switches, never from editable card data. It MUST be absent while the registry does not host quantum workloads; it MUST NOT be an empty object or null in that case. While it is present, `signature.signed_canonical` includes `quantum_workloads`, which covers the whole block (section 7.2).
+
+| Field | Type | Meaning |
+|---|---|---|
+| `status` | `shadow` or `on` | `shadow`: the registry checks what `on` would refuse and reports it without refusing. `on`: it refuses. |
+| `receipt_schema` | object: `version` (string), `signature_algorithms` (array of strings) | The job receipt format a job settled here carries (a chain of hash-linked steps, each signed by its participant) and the signature algorithms it names. The reference implementation publishes version `1.0` with `Ed25519`, the name the quantum workload agent card extension uses for the same algorithm. Naming the algorithm is what lets a later change of algorithm be a matter of configuration. |
+| `acceptance_tests` | object: `rungs` (array of 1 and 2), `settled_through` (array of `guild_work_order`, `contract_milestone`) | The acceptance tests, agreed before a run, whose verdict can settle a job here. Rung 1 checks the answer; rung 2 tests the run statistically, with test circuits whose false-accept and false-reject rates are stated in advance, or with a repeat on an independent provider. `settled_through` names the rails that settle the verdict, each only where it runs on this registry: the verify step of a Guild work order, the approval of a contract milestone. Both arrays are empty when no rail here settles a verdict. |
+| `metering_circuit` | string or null | The policy circuit the registry's attestation rail verifies for metered usage: shots or seconds reported against a log a meter committed to when the job ran. The reference implementation publishes `accurateResourceUsagePolicy/v2.0.0`, or null where it does not verify that circuit. |
+| `allocation_profile` | object, optional | Present when the registry declares an allocation profile (below): `state` (`declared` or `invalid`) and, when declared, `name`, `version`, `allocation_count` and `profile_hash` (`"sha256:"` and the lowercase hex SHA-256 of the canonical JSON of the profile document). The allocations themselves are not on the card, so a long profile cannot push the card past the size limit of section 9. |
+
+Runs that nobody can check cheaply rest on the provider's signed claims and its record; they are not an acceptance test and are not listed. The statistics of a run live in the acceptance test agreed before it, and settlement stays deterministic: a verdict enters it like any other input.
+
+**Allocation profile.** A registry that grants quantum time by proposal, in its own unit (the allocation frame of a research consortium), declares its allocations: for each, an identifier, the agent it is granted to and a cap. While `status` is `on`, a grant that names an allocation MUST NOT take the total granted under it past its cap, and a grant that names an allocation the profile does not declare, or another agent than its holder, MUST NOT be made; while it is `shadow`, the same decision is made and reported and the grant goes ahead. The total counts what was granted while the block was present; a grant made before is not in it. Room under a cap is given back only on evidence that a grant did not move: a refusal made before anything moved, or the ledger's own account of the part it moved; any other failure keeps the whole grant counted, so the room left can only shrink. The reference implementation reads the profile from its `QUANTUM_ALLOCATION_PROFILE` setting (a JSON object with `name`, `version`, an optional `unit` that must be the registry's own, and `allocations`, each with `id`, `holder` and `cap`). A grant names an allocation with the reason `allocation:<id>` on its treasury funding rail (`POST /api/v1/teg/treasury/fund-agent`); the decision is made before anything moves (in `shadow` it is reported and the grant goes ahead), and the ledger records the grant with that reason, so anyone who holds the profile can check each cap against the ledger.
+
 ## 5. The `compliance` block (MAY)
 
 ### 5.1 Absence rule
@@ -496,7 +513,9 @@ A registry MUST declare in `signed_canonical` the list of paths it signs, and MU
 28  federation.licence.operator.hash
 ```
 
-Every entry except `capabilities` is a single leaf; `capabilities` covers the whole block. Because the signed payload is an object keyed by path and is serialized with sorted keys (section 7.3), the order of the list does not change the bytes that are signed.
+A card that carries a `quantum_workloads` block (section 4.15) appends `quantum_workloads` to this list, as a 29th path; a card without one declares the 28 above.
+
+Every entry except `capabilities` and `quantum_workloads` is a single leaf; those two cover their whole block. Because the signed payload is an object keyed by path and is serialized with sorted keys (section 7.3), the order of the list does not change the bytes that are signed.
 
 ### 7.3 Signing
 
@@ -545,12 +564,13 @@ The tag changes on operator edits and on changes to a small set of stable inputs
 - The tag MUST change when a stable identity field (`spiffe_id`, `registry_name`, `trust_domain`, `tier`, `display_name`, `public_url`, `founded_at`, `did_namespace`), the policy hash or the fee commitments change.
 - Declaring or changing a jurisdiction profile, and recording or revoking an authorization, MUST change the tag. Because the tag is signed, this is what protects the `compliance` block against deletion (section 5.4).
 - A change of licence state or hash, of the network licence or of an operator registry's own licence, MUST change the tag, so a rotation, a revocation or a verdict change is never hidden behind a 304.
+- Starting or stopping quantum workload hosting, and any change to what the `quantum_workloads` block says, MUST change the tag; a registry that publishes no such block keeps the tag it would have without this rule.
 - The tag MUST NOT change with volatile data: the `economic` and `stats` blocks, `federation.active_peer_count`, the peer roster, and timestamps such as `served_at`.
 - The tag a registry returns on the 304 path MUST equal the tag it embeds in a full build (section 2).
 
 Consequently a reader that holds a copy with the current tag has current values for everything the tag covers; values outside it (for example `identity.software_version`) can be newer on the registry than in a cached copy.
 
-Reference construction (informative): the tag is `"sha256:" + lowercase_hex(SHA-256(canonical_json(basis)))`, where `basis` is an object with a format discriminator `"v": "0.6"`, a builder revision number, the operator-editable card data, the stable identity subset (`spiffe_id`, `registry_name`, `trust_domain`, `tier`, `display_name`, `public_url`, `founded_at`, `did_namespace`, `federation_base_url`; `software_version` is deliberately excluded), the policy hash, the fee commitments, the `capabilities` block, the configured SPIFFE bundle endpoint, fingerprints of the FX and AGORA market settings together with the catalog digest, the coarse solvency epoch together with whether the market's escrow invariant holds, the coarse market epoch (never the live digests, which would force every peer to re-fetch on every trade), and two parts:
+Reference construction (informative): the tag is `"sha256:" + lowercase_hex(SHA-256(canonical_json(basis)))`, where `basis` is an object with a format discriminator `"v": "0.6"`, a builder revision number, the operator-editable card data, the stable identity subset (`spiffe_id`, `registry_name`, `trust_domain`, `tier`, `display_name`, `public_url`, `founded_at`, `did_namespace`, `federation_base_url`; `software_version` is deliberately excluded), the policy hash, the fee commitments, the `capabilities` block, the configured SPIFFE bundle endpoint, fingerprints of the FX and AGORA market settings together with the catalog digest, the coarse solvency epoch together with whether the market's escrow invariant holds, the coarse market epoch (never the live digests, which would force every peer to re-fetch on every trade), the `quantum_workloads` block while the card carries one (under the key `quantum`; the key is absent otherwise), and two parts:
 
 ```
 compliance part = profile_hash (or "") + "|ra:" + authorizations_digest (or "")
@@ -566,7 +586,7 @@ licence part = state + "|" + hash + "|" + operator.state + "|" + operator.hash
 A receiver fetches a peer's card over the federation channel, conditionally with `If-None-Match`.
 
 - A receiver SHOULD refuse a card body larger than 32 KiB, nested deeper than 8 levels, or containing any string value longer than 2048 characters. A registry MUST therefore keep its card within these limits.
-- A receiver refuses a card without a string `registry_card_version` or without an `identity` object, with an `orb_color` or `orb_glow_color` that is not `#rrggbb`, or with an invalid `did_namespace` (section 4.1).
+- A receiver refuses a card without a string `registry_card_version` or without an `identity` object, with an `orb_color` or `orb_glow_color` that is not `#rrggbb`, with an invalid `did_namespace` (section 4.1), or with a `quantum_workloads` key that is not an object with a `status` string (section 4.15). A `status` other than `shadow` or `on` (a later version's) is kept, and the receiver treats the block as not hosting quantum workloads.
 - A receiver verifies the signature (section 7.4) on the card as received and records whether it verified. A receiver MAY keep its previous copy of a peer's card rather than replace it with one that is unsigned or fails verification. The reference implementation stores such a card with its verdict, and keeps the previous copy instead only when its `FEDERATION_INGEST_FAIL_CLOSED` setting is on. Cards of registries it does not reach directly arrive relayed by a direct peer, and it stores them with that peer's verdict rather than one of its own.
 - After verifying, a receiver MAY drop a `sovereign_variant` it cannot render, and MAY refuse a card that names a `flare_` variant outside its catalog (section 4.4).
 - A receiver evaluates a peer's network licence from the certificate the card carries, not from the card's own `state` (see `federation-licence-certificate-v1.md`). The reference implementation records the licence as `invalid` when the card's signed `hash` does not match the certificate it carries.
@@ -586,6 +606,7 @@ A version 0.6 conforming registry:
 9. Contains no field outside this specification, except inside `endpoints` and `federation.licence`.
 10. Publishes `identity.did_namespace` equal to its trust domain whenever it issues DIDs with an issuer segment.
 11. Derives `federation.licence` from the certificates it holds and never from editable card data.
+12. Emits `quantum_workloads` only while it hosts quantum workloads, derives it from its own switches and never from editable card data, signs it as a whole block, and, while its `status` is `on`, never lets a grant that names a declared allocation pass that allocation's cap (section 4.15).
 
 ## Appendix A. Abbreviated example
 

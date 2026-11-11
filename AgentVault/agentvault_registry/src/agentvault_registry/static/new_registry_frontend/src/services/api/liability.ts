@@ -270,8 +270,8 @@ export const liabilityApi = {
   webauthnSelfOptions: () =>
     apiClient.get<Record<string, any>>('/liability/webauthn/options').then(r => r.data),
 
-  webauthnSelfRegister: (body: { attestation_object: string; client_data_json: string }) =>
-    apiClient.post<{ ok: boolean; device_id: number; credential_id: string }>(
+  webauthnSelfRegister: (body: { attestation_object: string; client_data_json: string; confirm_challenge_id?: string }) =>
+    apiClient.post<{ ok: boolean; device_id: number; credential_id: string; approval?: string }>(
       '/liability/webauthn/register', body).then(r => r.data),
 
   // WEBAUTHN — the biometric-enforced signer. Enrollment goes through
@@ -279,6 +279,9 @@ export const liabilityApi = {
   // not per-device); the per-device options/register/enroll-key trio that used
   // to sit here had zero callers — the dead useEnclaveKey path — and was
   // removed with it (§POCKETBRIDGE P0). Revocation is still a live rail.
-  revokeDeviceKey: (deviceId: number) =>
-    apiClient.post(`/liability/devices/${deviceId}/revoke-key`).then(r => r.data),
+  // D6-850: a live key goes with the account's second factor: a 428 step_up_required names the challenge, and the
+  // proof (an approved challenge_id, or a totp_code) rides the second call.
+  revokeDeviceKey: (deviceId: number, proof?: { challenge_id?: string; totp_code?: string }) =>
+    (proof ? apiClient.post(`/liability/devices/${deviceId}/revoke-key`, proof)
+           : apiClient.post(`/liability/devices/${deviceId}/revoke-key`)).then(r => r.data),
 }

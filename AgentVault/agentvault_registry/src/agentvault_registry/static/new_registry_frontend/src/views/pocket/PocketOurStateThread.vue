@@ -9,14 +9,26 @@
            phone it leaves the thread for the list, as before -->
       <button class="ost-back" data-testid="ost-back" :data-act="arrowAct" :aria-label="arrowLabel" :title="arrowLabel"
               @click="onArrow"><Icon :name="arrowAct === 'open-list' ? 'mdi:chevron-right' : 'mdi:chevron-left'" /></button>
-      <OurStateIdentity v-if="counterparty" class="ost-who" data-testid="ost-counterparty"
-                        :ptype="identityKind(counterparty.ptype)"
-                        :pid="identityPid(counterparty)"
-                        :fallback-name="counterparty.name" size="sm" show-name
-                        :clickable="counterparty.ptype === 'agent'"
-                        @open="detailOpen = counterparty.ptype === 'agent'" />
+      <template v-if="counterparty">
+        <OurStateIdentity class="ost-who" data-testid="ost-counterparty"
+                          :ptype="identityKind(counterparty.ptype)"
+                          :pid="identityPid(counterparty)"
+                          :fallback-name="counterparty.name" size="sm" show-name
+                          :clickable="counterparty.ptype === 'agent'"
+                          @open="detailOpen = counterparty.ptype === 'agent'" />
+        <!-- V0657 (b), item 5: an agent counterparty's organization, as its home states it (a listed one only) -->
+        <OrgMark v-if="counterpartyOrg" :mark="counterpartyOrg" :local="counterparty.ptype === 'agent'"
+                 class="ost-org-mark" data-testid="ost-counterparty-org" />
+      </template>
       <span v-else-if="room" class="ost-who ost-room-head" data-testid="ost-room-head">
-        <span class="ost-room-title">{{ room.title || t('ourstate.rooms.room', 'Org room') }}
+        <span class="ost-room-title">
+          <!-- V0657 (b), item 5: the room's organization by its logo (hosted by this registry) and its live name;
+               the members' own organization page is a click away -->
+          <RouterLink v-if="room.org" :to="{ name: 'organization', query: { org: room.org.id } }" class="ost-room-org"
+                      data-testid="ost-room-org" :title="room.org.name" @click.stop>
+            <img v-if="roomLogo" :src="roomLogo" alt="" class="ost-room-logo" @error="roomLogoBroken = true" />
+          </RouterLink>
+          {{ room.title || t('ourstate.rooms.room', 'Org room') }}
           <span v-if="room.mode === 'announce'" class="ost-announce" data-testid="ost-room-announce">{{ t('ourstate.rooms.announce', 'announce') }}</span>
         </span>
         <span v-if="room.topic" class="ost-room-topic" data-testid="ost-room-topic">{{ room.topic }}</span>
@@ -198,6 +210,8 @@
          with the developer token, never the speaking agent's.
          V0653 (al), his seq 686 ("the pinned version was way more clear to spot"): pinned at every width again, the
          side panel beside or not, and compact: one card with "n more", the one-line strip on a phone-width pane. -->
+    <!-- V0659 (f): a cross-frame room's address, rule, members and (for its operators on its host) their menu -->
+    <RoomPanel v-if="kind === 'room'" :conversation-id="convId" :token="token" />
     <OurChatApprovals v-if="kind === 'org'" ref="approvalsPanel" compact :narrow="narrowPane(paneWidth)"
                       :conversation-id="convId" :token="token" :focus-id="focusApprovalId"
                       @count="approvalsCount = $event" @late="onApprovalsLate" />
@@ -224,7 +238,7 @@
                        @retry="retryAsk" @edit="editAsk" @dismiss="dismissAsk" />
         <!-- Immutable provenance: every speaker CHANGE re-shows the full
              identity (the mandate: avatar + encirclement + collar). -->
-        <div v-if="speakerChanged(i)" class="ost-author" :class="{ mine: isMine(m) }"
+        <div v-if="speakerChanged(i)" class="ost-author" :class="{ mine: onMySide(m), 'my-agent': isOwnAgentLine(m) }"
              :data-testid="`ost-author-${m.seq}`">
           <!-- §DEALTHREADS — a SYSTEM sender is a rail, not a person: label it
                as one instead of dressing it as a developer ("dev deal-rail"). -->
@@ -237,9 +251,15 @@
           <!-- V0652 (aj): an agent's message its owner sent through their own session (the registry verified it) -->
           <span v-if="m.sender_ptype === 'agent' && m.sent_by_owner" class="ost-by-owner" data-testid="ost-by-owner">
             {{ t('ourstate.thread.sentByOwner', 'sent by its owner') }}</span>
+          <!-- V0659 (o): a line one of your own agents wrote itself (the registry says so): its name, and this mark -->
+          <span v-else-if="isOwnAgentLine(m)" class="ost-my-agent" data-testid="ost-my-agent"
+                :title="t('ourstate.thread.yourAgentTitle', 'Written by one of your agents, not by you')">
+            {{ t('ourstate.thread.yourAgent', 'your agent') }}</span>
         </div>
-        <div class="ost-msg" :class="{ mine: isMine(m), sys: m.kind === 'system', 'for-me': forMe(m), ask: isAsk(m),
-                                       'in-thread': inThread.has(m.id) }"
+        <!-- V0659 (o): `mine` puts a line on your side of the thread (your own, or your own agent's); `my-agent` draws your
+             agent's in a lighter bubble or frame than yours, so it never reads as your own hand -->
+        <div class="ost-msg" :class="{ mine: onMySide(m), 'my-agent': isOwnAgentLine(m), sys: m.kind === 'system',
+                                       'for-me': forMe(m), ask: isAsk(m), 'in-thread': inThread.has(m.id) }"
              :data-testid="`ost-msg-${m.seq}`">
           <div v-if="m.deleted" class="ost-tombstone">{{ t('ourstate.thread.deleted', 'message deleted') }}</div>
           <div v-else-if="m.kind === 'system' && m.body === 'ping'" class="ost-ping-row" data-testid="ost-ping-row">
@@ -264,7 +284,7 @@
           <OurStateCard v-else-if="m.kind === 'card'" :card="m.card" :defang="myState === 'pending'"
                         :live-settlement="liveSettle[m.card?.refs?.token_id] || null"
                         :live-approval="liveApproval[m.card?.data?.approval_id] || null"
-                        :mine="isMine(m)" @pay="openPayDoor" @open-agent="openAgentDetail"
+                        :mine="onMySide(m)" @pay="openPayDoor" @open-agent="openAgentDetail"
                         @open-work="openWorkDoor" @applet-door="openAppletDoor"
                         @open-trade="openTradeDoor"
                         @use-terms="p => openEngageConfirm(p)"
@@ -304,7 +324,7 @@
             {{ t('ourstate.thread.reply', 'Reply') }}</button>
         </div>
         <!-- V0652 (ac): a thread's bar under its root: how many it holds, what is new, what is for you, the latest -->
-        <button v-if="bars[m.id]" type="button" class="ost-thread-bar" :class="{ open: bars[m.id].expanded, mine: isMine(m) }"
+        <button v-if="bars[m.id]" type="button" class="ost-thread-bar" :class="{ open: bars[m.id].expanded, mine: onMySide(m) }"
                 :aria-expanded="bars[m.id].expanded ? 'true' : 'false'" :data-testid="`ost-thread-${m.seq}`"
                 @click="toggleThread(bars[m.id])">
           <!-- V0653: the parts are apart in the text run too (session-lead, seq 685: a screen reader heard "1 newlast:"),
@@ -415,6 +435,7 @@
     <ChatSidePanel v-if="sideOn" :org-id="String(room?.org_id || '')" :viewer-key="myKey || 'me'"
                    :approvals-count="approvalsCount" :focus-approvals="!!focusApprovalId"
                    :wake-modes="room?.wake_modes || null" :can-set-wake="!!room?.can_set_wake" :wake-busy="wakeBusy"
+                   :board-first-line="boardFirstLine(room?.board?.text)"
                    @set-wake="(key, m) => setWake(key, m)" @message="(a) => (dmTarget = a)" @mention="insertMention">
       <!-- V0653 (al): WAITING ON YOU keeps its count; the requests themselves are pinned above the history, and this
            section opens their whole list there -->
@@ -430,7 +451,7 @@
       </template>
       <template #board>
         <ChatBoard :board="room?.board || null" :token="token" :conversation-id="convId" :org-id="String(room?.org_id || '')"
-                   :viewer-key="myKey || 'me'" @update="onBoardUpdate" />
+                   :viewer-key="myKey || 'me'" capped @update="onBoardUpdate" />
       </template>
     </ChatSidePanel>
     </div><!-- .ost-body -->
@@ -904,6 +925,8 @@
 
 <script setup lang="ts">
 import { blockTargetFor, householdJoinPrompt, identityKind, identityPid } from '@/services/chat/counterparty'
+import OrgMark from '@/components/OrgMark.vue'
+import { orgMarkFromParams, safeLogo } from '@/services/orgMark'
 import { readAccessToken } from '@/services/accessToken'
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, defineAsyncComponent, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -927,11 +950,13 @@ import ChatSidePanel from '@/components/ourstate/ChatSidePanel.vue'
 import ChatDmWindow from '@/components/ourstate/ChatDmWindow.vue'
 import ChatCardHistory from '@/components/ourstate/ChatCardHistory.vue'
 import ChatBoard from '@/components/ourstate/ChatBoard.vue'
+import RoomPanel from '@/components/ourstate/RoomPanel.vue'
 import { foldThreads, lastReplyAt, type ThreadBar } from '@/services/chat/threads'
 import { applyCardUpdate, applyCardUpdates, type CardUpdate } from '@/services/chat/liveCards'
-import { chatSurfaceFor, narrowPane, showSidePanel } from '@/services/chat/sidePanel'
+import { boardFirstLine, chatSurfaceFor, narrowPane, showSidePanel } from '@/services/chat/sidePanel'
 import { muteInEffect } from '@/services/chat/notifyLevel'
 import { isAsk, namesViewer, timeLabel, timeTitle } from '@/services/chat/messageText'
+import { fromOwnAgent, markedOwnAgents } from '@/services/chat/myAgent'
 import { appLocale } from '@/services/appLocale'
 import OurChatApprovals from '@/views/pocket/OurChatApprovals.vue'
 import { liveApprovalStatus, touchesApprovals } from '@/services/chat/approvals'
@@ -953,6 +978,7 @@ import { pushOptInRows } from '@/services/chat/pushOptIn'
 import { normalizeListing, effectivePrice, priceLine, mergeTickers, trim } from '@/services/chat/stocks'
 import { developerApi } from '@/services/api/developers'   // ⚠ PLURAL: developer.ts is a different module and has no balances rail
 import { contractsV2Api } from '@/services/api/contractsV2'
+import { orderDoor } from '@/services/uiMode'   // V0658 (q): an order's door follows the landing decision
 import { useAuthStore } from '@/stores/auth'
 import { usePocketAgent } from '@/composables/usePocketAgent'
 import { rememberedSpeaker, rememberSpeaker, resolveSpeaker } from '@/services/chat/speakAs'
@@ -998,6 +1024,10 @@ const myState = ref('active')
 const kind = ref('dm')
 const counterparty = ref<any | null>(null)
 const room = ref<any | null>(null)        // §OURSTATE-2: org-room state from the page
+// V0657 (b), item 5: the room's organization (its logo, hosted by this registry) and an agent counterparty's mark
+const roomLogoBroken = ref(false)
+const roomLogo = computed(() => (roomLogoBroken.value ? null : safeLogo(room.value?.org || null)))
+const counterpartyOrg = computed(() => orgMarkFromParams(counterparty.value?.org))
 const genesisOpen = ref(false)
 const serviceInflight = ref(false)
 const hasOlder = ref(false)
@@ -1237,6 +1267,8 @@ function scrollBottom() { const el = scrollEl.value; if (el) el.scrollTop = el.s
 
 /* ── rendering helpers ── */
 const myDids = computed(() => new Set(credAgents.value.map(a => a.did?.toLowerCase()).filter(Boolean)))
+/* V0659 (o): the agents the registry marked as your own in this thread (a live line without the mark reads by it) */
+const ownAgentDids = computed(() => markedOwnAgents(messages.value as any))
 /* ── V0652 (x): what names the viewer, what waits on them, the times ── */
 const myKey = computed<string | null>(() => {
   const u: any = (auth as any).user || {}
@@ -1319,11 +1351,20 @@ watch(forMeCount, (n) => { if (!n) forMeOnly.value = false })
 const fullTimeId = ref<string | null>(null)
 function toggleFullTime(id: string) { fullTimeId.value = fullTimeId.value === id ? null : id }
 
+/* V0659 (o), his seq 1833: a line one of your own agents wrote itself is your agent's, never your own. The registry says
+   which lines are (services/chat/myAgent.ts); the agents this browser can act as include every agent you own here
+   (V0641), so asking that list drew them all as your own hand. (ownAgentDids is declared with myDids, above every
+   computed that asks isMine.) */
+function isOwnAgentLine(m: any): boolean { return fromOwnAgent(m, ownAgentDids.value) }
+/** Your side of the thread: your own lines and your own agents' (where a line sits; the money doors and the ledger). */
+function onMySide(m: any): boolean { return isMine(m) || isOwnAgentLine(m) }
+/** Your own line: what you wrote, or typed as one of your agents. What is new to you, or for you, is never this. */
 function isMine(m: any): boolean {
   if (m.sender_ptype === 'developer') {
     const u: any = (auth as any).user || {}
     return String(m.sender_id) === String(u.developer_id ?? '') || String(m.sender_id) === String(u.id ?? '')
   }
+  if (isOwnAgentLine(m)) return false
   return myDids.value.has(String(m.sender_id || '').toLowerCase())
 }
 function speakerChanged(i: number): boolean {
@@ -1337,6 +1378,9 @@ function speakerChanged(i: number): boolean {
   const prev = list[j]
   if (!prev) return true
   return prev.sender_ptype !== m.sender_ptype || String(prev.sender_id) !== String(m.sender_id)
+    // V0659 (o): one agent, two hands. A line its owner typed as it and a line it wrote itself each head their own
+    // row, so "sent by its owner" and "your agent" each stand over the lines they are about
+    || !!prev.sent_by_owner !== !!m.sent_by_owner || isOwnAgentLine(prev) !== isOwnAgentLine(m)
 }
 const isMeAction = (m: any) => m.kind === 'text' && typeof m.body === 'string' && m.body.startsWith('/me ')
 
@@ -2622,9 +2666,11 @@ async function shareWork(item: typeof workItems.value[number]) {
 
 function openWorkDoor(p: { kind: 'contract.offer' | 'guild.order'; ref: string }) {
   // A DOOR: the work rail does the awarding, delivering and settling. Guild
-  // orders land on their own sheet in Earn (?order=), contracts on the WORK
-  // view — both are surfaces that already exist and already gate themselves.
-  if (p.kind === 'guild.order') router.push(`/pocket/payments?order=${encodeURIComponent(p.ref)}`).catch(() => {})
+  // orders land on their own order (?order=): Pocket's sheet in Payments on a
+  // phone, the Guild board on a desktop (V0658 (q): this thread is mounted by
+  // both shells, so the door follows the landing decision, services/uiMode),
+  // contracts on the WORK view; surfaces that already exist and gate themselves.
+  if (p.kind === 'guild.order') router.push(orderDoor(p.ref)).catch(() => {})
   else router.push(`/contracts?ref=${encodeURIComponent(p.ref)}`).catch(() => {})
 }
 
@@ -2848,7 +2894,7 @@ async function send() {
       return
     case 'ledger':
       // Local-only, from what THIS page can see — and it says so.
-      ledger.value = buildLedger(messages.value, isMine, pageBound.value)
+      ledger.value = buildLedger(messages.value, onMySide, pageBound.value)   // V0659 (o): your side, your agents too
       ledgerOpen.value = true
       input.value = ''
       return
@@ -3421,6 +3467,15 @@ watch(convId, () => { dmTarget.value = null })   // V0655 (ay): the window belon
 .ost-assist-switch-label { flex: 1; min-width: 0; font-weight: 600; font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ost-assist-switch-state { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; opacity: .8; }
 .ost-assist-switch.on .ost-assist-switch-state { color: var(--warning-color, #f59e0b); opacity: 1; }
+/* V0659 (o): your own agent's line sits on your side under its name and the "your agent" mark, in a lighter bubble than
+   your own (a card in a lighter frame), so it never reads as your own hand. The mark wears the same fixed teal as that
+   bubble and frame, at full strength and under every palette: the sovereign accent (#DC2626) reads 3.8:1 on the dark
+   surface, and small text needs 4.5:1 (contrast.v0659.test.ts). What is for you still wins the background below. */
+.ost-my-agent { margin-left: 6px; padding: 0 6px; border: 1px solid rgba(79, 216, 196, .5); border-radius: 999px;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .62rem; letter-spacing: .08em; text-transform: uppercase;
+  color: #4fd8c4; white-space: nowrap; }
+.ost-msg.my-agent .ost-bubble { background: rgba(79, 216, 196, .06); border: 1px dashed rgba(79, 216, 196, .45); }
+.ost-msg.my-agent :deep(.osc) { border-style: dashed; border-color: rgba(79, 216, 196, .45); background: rgba(79, 216, 196, .04); }
 .ost-msg.for-me .ost-bubble, .ost-msg.ask { box-shadow: inset 3px 0 0 var(--primary-color, #4fd8c4); }
 .ost-msg.for-me .ost-bubble { background: rgba(79, 216, 196, .1); }
 .ost-forme-toggle {
@@ -3556,6 +3611,9 @@ textarea.ost-sheet-input { resize: vertical; }
 /* §OURSTATE-2 room chrome */
 .ost-room-head { display: flex; flex-direction: column; min-width: 0; }
 .ost-room-title { font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
+.ost-room-org { display: inline-flex; flex: 0 0 auto; }
+.ost-room-logo { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; }
+.ost-org-mark { flex: 0 1 auto; min-width: 0; }
 .ost-room-topic { font-size: .75rem; opacity: .6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ost-announce { font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; border: 1px solid var(--warning-color, #f59e0b); color: var(--warning-color, #f59e0b); border-radius: 6px; padding: 0 5px; }
 .ost-genesis { border-bottom: 1px solid var(--border-color, rgba(128,128,128,.2)); }
