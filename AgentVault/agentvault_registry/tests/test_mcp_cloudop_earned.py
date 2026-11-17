@@ -303,10 +303,11 @@ def test_every_earned_lifecycle_that_reaches_the_database_or_a_peer_declares_it(
     from agentvault_registry.api_tests.contracts import (earned_ad_agents, earned_ad_chat_approvals, earned_ad_chat_tools,
                                                          earned_ad_developers, earned_ad_devtools, earned_ad_ephemeral,
                                                          earned_ad_federation, earned_ad_platform,
-                                                         earned_ad_retired, earned_ad_support_played)
+                                                         earned_ad_retired, earned_ad_support_played,
+                                                         earned_refusal_slice1, earned_template_library)
     mods = (earned_agent_public, earned_ad_agents, earned_ad_developers, earned_ad_devtools, earned_ad_federation,
             earned_ad_platform, earned_ad_ephemeral, earned_ad_chat_approvals, earned_ad_chat_tools, earned_ad_retired,
-            earned_ad_support_played)
+            earned_ad_support_played, earned_refusal_slice1, earned_template_library)
     # every lifecycle an operator run may take lives in one of these modules
     assert sum(len(m.LIFECYCLES) for m in mods) == len(earned_agent_public.LIFECYCLES) + len(earned_admin_dev.LIFECYCLES)
     for m in mods:

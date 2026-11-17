@@ -747,7 +747,7 @@ function goToEventStore(did: string) {
   letter-spacing: 0.04em;
   display: flex; flex-direction: column; gap: 0.5rem; align-items: stretch;
 }
-.aa-empty-sub { color: rgba(255, 255, 255, 0.4); font-size: 0.62rem; }
+.aa-empty-sub { color: var(--nc-text-muted); font-size: 0.62rem; } /* V0663: was white at 40% (3.8:1 on #0a0d16); the theme's muted text reads 6.3:1 */
 .aa-circuit-listing {
   list-style: none;
   margin: 0; padding: 0;

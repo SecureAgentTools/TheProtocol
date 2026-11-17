@@ -84,65 +84,65 @@ def _dial(wire, url, **kw):
 
 # --- the pin ------------------------------------------------------------------------------------------------------
 def test_a_checked_hop_is_dialled_at_the_address_the_check_saw(dns, wire):
-    dns.answers["frame.example"] = [[PUBLIC]]
-    r, refusal = _dial(wire, "https://frame.example/bundle")
+    dns.answers["frame.example.org"] = [[PUBLIC]]
+    r, refusal = _dial(wire, "https://frame.example.org/bundle")
     assert refusal is None and r.status_code == 200
     one = wire.seen[0]
     assert one["reached"] == PUBLIC, "the connection must go to the checked address"
-    assert one["host"] == "frame.example" and one["sni"] == "frame.example", "the name is kept for the server"
+    assert one["host"] == "frame.example.org" and one["sni"] == "frame.example.org", "the name is kept for the server"
     assert "/bundle" in one["url"]
 
 
 def test_a_name_that_answers_differently_the_second_time_cannot_move_the_connection(dns, wire):
     """The window the alert names: the check resolves, then the connection resolves again. The second answer here is an
     address the check would have refused."""
-    dns.answers["rebind.example"] = [[PUBLIC], [INTERNAL]]
-    r, refusal = _dial(wire, "https://rebind.example/bundle")
+    dns.answers["rebind.example.org"] = [[PUBLIC], [INTERNAL]]
+    r, refusal = _dial(wire, "https://rebind.example.org/bundle")
     assert refusal is None and r.status_code == 200
     assert wire.seen[0]["reached"] == PUBLIC, "the dial followed the second answer instead of the checked address"
 
 
 def test_each_redirect_hop_is_pinned_too(dns, wire):
-    dns.answers["first.example"] = [[PUBLIC]]
-    dns.answers["second.example"] = [[PUBLIC2], [INTERNAL]]
-    wire.redirect[PUBLIC] = "https://second.example/b2"
-    r, refusal = _dial(wire, "https://first.example/b1")
+    dns.answers["first.example.org"] = [[PUBLIC]]
+    dns.answers["second.example.org"] = [[PUBLIC2], [INTERNAL]]
+    wire.redirect[PUBLIC] = "https://second.example.org/b2"
+    r, refusal = _dial(wire, "https://first.example.org/b1")
     assert refusal is None and r.status_code == 200
     assert [s["reached"] for s in wire.seen] == [PUBLIC, PUBLIC2]
-    assert wire.seen[1]["host"] == "second.example" and wire.seen[1]["sni"] == "second.example"
+    assert wire.seen[1]["host"] == "second.example.org" and wire.seen[1]["sni"] == "second.example.org"
 
 
 def test_a_relative_redirect_still_resolves_against_the_name(dns, wire):
     """The pin must not leak into the logical URL: a relative Location resolves against the name, not the address."""
-    dns.answers["rel.example"] = [[PUBLIC]]
+    dns.answers["rel.example.org"] = [[PUBLIC]]
     wire.redirect[PUBLIC] = "/moved"
-    r, refusal = _dial(wire, "https://rel.example/bundle")
+    r, refusal = _dial(wire, "https://rel.example.org/bundle")
     assert refusal is None and r.status_code == 200
-    assert wire.seen[1]["host"] == "rel.example" and wire.seen[1]["url"].endswith("/moved")
+    assert wire.seen[1]["host"] == "rel.example.org" and wire.seen[1]["url"].endswith("/moved")
 
 
 def test_a_port_is_carried_into_the_dial_and_the_host_header(dns, wire):
-    dns.answers["ported.example"] = [[PUBLIC]]
-    r, refusal = _dial(wire, "https://ported.example:8443/bundle")
+    dns.answers["ported.example.org"] = [[PUBLIC]]
+    r, refusal = _dial(wire, "https://ported.example.org:8443/bundle")
     assert refusal is None
-    assert wire.seen[0]["host"] == "ported.example:8443" and f"{PUBLIC}:8443" in wire.seen[0]["url"]
+    assert wire.seen[0]["host"] == "ported.example.org:8443" and f"{PUBLIC}:8443" in wire.seen[0]["url"]
 
 
 # --- controls: the refusals and the by-name path are unchanged -----------------------------------------------------
 def test_an_internal_host_is_still_refused(dns, wire):
-    dns.answers["inside.example"] = [[INTERNAL]]
-    r, refusal = _dial(wire, "https://inside.example/bundle")
+    dns.answers["inside.example.org"] = [[INTERNAL]]
+    r, refusal = _dial(wire, "https://inside.example.org/bundle")
     assert r is None and "internal address" in refusal
     assert wire.seen == [], "nothing may be dialled once the check refuses"
 
 
 def test_a_host_that_does_not_resolve_is_still_refused(dns, wire):
-    r, refusal = _dial(wire, "https://nowhere.example/bundle")
+    r, refusal = _dial(wire, "https://nowhere.example.org/bundle")
     assert r is None and "does not resolve" in refusal
 
 
 def test_plain_http_is_still_refused(dns, wire):
-    r, refusal = _dial(wire, "http://frame.example/bundle")
+    r, refusal = _dial(wire, "http://frame.example.org/bundle")
     assert r is None and "https" in refusal
 
 
@@ -158,7 +158,7 @@ def test_allow_internal_still_dials_by_name(dns, wire):
 
 def test_host_is_internal_keeps_its_two_tuple(dns, wire):
     """Its other caller and test_frame_invitation_bundle_guard read (bool, why)."""
-    dns.answers["inside.example"] = [[INTERNAL]]
-    dns.answers["ok.example"] = [[PUBLIC]]
-    assert asyncio.run(ftm._host_is_internal("inside.example", 443))[0] is True
-    assert asyncio.run(ftm._host_is_internal("ok.example", 443)) == (False, "")
+    dns.answers["inside.example.org"] = [[INTERNAL]]
+    dns.answers["ok.example.org"] = [[PUBLIC]]
+    assert asyncio.run(ftm._host_is_internal("inside.example.org", 443))[0] is True
+    assert asyncio.run(ftm._host_is_internal("ok.example.org", 443)) == (False, "")

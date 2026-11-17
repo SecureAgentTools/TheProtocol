@@ -164,6 +164,22 @@ sequenceDiagram
     Note over Worker,Local: then the fan-out and the licence verdicts.<br/>A failed peer does not stop the others.
 ```
 
+### The registries the index knows, each verified here
+
+The federated index (the Directory) lists the registries whose signed cards it holds. A registry does not take that list on trust: `GET /api/v1/public/directory/registries` (public) reads it and **verifies every card itself**, answering `{"configured", "index_serves_cards", "registries", "counts", "truncated"}`.
+
+- **Only a verified card names a registry.** The check is the federation sync's own: the card's signed canonical form, the freshness anchor, expiry refused, the compliance digest recomputed. The key set is fetched from the origin the card's **signed** `identity.public_url` names (https only; never the card's unsigned `jwks_url`, never the index's own address), through the outbound guard: no redirect, at most 64 KiB, cached per origin for 10 minutes (a failure for 2), once per origin per read. A card the index made and signed with a key it controls stays unverified. A row that did not verify carries only the index's name, with the reason, and no domain or relation.
+- **What a registry is to this one**: **this registry**, a **peer**, **known** (this registry has a peer row for it, but not an active one) or a **candidate** (no peer row at all). A row is matched to a peer row by registry name, or by the host of the peer's base URL against the host the card's signed `public_url` names. A trust domain an operator shares with its frame never makes it a peer: a frame's operators carry the frame's domain, and the frame is the peer. An index answer never creates a peer row.
+- **Bounded and honest.** Up to 300 rows, 8 key fetches at a time, `truncated` when the index gave more. A broken index answers 502 with the reason and never an empty list; the answer is 503 without Redis; a good answer is kept for 2 minutes. An index older than the one that serves cards is asked again without them and its rows come back unverified, with that reason.
+
+```bash
+curl -s "$API/api/v1/public/directory/registries"
+```
+
+The answer reads `{"configured": true, "index_serves_cards": false, "registries": [ … ], "counts": {"index": 17, "read": 17, "verified": 0, "unverified": 17}, "truncated": false}`. Where the index serves no cards (an older Directory), every row is unverified and says why: `{"name": null, "trust_domain": null, "verified": false, "reason": "the index serves no cards (an older Directory)", "relation": "unverified", "index": {"name": "Sandbox Alpha", "public_url": "https://sandbox-a.theprotocol.cloud", "reachable": true, …}}`, the index's own words under `index` and nothing it said treated as a name.
+
+The console shows it on the **Federation Peers** page: each verified registry from its own card (name, trust domain, place, unit) marked **Verified by this registry**, with what it is to this registry; where the index and the card name different addresses, both are shown. A candidate points an admin with the federation flag at the invitation rail, and nobody else. A broken index shows its reason with a retry, an older index and a cut answer are named, and a registry with no index shows nothing.
+
 ### Direct peering: faster propagation
 
 A card moves one hop per sync cycle. If the registry where a card changed and the registry that wants to see it are N hops apart, the worst case is N times `FEDERATION_SYNC_INTERVAL_SECONDS`. A direct peering between the two shortens that to one interval, however deep either side sits.

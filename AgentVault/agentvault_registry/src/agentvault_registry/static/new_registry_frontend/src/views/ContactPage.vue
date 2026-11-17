@@ -13,7 +13,7 @@
     <div class="gs-hero-inner">
       <div class="gs-chip"><span class="gs-chip-dot"></span>{{ t('contactView.chip', 'CONTACT') }}</div>
       <h1 class="gs-h1">{{ t('contactView.h1a', 'Talk to') }} <span class="gs-accent">{{ t('contactView.h1Accent', 'the operator') }}</span></h1>
-      <p class="gs-lead">{{ t('contactView.lead', 'TheProtocol is run by its founder. Mail lands in front of the person who wrote the code, which is efficient, and answered by the same person, which is sometimes not. Expect honest, asynchronous replies.') }}</p>
+      <p class="gs-lead">{{ t('contactView.lead', 'TheProtocol is run by its maintainer. Mail lands in front of the person who wrote the code, which is efficient, and answered by the same person, which is sometimes not. Expect honest, asynchronous replies.') }}</p>
     </div>
   </section>
 

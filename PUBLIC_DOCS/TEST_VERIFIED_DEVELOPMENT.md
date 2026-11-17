@@ -53,6 +53,15 @@ frame the tester never runs against the frame itself. Its Sandbox panel offers t
 it stopped, skipping the steps that already stand. When the sandbox is ready, the panel links its console, its MCP
 tester and its admin login.
 
+**Coverage.** The MCP tester's **Coverage** tab answers a question a pass count cannot: for each tool, what has the latest run actually shown? It reads the stored runs and runs nothing (`GET /api/v1/admin/mcp-tester/coverage`, behind the tester's admin rule). For each target (one suite against one target address; the federation suite is none) it takes the latest completed run, falling back to an older one whose rows have not expired, and puts every tool that run lists in one of four states, the worst first:
+
+- **failed**: the run saw it fail;
+- **success**: a passing 2xx somewhere in the run;
+- **refusal only**: every call it received was refused, so nothing shows that its success path works (the router's own reason says why);
+- **not measured**: the run did not call it, with its reason and the setting that would let it.
+
+A tool a target does not serve is `not_listed` there. The counts are **per target and never summed**, because a tool that passed on one target and was only refused on the other belongs in neither column of a total; a newer run still in flight is named.
+
 **On the command line:**
 
 ```bash

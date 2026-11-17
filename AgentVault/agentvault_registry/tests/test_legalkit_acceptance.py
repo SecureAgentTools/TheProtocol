@@ -21,10 +21,11 @@ def test_reconsent_required_semantics():
 
 def test_versions_are_one_copy():
     from agentvault_registry.config import settings
-    assert lv.TOS_VERSION == settings.TOS_VERSION == "2.4"   # §BAFIN 2026-10-04: 2.4, membership instead of staking
+    assert lv.TOS_VERSION == settings.TOS_VERSION == "2.5"   # V0667 set 2.6: the code host (§ 5.12); 2.4 was §BAFIN's membership
+    assert la.reconsent_required("2.4", lv.TOS_VERSION) is True   # every 2.4 account is asked again at its next login
     assert la.reconsent_required("2.3", lv.TOS_VERSION) is True   # every 2.3 account is asked again at its next login
     # the Operator Terms did not change in set 2.5: an operator who accepted them at 2.4 is not asked again
-    assert lv.DOCUMENTS_VERSION == "2.5" and lv.OPERATOR_TERMS_SET_VERSION == "2.4"
+    assert lv.DOCUMENTS_VERSION == "2.6" and lv.OPERATOR_TERMS_SET_VERSION == "2.4"
     assert lv.ACCEPTABLE_DOCUMENTS["operators"] == lv.OPERATOR_TERMS_SET_VERSION
     assert la.reconsent_required("2.2", lv.TOS_VERSION) is True   # every 2.2 account is asked again at its next login
     assert lv.ACCEPTABLE_DOCUMENTS["terms"] == lv.TOS_VERSION

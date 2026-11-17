@@ -1,0 +1,40 @@
+version: 1
+name: csv-to-postgres
+# system to system: no registry and no identity (nothing here calls TheProtocol)
+sources:
+  exports:
+    type: filedrop                      # an SFTP folder instead: see README.md
+    config:
+      path: ${EXPORT_DIR}
+      format: csv
+      suffix: .csv
+      id_field: order_no                # the old system's own id: an export read twice moves nothing twice
+      settle_seconds: 0                 # the exports are complete before the migration starts
+      poll_seconds: 0                   # read the folder once, then finish
+sinks:
+  shop:
+    type: sql_upsert
+    config:
+      engine: ${TARGET_ENGINE}
+      host: ${TARGET_HOST}
+      connect_args: {port: '${TARGET_PORT}'}
+      database: ${TARGET_DATABASE}
+      user: ${TARGET_USER}
+      password: ${TARGET_PASSWORD}
+      path: ${TARGET_PATH}
+      table: ${TARGET_TABLE}
+      key: [order_no]
+      on_conflict: update
+      preimage: true
+mappings:
+  - name: orders
+    version: 1
+    from: exports
+    to: shop
+    fields:
+      order_no: {path: $.payload.data.order_no, as: int}
+      customer_id: {path: $.payload.data.customer_id, as: int}
+      ordered_at: {path: $.payload.data.ordered_at, as: datetime, format: '%Y-%m-%d %H:%M', tz: '${SOURCE_TZ}'}
+      amount: {path: $.payload.data.amount, as: decimal, round: 2}
+      currency: {path: $.payload.data.currency, trim: true, case: upper}
+      status: {path: $.payload.data.status, trim: true, case: lower}

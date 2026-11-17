@@ -57,6 +57,25 @@ REGISTRY_SELF_URL = getattr(settings, "REGISTRY_SELF_URL", "http://localhost:800
 HTTPX_TIMEOUT_SHORT = 10.0
 HTTPX_TIMEOUT_MUTATE = 30.0
 
+# V0663 (order gwo_d9fa08ed4306f6ceda4fe5f3): a message posted on a MIRROR of a thread is relayed to the thread's host
+# before the route answers (services/chat_federation.relay_to_host): RELAY_ATTEMPTS attempts, each bounded by its
+# DELIVER_TIMEOUT_S, RELAY_RETRY_S between them. A tool that posts a message waits longer than that, or a relay that
+# was slow but succeeded reads as a ReadTimeout (the soak's run 103, room seq 3357: it waited HTTPX_TIMEOUT_SHORT).
+# tests/test_mcp_chat_send_wait_v0663.py drives the relay to count its attempts, so a change there breaks the test.
+RELAY_ATTEMPTS = 2
+CHAT_SEND_MARGIN_S = 14.0
+
+
+def chat_relay_worst_case_s() -> float:
+    """The longest a message POST on a mirror waits on its host's relay (31 s today)."""
+    from ..services.chat_federation import DELIVER_TIMEOUT_S, RELAY_RETRY_S
+    return RELAY_ATTEMPTS * DELIVER_TIMEOUT_S + (RELAY_ATTEMPTS - 1) * RELAY_RETRY_S
+
+
+def chat_send_timeout_s() -> float:
+    """What a tool that posts a message waits for its own registry: the relay's worst case and a margin (45 s)."""
+    return chat_relay_worst_case_s() + CHAT_SEND_MARGIN_S
+
 
 # ---------------------------------------------------------------------------
 # Tier 0 — getAgentToken (no auth required)
@@ -2783,7 +2802,7 @@ async def chat_send_message(auth: MCPAuthContext, body: str,
             msg["reply_to"] = str(reply_to)     # V0652 (ac): the reply folds under the message it answers
         return await _chat_request(
             auth, "POST", f"/api/v1/chat/conversations/{seg(conversation_id)}/messages",
-            json_body=msg, op_name="sendChatMessage")
+            json_body=msg, op_name="sendChatMessage", timeout=chat_send_timeout_s())
     if target_remote_key:
         rk = str(target_remote_key).strip()
         target = {"ptype": "agent" if rk.lower().startswith("did:") else "developer", "remote_key": rk}
@@ -2797,7 +2816,7 @@ async def chat_send_message(auth: MCPAuthContext, body: str,
         auth, "POST", "/api/v1/chat/conversations",
         json_body={"kind": conversation_kind, "target": target,
                    "first_message": {"kind": "text", "body": body, "client_ref": ref}},
-        op_name="sendChatMessage")
+        op_name="sendChatMessage", timeout=chat_send_timeout_s())
 
 
 async def chat_respond_request(auth: MCPAuthContext, conversation_id: str,
@@ -2950,7 +2969,7 @@ async def chat_post_progress(auth: MCPAuthContext, conversation_id: str, title: 
     return await _chat_request(auth, "POST", f"/api/v1/chat/conversations/{seg(conversation_id)}/messages",
                                json_body={"kind": "card", "card": progress_card(title, state, steps, note),
                                           "client_ref": client_ref or str(uuid.uuid4())},
-                               op_name="postChatProgress")
+                               op_name="postChatProgress", timeout=chat_send_timeout_s())
 
 
 async def chat_update_progress(auth: MCPAuthContext, conversation_id: str, message_id: str, title: str,

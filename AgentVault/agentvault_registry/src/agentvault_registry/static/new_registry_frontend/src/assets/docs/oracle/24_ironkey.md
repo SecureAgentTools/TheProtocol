@@ -132,6 +132,7 @@ Owners (and platform admins) manage an agent's access through the authz API (dev
 GET /api/v1/agents/{did}/authz
 
 # Replace the role set and write the spend policy
+# (allowed_currencies names your registry's own unit: ECU on EU, another name elsewhere)
 PUT /api/v1/agents/{did}/authz
 {
   "roles": ["trader", "governor"],
@@ -150,7 +151,7 @@ POST /api/v1/agents/{did}/authz/roles   { "role": "governor" }
 GET /api/v1/agents/{did}/authz/denials
 ```
 
-`roles` in a `PUT` replaces the whole role set (and `roles_expires_at` gives that set an expiry); `spend_policy` replaces the policy; `delegate_enabled` grants or removes `authz.delegate`. Platform admins also get a fleet report (`GET /api/v1/admin/agents/authz/report`: how many agents still hold `legacy-full`, how many are capped, the role census) and an emergency **clamp** (`POST /api/v1/admin/agents/{did}/authz/clamp`), which sets the agent's roles (by default `observer` only) and both caps to zero in one call.
+`roles` in a `PUT` replaces the whole role set (and `roles_expires_at` gives that set an expiry); `spend_policy` replaces the policy (send `{}` to remove it; leaving it out, or sending `null`, keeps the policy as it is); `delegate_enabled` grants or removes `authz.delegate`. Platform admins also get a fleet report (`GET /api/v1/admin/agents/authz/report`: how many agents still hold `legacy-full`, how many are capped, the role census) and an emergency **clamp** (`POST /api/v1/admin/agents/{did}/authz/clamp`), which sets the agent's roles (by default `observer` only) and both caps to zero in one call.
 
 In the console, the same controls are the **Agent Access** panel wherever you manage agents: role chips, the spend policy, and a mode-aware note that says in `shadow` what enforcement would change. You can edit the access only of agents you created; admins can edit any.
 

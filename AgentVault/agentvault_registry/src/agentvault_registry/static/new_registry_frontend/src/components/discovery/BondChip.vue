@@ -9,6 +9,7 @@
 import { computed } from 'vue'
 import Icon from '@/components/Icon.vue'
 import { useI18n } from '@/composables/useI18n'
+import { fmt } from '@/services/cockpit/num'
 
 const props = defineProps<{
   bond?: Record<string, any> | null
@@ -29,9 +30,9 @@ const title = computed(() => {
   parts.push(b.status === 'matured'
     ? t('discoveryView.bond.matured', 'Bond matured')
     : t('discoveryView.bond.locked', 'Bonded'))
-  if (b.amount) parts.push(`${b.amount} ${b.currency || ''}`.trim())
-  if (b.progress && typeof b.progress.percent === 'number') parts.push(`${t('discoveryView.bond.maturity', 'maturity')} ${b.progress.percent}%`)
-  if (props.volume != null) parts.push(`${t('discoveryView.bond.volume', 'volume')} ${props.volume}`)
+  if (b.amount) parts.push(`${fmt(b.amount, 6)} ${b.currency || ''}`.trim())
+  if (b.progress && typeof b.progress.percent === 'number') parts.push(`${t('discoveryView.bond.maturity', 'maturity')} ${fmt(b.progress.percent, 1)}%`)
+  if (props.volume != null) parts.push(`${t('discoveryView.bond.volume', 'volume')} ${fmt(props.volume, 2)}`)
   if (b.source === 'card' && b.registry) parts.push(`${t('discoveryView.bond.signedBy', 'signed by')} ${b.registry}`)
   return parts.join(' · ')
 })
@@ -48,7 +49,7 @@ const title = computed(() => {
   >
     <Icon name="mdi:shield-account" />
     {{ matured ? t('discoveryView.bond.matured', 'Bond matured') : t('discoveryView.bond.locked', 'Bonded') }}
-    <small v-if="bond?.amount">{{ bond.amount }} {{ bond.currency || fallbackCurrency }}</small>
+    <small v-if="bond?.amount">{{ fmt(bond.amount, 6) }} {{ bond.currency || fallbackCurrency }}</small>
   </span>
 </template>
 

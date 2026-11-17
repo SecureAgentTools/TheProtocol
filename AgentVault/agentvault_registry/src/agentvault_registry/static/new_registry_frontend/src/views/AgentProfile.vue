@@ -12,6 +12,8 @@ const { t } = useI18n()
 import { agentCardsApi } from '@/services/api/agentCards'
 import { apiClient } from '@/services/api/client'
 import FlareBadge from '@/components/common/FlareBadge.vue'
+import CopyButton from '@/components/quickOnboarding/CopyButton.vue'
+import { consoleLink } from '@/services/share/consoleLink'
 import UserAvatar from '@/components/common/UserAvatar.vue'
 import { discoveryService } from '@/services/api/discovery'
 import { agentAvatarUser, agentAvatarUrl } from '@/services/agentAvatar'
@@ -473,6 +475,9 @@ watch(() => route.params.did, () => {
             <div class="ap-id-main">
               <div class="ap-name-row">
                 <h1 class="ap-name">{{ agent.name || t('agentDetailsView.unnamed') }}</h1>
+                <!-- V0662 (his suggestion 4): a link to this agent, on this console -->
+                <CopyButton v-if="agentDid" :value="consoleLink('/agent-profile/' + encodeURIComponent(agentDid))"
+                            :what="t('agentProfile.linkWhat', 'the link to this agent')" icon-only quiet data-testid="ap-copy-link" />
                 <FlareBadge
                   v-if="agent.flare_tier"
                   :tier="agent.flare_tier"

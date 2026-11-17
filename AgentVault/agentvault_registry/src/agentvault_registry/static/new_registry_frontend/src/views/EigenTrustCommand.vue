@@ -8,7 +8,7 @@
       text="Whether the simulation console is on here could not be read just now; nothing is started until it is." />
     <div v-else-if="!simulationEnabled" class="et-nosim" data-testid="et-nosim">
       <strong>No simulation runs on this registry.</strong>
-      The simulation console is switched off here (ADMIN_SIMULATION_ENABLED), so there is nothing to start, stop or fund.
+      The simulation console is switched off here (ADMIN_SIMULATION_ENABLED), so there is nothing to start or stop.
       Reputation itself is computed on every registry; the public leaderboard shows it.
     </div>
 
@@ -405,14 +405,6 @@
           <button class="et-btn et-btn-red" @click="stopSim" :disabled="!simulationEnabled || !status.running || loading">
             {{ loading ? 'Stopping...' : 'STOP' }}
           </button>
-          <div class="et-fund-inline">
-            <label class="et-label" for="et-fund-target">Top up to</label>
-            <input id="et-fund-target" type="number" v-model.number="fundTarget" class="et-input-sm" min="100" step="1000" />
-            <span class="et-label">{{ localCurrency }}</span>
-            <button class="et-btn et-btn-gold" @click="fundAll(fundTarget, false)" :disabled="!simulationEnabled || fundLoading">
-              {{ fundLoading ? 'Funding...' : 'FUND' }}
-            </button>
-          </div>
         </div>
 
         <ReadFailedNotice v-if="simulationEnabled && statusRead === 'unread'" dense :retry="fetchStatus" data-testid="et-status-unread" />
@@ -548,57 +540,20 @@
 
         <!-- Action Bar -->
         <div class="et-action-bar">
-          <div class="et-fund-inline">
-            <label class="et-label" for="et-fund-target-2">Top up to</label>
-            <input id="et-fund-target-2" type="number" v-model.number="fundTarget" class="et-input-sm" min="100" step="1000" />
-            <span class="et-label">{{ localCurrency }}</span>
-          </div>
-          <button class="et-btn et-btn-gold" @click="fundAll(fundTarget, false)" :disabled="!simulationEnabled || fundLoading">
-            {{ fundLoading ? 'Funding...' : 'Top Up All' }}
-          </button>
-          <button class="et-btn et-btn-ghost" @click="fundAll(fundTarget, true)" :disabled="!simulationEnabled || fundLoading">Depleted Only</button>
-          <button class="et-btn et-btn-cyan" @click="previewFunding(fundTarget)" :disabled="!simulationEnabled || previewLoading">
-            {{ previewLoading ? 'Calculating...' : 'Preview' }}
+          <!-- V0663 (gwo_be8899e9eb589224813ec90a): the funding preview is gone with its route (it ran the retired network's
+               host script); the issue bar it used to open opens from its own button. V0664 (gwo_40f159d2a945a7070df20933):
+               bulk funding (Top up, Top Up All, Depleted Only, its progress log and confirm) went the same way -->
+          <button class="et-btn et-btn-cyan" data-testid="et-mint-toggle" :aria-expanded="showMintBar" @click="showMintBar = !showMintBar">
+            Issue units
           </button>
           <button class="et-btn et-btn-ghost" @click="fetchAgents" :disabled="agentsLoading">
             <span v-if="agentsLoading" class="et-spin">&#x21BB;</span>
             <span v-else>&#x21BB;</span> Refresh
           </button>
-          <div v-if="fundResult" class="et-fund-result">{{ fundResult }}</div>
         </div>
 
-        <!-- Mint + Preview Panel -->
-        <div v-if="previewData || mintResult" class="et-preview-panel">
-          <div v-if="previewData" class="et-preview-grid">
-            <div class="et-preview-item">
-              <span class="et-preview-label">Agents to fund</span>
-              <span class="et-preview-value">{{ previewData.agents_to_fund }}</span>
-            </div>
-            <div class="et-preview-item">
-              <span class="et-preview-label">Frame A needed</span>
-              <span class="et-preview-value">{{ fmtNum(previewData.total_needed_a) }} AVT</span>
-            </div>
-            <div class="et-preview-item">
-              <span class="et-preview-label">Frame A treasury</span>
-              <span class="et-preview-value" :class="previewData.deficit_a > 0 ? 'et-deficit' : 'et-surplus'">{{ fmtNum(previewData.treasury_a) }} AVT</span>
-            </div>
-            <div class="et-preview-item" v-if="previewData.deficit_a > 0">
-              <span class="et-preview-label">Frame A deficit</span>
-              <span class="et-preview-value et-deficit">{{ fmtNum(previewData.deficit_a) }} AVT — ISSUANCE REQUIRED</span>
-            </div>
-            <div class="et-preview-item">
-              <span class="et-preview-label">Frame B needed</span>
-              <span class="et-preview-value">{{ fmtNum(previewData.total_needed_b) }} AVT</span>
-            </div>
-            <div class="et-preview-item">
-              <span class="et-preview-label">Frame B treasury</span>
-              <span class="et-preview-value" :class="previewData.deficit_b > 0 ? 'et-deficit' : 'et-surplus'">{{ fmtNum(previewData.treasury_b) }} AVT</span>
-            </div>
-            <div class="et-preview-item" v-if="previewData.deficit_b > 0">
-              <span class="et-preview-label">Frame B deficit</span>
-              <span class="et-preview-value et-deficit">{{ fmtNum(previewData.deficit_b) }} AVT — ISSUANCE REQUIRED</span>
-            </div>
-          </div>
+        <!-- Issue panel -->
+        <div v-if="showMintBar || mintResult" class="et-preview-panel">
           <div class="et-mint-bar">
             <input type="number" v-model.number="mintAmount" class="et-input-sm" min="1000" step="100000" placeholder="Amount" />
             <button class="et-btn et-btn-mint" @click="doMint('A')" :disabled="mintLoading">
@@ -608,19 +563,6 @@
               {{ mintLoading ? 'Issuing...' : 'Issue on Frame B' }}
             </button>
             <span v-if="mintResult" class="et-mint-result">{{ mintResult }}</span>
-          </div>
-        </div>
-
-        <!-- Funding Progress Log -->
-        <div v-if="fundLoading || fundLogLines.length > 0" class="et-fund-log">
-          <div class="et-fund-log-header">
-            <span>Funding Progress</span>
-            <span v-if="fundLoading" class="et-spin">&#x21BB;</span>
-          </div>
-          <div class="et-fund-log-body" ref="fundLogRef">
-            <div v-for="(line, i) in fundLogLines" :key="i" class="et-fund-log-line" :class="'et-log-' + line.type">
-              {{ line.message }}
-            </div>
           </div>
         </div>
 
@@ -679,18 +621,6 @@
       @confirm="executeMint"
     />
 
-    <!-- ETC2 (audit 2026-05-07): bulk-fund confirm. -->
-    <ConfirmActionModal
-      :show="showFundConfirm"
-      title="// BULK FUND AGENTS"
-      :message="`Fund ${fundConfirmOnlyDepleted ? '<strong>depleted</strong> agents only' : '<strong>all</strong> agents'} to <strong>${fmtNum(fundConfirmTarget)} AVT</strong> from treasury? This will fire one /teg/treasury/fund-agent call per under-target agent.`"
-      tone="warn"
-      confirm-text="Fund Now"
-      busy-text="Funding…"
-      :busy="fundLoading"
-      @close="showFundConfirm = false"
-      @confirm="executeFundAll"
-    />
   </div>
 </template>
 
@@ -744,19 +674,12 @@ function setNotice(type: 'ok' | 'err', msg: string) {
   if (noticeTimer) clearTimeout(noticeTimer)
   noticeTimer = setTimeout(() => { notice.value = null }, 8000)
 }
-const fundLoading = ref(false)
 const agentsLoading = ref(false)
-const fundResult = ref('')
-const fundTarget = ref(10000)
 const expandedRegistries = ref(new Set<string>())
-const previewLoading = ref(false)
-const previewData = ref<any>(null)
+const showMintBar = ref(false)
 const mintAmount = ref(10000000)
 const mintLoading = ref(false)
 const mintResult = ref('')
-const fundLogLines = ref<{ type: string, message: string }[]>([])
-const fundLogRef = ref<HTMLElement | null>(null)
-let fundLogTimer: ReturnType<typeof setInterval> | null = null
 const topoRegistries = ref<any[]>([])
 const topoEdges = ref<any[]>([])
 const topoLoading = ref(false)
@@ -1231,16 +1154,6 @@ async function stopSim() {
   } finally { loading.value = false }
 }
 
-async function previewFunding(target: number) {
-  previewLoading.value = true
-  previewData.value = null
-  try {
-    const res = await simulationApi.fundingPreview({ target_balance: target, only_depleted: false, depleted_threshold: 100 })
-    previewData.value = res
-  } catch { previewData.value = { message: 'Preview failed' } }
-  finally { previewLoading.value = false }
-}
-
 // ETC1+ETC2 (audit 2026-05-07): mint flow rebuilt.
 //
 // Original bugs:
@@ -1281,7 +1194,6 @@ async function executeMint() {
       await simulationApi.mintTokens(String(mintAmount.value))
       mintResult.value = `Issued ${fmtNum(mintAmount.value)} AVT on Frame A`
     }
-    await previewFunding(fundTarget.value)
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } } }
     mintResult.value = err?.response?.data?.detail || 'Issuance failed'
@@ -1289,65 +1201,6 @@ async function executeMint() {
     mintLoading.value = false
     mintConfirmFrame.value = ''
     setTimeout(() => { mintResult.value = '' }, 8000)
-  }
-}
-
-function startFundLogPolling() {
-  fundLogLines.value = []
-  // ETC3: fundLogTimer fires every 2s during a funding run — pause on hidden tab.
-  fundLogTimer = setInterval(async () => {
-    if (document.visibilityState === 'hidden') return
-    try {
-      const res = await simulationApi.getFundStatus()
-      if (res.lines && res.lines.length > fundLogLines.value.length) {
-        fundLogLines.value = res.lines
-        nextTick(() => { if (fundLogRef.value) fundLogRef.value.scrollTop = fundLogRef.value.scrollHeight })
-      }
-    } catch {}
-  }, 2000)
-}
-
-function stopFundLogPolling() {
-  if (fundLogTimer) { clearInterval(fundLogTimer); fundLogTimer = null }
-}
-
-// ETC2 (audit 2026-05-07): confirm guard on bulk funding.
-// fundAll moves AVT from treasury to every sim agent — high-blast-radius.
-// Previously a single click on "Fund All" or "Fund Depleted" fired immediately.
-const showFundConfirm = ref(false)
-const fundConfirmTarget = ref(0)
-const fundConfirmOnlyDepleted = ref(false)
-
-function fundAll(target: number, onlyDepleted: boolean) {
-  if (fundLoading.value) return
-  fundConfirmTarget.value = target
-  fundConfirmOnlyDepleted.value = onlyDepleted
-  showFundConfirm.value = true
-}
-
-async function executeFundAll() {
-  const target = fundConfirmTarget.value
-  const onlyDepleted = fundConfirmOnlyDepleted.value
-  fundLoading.value = true
-  fundResult.value = ''
-  fundLogLines.value = []
-  showFundConfirm.value = false
-  startFundLogPolling()
-  try {
-    const res = await simulationApi.fundAgents({
-      target_balance: target,
-      only_depleted: onlyDepleted,
-      depleted_threshold: 100,
-    })
-    fundResult.value = res.message || `Funded ${res.funded_count ?? '?'} agents`
-    await fetchAgents()
-  } catch {
-    fundResult.value = 'Funding failed — check progress log for details'
-  } finally {
-    fundLoading.value = false
-    stopFundLogPolling()
-    try { const res = await simulationApi.getFundStatus(); fundLogLines.value = res.lines } catch {}
-    setTimeout(() => { fundResult.value = '' }, 10000)
   }
 }
 
@@ -1459,7 +1312,7 @@ async function startConsole(cfg: RegistryConfig): Promise<void> {
   campStartPolling()            // §V0132 campaign engine — live status (3s public read)
 }
 
-onUnmounted(() => { alive = false; offConfigRead?.(); offConfigRead = null; stopPolling(); stopLogPolling(); stopTelemetryPolling(); campStopPolling(); stopFundLogPolling(); if (ddSavedTimer) clearTimeout(ddSavedTimer); if (campSavedTimer) clearTimeout(campSavedTimer) })
+onUnmounted(() => { alive = false; offConfigRead?.(); offConfigRead = null; stopPolling(); stopLogPolling(); stopTelemetryPolling(); campStopPolling(); if (ddSavedTimer) clearTimeout(ddSavedTimer); if (campSavedTimer) clearTimeout(campSavedTimer) })
 </script>
 
 <style scoped>
@@ -1737,14 +1590,6 @@ onUnmounted(() => { alive = false; offConfigRead?.(); offConfigRead = null; stop
   background: rgba(239, 68, 68, 0.18); border-color: var(--et-red);
   box-shadow: 0 0 14px rgba(239, 68, 68, 0.2);
 }
-.et-btn-gold {
-  background: rgba(212, 160, 23, 0.1); color: var(--et-gold);
-  border-color: rgba(212, 160, 23, 0.3);
-}
-.et-btn-gold:hover:not(:disabled) {
-  background: rgba(212, 160, 23, 0.18); border-color: var(--et-gold);
-  box-shadow: 0 0 14px rgba(212, 160, 23, 0.2);
-}
 .et-btn-ghost {
   background: transparent; color: var(--et-text-dim); border-color: var(--et-border);
 }
@@ -1804,17 +1649,12 @@ onUnmounted(() => { alive = false; offConfigRead?.(); offConfigRead = null; stop
 
 /* ── Agent Tab ─────────────────────────────────────────────────────────────── */
 .et-action-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.et-fund-inline { display: flex; gap: 6px; align-items: center; }
 .et-input-sm {
   width: 90px; padding: 4px 8px; font-family: var(--et-mono); font-size: 12px;
   background: rgba(0,20,20,0.8); border: 1px solid var(--et-border); color: var(--et-text);
   border-radius: 4px; text-align: right;
 }
 .et-input-sm:focus { outline: none; border-color: var(--et-cyan); }
-.et-fund-result {
-  font-family: var(--et-mono); font-size: 10px; color: var(--et-green);
-  letter-spacing: 0.04em;
-}
 .et-summary {
   font-family: var(--et-mono); font-size: 11px; color: var(--et-text-dim);
   letter-spacing: 0.04em;
@@ -1898,20 +1738,11 @@ onUnmounted(() => { alive = false; offConfigRead?.(); offConfigRead = null; stop
   .et-stat-row { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* ── Preview Panel ──────────────────────────────────────── */
+/* ── Issue Panel ────────────────────────────────────────── */
 .et-preview-panel {
   background: rgba(16,185,129,0.05); border: 1px solid rgba(16,185,129,0.15);
   border-radius: 8px; padding: 16px; margin-bottom: 16px;
 }
-.et-preview-grid {
-  display: grid; grid-template-columns: 1fr 1fr;
-  gap: 6px 24px; margin-bottom: 12px;
-}
-.et-preview-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); }
-.et-preview-label { font-size: 12px; color: var(--et-text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
-.et-preview-value { font-family: var(--et-mono); font-size: 14px; color: var(--et-text); }
-.et-deficit { color: #ef4444 !important; font-weight: 600; }
-.et-surplus { color: #10b981 !important; }
 .et-mint-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 /* Generic primary action → theme accent (recolors neural↔sovereign). Mint buttons are
    CURRENCY-categorical per the 3-currency glyph convention: AVT=green, JDAY=blue #00b0ff. */
@@ -1922,28 +1753,6 @@ onUnmounted(() => { alive = false; offConfigRead?.(); offConfigRead = null; stop
 .et-btn-mint-b { background: rgba(0,176,255,0.15); color: #00b0ff; border: 1px solid rgba(0,176,255,0.3); }
 .et-btn-mint-b:hover { background: rgba(0,176,255,0.25); }
 .et-mint-result { font-family: var(--et-mono); font-size: 13px; color: #10b981; }
-
-/* ── Funding Progress Log ───────────────────────────────── */
-.et-fund-log {
-  background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 8px; margin-bottom: 16px; overflow: hidden;
-}
-.et-fund-log-header {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 8px 12px; background: rgba(0,0,0,0.2);
-  font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
-  color: var(--et-text-dim);
-}
-.et-fund-log-body {
-  max-height: 300px; overflow-y: auto; padding: 8px 12px;
-  font-family: var(--et-mono); font-size: 12px; line-height: 1.6;
-}
-.et-fund-log-line { white-space: pre-wrap; }
-.et-log-ok { color: #10b981; }
-.et-log-error { color: #ef4444; }
-.et-log-warn { color: #f59e0b; }
-.et-log-info { color: var(--et-text-dim); }
-.et-log-done { color: #10b981; font-weight: 600; }
 
 /* ── Config selects / inputs (2026-05-31) ──────────────────────────────────── */
 .et-select {

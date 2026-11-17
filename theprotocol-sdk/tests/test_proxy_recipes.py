@@ -92,6 +92,12 @@ def _evidence_key(tmp: pathlib.Path) -> str:
     return "file:" + str(tmp / "evidence.pem")
 
 
+@pytest.mark.parametrize("recipe,source", [("meridian", "oms"), ("lyceum", "sis")])
+def test_the_two_file_drop_recipes_keep_watching_their_folder(recipe, source):
+    """Both are continuous flows: a file the legacy system drops while the proxy runs must be read, so the folder is listed again."""
+    assert _doc(recipe)["sources"][source]["config"]["poll_seconds"] == 30
+
+
 def test_meridian_attests_released_intents_and_exports_their_evidence(tmp_path):
     fake = _fake("meridian", "fake_oms")
     out = tmp_path / "oms-out"
@@ -100,7 +106,7 @@ def test_meridian_attests_released_intents_and_exports_their_evidence(tmp_path):
     (out / "intents-0007.json").write_text(__import__("json").dumps(intents))
     doc = _doc("meridian")
     doc["state"] = str(tmp_path / "state.db")
-    doc["sources"]["oms"]["config"].update(path=str(out), settle_seconds=0)
+    doc["sources"]["oms"]["config"].update(path=str(out), settle_seconds=0, poll_seconds=0)   # 0: read once and finish
     doc["sinks"]["erp"]["config"].update(dir=str(tmp_path / "erp-in"), signing_key=_evidence_key(tmp_path))
     reports = _run(doc, tmp_path)
     released = [i for i in intents if i["status"] == "RELEASED"]
@@ -123,7 +129,7 @@ def test_lyceum_attests_each_awarded_credential_and_leaves_the_revoked_one(tmp_p
         sys.argv = sys_argv
     doc = _doc("lyceum")
     doc["state"] = str(tmp_path / "state.db")
-    doc["sources"]["sis"]["config"].update(path=str(out), settle_seconds=0)
+    doc["sources"]["sis"]["config"].update(path=str(out), settle_seconds=0, poll_seconds=0)   # 0: read once and finish
     reports = _run(doc, tmp_path)
     assert len(reports) == 4 and all(r["mapping"] == "credential" for r in reports)
     data = [r["data"]["request"]["attestation_data"]["claim"] for r in reports]

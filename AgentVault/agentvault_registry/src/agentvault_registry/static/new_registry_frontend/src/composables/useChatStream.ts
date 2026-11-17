@@ -27,6 +27,13 @@ export interface ChatStreamHandlers {
   onPing?: (env: ChatEnvelope) => void
   /** V0652 (aa): a card updated in place (`message` carries id, seq, card, card_rev, card_updated_at). */
   onCardUpdate?: (env: ChatEnvelope) => void
+  /** V0662: a message's text changed (`message` carries id, body, edited_at) or it was taken back (deleted: true). */
+  onMessageEdited?: (env: ChatEnvelope) => void
+  onMessageDeleted?: (env: ChatEnvelope) => void
+  /** V0662: a reaction word was put on or taken off (`message` carries id, word, reactions (counts) and `by`). */
+  onReaction?: (env: ChatEnvelope) => void
+  /** V0662: the thread's pins changed (`message` carries id, pinned, count): read the list again. */
+  onPinsChanged?: (env: ChatEnvelope) => void
   /** V0652 (ac): a room's status board changed (`board` carries text, rev, updated_at, updated_by). */
   onBoardUpdate?: (env: { conversation_id: string; board: Record<string, any>; actor_name?: string }) => void
   /** Fired after a RECONNECT — pull /sync; the socket has no memory. */
@@ -39,12 +46,20 @@ export function useChatStream(handlers: ChatStreamHandlers) {
   const onMsg = (data: any) => { try { handlers.onMessage?.(data as ChatEnvelope) } catch { /* handler's problem */ } }
   const onPing = (data: any) => { try { handlers.onPing?.(data as ChatEnvelope) } catch { /* handler's problem */ } }
   const onCard = (data: any) => { try { handlers.onCardUpdate?.(data as ChatEnvelope) } catch { /* handler's problem */ } }
+  const onEdited = (data: any) => { try { handlers.onMessageEdited?.(data as ChatEnvelope) } catch { /* handler's problem */ } }
+  const onDeleted = (data: any) => { try { handlers.onMessageDeleted?.(data as ChatEnvelope) } catch { /* handler's problem */ } }
+  const onReact = (data: any) => { try { handlers.onReaction?.(data as ChatEnvelope) } catch { /* handler's problem */ } }
+  const onPins = (data: any) => { try { handlers.onPinsChanged?.(data as ChatEnvelope) } catch { /* handler's problem */ } }
   const onBoard = (data: any) => { try { handlers.onBoardUpdate?.(data) } catch { /* handler's problem */ } }
   const onReconnected = () => { try { handlers.onResync?.() } catch { /* handler's problem */ } }
 
   ws.on('chat.message' as any, onMsg)
   ws.on('chat.ping' as any, onPing)
   ws.on('chat.card_updated' as any, onCard)
+  ws.on('chat.message_edited' as any, onEdited)
+  ws.on('chat.message_deleted' as any, onDeleted)
+  ws.on('chat.message_reaction' as any, onReact)
+  ws.on('chat.pins_changed' as any, onPins)
   ws.on('chat.board_updated' as any, onBoard)
   ws.on('reconnected' as any, onReconnected)
 

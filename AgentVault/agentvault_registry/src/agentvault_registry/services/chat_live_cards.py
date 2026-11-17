@@ -36,9 +36,11 @@ GUILD_EVENTS_MAX = 20
 # V0654 (aq), item 18: a request card (approval or choice) takes one update, by its rail: it reads withdrawn when the agent
 # that asked takes it back, and is closed from then on
 UPDATABLE = {"progress": "author", "guild.order.live": "rail", "approval.decided": "rail",
-             "approval.request": "rail", "choice.request": "rail"}
+             "approval.request": "rail", "choice.request": "rail", "code.change.live": "rail",
+             "content.change.live": "rail"}
 UPDATE_RAILS = {"guild.order.live": "the Guild rail", "approval.decided": "the chat approval rail",
-                "approval.request": "the chat approval rail", "choice.request": "the chat approval rail"}
+                "approval.request": "the chat approval rail", "choice.request": "the chat approval rail",
+                "code.change.live": "the code changes rail", "content.change.live": "the code changes rail"}
 
 # A card takes at most this many updates (a progress card of a long roll stays far below it).
 CARD_REV_MAX = 200
@@ -109,6 +111,10 @@ def closed_reason(card: Any) -> Optional[str]:
         return "the approval was used"
     if ctype in ("approval.request", "choice.request") and data.get("withdrawn"):   # V0654 (aq), item 18
         return "the request was withdrawn"
+    if ctype == "code.change.live" and data.get("state") in ("failed", "vetoed", "merged", "withdrawn"):   # V0666 D3
+        return f"the change is {data.get('state')}"
+    if ctype == "content.change.live" and data.get("state") in ("failed", "apply_failed", "undone", "withdrawn"):   # V0667 D5b (an applied change can still be undone)
+        return f"the change is {data.get('state')}"
     return None
 
 
@@ -182,3 +188,174 @@ def guild_order_card(order: Dict[str, Any], events: List[Dict[str, Any]], *, bid
         if worker_name:
             data["worker_name"] = str(worker_name)[:120]
     return {"v": 1, "type": "guild.order.live", "data": data, "refs": {"order_id": str(order.get("id"))}}
+
+
+# ---------------------------------------------------------------------------
+# V0666 D3 (order gwo_542285271416c653ca39af3f): a code distribution's change, live in its organization's room
+# ---------------------------------------------------------------------------
+
+# services/code_changes.STATES, kept here so this module reads no other (a test pins the two equal)
+CODE_CHANGE_STATES = ("proposed", "accepted", "balloting", "passed", "failed", "vetoed", "merged", "withdrawn")
+CODE_CHANGE_TERMINAL = frozenset({"failed", "vetoed", "merged", "withdrawn"})
+REASON_MAX = 200
+REASONS_MAX = 6
+SENTENCE_MAX = 300
+
+
+def _clip(v: Any, n: int) -> Optional[str]:
+    if v is None:
+        return None
+    s = str(v)
+    return s if len(s) <= n else s[:n - 1] + "…"
+
+
+def room_state(view: Dict[str, Any]) -> str:
+    """The state word a line's room last saw (code_changes.announce_state): the change's own state, except that a MERGED line change
+    that went upstream says so: `upstreaming` while its proposal on the main code is open, `upstream` once it landed there. A withdrawn,
+    failed or vetoed proposal leaves the change merged (V0667 D4)."""
+    state = str(view.get("state") or "proposed")
+    up = view.get("upstream") if isinstance(view.get("upstream"), dict) else None
+    if state == "merged" and up:
+        if up.get("state") == "merged":
+            return "upstream"
+        if up.get("state") in ("proposed", "accepted", "balloting", "passed"):
+            return "upstreaming"
+    return state if state in CODE_CHANGE_STATES else "proposed"
+
+
+def code_change_card(view: Dict[str, Any]) -> Dict[str, Any]:
+    """The `code.change.live` card of a line's change, from its public view (services/code_changes.view without a
+    reader): its title and state, the line (its release and organization by name), the signed checker's verdict, the
+    reviews of the commit and the line's own ballot. Never a reader's own vote or what a reader may do: the card is
+    everyone's in the room, each reader reads their own from the change (GET /code-changes/{id})."""
+    line = view.get("code_distribution") or {}
+    acc = view.get("acceptance") if isinstance(view.get("acceptance"), dict) else None
+    if acc is None or not isinstance(acc.get("ok"), bool):
+        checker = {"state": "none", "reasons": []}
+    else:
+        checker = {"state": "ok" if acc["ok"] else "failed",
+                   "reasons": [] if acc["ok"] else [_clip(r, REASON_MAX) for r in (acc.get("reasons") or [])][:REASONS_MAX]}
+    rv = view.get("review_verdict") if isinstance(view.get("review_verdict"), dict) else {}
+    commit = view.get("commit")
+    reviews = [r for r in (view.get("reviews") or []) if isinstance(r, dict) and (not commit or r.get("commit") == commit)]
+    lb = view.get("line_ballot") if isinstance(view.get("line_ballot"), dict) else {}
+    res = lb.get("result") if isinstance(lb.get("result"), dict) else None
+    state = str(view.get("state") or "proposed")
+    data: Dict[str, Any] = {
+        "change_id": str(view.get("id")),
+        "title": _clip(view.get("title") or view.get("id"), TITLE_MAX),
+        "state": state if state in CODE_CHANGE_STATES else "proposed",
+        "sensitive": bool(view.get("sensitive")),
+        "line": {"slug": line.get("slug"), "title": _clip(line.get("title"), TITLE_MAX),
+                 "release_name": line.get("release_name"), "organization_name": _clip(line.get("organization_name"), 120),
+                 "paused": line.get("state") == "paused"},
+        "checker": checker,
+        "reviews": {"count": len(reviews), "approvals": int(rv.get("approvals") or 0), "needed": int(rv.get("needed") or 1),
+                    "blockers": len(rv.get("blockers") or [])},
+        "ballot": {"votes": int(lb.get("votes") or 0), "deciders": int(lb.get("deciders_now") or 0), "ends": lb.get("ends"),
+                   "result": res.get("status") if res else None, "sentence": _clip(res.get("sentence"), SENTENCE_MAX) if res else None,
+                   "note": _clip(lb.get("deciders_note"), SENTENCE_MAX)},
+    }
+    up = view.get("upstream") if isinstance(view.get("upstream"), dict) else None
+    if up and isinstance(up.get("change_id"), str):
+        data["upstream"] = {"change_id": up["change_id"], "state": up.get("state"), "since": up.get("since")}
+    return {"v": 1, "type": "code.change.live", "data": data, "refs": {"code_change_id": str(view.get("id"))}}
+
+
+def validate_code_change_live(data: Dict[str, Any]) -> Optional[str]:
+    """A refusal reason for a `code.change.live` card's data (the code changes rail writes it), or None."""
+    cid = data.get("change_id")
+    if not isinstance(cid, str) or not cid.startswith("cc_"):
+        return "code.change.live: data.change_id must name a code change (cc_...)"
+    if not _is_text(data.get("title"), 1, TITLE_MAX):
+        return "code.change.live: data.title is required"
+    if data.get("state") not in CODE_CHANGE_STATES:
+        return "code.change.live: data.state must be a code change's state"
+    for k in ("line", "checker", "reviews", "ballot"):
+        if not isinstance(data.get(k), dict):
+            return f"code.change.live: data.{k} must be an object"
+    return None
+
+
+def code_change_state_line(seen: Optional[str], view: Dict[str, Any]) -> Optional[str]:
+    """The one line a state change posts to the change's room (the team's development log), or None: nothing when the
+    room has seen no state yet (the card itself announces the change) or already saw this one."""
+    state = room_state(view)
+    if seen is None or seen == state:
+        return None
+    title = _clip(view.get("title") or view.get("id"), 120)
+    line = view.get("code_distribution") or {}
+    release = line.get("release_name") or "its release line"
+    up = view.get("upstream") if isinstance(view.get("upstream"), dict) else {}
+    said = {
+        "upstreaming": f"proposed upstream to the main code as {up.get('change_id')}.",
+        "upstream": f"upstream since {up.get('change_id')}: the main code has it.",
+        "proposed": "proposed again: the signed checker reads its commit.",
+        "accepted": "the signed checks passed; it waits for its reviews.",
+        "balloting": f"the line's ballot is open; its deciders vote ({release}).",
+        "passed": "passed; the veto window runs.",
+        "merged": f"merged into {line.get('branch') or 'the line'}.",
+        "failed": "did not pass.",
+        "vetoed": "vetoed.",
+        "withdrawn": "withdrawn.",
+    }.get(state)
+    return _clip(f"{title}: {said}", SENTENCE_MAX) if said else None
+
+
+CONTENT_CHANGE_STATES = ("balloting", "failed", "apply_failed", "applied", "undone", "withdrawn")
+
+
+def content_change_card(view: Dict[str, Any]) -> Dict[str, Any]:
+    """V0667 D5b: the `content.change.live` card of a line's content change, from its public view (services/content_changes.view): its kind, title and state, the line (its
+    release and organization by name), our checker's verdict and the line's ballot. Never a reader's own vote or what a reader may do: the card is everyone's in the room, each
+    reader reads their own from the change (GET /content-changes/{id}). The content itself stays in the change: a card names what kind of change it is, never its text."""
+    line = view.get("code_distribution") or {}
+    k = view.get("checker") if isinstance(view.get("checker"), dict) else {}
+    b = view.get("ballot") if isinstance(view.get("ballot"), dict) else {}
+    res = b.get("result") if isinstance(b.get("result"), dict) else None
+    state = str(view.get("state") or "balloting")
+    data: Dict[str, Any] = {
+        "change_id": str(view.get("id")),
+        "kind": str(view.get("kind") or ""),
+        "title": _clip(view.get("title") or view.get("id"), TITLE_MAX),
+        "state": state if state in CONTENT_CHANGE_STATES else "balloting",
+        "line": {"slug": line.get("slug"), "title": _clip(line.get("title"), TITLE_MAX), "release_name": line.get("release_name"),
+                 "organization_name": _clip(view.get("organization_name"), 120), "paused": line.get("state") == "paused"},
+        "checker": {"state": "ok" if k.get("ok") is True else "none", "rules": [str(r) for r in (k.get("rules") or [])][:6]},
+        "ballot": {"votes": int(b.get("cast") or 0), "deciders": int(b.get("deciders") or 0), "ends": b.get("ends"),
+                   "result": res.get("status") if res else None, "sentence": _clip(res.get("sentence"), SENTENCE_MAX) if res else None},
+        "applied": state == "applied",
+    }
+    return {"v": 1, "type": "content.change.live", "data": data, "refs": {"content_change_id": str(view.get("id"))}}
+
+
+def validate_content_change_live(data: Dict[str, Any]) -> Optional[str]:
+    """A refusal reason for a `content.change.live` card's data (the code changes rail writes it), or None."""
+    cid = data.get("change_id")
+    if not isinstance(cid, str) or not cid.startswith("ct_"):
+        return "content.change.live: data.change_id must name a content change (ct_...)"
+    if not _is_text(data.get("title"), 1, TITLE_MAX):
+        return "content.change.live: data.title is required"
+    if data.get("state") not in CONTENT_CHANGE_STATES:
+        return "content.change.live: data.state must be a content change's state"
+    for k in ("line", "checker", "ballot"):
+        if not isinstance(data.get(k), dict):
+            return f"content.change.live: data.{k} must be an object"
+    return None
+
+
+def content_change_state_line(seen: Optional[str], view: Dict[str, Any]) -> Optional[str]:
+    """The one line a state change of a content change posts to its room (the team's development log), or None: nothing when the room has seen no state yet (the card itself
+    announces the change) or already saw this one."""
+    state = str(view.get("state") or "")
+    if seen is None or seen == state:
+        return None
+    title = _clip(view.get("title") or view.get("id"), 120)
+    said = {
+        "applied": "passed its ballot and is applied to the organization's own space; its deciders can undo it in one step.",
+        "failed": "did not pass its ballot; nothing was applied.",
+        "apply_failed": "passed its ballot but our checker refused it at the apply: nothing was applied.",
+        "undone": "undone; the organization's space is back as it was.",
+        "withdrawn": "withdrawn.",
+    }.get(state)
+    return _clip(f"{title}: {said}", SENTENCE_MAX) if said else None

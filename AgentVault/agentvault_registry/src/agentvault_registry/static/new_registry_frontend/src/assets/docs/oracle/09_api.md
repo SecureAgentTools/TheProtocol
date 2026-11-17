@@ -238,7 +238,7 @@ Errors carry two shapes in one body: a legacy `error` object and the RFC 7807 fi
 }
 ```
 
-`status` repeats the HTTP code, `title` is its name, `detail` is the human sentence and `instance` the request path. `type` identifies the kind of error; it is an identifier, not a page you can open. A validation error adds `error.code` and `error.field`:
+`status` repeats the HTTP code, `title` is its name, `detail` is the human sentence and `instance` the request path. `type` identifies the kind of error and is the address of its section in the [error types reference](https://docs.theprotocol.cloud/reference/errors) (`.../errors/not_found` opens its own small page there). A validation error adds `error.code` and `error.field`:
 
 ```json
 {

@@ -65,8 +65,18 @@ async def _build_flare_sidecar(
     # fields below are already None-safe when the developer has no flare.
     _agent_tier = getattr(agent, "flare_tier", None) if agent is not None else None
     _dev_tier = getattr(dev, "flare_tier", None) if dev is not None else None
-    if not _agent_tier and not _dev_tier:
+    # V0665/V0666 the contributor track: a ring or badge an agent wears that was EARNED (its developer unlocked it; the agent routes ask for the unlock row) is
+    # exported with no flare tier at all, an earned item needs no purchased tier. The developer's own earned wear is for the developer's own avatar and is NOT
+    # shipped on every agent they own: each agent shows what it was given, as the bought flares do through the bears_* flags.
+    from ..core.registry_identity import EARNED_CORNERS, EARNED_ENCIRCLEMENTS
+    _agent_earned_enc = getattr(agent, "flare_encirclement_variant", None) in EARNED_ENCIRCLEMENTS if agent is not None else False
+    _agent_earned_cv = getattr(agent, "flare_corner_variant", None) in EARNED_CORNERS if agent is not None else False
+    if not _agent_tier and not _dev_tier and not _agent_earned_enc and not _agent_earned_cv:
         return None
+    def _bought_only(value, earned):
+        """V0666: the developer's variant columns are shared by the bought flares and the earned items; a bearer of a BOUGHT slot inherits only a bought variant,
+        never the earned ring or badge the developer wears on their own avatar."""
+        return None if value in earned else value
     bears_corner = bool(getattr(agent, "bears_corner_flare", False)) if agent is not None else False
     bears_enc    = bool(getattr(agent, "bears_encirclement_flare", False)) if agent is not None else False
     # §pass39c (2026-05-18) — Sovereign agents NEVER inherit from dev. The
@@ -82,7 +92,7 @@ async def _build_flare_sidecar(
         "v": 1,
         "encirclement_variant": (
             (getattr(agent, "flare_encirclement_variant", None) if agent is not None else None)
-            or (None if is_sovereign_agent else (getattr(dev, "flare_encirclement_variant", None) if bears_enc else None))
+            or (None if is_sovereign_agent else (_bought_only(getattr(dev, "flare_encirclement_variant", None), EARNED_ENCIRCLEMENTS) if bears_enc else None))
         ),
         "encirclement_overlay": (
             (getattr(agent, "flare_encirclement_overlay", None) if agent is not None else None)
@@ -90,7 +100,7 @@ async def _build_flare_sidecar(
         ),
         "corner_variant": (
             (getattr(agent, "flare_corner_variant", None) if agent is not None else None)
-            or (None if is_sovereign_agent else (getattr(dev, "flare_corner_variant", None) if bears_corner else None))
+            or (None if is_sovereign_agent else (_bought_only(getattr(dev, "flare_corner_variant", None), EARNED_CORNERS) if bears_corner else None))
         ),
         "tier": getattr(agent, "flare_tier", None) if agent is not None else None,
         "selected_corner_flare":       getattr(dev, "selected_corner_flare", None) if bears_corner else None,

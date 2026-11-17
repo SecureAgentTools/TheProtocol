@@ -64,3 +64,16 @@ describe('dispute evidence tiers', () => {
     expect(isAgentEndpoint('/disputes/7/evidence', 'post')).toBe(true)
   })
 })
+
+// V0664 M5 (order gwo_5a4ea8476b97147f3056405e): the template library acts AS the agent where it changes something.
+describe('isAgentEndpoint: the template library', () => {
+  it('reads are public, writes are the agent\'s', () => {
+    expect(isAgentEndpoint('/workflow-templates?kind=migration', 'get')).toBe(false)
+    expect(isAgentEndpoint('/workflow-templates/wtpl_1', 'get')).toBe(false)
+    expect(isAgentEndpoint('/workflow-templates/wtpl_1/versions/2/kit', 'get')).toBe(false)
+    expect(isAgentEndpoint('/workflow-templates/wtpl_1/purchase', 'post')).toBe(true)
+    expect(isAgentEndpoint('/workflow-templates/wtpl_1/fork', 'post')).toBe(true)
+    expect(isAgentEndpoint('/workflow-templates/wtpl_1/instantiate', 'post')).toBe(true)
+    expect(isAgentEndpoint('/workflow-templates/wtpl_1', 'patch')).toBe(true)
+  })
+})

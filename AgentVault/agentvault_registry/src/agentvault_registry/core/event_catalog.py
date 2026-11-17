@@ -74,6 +74,7 @@ REGISTRY_EMITS = frozenset({   # 251 types the registry emits (V0658 (k): SlashM
     "TokensIssued", "TokensStaked", "TokensTransferred", "TokensUnstaked",
     "TransactionFeeCollected", "TreasuryBankruptcyQuarantineTriggered", "TreasuryQuarantineLifted",
     "TreasurySlashReceived", "VersionActivated", "VersionCreated", "VersionRolledBack", "VoteCast",
+    "WorkflowTemplatePurchased",  # V0664 M4: services/workflow_templates.Library.purchase
 })
 
 TEG_EMITS = frozenset({   # 12 types the TEG emits (its gate refuses those its row gives to the registry)

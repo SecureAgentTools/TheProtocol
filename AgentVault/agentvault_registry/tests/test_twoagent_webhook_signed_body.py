@@ -38,18 +38,8 @@ def _receiver_resolves(monkeypatch):
 SECRET = "0f" * 32
 
 
-class _Resp:
-    status_code = 200
-    text = "ok"
-
-
-class _Client:
-    def __init__(self):
-        self.received = []
-
-    async def post(self, url, **kw):
-        self.received.append(kw)
-        return _Resp()
+# V0662 (item 16): a webhook send goes through the outbound guard, which needs a real client's connection layer
+from tests._doubles import RecordingWebhookClient as _Client  # noqa: E402
 
 
 class _Db:
@@ -63,7 +53,7 @@ class _Db:
 def _deliver(data):
     svc = ws.WebhookService()
     svc.client = _Client()
-    hook = types.SimpleNamespace(id="wh1", url="http://receiver.invalid/hook", secret=SECRET, failure_count=0,
+    hook = types.SimpleNamespace(id="wh1", url="http://receiver.example.org/hook", secret=SECRET, failure_count=0,
                                  is_active=True, last_triggered_at=None)
     loop = asyncio.new_event_loop()
     try:

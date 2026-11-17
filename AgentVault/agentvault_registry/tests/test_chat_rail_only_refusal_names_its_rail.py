@@ -26,6 +26,8 @@ RAIL = {
     "choice.request": "chat approval rail",        # V0652 (ab): a choice is an approval request with options
     "choice.decided": "chat approval rail",
     "guild.order.live": "Guild rail",          # V0652 (aa)
+    "code.change.live": "code changes rail",   # V0666 D3
+    "content.change.live": "code changes rail",   # V0667 D5b
 }
 
 

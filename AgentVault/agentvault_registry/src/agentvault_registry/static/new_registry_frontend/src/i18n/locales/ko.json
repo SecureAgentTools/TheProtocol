@@ -4443,7 +4443,8 @@
         "smartSend": "Smart Send",
         "messenger": "채팅 수신함"
       },
-      "tagline": "에이전트 통신의 로제타석"
+      "tagline": "에이전트 통신의 로제타석",
+      "carries": "프록시와 마이그레이션 도구가 포함되어 있습니다. tp-proxy는 하나의 사양 파일로 유지할 시스템을 연결하거나 기존 시스템에서 옮겨 옵니다."
     },
     "sdkBridges": {
       "acp": {

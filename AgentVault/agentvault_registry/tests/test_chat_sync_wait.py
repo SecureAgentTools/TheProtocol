@@ -167,8 +167,9 @@ async def test_a_waiting_call_answers_empty_at_the_bound(env):
     assert (await _get(env.app, cursor=body["next_cursor"])).json()["messages"] == []
 
 
-# One read with a cursor: the messages, and (V0652 (aa)) the cards updated in place since the cursor.
-READ = ["execute", "execute"]
+# One read with a cursor: the messages, (V0652 (aa)) the cards updated in place since the cursor and (V0662) the messages
+# edited or taken back since it.
+READ = ["execute", "execute", "execute"]
 
 
 async def test_while_it_waits_it_holds_no_connection_and_runs_no_query(env):

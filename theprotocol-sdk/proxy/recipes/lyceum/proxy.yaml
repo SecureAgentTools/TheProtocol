@@ -16,7 +16,7 @@ state: /data/lyceum-state.db
 sources:
   sis:
     type: filedrop
-    config: {path: /data/sis-out, suffix: .csv, id_field: award_id, settle_seconds: 2}
+    config: {path: /data/sis-out, suffix: .csv, id_field: award_id, settle_seconds: 2, poll_seconds: 30}
 actions:
   issue:
     type: attestation

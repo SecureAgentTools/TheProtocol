@@ -15,6 +15,8 @@
  */
 import { ref, computed, type Ref } from 'vue'
 import { apiClient } from '@/services/api/client'
+import { hasAdminFlag } from '@/composables/usePermissions'
+import { useAuthStore } from '@/stores/auth'
 
 export interface PeerVisualV03 {
   theme?: string | null
@@ -238,7 +240,8 @@ export function useFederationTopology(
     isLoading.value = true
     error.value = null
     try {
-      if (useAdmin) {
+      // the admin overview is an admin_federation read: asked only for a session that holds the flag (V0662 admin guard)
+      if (useAdmin && hasAdminFlag(useAuthStore().user, 'federation')) {
         try {
           const res = await apiClient.get('/admin/federation/topology-overview')
           // Layer in legacy /public/topology edges + merge v0.3 fields into admin buckets

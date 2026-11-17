@@ -233,6 +233,9 @@ _UNCOVERED_BASELINE: Set[str] = {
     "TreasuryQuarantineLifted",
     "TreasurySlashReceived",  # observed
     "WebhookRetryExhausted",
+    # V0664 "Migrate a system", M4: a template purchase moves real units between two developers' agents, so no sweep drives
+    # it; M8's sandbox proof does (two agents of different developers), and the MCP tester measures the refusals
+    "WorkflowTemplatePurchased",
     "agent.health_changed",
     "agent.reinstated",
     "agent.slashed",

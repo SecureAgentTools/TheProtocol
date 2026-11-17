@@ -95,15 +95,7 @@ async def build_signed_devcard(db: AsyncSession, agent: Agent, requested_by: str
         raise HTTPException(status_code=403, detail="owner has opted out of DevCard passport disclosure")
 
     payload = await _devcard_payload(db, agent, dev)
-
-    from agentvault_registry.identity import svid_client
-    from agentvault_registry.services.registry_card_keystore import get_or_mint_signing_key
-    from agentvault_registry.services.registry_card_signer_impl import sign_with_keypair
-
-    spiffe_id = svid_client.get_spiffe_id() or f"spiffe://unknown/{_home_registry_name()}"
-    key_row = await get_or_mint_signing_key(db, spiffe_id)
-    signature = sign_with_keypair(payload, key_row)
-    kid = f"{spiffe_id}#{key_row.rotation_seq}"
+    env = await sign_devcard_payload(db, payload)
 
     # Disclosure audit (GDPR purpose-binding) — fail-open but loudly logged.
     try:
@@ -118,10 +110,22 @@ async def build_signed_devcard(db: AsyncSession, agent: Agent, requested_by: str
     except Exception as e:
         logger.error(f"[DevCard] disclosure audit write failed (served anyway): {e}")
 
-    return {
-        "payload": payload,
-        "signature": {"alg": "EdDSA", "kid": kid, "value": signature},
-    }
+    return env
+
+
+async def sign_devcard_payload(db: AsyncSession, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Sign a DevCard payload with this registry's registry-card key (Ed25519), as every venue verifies it against the home's public
+    /.well-known/registry-jwks.json. One signer for both cards: the exchange's above and the code passport's (V0667,
+    services/code_passport.signed_card), which writes its own disclosure row first."""
+    from agentvault_registry.identity import svid_client
+    from agentvault_registry.services.registry_card_keystore import get_or_mint_signing_key
+    from agentvault_registry.services.registry_card_signer_impl import sign_with_keypair
+
+    spiffe_id = svid_client.get_spiffe_id() or f"spiffe://unknown/{_home_registry_name()}"
+    key_row = await get_or_mint_signing_key(db, spiffe_id)
+    signature = sign_with_keypair(payload, key_row)
+    kid = f"{spiffe_id}#{key_row.rotation_seq}"
+    return {"payload": payload, "signature": {"alg": "EdDSA", "kid": kid, "value": signature}}
 
 
 @router.get("/dev-card/by-agent/{agent_did}", summary="DevCard for an agent's owner (peer registries only)")

@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import WornTitle from '@/components/contributor/WornTitle.vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useUIStore } from '@/stores/ui'
 import { useViewport } from '@/composables/useViewport'
-import { usePermissions, type AdminAction } from '@/composables/usePermissions'
+import { hasAdminFlag, type AdminAction } from '@/composables/usePermissions'
+import { NAV_GROUPS, NAV_ITEMS, navItemByPath, type NavItem, type NavGroup } from '@/services/nav/navTable'
+import { navItemState, routeRule, adminSubgroups, type NavCtx, type RouteRule } from '@/services/nav/navAccess'
+import { useNavPins } from '@/services/nav/navPins'
+import { rememberUiMode } from '@/services/uiMode'
 import { useMainframe } from '@/composables/useMainframe'
 import { isMainframeOnlyPath } from '@/composables/mainframeOnlyPaths'
 import { useRegistryConfig } from '@/composables/useRegistryConfig'
@@ -14,6 +19,7 @@ import Icon from '@/components/Icon.vue'
 import UserAvatar from '@/components/common/UserAvatar.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import ProtocolMark from '@/components/ProtocolMark.vue'
+import PublicAnnouncementsStrip from '@/components/PublicAnnouncementsStrip.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -36,8 +42,7 @@ async function refreshChatUnread() {
 function badgeCount(item: NavItem): number {
   return item.badgeKey === 'chat' ? chatUnread.value : 0
 }
-const permissions = usePermissions()
-const { t } = useI18n()
+const { t, tp } = useI18n()
 
 // 2026-05-11: resolves an item's display label through vue-i18n when
 // item.i18nKey is set; otherwise returns the literal `name` field.
@@ -79,234 +84,88 @@ const isHidden = computed(() => {
 const { config: _sharedCfg } = useRegistryConfig()
 const isFederatedOperator = computed(() => _sharedCfg.value.is_federated_operator ?? false)
 
-// Auth requirement types
-interface NavItem {
-  name: string
-  // 2026-05-11: optional i18n key. If set, item label resolves through t(),
-  // falling back to `name` when key is missing/untranslated. Migration is
-  // §NAVI18N (2026-08-31): every entry carries one now. An entry WITHOUT a key renders
-  // `name` literally in all nine locales — which is what seven of them silently did.
-  i18nKey?: string
-  path: string
-  icon: string
-  color: string
-  requiresAgent?: boolean
-  requiresAdmin?: boolean
-  // P3.1 (2026-05-08): when set, requires the user to have either is_admin
-  // (super-flag) OR the specific admin sub-flag. Pairs with backend RBAC.
-  requiredSubFlag?: AdminAction
-  authHint?: string
-  // §CHATPOLISH (2026-08-30) — an optional live counter beside the label. §CHATDESK
-  // C2 specified "nav entry … with unread badge" and shipped the entry without
-  // one, so the desktop shell had no way to say a message had arrived. Kept as a
-  // KEY rather than a number: the item table is static config, the count is not.
-  badgeKey?: 'chat'
-  mainframeOnly?: boolean
-  // PB-1 (2026-05-09): if true, item is hidden entirely unless the user
-  // owns a backer flare (auth.user.flare_tier is non-null). Used for
-  // "My Flare" — the FlareManager view only matters once you've earned one.
-  requiresFlare?: boolean
-  // §FLARESHOP (2026-08-16): if true, the item needs the EURO on-ramp to be
-  // live on this registry. It is off on every frame in this fleet, which left
-  // "Become a Backer" advertising a lane with nothing behind it. The item STAYS
-  // in the sidebar (Commander's call) but locks, with a tooltip pointing at the
-  // local-currency shop — the same treatment Disputes/Staking already get.
-  // §BAFIN (2026-10-02: there is no fiat lane any more; the letter: the euro lane and its public price list
-  // are off): "Become a Backer" is no longer locked but HIDDEN where the euro lane is off (requiresRegistryFlag
-  // 'fiat_onramp_enabled', the read the router guard uses), so no page advertises a euro door that is closed.
-  requiresFiat?: boolean
-  // §COCKPIT P1 (2026-08-31): the item exists only where the REGISTRY serves the
-  // feature. HIDDEN, not locked — a lock says "you may not", and the honest thing
-  // to say about a surface this deployment does not run is nothing at all. Read
-  // from the shared public-config composable, the same one the router guard uses,
-  // so the nav and the guard cannot disagree.
-  requiresRegistryFlag?: 'cockpit_desk_enabled' | 'frame_kit_enabled' | 'staking_enabled' | 'fiat_onramp_enabled'
-  /** §FEFRAME W3: hidden only when the registry says this flag is FALSE (an older registry that does not say keeps it) */
-  hiddenWhenRegistryFlagFalse?: 'simulation_enabled'
+// V0662 sidebar (order gwo_0feb166a01e2ff611e154361): the table (his task groups) and the one rule for who sees an
+// entry live in services/nav (navTable, navAccess), shared with the search and the palette; the rule is read from the
+// route each entry opens, the meta the router's guard enforces. No hand list of public paths, no admin flag of our own.
+const navGroups: NavGroup[] = NAV_GROUPS
+const _rules = new Map<string, RouteRule>()
+function ruleOf(path: string): RouteRule {
+  let r = _rules.get(path)
+  if (!r) { r = routeRule(router, path); _rules.set(path, r) }
+  return r
+}
+const ADMIN_FLAGS: AdminAction[] = ['platform', 'federation', 'enforcement', 'treasury', 'support']
+const navCtx = computed<NavCtx>(() => ({
+  signedIn: !!authStore.isAuthenticated,
+  legacyAdmin: (authStore.user as any)?.is_admin === true,
+  flags: ADMIN_FLAGS.filter((f) => hasAdminFlag(authStore.user, f)),
+  hasAgent: !!authStore.agentToken,
+  isMainframe: !!_localIsMainframe.value,
+  fiatEnabled: _fiatEnabled.value,
+  registryCfg: _registryCfg.value,
+  flareTier: (authStore.user as any)?.flare_tier ?? null,
+}))
+function itemState(item: NavItem) { return navItemState(item, ruleOf(item.path), navCtx.value) }
+function visibleItems(group: NavGroup): NavItem[] { return group.items.filter((i) => itemState(i) !== 'hide') }
+/** a group with nothing this person sees is not drawn (Administration for a member; most groups for a visitor) */
+const visibleGroups = computed(() => navGroups.filter((g) => visibleItems(g).length > 0))
+function adminGroups(group: NavGroup) { return adminSubgroups(group.items, ruleOf, navCtx.value) }
+// each key spelled out, so the raw-key gate reads all five (a key built from a template read as one it could not find)
+const ADMIN_GROUP_LABEL: Record<AdminAction, () => string> = {
+  platform: () => t('nav.adminGroups.platform', 'Platform'),
+  federation: () => t('nav.adminGroups.federation', 'Federation'),
+  enforcement: () => t('nav.adminGroups.enforcement', 'Enforcement'),
+  treasury: () => t('nav.adminGroups.treasury', 'Treasury'),
+  support: () => t('nav.adminGroups.support', 'Support'),
+}
+function adminGroupLabel(flag: AdminAction): string { return ADMIN_GROUP_LABEL[flag]() }
+
+// ── The Pinned block (his 2026-11-13 word: defaults Mission Control, OurChat, Pocket mode; pin any item from its
+// category; drag to reorder; its own prefs key). services/nav/navPins: read the server, change, write back. ──
+const navPins = useNavPins()
+onMounted(() => { if (authStore.isAuthenticated) void navPins.load() })
+watch(() => authStore.isAuthenticated, (now, before) => { if (now && !before) void navPins.load(true) })
+const pinnedItems = computed<NavItem[]>(() => navPins.pins.value
+  .map((p) => navItemByPath(p))
+  .filter((i): i is NavItem => !!i && itemState(i) !== 'hide'))
+const pinBusy = ref(false)
+async function togglePinFor(item: NavItem) {
+  if (pinBusy.value) return
+  pinBusy.value = true
+  try {
+    const r = await navPins.toggle(item.path)
+    if (r === 'failed') uiStore.showError(t('nav.pins.failedTitle', 'Pin not saved'), t('nav.pins.failed', 'The server did not take the change; the pins are as they were.'))
+  } finally { pinBusy.value = false }
+}
+function pinLabel(item: NavItem): string {
+  return navPins.isPinned(item.path)
+    ? tp('nav.pins.unpin', 'Unpin {name}', { name: itemLabel(item) })
+    : tp('nav.pins.pin', 'Pin {name}', { name: itemLabel(item) })
+}
+const dragPath = ref<string | null>(null)
+function onPinDragStart(item: NavItem, e: DragEvent) {
+  dragPath.value = item.path
+  try { e.dataTransfer?.setData('text/plain', item.path); if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move' } catch { /* old browsers */ }
+}
+async function onPinDrop(index: number) {
+  const path = dragPath.value
+  dragPath.value = null
+  if (!path) return
+  const r = await navPins.move(path, index)
+  if (r === 'failed') uiStore.showError(t('nav.pins.failedTitle', 'Pin not saved'), t('nav.pins.failed', 'The server did not take the change; the pins are as they were.'))
+}
+/** the keyboard's way to reorder: Alt+ArrowUp / Alt+ArrowDown on a pinned entry */
+function onPinKeydown(e: KeyboardEvent, item: NavItem, index: number) {
+  if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
+  e.preventDefault()
+  void navPins.move(item.path, e.key === 'ArrowUp' ? index - 1 : index + 1)
 }
 
-interface NavGroup {
-  label: string
-  // 2026-05-11: optional i18n key for the group header. Falls back to `label`.
-  i18nKey?: string
-  icon: string
-  items: NavItem[]
+// Pocket mode, also a switch in the footer (the sidebar design): the same door the entry opens, and the mode remembered
+function switchToPocket() {
+  rememberUiMode('pocket')
+  navigate('/pocket/home')
 }
-
-// Top-level items (always visible, no group)
-const topItems: NavItem[] = [
-  { name: 'Mission Control', i18nKey: 'nav.items.missionControl', path: '/mission-control', icon: 'mdi:view-grid', color: 'text-blue-600' },
-  // §DASHRESTORE (2026-09-02) — the 3D bridge kept its view and gained its own
-  // entry of its own (a Bridge menu item). data-tour is
-  // DERIVED from path in the template, so this row is also `nav-bridge` for free.
-  { name: 'Bridge', i18nKey: 'nav.items.bridge', path: '/bridge', icon: 'mdi:telescope', color: 'text-indigo-400' },
-  // POCKET mode (2026-07-07) — a peer of Mission Control: the simplified consumer shell.
-  // Top-level (not buried in a collapsed group) so it's instantly discoverable; this
-  // cockpit is "Advanced mode".
-  { name: 'Pocket mode', i18nKey: 'nav.items.pocketMode', path: '/pocket/home', icon: 'mdi:cellphone', color: 'text-cyan-400' },
-  // 2026-07-20 Commander: keep top-level to the two shells — The Guild lives in AGENTS,
-  // GÖDEL FORGE in COMMUNITY (a crowded top level stops being a top level).
-]
-
-// Grouped navigation
-const navGroups: NavGroup[] = [
-  {
-    label: 'AGENTS',
-    i18nKey: 'nav.groups.agents',
-    icon: 'mdi:robot',
-    items: [
-      // THE GUILD (moved from top level 2026-07-20) — agent work exchange; literal brand name.
-      { name: 'The Guild', i18nKey: 'nav.items.guild', path: '/guild', icon: 'mdi:briefcase', color: 'text-yellow-400', authHint: 'Agent work exchange — escrowed bounties, bids, verified pay' },
-      { name: 'Onboarding', i18nKey: 'nav.items.onboarding', path: '/onboarding', icon: 'mdi:rocket-launch', color: 'text-teal-600' },
-      { name: 'Agent Builder', i18nKey: 'nav.items.agentBuilder', path: '/agent-builder', icon: 'mdi:wrench', color: 'text-orange-600' },
-      { name: 'My Agents', i18nKey: 'nav.items.myAgents', path: '/my-agents', icon: 'mdi:robot', color: 'text-green-600' },
-      { name: 'Agent Discovery', i18nKey: 'nav.items.agentDiscovery', path: '/discover', icon: 'mdi:magnify', color: 'text-purple-600' },
-      // V0658 (v), item 4: the organizations and the work records they publish (#/firms), reachable from no entry before
-      { name: 'Firms', i18nKey: 'nav.items.firms', path: '/firms', icon: 'mdi:office-building', color: 'text-sky-400', authHint: 'Organizations and the work records they publish' },
-      // §pass62 (2026-05-21) — Federation peer browse view (parallel to Agent Discovery).
-      // §pass62.1 (2026-05-21) — Renamed "Federation Discovery" → "Federation Peers" (16 chars
-      // matches sibling "Agent Discovery"=15; longer name was wrapping on 2 lines in sidebar).
-      { name: 'Federation Peers', i18nKey: 'nav.items.federationPeers', path: '/federation-discover', icon: 'mdi:source-branch', color: 'text-cyan-500', authHint: 'Browse + drill into federation peers, frames, cloud operators' },
-      { name: 'Leaderboard', i18nKey: 'nav.items.leaderboard', path: '/leaderboard', icon: 'mdi:trophy', color: 'text-yellow-500', authHint: 'Public top-ranked agents by EigenTrust score' },
-      // POCKET FRAME (2026-07-07) — mobile pairing + push devices, and IRONKEY approvals/panic.
-      { name: 'POCKET FRAME', i18nKey: 'nav.items.pocketFrame', path: '/pocket-frame', icon: 'mdi:cellphone-link', color: 'text-cyan-400', authHint: 'Pair your phone + manage push notifications' },
-      { name: 'Approvals', i18nKey: 'nav.items.pocketApprovals', path: '/pocket-approvals', icon: 'mdi:shield-key', color: 'text-emerald-400', authHint: 'IRONKEY delegations, capability permits, panic revoke' },
-      // COCKPIT CARD (2026-07-25) — liable hybrid identity: human-underwritten agent mandates.
-      { name: 'Cockpit Card', i18nKey: 'nav.items.cockpitCard', path: '/cockpit', icon: 'mdi:card-account-details', color: 'text-rose-400', authHint: 'Underwrite an agent — liability mandates, evidence chain, phone confirms' },
-      // §COCKPIT P1 (2026-08-31) — the DESK: a modular read-only working surface
-      // for the liable human. Hidden unless COCKPIT_DESK_ENABLED is true here.
-      { name: 'Cockpit Desk', i18nKey: 'nav.items.cockpitDesk', path: '/desk', icon: 'mdi:view-dashboard-variant-outline', color: 'text-rose-300', requiresRegistryFlag: 'cockpit_desk_enabled', authHint: 'Your decisions, agents, denials and conservation on one savable desk' },
-      // PHONE FABRIC console (2026-07-07) — oversight for capability-gated agent computer-use.
-      { name: 'Phone Fabric', i18nKey: 'nav.items.phoneFabric', path: '/phone-fabric', icon: 'mdi:monitor-cellphone', color: 'text-cyan-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Watch + kill agent phone sessions (computer-use)' },
-    ]
-  },
-  {
-    label: 'ECONOMY',
-    i18nKey: 'nav.groups.economy',
-    icon: 'mdi:currency-usd',
-    items: [
-      { name: 'Become a Backer', i18nKey: 'nav.items.becomeBacker', path: '/become-a-backer', icon: 'mdi:hand-coin-outline', color: 'text-emerald-500', mainframeOnly: true, requiresRegistryFlag: 'fiat_onramp_enabled', authHint: 'Back TheProtocol — receive this frame\'s units + a supporter flare' },
-      { name: 'Flare Shop', i18nKey: 'nav.items.flareShop', path: '/flare-shop', icon: 'mdi:store-outline', color: 'text-violet-400', authHint: 'Buy encirclements + broken-machine overlays with this frame\'s own currency' },
-      { name: 'My Flare', i18nKey: 'nav.items.myFlare', path: '/flare-manager', icon: 'mdi:shield-star', color: 'text-amber-500', requiresFlare: true, authHint: 'Manage your backer flare — profile + agent assignment' },
-      { name: 'Founders Wall', i18nKey: 'nav.items.foundersWall', path: '/founders-wall', icon: 'mdi:trophy-variant', color: 'text-yellow-400', requiresRegistryFlag: 'fiat_onramp_enabled', authHint: 'See the backers powering TheProtocol\'s genesis chapter' },
-      // 2026-07-25: requiresAgent DROPPED — Contracts is dual-auth since X34 (browse/analytics/
-      // templates work on a developer JWT; mutations mint an agent JWT per-action inside the view).
-      { name: 'Contracts', i18nKey: 'nav.items.contracts', path: '/contracts', icon: 'mdi:file-document-edit', color: 'text-indigo-600' },
-      { name: 'Settlements', i18nKey: 'nav.items.settlements', path: '/settlements', icon: 'mdi:scale-balance', color: 'text-cyan-600', mainframeOnly: true },
-      { name: 'Disputes', i18nKey: 'nav.items.disputes', path: '/disputes', icon: 'mdi:gavel', color: 'text-red-600', requiresAgent: true, authHint: 'Requires active agent authentication' },
-      { name: 'Locks', i18nKey: 'nav.items.staking', path: '/locks', icon: 'mdi:lock', color: 'text-amber-600', requiresAgent: true, requiresRegistryFlag: 'staking_enabled', authHint: 'Requires active agent authentication' },
-      { name: 'Forex Desk', i18nKey: 'nav.items.forex', path: '/forex', icon: 'mdi:swap-horizontal', color: 'text-cyan-400', requiresAgent: true, authHint: 'Move value between your agents — local, cross-registry & cross-frame FX' },
-      { name: 'AGORA Desk', i18nKey: 'nav.items.exchange', path: '/agora', icon: 'mdi:chart-candlestick', color: 'text-emerald-400', requiresAgent: true, authHint: 'AGORA: trade org points via order book, launches and distributions' },
-      { name: 'AGORA Listings', i18nKey: 'nav.items.stocks', path: '/agora/listings', icon: 'mdi:telescope', color: 'text-emerald-300', authHint: 'Federation listings screener: every market, passport buys on foreign books' },
-    ]
-  },
-  {
-    // 2026-05-11 PB-1 §67 (Round 2) — dedicated OPERATOR category. Sits between
-    // ECONOMY and GOVERNANCE. Public pitch + owner portal + frame request form.
-    label: 'OPERATOR',
-    i18nKey: 'nav.groups.operator',
-    icon: 'mdi:server-network',
-    items: [
-      { name: 'Operator', i18nKey: 'nav.items.operatorPitch', path: '/operator', icon: 'mdi:server', color: 'text-cyan-500', mainframeOnly: true, authHint: 'Run a registry — backed devs unlock self-service cloud-op provisioning. Sovereign frames request-only.' },
-      { name: 'Operator Portal', i18nKey: 'nav.items.operatorPortal', path: '/operator-portal', icon: 'mdi:server-network', color: 'text-cyan-400', mainframeOnly: true, authHint: 'Owner console — your eligibility, your operators, your bundle + credentials' },
-      { name: 'Frame Commander', i18nKey: 'nav.items.frameCommander', path: '/frame-commander', icon: 'mdi:globe-model', color: 'text-amber-400', mainframeOnly: true, authHint: 'Request a sovereign frame — your own digital nation under TheProtocol' },
-      { name: 'Your frame', i18nKey: 'nav.items.frameKit', path: '/frame-kit', icon: 'mdi:package', color: 'text-amber-300', mainframeOnly: true, requiresRegistryFlag: 'frame_kit_enabled', authHint: 'Follow your frame request and download the frame kit' },
-    ]
-  },
-  {
-    label: 'GOVERNANCE',
-    i18nKey: 'nav.groups.governance',
-    icon: 'mdi:bank',
-    items: [
-      { name: 'Senate Floor', i18nKey: 'nav.items.senateFloor', path: '/senate', icon: 'mdi:bank', color: 'text-yellow-600', requiresAgent: true, authHint: 'Requires active agent authentication' },
-      { name: 'Attestations', i18nKey: 'nav.items.attestations', path: '/attestations', icon: 'mdi:certificate', color: 'text-emerald-500', authHint: 'Your ZKP attestations: lifecycle + signed bundles + schedules' },
-      { name: 'Organizations', i18nKey: 'nav.items.organizations', path: '/organization', icon: 'mdi:office-building', color: 'text-blue-600' },
-      { name: 'Federation', i18nKey: 'nav.items.federation', path: '/federation', icon: 'mdi:server-network', color: 'text-indigo-600' },
-      { name: 'Galactic Map', i18nKey: 'nav.items.galacticMap', path: '/galactic-map', icon: 'mdi:map', color: 'text-purple-600' },
-      { name: 'AgentWorld', i18nKey: 'nav.items.agentWorld', path: '/agentworld', icon: 'mdi:globe-model', color: 'text-cyan-500' },
-      { name: 'Universe', i18nKey: 'nav.items.universe', path: '/universe', icon: 'mdi:creation', color: 'text-indigo-400' },
-    ]
-  },
-  {
-    label: 'DEVELOPER',
-    i18nKey: 'nav.groups.developer',
-    icon: 'mdi:code-braces',
-    items: [
-      { name: 'API Tutorials', i18nKey: 'nav.items.apiTutorials', path: '/tutorials', icon: 'mdi:book-open-variant', color: 'text-violet-600' },
-      { name: 'API Tester', i18nKey: 'nav.items.apiTester', path: '/api-tester', icon: 'mdi:test-tube', color: 'text-cyan-600', requiresAdmin: true, requiredSubFlag: 'platform' },
-      { name: 'Webhooks', i18nKey: 'nav.items.webhooks', path: '/webhooks', icon: 'mdi:webhook', color: 'text-orange-600' },
-      { name: 'CI/CD Pipelines', i18nKey: 'nav.items.cicd', path: '/ci-cd', icon: 'mdi:source-branch', color: 'text-green-600' },
-      { name: 'Bundles', i18nKey: 'nav.items.bundles', path: '/bundles', icon: 'mdi:archive-outline', color: 'text-indigo-600' },
-    ]
-  },
-  {
-    label: 'COMMUNITY',
-    i18nKey: 'nav.groups.community',
-    icon: 'mdi:account-group',
-    items: [
-      // §CHATDESK C2 (2026-08-28) — OurChat reaches the desktop shell. This entry
-      // is the DESKTOP mount (/ourchat, two-pane); Pocket keeps /pocket/ourchat.
-      // Grouped, not top-level: the 2026-07-20 order keeps top level to the two shells.
-      { name: 'OurChat', i18nKey: 'nav.items.ourchat', path: '/ourchat', icon: 'mdi:chat', color: 'text-emerald-400', badgeKey: 'chat', authHint: 'Threads, org rooms and the support desk — receipts included' },
-      // GÖDEL FORGE (moved from top level 2026-07-20) — the community's self-improving arena.
-      { name: 'GÖDEL FORGE', i18nKey: 'nav.items.godelForge', path: '/forge', icon: 'mdi:source-branch', color: 'text-purple-400', authHint: 'Self-improving-agent arena — Evolution Tree, verifier quorums, royalties' },
-      { name: 'Community Hub', i18nKey: 'nav.items.communityHub', path: '/community', icon: 'mdi:account-group', color: 'text-violet-500' },
-      { name: 'Support', i18nKey: 'nav.items.support', path: '/support', icon: 'mdi:lifebuoy', color: 'text-amber-500' },
-      { name: 'Game Arena', i18nKey: 'nav.items.gameArena', path: '/games', icon: 'mdi:gamepad-variant', color: 'text-red-500' },
-      // §pass63 (2026-05-22) — Astraeus item removed with rip.
-    ]
-  },
-  {
-    label: 'ADMINISTRATION',
-    i18nKey: 'nav.groups.administration',
-    icon: 'mdi:shield-account',
-    items: [
-      { name: 'Developers', i18nKey: 'nav.items.developersAdmin', path: '/admin/developers', icon: 'mdi:account-plus', color: 'text-blue-500', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Developer account management' },
-      { name: 'Registry Card', i18nKey: 'nav.items.registryCard', path: '/admin/registry-card', icon: 'mdi:radio-tower', color: 'text-cyan-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Edit this registry\'s v0.3 self-describing federation card' },
-      { name: 'Agent Roster', i18nKey: 'nav.items.agentRoster', path: '/admin/agents', icon: 'mdi:account', color: 'text-violet-500', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Agent identity and ownership' },
-      { name: 'Enforcement', i18nKey: 'nav.items.enforcement', path: '/admin/enforcement', icon: 'mdi:gavel', color: 'text-rose-400', requiresAdmin: true, requiredSubFlag: 'enforcement', authHint: 'Per-agent economic levers — slashing locked units, offense ladder, suspension, policy + two-man queue' },
-      { name: 'Jurisdiction', i18nKey: 'nav.items.jurisdiction', path: '/admin/jurisdiction', icon: 'mdi:scale-balance', color: 'text-teal-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Declare regulated lifecycle acts and record the state authorizations that unlock them' },
-      { name: 'Frame Management', i18nKey: 'nav.items.frameManagement', path: '/frame-management', icon: 'mdi:source-branch', color: 'text-violet-600', requiresAdmin: true, requiredSubFlag: 'federation', mainframeOnly: true, authHint: 'Sovereign frame federation + SF-4/5 data planes' },
-      { name: 'OP Management', i18nKey: 'nav.items.opManagement', path: '/operator-management', icon: 'mdi:shield-account', color: 'text-amber-600', requiresAdmin: true, requiredSubFlag: 'federation', mainframeOnly: true, authHint: 'Operator onboarding and lifecycle' },
-      { name: 'Federation Tests', i18nKey: 'nav.items.federationTests', path: '/federation-test', icon: 'mdi:server-network', color: 'text-purple-600', requiresAdmin: true, requiredSubFlag: 'federation', mainframeOnly: true, authHint: 'Federation conformance testing' },
-      { name: 'Health Monitor', i18nKey: 'nav.items.healthMonitor', path: '/health-monitor', icon: 'mdi:heart-pulse', color: 'text-red-600', requiresAdmin: true, requiredSubFlag: 'platform' },
-      { name: 'Command Center', i18nKey: 'nav.items.commandCenter', path: '/command-center', icon: 'mdi:radar', color: 'text-emerald-500', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Operator diagnostics & remediation' },
-      { name: 'Galactic Command', i18nKey: 'nav.items.galacticCommand', path: '/galactic-command', icon: 'mdi:crosshairs-gps', color: 'text-cyan-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Fleet cockpit — click a registry on the map, command it' },
-      { name: 'EigenTrust', i18nKey: 'nav.items.eigenTrust', path: '/eigentrust-command', icon: 'mdi:brain', color: 'text-purple-500', requiresAdmin: true, requiredSubFlag: 'platform', hiddenWhenRegistryFlagFalse: 'simulation_enabled', authHint: 'Simulation & reputation command center' },
-      { name: 'IRONHAND', i18nKey: 'nav.items.ironhand', path: '/admin/ironhand', icon: 'mdi:shield-lock', color: 'text-cyan-600', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Agent mTLS identity monitor' },
-      { name: 'mTLS Theatre', i18nKey: 'nav.items.ironhandTheatre', path: '/ironhand/theatre', icon: 'mdi:map-marker-path', color: 'text-cyan-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Live cross-frame mTLS identity-travel theatre' },
-      { name: 'CONSUL', i18nKey: 'nav.items.consul', path: '/admin/compliance', icon: 'mdi:shield-search', color: 'text-cyan-400', requiresAdmin: true, requiredSubFlag: 'platform', mainframeOnly: true, authHint: 'Federation compliance monitor + kill switch' },
-      { name: 'OPA Policy', i18nKey: 'nav.items.opaConsole', path: '/admin/opa', icon: 'mdi:shield-search', color: 'text-cyan-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Policy decision evidence + enforce-impact simulator' },
-      { name: 'Reactors', i18nKey: 'nav.items.reactors', path: '/admin/reactors', icon: 'mdi:radioactive', color: 'text-emerald-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Event-driven reactor framework status' },
-      { name: 'Releases', i18nKey: 'nav.items.releaseChannel', path: '/admin/release-channel', icon: 'mdi:package', color: 'text-amber-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Signed release channel: stable releases and hotfixes, the rollout window you schedule' },
-      { name: 'Agent Evals', i18nKey: 'nav.items.agentEvals', path: '/admin/evals', icon: 'mdi:clipboard-check-multiple-outline', color: 'text-emerald-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Scored task batteries for agents — results fold into reputation' },
-      { name: 'MCP Tester', i18nKey: 'nav.items.mcpTester', path: '/admin/mcp-tester', icon: 'mdi:bug-check-outline', color: 'text-cyan-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Full-surface MCP regression sweep — sandbox-only proxy' },
-      { name: 'Console Suite', i18nKey: 'nav.items.consoleSuite', path: '/admin/console-suite', icon: 'mdi:monitor-cellphone', color: 'text-cyan-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'The console lifecycle suite: browser runs on a desktop and a phone screen against a sandbox frame' },
-      { name: 'Event Ledger', i18nKey: 'nav.items.eventLedger', path: '/admin/events', icon: 'mdi:database-search', color: 'text-violet-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'EventStore explorer — browse the immutable ledger' },
-      { name: 'Ledger Forensics', i18nKey: 'nav.items.ledgerForensics', path: '/admin/forensics', icon: 'mdi:shield-search', color: 'text-amber-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Stuck-funds tracer + AGORA/supply invariants + emission policy console' },
-      { name: 'Emission Policy', i18nKey: 'nav.items.emissionPolicy', path: '/admin/emission-policy', icon: 'mdi:database-search', color: 'text-violet-400', requiresAdmin: true, requiredSubFlag: 'treasury', authHint: 'Which side may write each event type to the ledger, what the projection counts, and what is wrong' },
-      { name: 'CI/CD Fleet', i18nKey: 'nav.items.cicdFleet', path: '/admin/cicd', icon: 'mdi:source-branch', color: 'text-cyan-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Fleet-wide CI/CD: pipelines, deployments, flags' },
-      { name: 'Audit Logs', i18nKey: 'nav.items.auditLogs', path: '/admin/audit-logs', icon: 'mdi:shield-search', color: 'text-amber-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'security_audit_logs — admin action history' },
-      { name: 'Marketplace', i18nKey: 'nav.items.adminMarketplace', path: '/admin/marketplace', icon: 'mdi:flag-outline', color: 'text-rose-400', requiresAdmin: true, requiredSubFlag: 'enforcement', authHint: 'Bundle moderation queue + hide/unhide actions' },
-      { name: 'Treasury', i18nKey: 'nav.items.treasury', path: '/admin/treasury', icon: 'mdi:bank', color: 'text-emerald-400', requiresAdmin: true, requiredSubFlag: 'treasury', authHint: 'Treasury balance, supply invariant, issuance + fees' },
-      { name: 'Fiat Operations', i18nKey: 'nav.items.fiatOps', path: '/admin/fiat-ops', icon: 'mdi:credit-card-settings', color: 'text-emerald-500', requiresAdmin: true, requiredSubFlag: 'treasury', mainframeOnly: true, requiresFiat: true, authHint: 'Fiat ops console — overview, pricing, simulator, purchase explorer, manual recovery' },
-      { name: 'FX Desk', i18nKey: 'nav.items.fxDesk', path: '/admin/fx', icon: 'mdi:swap-horizontal-bold', color: 'text-amber-400', requiresAdmin: true, requiredSubFlag: 'treasury', mainframeOnly: true, authHint: 'Cross-frame FX desk — the pool between the frames\' units, live rate, swap feed + quote simulator' },
-      { name: 'AGORA Admin', i18nKey: 'nav.items.exchangeAdmin', path: '/admin/agora', icon: 'mdi:scale-balance', color: 'text-emerald-400', requiresAdmin: true, requiredSubFlag: 'federation', authHint: 'AGORA market command: listings lifecycle, I-X invariants, compliance registry, global halt' },
-      { name: 'Webhook Health', i18nKey: 'nav.items.webhookHealth', path: '/admin/webhooks-cluster', icon: 'mdi:webhook', color: 'text-orange-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Cluster-wide webhook delivery health + failures' },
-      { name: 'X-Frame Bridge', i18nKey: 'nav.items.xframeBridge', path: '/admin/bridge', icon: 'mdi:bank-transfer', color: 'text-violet-400', requiresAdmin: true, requiredSubFlag: 'federation', authHint: 'Async + SF-3 cross-frame transfer health' },
-      { name: 'Email Studio', i18nKey: 'nav.items.emailStudio', path: '/admin/email', icon: 'mdi:email-outline', color: 'text-cyan-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Preview transactional + reactor email templates' },
-      { name: 'Mail Console', i18nKey: 'nav.items.mailConsole', path: '/admin/mail-fleet', icon: 'mdi:email-fast', color: 'text-cyan-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Fleet-wide mail posture: who verifies, who can actually send' },
-      { name: 'Broadcasts', i18nKey: 'nav.items.broadcasts', path: '/admin/broadcasts', icon: 'mdi:bullhorn', color: 'text-amber-400', requiresAdmin: true, requiredSubFlag: 'support', mainframeOnly: false, authHint: 'Compose, edit, retract admin broadcasts; read-tracking + WS recipient stats' },
-      // §ADMINDESK (2026-08-29) — operator chat desk: two lanes, fully audited.
-      { name: 'Chat Desk', i18nKey: 'nav.items.chatDesk', path: '/admin/chatdesk', icon: 'mdi:chat', color: 'text-emerald-400', requiresAdmin: true, requiredSubFlag: 'support', mainframeOnly: false, authHint: 'Support threads + customer-granted reviews; every transcript open is audited' },
-      { name: 'Settlements', i18nKey: 'nav.items.settlementsAdmin', path: '/admin/settlements', icon: 'mdi:scale-balance', color: 'text-violet-400', requiresAdmin: true, requiredSubFlag: 'enforcement', mainframeOnly: true, authHint: 'Cross-registry dispute compensation slash + payment flows' },
-      { name: 'Federation Ops', i18nKey: 'nav.items.federationOps', path: '/federation?tab=operations', icon: 'mdi:server-network', color: 'text-indigo-400', requiresAdmin: true, requiredSubFlag: 'federation', authHint: 'Federation Operations tab — drift remediation, license state, BFS reachability' },
-      { name: 'Att. Analytics', i18nKey: 'nav.items.attAnalytics', path: '/admin/attestation-analytics', icon: 'mdi:shield-star', color: 'text-emerald-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'ZKP attestation distribution, lifecycle, cadence' },
-      { name: 'Canaries', i18nKey: 'nav.items.canaries', path: '/admin/canaries', icon: 'mdi:heart-pulse', color: 'text-cyan-400', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Continuous synthetic-transaction monitor' },
-      { name: 'ZKP Audit', i18nKey: 'nav.items.zkpAudit', path: '/admin/attestations', icon: 'mdi:shield-check', color: 'text-emerald-500', requiresAdmin: true, requiredSubFlag: 'platform', authHint: 'Cross-platform ZKP attestation audit + force-revoke' },
-    ]
-  },
-]
 
 // Track which groups are open (persisted in localStorage)
 const openGroups = ref<Set<string>>(new Set())
@@ -339,8 +198,14 @@ onMounted(async () => {
  */
 function revealActiveGroup() {
   for (const group of navGroups) {
-    if (group.items.some(item => isActive(item.path)) && !openGroups.value.has(group.label)) {
-      openGroups.value = new Set(openGroups.value).add(group.label)
+    if (group.items.some(item => isActive(item.path)) && !openGroups.value.has(group.id)) {
+      openGroups.value = new Set(openGroups.value).add(group.id)
+    }
+    if (group.id === 'administration') {
+      for (const sg of adminGroups(group)) {
+        const key = `administration:${sg.flag}`
+        if (sg.items.some(item => isActive(item.path)) && !openGroups.value.has(key)) openGroups.value = new Set(openGroups.value).add(key)
+      }
     }
   }
 }
@@ -363,10 +228,7 @@ function groupHasActive(group: NavGroup): boolean {
 }
 
 // Flat list for backward compat (used by isActive, isItemLocked)
-const navigationItems = computed(() => [
-  ...topItems,
-  ...navGroups.flatMap(g => g.items)
-])
+const navigationItems = computed(() => NAV_ITEMS)
 
 // ─────────────────────────────────────────────────────────────────────────
 // Quick-search (QOL) — a near-invisible nav filter under the identity block.
@@ -394,7 +256,6 @@ const searchResults = computed<SearchHit[]>(() => {
     const score = (idx === 0 ? 0 : 100) + idx
     hits.push({ item, group, score })
   }
-  for (const item of topItems) consider(item, null)
   for (const group of navGroups) {
     const gl = groupLabel(group)
     for (const item of group.items) consider(item, gl)
@@ -451,6 +312,10 @@ function onSearchKeydown(e: KeyboardEvent) {
   } else if (e.key === 'Enter') {
     e.preventDefault()
     openSearchHit(searchResults.value[searchActiveIndex.value])
+  } else if (e.altKey && (e.key === 'p' || e.key === 'P')) {
+    e.preventDefault()
+    const hit = searchResults.value[searchActiveIndex.value]
+    if (hit) void togglePinFor(hit.item)
   } else if (e.key === 'Escape') {
     e.preventDefault()
     if (searchQuery.value) clearSearch()
@@ -487,49 +352,11 @@ onMounted(() => {
 })
 onUnmounted(() => { if (unreadTimer) { clearInterval(unreadTimer); unreadTimer = null } })
 
-// Paths that work for anonymous (logged-out) visitors. When the user is
-// not authenticated, every other nav item appears locked with a "Sign in
-// to access" tooltip. Added 2026-05-08 alongside Leaderboard sidebar fix
-// (P2.1) so anonymous visitors get the chrome but can't activate gated
-// areas. Keep this set small — only routes whose backend allows public
-// access AND whose UX makes sense without auth.
-const PUBLIC_PATHS = new Set<string>([
-  '/leaderboard',
-  '/become-a-backer',           // PB-1: anonymous flow supported (Stripe Checkout w/ email)
-  '/become-a-backer/success',
-  // 2026-05-10 — Founders Wall is a public read-only view of all backers
-  // (anonymized aggregate stats endpoint, no PII). The sidebar was locking
-  // it for anonymous visitors even though the route + backend are public.
-  '/founders-wall',
-  // 2026-05-11 PB-1 §67 — Operator category public pages. /operator is the
-  // unified 4-tab pitch; /frame-commander is the standalone sovereign-frame
-  // request surface. /operator-portal stays gated (owner console). Both
-  // public surfaces are anon-visitor-safe via DashboardLayout child + allowAnonymous.
-  '/operator',
-  '/frame-commander',
-  '/operator/request-frame',  // legacy alias → redirects to /frame-commander
-  // 2026-06-17 — Discover Stocks is the PUBLIC network-wide AGORA equity
-  // screener (route is allowAnonymous; browse needs no auth, passport-buy
-  // self-disables for guests). Was struck-through for anonymous visitors.
-  '/stocks',
-  '/agora/listings',  // §AGORAWORDS (V0419): the listings page's new path; /stocks redirects here
-  // 2026-07-20 — both moved into groups; each is a public read surface
-  // (the Guild board and the Forge arena browse anonymously; acting needs auth).
-  '/guild',
-  '/forge',
-  // V0658 (v): the organizations and their published work records (#/firms), a public page like the leaderboard
-  '/firms',
-])
-
-// Determine if a nav item should be hidden ENTIRELY (not just locked).
-// Currently only used by `requiresFlare` — showing a "My Flare" item to
-// someone who has no flare is noise. PB-1, 2026-05-09.
-const isItemHidden = (item: NavItem): boolean => {
-  if (item.requiresFlare && !authStore.user?.flare_tier) return true
-  if (item.requiresRegistryFlag && !_registryCfg.value[item.requiresRegistryFlag]) return true
-  if (item.hiddenWhenRegistryFlagFalse && (_registryCfg.value as any)[item.hiddenWhenRegistryFlagFalse] === false) return true
-  return false
-}
+// V0662: who sees an entry is ONE rule (services/nav/navAccess, read from the route the entry opens): a visitor sees
+// only what a visitor can open (the routes' requiresAuth false / allowAnonymous: the list this file kept by hand),
+// an admin entry only an admin holding its flag. Hidden, not locked; a member's entry that needs an agent, the
+// mainframe or the euro lane stays locked and says why.
+const isItemHidden = (item: NavItem): boolean => itemState(item) === 'hide'
 
 // §pass66 — mainframe-only gate uses the LOCAL registry's `identity.tier`
 // (via useMainframe). Single source of truth: `mainframeOnlyPaths` Set.
@@ -548,23 +375,7 @@ const _fiatEnabled = computed(() => !!_sharedCfg.value.fiat_onramp_enabled)   //
 // it resolves, so a flagged item never flashes into the nav before we know.
 const _registryCfg = computed(() => _sharedCfg.value as Record<string, any>)
 
-// Determine if a nav item is locked due to missing auth
-const isItemLocked = (item: NavItem): boolean => {
-  if (isMainframeOnlyPath(item.path) && !_localIsMainframe.value) return true
-  if (item.requiresFiat && !_fiatEnabled.value) return true
-  if (item.requiresAgent && !authStore.agentToken) return true
-  // P3.1 (2026-05-08): if a specific admin sub-flag is required, check it
-  // via usePermissions (which honors is_admin super-flag). Falls back to
-  // legacy `requiresAdmin` for items not yet annotated with a sub-flag.
-  if (item.requiredSubFlag) {
-    if (!permissions.can(item.requiredSubFlag)) return true
-  } else if (item.requiresAdmin && !authStore.isAdmin) {
-    return true
-  }
-  // Anonymous user: lock everything outside the public-safe set.
-  if (!authStore.isAuthenticated && !PUBLIC_PATHS.has(item.path)) return true
-  return false
-}
+const isItemLocked = (item: NavItem): boolean => itemState(item) === 'lock'
 
 // RBAC §66 (2026-05-08): floating locked-item tooltip — replaces the
 // pre-§66 inline tooltip that lived inside each <li> with `position:
@@ -578,7 +389,7 @@ const isItemLocked = (item: NavItem): boolean => {
 // position computed from the hovered button's `getBoundingClientRect()`.
 // Anchors to the right edge of the sidebar item with a small left-pointing
 // arrow + a kind-specific accent colour + a 2-line message (title + sub).
-type LockKind = 'auth' | 'mainframe' | 'agent' | 'subflag' | 'admin' | 'fiat' | 'unknown'
+type LockKind = 'auth' | 'mainframe' | 'agent' | 'fiat' | 'unknown'
 interface LockReason {
   kind: LockKind
   title: string
@@ -589,7 +400,7 @@ const hoveredItem = ref<NavItem | null>(null)
 const tooltipPos = ref<{ top: number; left: number } | null>(null)
 let lastHoveredButton: HTMLElement | null = null
 
-function handleItemHover(item: NavItem, event: MouseEvent) {
+function handleItemHover(item: NavItem, event: MouseEvent | FocusEvent) {
   if (!isItemLocked(item)) return
   const btn = event.currentTarget as HTMLElement
   lastHoveredButton = btn
@@ -625,12 +436,8 @@ function clearItemHover() {
 const lockReason = computed<LockReason | null>(() => {
   const item = hoveredItem.value
   if (!item) return null
-  // Anonymous (and the path isn't one of the public-safe set)
-  if (!authStore.isAuthenticated && !PUBLIC_PATHS.has(item.path)) {
-    return { kind: 'auth', title: 'Sign in to unlock', sub: 'Click to go to login →', icon: 'mdi:account-question-outline' }
-  }
   // §pass66 — Mainframe-only path on a non-mainframe registry
-  if (isMainframeOnlyPath(item.path) && !_localIsMainframe.value) {
+  if ((item.mainframeOnly || isMainframeOnlyPath(item.path)) && !_localIsMainframe.value) {
     return { kind: 'mainframe', title: 'Mainframe-only feature', sub: 'Federate with the mainframe for this — not available on cloud-ops', icon: 'mdi:server-off' }
   }
   // §FLARESHOP — the euro lane is not enabled on this registry
@@ -642,14 +449,6 @@ const lockReason = computed<LockReason | null>(() => {
   // Agent-required without an active agent
   if (item.requiresAgent && !authStore.agentToken) {
     return { kind: 'agent', title: 'Active agent required', sub: 'Pick one from the top-right →', icon: 'mdi:robot-confused-outline' }
-  }
-  // Sub-flag mismatch
-  if (item.requiredSubFlag && !permissions.can(item.requiredSubFlag)) {
-    return { kind: 'subflag', title: `Requires admin_${item.requiredSubFlag}`, sub: 'Ask Commander to grant the flag', icon: 'mdi:shield-lock-outline' }
-  }
-  // Legacy super-flag check
-  if (item.requiresAdmin && !authStore.isAdmin) {
-    return { kind: 'admin', title: 'Admin only', sub: 'Ask Commander to grant admin', icon: 'mdi:shield-account-outline' }
   }
   // Fallback — show authHint if present, otherwise generic
   return { kind: 'unknown', title: item.authHint || 'Locked', sub: '', icon: 'mdi:information-outline' }
@@ -682,6 +481,7 @@ function retryAccount() { return authStore.refreshProfile() }
 // Extended profile (display_name + avatar_url from /developers/me)
 const profileDisplayName = ref('')
 const profileAvatarUrl   = ref('')
+const profileTitle       = ref('')   // V0665: the contributor title worn (from /developers/me)
 
 const sidebarName = computed(() =>
   profileDisplayName.value || currentUser.value?.name || currentUser.value?.email || ''
@@ -692,6 +492,10 @@ const sidebarInitials = computed(() => {
   return src.split(/\s+/).map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
 })
 
+// V0665: wearing a title elsewhere (the track, the flare manager) updates the line under the name at once
+function onTitle(e: Event) { profileTitle.value = String((e as CustomEvent).detail || '') }
+onMounted(() => window.addEventListener('ct:title', onTitle))
+onUnmounted(() => window.removeEventListener('ct:title', onTitle))
 onMounted(async () => {
   // Skip /developers/me for anonymous visitors (Leaderboard public route).
   // Without this guard, anonymous would 401 on every sidebar mount.
@@ -700,6 +504,7 @@ onMounted(async () => {
     const res = await apiClient.get('/developers/me')
     profileDisplayName.value = res.data.display_name || ''
     profileAvatarUrl.value   = res.data.avatar_url   || ''
+    profileTitle.value       = res.data.flare_title   || ''
   } catch { /* expected */ }
 })
 
@@ -823,6 +628,8 @@ const toggleSidebar = () => {
             <p class="sidebar-user-role">
               {{ currentUser.role }}
             </p>
+            <!-- V0665 the contributor track: the title worn under the name (the plate at the size drawn for this block) -->
+            <WornTitle :title="profileTitle" :flare-tier="currentUser?.flare_tier" size="sidebar" class="sidebar-user-title" data-testid="sidebar-title" />
           </div>
         </div>
       </div>
@@ -862,7 +669,7 @@ const toggleSidebar = () => {
         </div>
 
         <ul v-if="searchQuery && searchResults.length" class="sidebar-qs-results">
-          <li v-for="(hit, i) in searchResults" :key="hit.item.path">
+          <li v-for="(hit, i) in searchResults" :key="hit.item.path" class="sidebar-row">
             <button
               class="sidebar-qs-hit"
               :class="{ 'sidebar-qs-hit--active': i === searchActiveIndex }"
@@ -876,6 +683,12 @@ const toggleSidebar = () => {
                 </template>
               </span>
               <span v-if="hit.group" class="sidebar-qs-hit-group">{{ hit.group }}</span>
+            </button>
+            <!-- V0662: the search finds and pins every item; Alt+P pins the highlighted one -->
+            <button type="button" class="sidebar-pin" :class="{ 'sidebar-pin--on': navPins.isPinned(hit.item.path) }"
+                    data-testid="nav-pin-toggle" :aria-pressed="navPins.isPinned(hit.item.path)" :aria-label="pinLabel(hit.item)"
+                    :title="pinLabel(hit.item)" :disabled="pinBusy" @mousedown.prevent="togglePinFor(hit.item)">
+              <Icon :icon="navPins.isPinned(hit.item.path) ? 'mdi:pin' : 'mdi:pin-outline'" class="w-3.5 h-3.5" />
             </button>
           </li>
         </ul>
@@ -910,55 +723,109 @@ const toggleSidebar = () => {
            in icons-only mode where button paddings sum slightly above 4rem
            (user-feedback 2026-05-07). -->
       <nav class="flex-1 overflow-y-auto overflow-x-hidden p-4">
-        <!-- Top-level items (always visible) -->
-        <ul class="space-y-1 mb-3">
-          <li v-for="item in topItems" :key="item.path">
+        <!-- V0662: the Pinned block (defaults Mission Control, OurChat, Pocket mode; drag to reorder, or
+             Alt+Arrow keys; the pins follow the account). A visitor has no account and no pins. -->
+        <ul v-if="pinnedItems.length" class="space-y-1 mb-3 sidebar-pinned" data-testid="nav-pinned"
+            :aria-label="t('nav.pins.title', 'Pinned')">
+          <li v-for="(item, index) in pinnedItems" :key="'pin:' + item.path" class="sidebar-row"
+              :class="{ 'sidebar-row--drag': dragPath === item.path }"
+              :draggable="!isCollapsed" @dragstart="(e) => onPinDragStart(item, e)" @dragover.prevent @drop.prevent="onPinDrop(index)">
             <button
-              @click="navigate(item.path)"
+              @click="isItemLocked(item) ? handleLockedClick(item) : navigate(item.path)"
+              @keydown="(e) => onPinKeydown(e, item, index)"
               :data-tour="'nav-' + item.path.replace(/^\//,'').replace(/\//g,'-')"
-              :class="['sidebar-nav-item w-full flex items-center px-3 py-2 rounded-lg transition-all', isActive(item.path) ? 'sidebar-nav-active' : 'sidebar-nav-inactive']"
+              :class="['sidebar-nav-item w-full flex items-center px-3 py-2 rounded-lg transition-all', isItemLocked(item) ? 'sidebar-nav-locked' : (isActive(item.path) ? 'sidebar-nav-active' : 'sidebar-nav-inactive')]"
               :title="isCollapsed ? itemLabel(item) : undefined"
             >
               <Icon :icon="item.icon" :class="`w-5 h-5 shrink-0 ${isActive(item.path) ? 'sidebar-icon-active' : 'sidebar-icon-inactive'}`" />
               <span v-if="!isCollapsed" class="sidebar-nav-label ml-3">{{ itemLabel(item) }}</span>
+              <span v-if="!isCollapsed && badgeCount(item) > 0" class="sidebar-badge" data-testid="nav-badge-chat"
+                    :aria-label="String(badgeCount(item))">{{ badgeCount(item) > 99 ? '99+' : badgeCount(item) }}</span>
+              <span v-else-if="isCollapsed && badgeCount(item) > 0" class="sidebar-badge-dot" data-testid="nav-badge-chat-dot" />
+            </button>
+            <button v-if="!isCollapsed" type="button" class="sidebar-pin sidebar-pin--on" data-testid="nav-pin-toggle"
+                    :aria-pressed="true" :aria-label="pinLabel(item)" :title="pinLabel(item)" :disabled="pinBusy"
+                    @click.stop="togglePinFor(item)">
+              <Icon icon="mdi:pin" class="w-3.5 h-3.5" />
             </button>
           </li>
         </ul>
 
         <!-- Grouped navigation -->
-        <div v-for="group in navGroups" :key="group.label" class="mb-1">
+        <div v-for="group in visibleGroups" :key="group.id" class="mb-1" :data-nav-group="group.id">
           <!-- Group header -->
           <button
-            @click="isCollapsed ? undefined : toggleGroup(group.label)"
+            @click="isCollapsed ? undefined : toggleGroup(group.id)"
             :class="['sidebar-group-header w-full flex items-center px-3 py-1.5 rounded-md transition-all', groupHasActive(group) ? 'sidebar-group-active' : '']"
             :title="isCollapsed ? groupLabel(group) : undefined"
           >
             <Icon :icon="group.icon" :class="`w-4 h-4 shrink-0 ${groupHasActive(group) ? 'sidebar-icon-active' : 'sidebar-group-icon'}`" />
             <span v-if="!isCollapsed" class="sidebar-group-label ml-3 flex-1 text-left">{{ groupLabel(group) }}</span>
-            <Icon v-if="!isCollapsed" icon="mdi:chevron-down" :class="['w-4 h-4 sidebar-group-chevron transition-transform', isGroupOpen(group.label) ? 'rotate-180' : '']" />
+            <Icon v-if="!isCollapsed" icon="mdi:chevron-down" :class="['w-4 h-4 sidebar-group-chevron transition-transform', isGroupOpen(group.id) ? 'rotate-180' : '']" />
           </button>
 
-          <!-- Group items (collapsible) -->
-          <ul v-if="!isCollapsed && isGroupOpen(group.label)" class="space-y-0.5 mt-0.5 ml-2 pl-2 sidebar-group-items">
-            <li v-for="item in group.items" :key="item.path" v-show="!isItemHidden(item)">
-              <button
-                @click="isItemLocked(item) ? handleLockedClick(item) : navigate(item.path)"
-                :data-tour="'nav-' + item.path.replace(/^\//,'').replace(/\//g,'-')"
-                @mouseenter="(e) => handleItemHover(item, e)"
-                @mouseleave="clearItemHover"
-                @focus="(e) => handleItemHover(item, e)"
-                @blur="clearItemHover"
-                :class="['sidebar-nav-item w-full flex items-center px-3 py-1.5 rounded-lg transition-all text-sm', isItemLocked(item) ? 'sidebar-nav-locked' : (isActive(item.path) ? 'sidebar-nav-active' : 'sidebar-nav-inactive')]"
-                :style="isItemLocked(item) ? 'cursor: not-allowed;' : ''"
-                :aria-describedby="isItemLocked(item) && hoveredItem?.path === item.path ? 'sff-tooltip' : undefined"
-              >
-                <Icon :icon="isItemLocked(item) ? 'mdi:shield-lock' : item.icon" :class="`w-4 h-4 shrink-0 ${isItemLocked(item) ? 'sidebar-icon-locked' : (isActive(item.path) ? 'sidebar-icon-active' : 'sidebar-icon-inactive')}`" />
-                <span class="sidebar-nav-label ml-2.5" :class="{ 'sidebar-label-locked': isItemLocked(item) }">{{ itemLabel(item) }}</span>
-                <span v-if="badgeCount(item) > 0" class="sidebar-badge" data-testid="nav-badge-chat"
-                      :aria-label="String(badgeCount(item))">{{ badgeCount(item) > 99 ? '99+' : badgeCount(item) }}</span>
-              </button>
-            </li>
-          </ul>
+          <!-- Group items (collapsible). V0662: Administration in collapsible sub-groups, one per admin flag; each entry
+               has a pin toggle (pin any item from its category). -->
+          <template v-if="!isCollapsed && isGroupOpen(group.id)">
+            <div v-if="group.id === 'administration'" class="mt-0.5 ml-2 pl-2 sidebar-group-items">
+              <div v-for="sg in adminGroups(group)" :key="sg.flag" class="sidebar-subgroup" data-testid="nav-admin-subgroup" :data-flag="sg.flag">
+                <button type="button" class="sidebar-subgroup-header w-full flex items-center px-2 py-1 rounded-md"
+                        :aria-expanded="isGroupOpen('administration:' + sg.flag)" @click="toggleGroup('administration:' + sg.flag)">
+                  <span class="flex-1 text-left">{{ adminGroupLabel(sg.flag) }}</span>
+                  <span class="sidebar-subgroup-count">{{ sg.items.length }}</span>
+                  <Icon icon="mdi:chevron-down" :class="['w-3.5 h-3.5 sidebar-group-chevron transition-transform', isGroupOpen('administration:' + sg.flag) ? 'rotate-180' : '']" />
+                </button>
+                <ul v-if="isGroupOpen('administration:' + sg.flag)" class="space-y-0.5 mt-0.5">
+                  <li v-for="item in sg.items" :key="item.path" class="sidebar-row">
+                    <button
+                      @click="isItemLocked(item) ? handleLockedClick(item) : navigate(item.path)"
+                      :data-tour="'nav-' + item.path.replace(/^\//,'').replace(/\//g,'-')"
+                      @mouseenter="(e) => handleItemHover(item, e)"
+                      @mouseleave="clearItemHover"
+                      @focus="(e) => handleItemHover(item, e)"
+                      @blur="clearItemHover"
+                      :class="['sidebar-nav-item w-full flex items-center px-3 py-1.5 rounded-lg transition-all text-sm', isItemLocked(item) ? 'sidebar-nav-locked' : (isActive(item.path) ? 'sidebar-nav-active' : 'sidebar-nav-inactive')]"
+                      :style="isItemLocked(item) ? 'cursor: not-allowed;' : ''"
+                      :aria-describedby="isItemLocked(item) && hoveredItem?.path === item.path ? 'sff-tooltip' : undefined"
+                    >
+                      <Icon :icon="isItemLocked(item) ? 'mdi:shield-lock' : item.icon" :class="`w-4 h-4 shrink-0 ${isItemLocked(item) ? 'sidebar-icon-locked' : (isActive(item.path) ? 'sidebar-icon-active' : 'sidebar-icon-inactive')}`" />
+                      <span class="sidebar-nav-label ml-2.5" :class="{ 'sidebar-label-locked': isItemLocked(item) }">{{ itemLabel(item) }}</span>
+                    </button>
+                    <button type="button" class="sidebar-pin" :class="{ 'sidebar-pin--on': navPins.isPinned(item.path) }" data-testid="nav-pin-toggle"
+                            :aria-pressed="navPins.isPinned(item.path)" :aria-label="pinLabel(item)" :title="pinLabel(item)" :disabled="pinBusy"
+                            @click.stop="togglePinFor(item)">
+                      <Icon :icon="navPins.isPinned(item.path) ? 'mdi:pin' : 'mdi:pin-outline'" class="w-3.5 h-3.5" />
+                    </button>
+                  </li>
+                </ul>
+              </div>
+            </div>
+            <ul v-else class="space-y-0.5 mt-0.5 ml-2 pl-2 sidebar-group-items">
+              <li v-for="item in group.items" :key="item.path" v-show="!isItemHidden(item)" class="sidebar-row">
+                <button
+                  @click="isItemLocked(item) ? handleLockedClick(item) : navigate(item.path)"
+                  :data-tour="'nav-' + item.path.replace(/^\//,'').replace(/\//g,'-')"
+                  @mouseenter="(e) => handleItemHover(item, e)"
+                  @mouseleave="clearItemHover"
+                  @focus="(e) => handleItemHover(item, e)"
+                  @blur="clearItemHover"
+                  :class="['sidebar-nav-item w-full flex items-center px-3 py-1.5 rounded-lg transition-all text-sm', isItemLocked(item) ? 'sidebar-nav-locked' : (isActive(item.path) ? 'sidebar-nav-active' : 'sidebar-nav-inactive')]"
+                  :style="isItemLocked(item) ? 'cursor: not-allowed;' : ''"
+                  :aria-describedby="isItemLocked(item) && hoveredItem?.path === item.path ? 'sff-tooltip' : undefined"
+                >
+                  <Icon :icon="isItemLocked(item) ? 'mdi:shield-lock' : item.icon" :class="`w-4 h-4 shrink-0 ${isItemLocked(item) ? 'sidebar-icon-locked' : (isActive(item.path) ? 'sidebar-icon-active' : 'sidebar-icon-inactive')}`" />
+                  <span class="sidebar-nav-label ml-2.5" :class="{ 'sidebar-label-locked': isItemLocked(item) }">{{ itemLabel(item) }}</span>
+                  <span v-if="badgeCount(item) > 0" class="sidebar-badge" data-testid="nav-badge-chat"
+                        :aria-label="String(badgeCount(item))">{{ badgeCount(item) > 99 ? '99+' : badgeCount(item) }}</span>
+                </button>
+                <button v-if="authStore.isAuthenticated" type="button" class="sidebar-pin" :class="{ 'sidebar-pin--on': navPins.isPinned(item.path) }"
+                        data-testid="nav-pin-toggle" :aria-pressed="navPins.isPinned(item.path)" :aria-label="pinLabel(item)" :title="pinLabel(item)"
+                        :disabled="pinBusy" @click.stop="togglePinFor(item)">
+                  <Icon :icon="navPins.isPinned(item.path) ? 'mdi:pin' : 'mdi:pin-outline'" class="w-3.5 h-3.5" />
+                </button>
+              </li>
+            </ul>
+          </template>
 
           <!-- Collapsed: show group icon only, auto-expand on hover could be added later -->
           <ul v-if="isCollapsed" class="space-y-0.5 mt-0.5">
@@ -978,6 +845,16 @@ const toggleSidebar = () => {
             </li>
           </ul>
         </div>
+
+        <!-- V0664: the newest public announcements, where a visitor has only a sign-in line (nothing when there are none) -->
+        <PublicAnnouncementsStrip v-if="!authStore.isAuthenticated && !isCollapsed" />
+
+        <!-- V0662: a visitor sees only what a visitor can open, and one line for the rest -->
+        <button v-if="!authStore.isAuthenticated && !isCollapsed" type="button" class="sidebar-guest-line w-full text-left px-3 py-2 mt-2"
+                data-testid="nav-guest-signin" @click="router.push('/login')">
+          <Icon icon="mdi:login" class="w-4 h-4 shrink-0" />
+          <span>{{ t('nav.anon.signInLine', 'Sign in for your agents, OurChat and the rest') }}</span>
+        </button>
       </nav>
 
       <!-- Bottom Section -->
@@ -993,6 +870,22 @@ const toggleSidebar = () => {
           <span v-if="!isCollapsed" class="sidebar-nav-label ml-3">{{ bottomItemLabel(item) }}</span>
         </button>
         
+        <!-- V0662: Pocket mode, also a switch in the footer; the desktop shell is the "off" side -->
+        <button
+          v-if="authStore.isAuthenticated"
+          type="button"
+          role="switch"
+          :aria-checked="false"
+          data-testid="nav-pocket-switch"
+          class="sidebar-nav-item sidebar-nav-inactive w-full flex items-center px-3 py-2 rounded-lg transition-all"
+          :title="isCollapsed ? t('nav.items.pocketMode', 'Pocket mode') : undefined"
+          @click="switchToPocket"
+        >
+          <Icon icon="mdi:cellphone" class="w-5 h-5 shrink-0 sidebar-icon-inactive" />
+          <span v-if="!isCollapsed" class="sidebar-nav-label ml-3 flex-1 text-left">{{ t('nav.items.pocketMode', 'Pocket mode') }}</span>
+          <span v-if="!isCollapsed" class="sidebar-switch" aria-hidden="true"><span class="sidebar-switch-knob" /></span>
+        </button>
+
         <!-- Theme cycle button (aggressive red / neural cyan / …future themes) -->
         <button
           @click="uiStore.cycleBrandTheme"
@@ -1360,6 +1253,7 @@ const toggleSidebar = () => {
   color: rgba(255, 255, 255, 0.88);
   letter-spacing: 0.01em;
 }
+.sidebar-user-title { margin-top: 4px; }
 .sidebar-user-role {
   font-size: 0.6rem;
   letter-spacing: 0.18em;
@@ -1793,5 +1687,48 @@ nav::-webkit-scrollbar-thumb:hover {
   }
   .sidebar-nav-inactive:hover,
   .sidebar-logout:hover { transform: none; }
+}
+
+/* ─── V0662 sidebar: pins, admin sub-groups, the visitor's line, the Pocket switch ─── */
+.sidebar-row { position: relative; }
+.sidebar-row > .sidebar-nav-item, .sidebar-row > .sidebar-qs-hit { padding-right: 1.9rem; }
+.sidebar-pin {
+  position: absolute; top: 50%; right: 4px; transform: translateY(-50%);
+  width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 6px; border: 1px solid transparent; background: transparent;
+  color: rgba(var(--nc-primary-rgb), 0.55); opacity: 0; cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+/* shown on the row's hover and to the keyboard; a pinned entry always says so */
+.sidebar-row:hover .sidebar-pin, .sidebar-pin:focus-visible, .sidebar-pin--on { opacity: 1; }
+.sidebar-pin:hover { background: rgba(var(--nc-primary-rgb), 0.12); color: rgb(var(--nc-primary-rgb)); }
+.sidebar-pin:focus-visible { outline: 2px solid rgba(var(--nc-primary-rgb), 0.85); outline-offset: 1px; }
+.sidebar-pin--on { color: rgb(var(--nc-primary-rgb)); }
+.sidebar-pin:disabled { cursor: progress; }
+@media (hover: none) { .sidebar-pin { opacity: 1; } }
+.sidebar-pinned { padding-bottom: 0.5rem; border-bottom: 1px solid rgba(var(--nc-primary-rgb), 0.12); }
+.sidebar-pinned .sidebar-row[draggable="true"] { cursor: grab; }
+.sidebar-row--drag { opacity: 0.5; }
+.sidebar-subgroup + .sidebar-subgroup { margin-top: 0.15rem; }
+.sidebar-subgroup-header {
+  font-size: 0.68rem; letter-spacing: 0.04em; color: rgba(255, 255, 255, 0.62);
+  background: transparent; border: 0; cursor: pointer; gap: 0.4rem;
+}
+.sidebar-subgroup-header:hover { color: rgb(var(--nc-primary-rgb)); }
+.sidebar-subgroup-header:focus-visible { outline: 2px solid rgba(var(--nc-primary-rgb), 0.85); outline-offset: 1px; }
+.sidebar-subgroup-count { font-size: 0.6rem; opacity: 0.6; font-variant-numeric: tabular-nums; }
+.sidebar-guest-line {
+  display: flex; align-items: center; gap: 0.5rem; font-size: 0.74rem; border-radius: 8px;
+  color: rgba(var(--nc-primary-rgb), 0.85); background: rgba(var(--nc-primary-rgb), 0.06);
+  border: 1px dashed rgba(var(--nc-primary-rgb), 0.3); cursor: pointer;
+}
+.sidebar-guest-line:hover { background: rgba(var(--nc-primary-rgb), 0.12); }
+.sidebar-switch {
+  position: relative; width: 26px; height: 14px; border-radius: 999px; flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.sidebar-switch-knob {
+  position: absolute; top: 1px; left: 1px; width: 10px; height: 10px; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
 }
 </style>

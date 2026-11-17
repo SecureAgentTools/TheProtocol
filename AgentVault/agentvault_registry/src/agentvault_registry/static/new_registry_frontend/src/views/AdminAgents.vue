@@ -1141,6 +1141,7 @@ onBeforeUnmount(() => {
               :indeterminate.prop="someVisibleSelected"
               @change="toggleSelectAll"
               :title="allVisibleSelected ? 'Deselect all visible' : 'Select all visible'"
+              :aria-label="allVisibleSelected ? 'Deselect all visible' : 'Select all visible'"
             />
           </th>
           <th>{{ t('adminAgentsView.table.name') }}</th>
@@ -1173,6 +1174,7 @@ onBeforeUnmount(() => {
               :checked="selectedDids.includes(a.did)"
               @change="toggleSelectOne(a.did)"
               :title="`Select ${a.name || a.did}`"
+              :aria-label="`Select ${a.name || a.did}`"
             />
           </td>
           <td><span class="aa-name">{{ a.name || '—' }}</span></td>
@@ -1977,7 +1979,7 @@ onBeforeUnmount(() => {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;color:#e2e8f0;font-weight:600">
           <span style="display:flex;flex-direction:column;gap:2px;min-width:0">
             <span>Agent Access (admin)</span>
-            <span style="font-size:10px;font-weight:400;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ accessDid }}</span>
+            <span style="font-size:10px;font-weight:400;color:var(--nc-text-muted, #8f9399);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ accessDid }}</span>
           </span>
           <button style="background:none;border:none;color:#94a3b8;font-size:1.5rem;line-height:1;cursor:pointer" @click="accessDid = null">×</button>
         </div>
@@ -2037,7 +2039,7 @@ onBeforeUnmount(() => {
 .aa-stat-warn { border-top-color: #f59e0b; }
 .aa-stat-bad { border-top-color: #ef4444; }
 .aa-stat-muted { border-top-color: rgba(148, 163, 184, 0.3); }
-.aa-stat-label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; }
+.aa-stat-label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--nc-text-muted, #8f9399); }
 .aa-stat-value { font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 700; color: #e2e8f0; }
 
 .aa-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; position: relative; z-index: 1; }
@@ -2081,7 +2083,7 @@ onBeforeUnmount(() => {
 .aa-table thead th {
   background: rgba(15, 23, 42, 0.8); padding: 10px 8px; text-align: left;
   font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600;
-  letter-spacing: 0.1em; text-transform: uppercase; color: #64748b;
+  letter-spacing: 0.1em; text-transform: uppercase; color: var(--nc-text-muted, #8f9399);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 .aa-table tbody td { padding: 10px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.04); vertical-align: middle; }
@@ -2150,7 +2152,7 @@ onBeforeUnmount(() => {
   100% { background-position: -200% 0; }
 }
 .aa-num { text-align: right; font-variant-numeric: tabular-nums; color: #cbd5e1; font-family: 'IBM Plex Mono', monospace; }
-.aa-dim { color: #7d8aa0; font-size: 11px; }  /* §FESUITE: 5.3:1 on the table (#64748b was 3.9:1, 40 cells) */
+.aa-dim { color: #7d8aa0; font-size: 11px; }  /* §FESUITE: 5.3:1 on the table (var(--nc-text-muted, #8f9399) was 3.9:1, 40 cells) */
 .aa-owner { color: #94a3b8; font-size: 11px; }
 .aa-owner-deleted { color: #f87171; text-decoration: line-through; }
 .aa-mono { font-family: 'IBM Plex Mono', monospace; font-size: 11px; cursor: pointer; }
@@ -2166,7 +2168,7 @@ onBeforeUnmount(() => {
 .aa-rep-high { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
 .aa-rep-med { background: rgba(0, 210, 210, 0.15); color: #00d2d2; }
 .aa-rep-low { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
-.aa-rep-none { background: rgba(148, 163, 184, 0.1); color: #64748b; }
+.aa-rep-none { background: rgba(148, 163, 184, 0.1); color: var(--nc-text-muted, #8f9399); }
 
 .aa-icon-on { color: #22c55e; }
 .aa-icon-off { color: #475569; }
@@ -2186,7 +2188,7 @@ onBeforeUnmount(() => {
 .aa-btn-danger { background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: #f87171; }
 .aa-btn-cyan { background: rgba(0, 210, 210, 0.1); border-color: rgba(0, 210, 210, 0.3); color: var(--nc-primary, #00d2d2); }
 
-.aa-empty { text-align: center; padding: 40px; color: #64748b; }
+.aa-empty { text-align: center; padding: 40px; color: var(--nc-text-muted, #8f9399); }
 .aa-pagination { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-top: 1px solid rgba(255, 255, 255, 0.05); background: rgba(15, 23, 42, 0.4); }
 
 /* Drawer */
@@ -2205,10 +2207,10 @@ onBeforeUnmount(() => {
 .aa-drawer-body { flex: 1; overflow-y: auto; padding: 18px 20px; }
 .aa-tab-pane { font-size: 13px; }
 .aa-kv { display: grid; grid-template-columns: 170px 1fr; gap: 8px 16px; }
-.aa-kv dt { color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+.aa-kv dt { color: var(--nc-text-muted, #8f9399); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
 .aa-kv dd { color: #e2e8f0; margin: 0; }
 .aa-sub-table { width: 100%; font-size: 11px; border-collapse: collapse; }
-.aa-sub-table th { text-align: left; padding: 6px 8px; color: #64748b; font-size: 10px; text-transform: uppercase; }
+.aa-sub-table th { text-align: left; padding: 6px 8px; color: var(--nc-text-muted, #8f9399); font-size: 10px; text-transform: uppercase; }
 .aa-sub-table td { padding: 6px 8px; border-top: 1px solid rgba(255, 255, 255, 0.04); }
 .aa-activity-data { background: rgba(0, 0, 0, 0.3); padding: 10px; border-radius: 4px; font-size: 10px; color: #94a3b8; overflow-x: auto; }
 .aa-drawer-footer { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid rgba(255, 255, 255, 0.08); background: rgba(15, 23, 42, 0.6); flex-wrap: wrap; }
@@ -2340,7 +2342,7 @@ onBeforeUnmount(() => {
 .aa-sig-jws.aa-sig-on { color: #38bdf8; border-color: rgba(56, 189, 248, 0.35); background: rgba(56, 189, 248, 0.06); }
 .aa-sig-pull-fresh { color: #4ade80; border-color: rgba(74, 222, 128, 0.35); background: rgba(74, 222, 128, 0.06); }
 .aa-sig-pull-stale { color: #facc15; border-color: rgba(250, 204, 21, 0.35); background: rgba(250, 204, 21, 0.06); }
-.aa-sig-pull-never { color: #64748b; border-color: rgba(100, 116, 139, 0.3); }
+.aa-sig-pull-never { color: var(--nc-text-muted, #8f9399); border-color: rgba(100, 116, 139, 0.3); }
 .aa-sig-drift {
   color: #fbbf24;
   border-color: rgba(251, 191, 36, 0.45);
@@ -2467,7 +2469,7 @@ onBeforeUnmount(() => {
 .aa-cs-note {
   font-size: 11px;
   margin: 10px 0 0;
-  color: #64748b;
+  color: var(--nc-text-muted, #8f9399);
 }
 .aa-cs-note code {
   background: rgba(56, 189, 248, 0.1);
@@ -2509,7 +2511,7 @@ onBeforeUnmount(() => {
 .aa-diff-col-title {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 10px;
-  color: #64748b;
+  color: var(--nc-text-muted, #8f9399);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   margin-bottom: 4px;

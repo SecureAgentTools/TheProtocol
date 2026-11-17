@@ -109,7 +109,7 @@
       <div class="cicd-c5-section">
         <div class="cicd-c5-section-header">
           <span>{{ t('agentCicdView.c5.drift.title') }}</span>
-          <button class="cicd-btn cicd-btn-ghost cicd-btn-sm" @click="forceDriftRefresh">{{ t('agentCicdView.c5.drift.refreshBtn') }}</button>
+          <button v-if="canPlatform" class="cicd-btn cicd-btn-ghost cicd-btn-sm" @click="forceDriftRefresh">{{ t('agentCicdView.c5.drift.refreshBtn') }}</button>
         </div>
         <div v-if="driftRefreshMsg" style="font-size:11px;color:var(--cicd-text-muted);">{{ driftRefreshMsg }}</div>
         <div v-if="driftEvents.length">
@@ -540,6 +540,7 @@ import { apiClient } from '@/services/api/client'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import { useAuthStore } from '@/stores/auth'
+import { hasAdminFlag } from '@/composables/usePermissions'
 dayjs.extend(relativeTime)
 
 const { t, tp } = useI18n()
@@ -806,6 +807,8 @@ const flagsForAgent = ref<AgentFlag[]>([])
 const rotateMsg = ref('')
 const authStore = useAuthStore()
 const isAdmin = computed(() => !!(authStore as any).user?.is_admin)
+// the drift refresh and the key rotation are admin_platform routes
+const canPlatform = computed(() => hasAdminFlag((authStore as any).user, 'platform'))
 const flagsReadable = ref(false)
 const openFlags = computed(() => flagsForAgent.value.filter(f => !f.acknowledged_at))
 function hasOpenFlag(type: string): boolean { return openFlags.value.some(f => f.flag_type === type) }
@@ -841,6 +844,7 @@ async function loadC5Data() {
 }
 
 async function forceDriftRefresh() {
+  if (!canPlatform.value) return   // V0662 admin guard (layer 3): a member's page never asks an admin route (CrowdSec counts each refusal)
   driftRefreshMsg.value = 'Refreshing…'
   try {
     await apiClient.post(`/admin/agent-card-drift/${encodeURIComponent(agentDid.value)}/refresh`)
@@ -853,6 +857,7 @@ async function forceDriftRefresh() {
 }
 
 async function rotateKey() {
+  if (!canPlatform.value) return
   if (!window.confirm('Rotate signing key for this agent? This is permanent (old key expires after grace period).')) return
   rotateMsg.value = ''
   try {

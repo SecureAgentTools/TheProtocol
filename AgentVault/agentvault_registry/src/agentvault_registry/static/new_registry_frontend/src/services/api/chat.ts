@@ -31,9 +31,12 @@ export interface ChatApiError extends Error {
 async function call(method: string, path: string, token: string | null, body?: any): Promise<any> {
   const headers: Record<string, string> = {}
   if (token) headers.Authorization = `Bearer ${token}`
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  // V0662: a FormData goes out as it is. Its Content-Type carries the multipart BOUNDARY and only the browser knows
+  // it, so naming one here (or stringifying the form) sends a body the registry cannot read.
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData
+  if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json'
   const r = await fetch(`/api/v1/chat${path}`, {
-    method, headers, body: body === undefined ? undefined : JSON.stringify(body),
+    method, headers, body: body === undefined ? undefined : (isForm ? body : JSON.stringify(body)),
   })
   let data: any = null
   try { data = await r.json() } catch { /* empty body */ }
@@ -65,7 +68,7 @@ export interface TargetSpec {
 }
 
 export const chatApi = {
-  listConversations(token: string, state: 'active' | 'requests' = 'active', cursor?: string, limit = 30) {
+  listConversations(token: string, state: 'active' | 'requests' | 'archived' = 'active', cursor?: string, limit = 30) {
     const q = new URLSearchParams({ state, limit: String(limit) })
     if (cursor) q.set('cursor', cursor)
     return call('GET', `/conversations?${q}`, token)
@@ -118,9 +121,32 @@ export const chatApi = {
     return call('GET', `/conversations/${conversationId}/messages?${q}`, token)
   },
 
+  /** V0663 (order 418): the messages of this thread that name the caller (the registry's mentions=me read, newest first). */
+  getMentionsMe(token: string, conversationId: string, limit = 50) {
+    const q = new URLSearchParams({ limit: String(limit), mentions: 'me' })
+    return call('GET', `/conversations/${conversationId}/messages?${q}`, token)
+  },
+
+  /** V0663 (order 418): the newest unread messages that name the caller across their rooms, with the total (the bell). */
+  unreadMentions(token: string, limit = 20) {
+    return call('GET', `/mentions?limit=${limit}`, token)
+  },
+
   postMessage(token: string, conversationId: string,
               payload: { kind: 'text' | 'card'; body?: string; card?: any; client_ref: string; reply_to?: string }) {
     return call('POST', `/conversations/${conversationId}/messages`, token, payload)
+  },
+
+  /** V0662: store a file for this thread. Uploading posts nothing: the answer carries the attachment's pointer and the
+   *  `card` to send next as a `kind: 'card'` message, so a failed upload never leaves a half-message in the room
+   *  (routers/chat.py upload_attachment; chat_link does the same two steps). The registry takes text, markdown, PDF
+   *  and images up to 5 MB. */
+  uploadAttachment(token: string, conversationId: string, file: Blob, name?: string) {
+    const form = new FormData()
+    // The name travels on a File of its own: `append(name, blob, filename)` renames in a browser but not in every
+    // environment that builds a FormData, and the registry derives the stored extension from this name.
+    form.append('file', new File([file], name || (file as File).name || 'file', { type: file.type }))
+    return call('POST', `/conversations/${conversationId}/attachments`, token, form)
   },
 
   /** V0654 (ap): ask your personal assistant to answer in this room as the identity of `token` (you, or your agent
@@ -179,6 +205,45 @@ export const chatApi = {
   cardHistory(token: string, conversationId: string, messageId: string) {
     return call('GET', `/conversations/${conversationId}/messages/${encodeURIComponent(messageId)}/card/history`, token)
   },
+  /** V0662: the thread's pins (newest first), `can_pin`, `max`; PUT / DELETE .../pin pins or unpins a message. */
+  listPins(token: string, conversationId: string) {
+    return call('GET', `/conversations/${conversationId}/pins`, token)
+  },
+  pinMessage(token: string, conversationId: string, messageId: string) {
+    return call('PUT', `/conversations/${conversationId}/messages/${encodeURIComponent(messageId)}/pin`, token)
+  },
+  unpinMessage(token: string, conversationId: string, messageId: string) {
+    return call('DELETE', `/conversations/${conversationId}/messages/${encodeURIComponent(messageId)}/pin`, token)
+  },
+  /** V0662: text lines of one thread holding the words (newest first; `before_seq` continues). */
+  searchMessages(token: string, conversationId: string, q: string, beforeSeq?: number) {
+    const qs = new URLSearchParams({ q })
+    if (beforeSeq) qs.set('before_seq', String(beforeSeq))
+    return call('GET', `/conversations/${conversationId}/search?${qs.toString()}`, token)
+  },
+  /** V0662: the session board of an organization's room (the organization's owners and admins; 403 otherwise). */
+  agentStatus(token: string, conversationId: string) {
+    return call('GET', `/conversations/${conversationId}/agent-status`, token)
+  },
+  /** V0662: put a reaction word on a message (answers { reactions, added }); DELETE takes it off. */
+  addReaction(token: string, conversationId: string, messageId: string, word: string) {
+    return call('PUT', `/conversations/${conversationId}/messages/${encodeURIComponent(messageId)}/reactions/${encodeURIComponent(word)}`, token)
+  },
+  removeReaction(token: string, conversationId: string, messageId: string, word: string) {
+    return call('DELETE', `/conversations/${conversationId}/messages/${encodeURIComponent(messageId)}/reactions/${encodeURIComponent(word)}`, token)
+  },
+  /** V0662: change the text of your own message inside the registry's window (answers { message, changed }). */
+  editMessage(token: string, conversationId: string, messageId: string, body: string) {
+    return call('PUT', `/conversations/${conversationId}/messages/${encodeURIComponent(messageId)}`, token, { body })
+  },
+  /** V0662: take back your own message inside the window (answers { message }, the tombstone). */
+  deleteMessage(token: string, conversationId: string, messageId: string) {
+    return call('DELETE', `/conversations/${conversationId}/messages/${encodeURIComponent(messageId)}`, token)
+  },
+  /** V0662: the earlier texts of a message, oldest first (when, who, the text before). */
+  messageHistory(token: string, conversationId: string, messageId: string) {
+    return call('GET', `/conversations/${conversationId}/messages/${encodeURIComponent(messageId)}/history`, token)
+  },
   ping(token: string, conversationId: string, clientRef: string) {
     return call('POST', `/conversations/${conversationId}/ping`, token, { client_ref: clientRef })
   },
@@ -204,6 +269,13 @@ export const chatApi = {
              payload: { action: 'kick' | 'mute' | 'unmute' | 'mode' | 'topic' | 'motd' | 'assistant_on' | 'assistant_off';
                         target?: TargetSpec; value?: string }) {
     return call('POST', `/conversations/${conversationId}/room`, token, payload)
+  },
+  /** V0662: seat a guest in an organization's room ({ agent_did } or { developer_id }); remove one by the member sheet's key. */
+  seatGuest(token: string, conversationId: string, target: { agent_did?: string; developer_id?: number }) {
+    return call('POST', `/conversations/${conversationId}/guests`, token, target)
+  },
+  removeGuest(token: string, conversationId: string, memberKey: string) {
+    return call('DELETE', `/conversations/${conversationId}/guests/${encodeURIComponent(memberKey)}`, token)
   },
   roomMembers(token: string, conversationId: string) {
     return call('GET', `/conversations/${conversationId}/members`, token)
@@ -284,6 +356,10 @@ export const chatApi = {
     return call('GET', `/rooms/${encodeURIComponent(conversationId)}`, token)
   },
   /** One operator act (the owner, or a moderator on a lower rank), in a room hosted here. */
+  /** V0663: close a room nobody has spoken in (its owner or a moderator); a room with messages is archived instead. */
+  closeRoom(token: string, conversationId: string) {
+    return call('POST', `/rooms/${encodeURIComponent(conversationId)}/close`, token)
+  },
   roomAct(token: string, conversationId: string, body: { action: RoomAction; member?: string; value?: string }) {
     return call('POST', `/rooms/${encodeURIComponent(conversationId)}/act`, token, body)
   },
@@ -294,4 +370,4 @@ export const chatApi = {
 export type RoomJoinRule = 'invited' | 'request' | 'anyone'
 /** V0659 (f): the operator acts a room's host takes. */
 export type RoomAction = 'invite' | 'mute' | 'unmute' | 'remove' | 'ban' | 'accept' | 'moderator' | 'unmoderator'
-  | 'rule' | 'topic' | 'title'
+  | 'rule' | 'topic' | 'title' | 'archive' | 'unarchive'

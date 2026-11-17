@@ -1183,16 +1183,6 @@ class RequestBodies:
                 "backend_mode": "intra",
                 "rate_tps": 0.1,
             },
-            "/admin/simulation/fund": {
-                "target_balance": 1000,
-                "only_depleted": True,
-                "depleted_threshold": 50,
-            },
-            "/admin/simulation/funding-preview": {
-                "target_balance": 1000,
-                "only_depleted": True,
-                "depleted_threshold": 50,
-            },
             "/admin/broadcasts": {   # §MCPTEST30 V0640: a direct notice to the sweep's own throwaway developer
                 "title": "API Tester Probe",
                 "body": "Direct notice from the automated API tester to its own test account; please ignore.",

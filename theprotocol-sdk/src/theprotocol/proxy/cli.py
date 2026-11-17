@@ -37,6 +37,7 @@ from .plugins import PluginError, load
 from .spec import Spec, SpecError, dotenv_value, read
 
 EXIT_FAILED, EXIT_SPEC, EXIT_CREDENTIALS = 1, 2, 3
+MIGRATE_HINT = "Moving off a system instead of bridging it? tp-proxy migrate --help"
 
 
 def _spec_path(arg: Optional[str]) -> str:
@@ -91,7 +92,7 @@ mappings:
     fields: {{reading: $.payload}}
 retry: {{first_s: 2, max_s: 300, attempts: 8}}
 breaker: {{refusals: 5, failures: 10, cooldown_s: 30}}
-service: {{listen: "127.0.0.1:9108"}}
+service: {{listen: "127.0.0.1:9108", report_every_s: 300}}
 """
 
 
@@ -378,7 +379,8 @@ def cmd_quantum_card(a) -> int:
 
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="tp-proxy", description="TheProtocol Proxy: a legacy system's agent identity "
-                                "on TheProtocol, translating in both directions.")
+                                "on TheProtocol, translating in both directions.",
+                                epilog=MIGRATE_HINT)
     sub = p.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("init", help="write proxy.yaml from the Agent Forge starter's .env and check it on the registry")
     s.add_argument("--from", dest="source", help="the starter's folder (default: here)")
@@ -417,6 +419,10 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--residency", help="jurisdiction codes the data stays in (default EU)")
     s.add_argument("--receipt-schema-version", help="the receipt builder's schema version")
     s.add_argument("--receipt-signing-algorithm", help="the receipt builder's signing algorithm")
+    from .migrate.cli import add as _add_migrate
+    _add_migrate(sub)
+    s = sub.add_parser("catalog", help="the built-in parts, the spec's schema and the mapping vocabulary (what a builder is made from)")
+    s.add_argument("--json", action="store_true", help="print everything as one JSON document")
     s = sub.add_parser("keygen", help="write a new Ed25519 signing key for the evidence export")
     s.add_argument("path")
     for name, help_ in (("pause", "stop sending (all mappings, or one)"), ("resume", "send again")):
@@ -434,7 +440,10 @@ def main(argv: Optional[List[str]] = None, *, transport: Optional[httpx.AsyncBas
         a.spec, a.mapping = None, a.spec      # `tp-proxy pause gate-out`: one argument that is not a spec file
     try:
         if a.cmd == "init":
-            return cmd_init(a, transport)
+            try:
+                return cmd_init(a, transport)
+            finally:
+                print(MIGRATE_HINT, file=sys.stderr)
         if a.cmd == "validate":
             return cmd_validate(a)
         if a.cmd == "run":
@@ -453,6 +462,14 @@ def main(argv: Optional[List[str]] = None, *, transport: Optional[httpx.AsyncBas
             return cmd_keygen(a)
         if a.cmd == "quantum-card":
             return cmd_quantum_card(a)
+        if a.cmd == "catalog":
+            from . import catalog as _catalog
+            doc = _catalog.build()
+            sys.stdout.write(_catalog.dumps(doc) if a.json else _catalog.table(doc) + "\n")
+            return 0
+        if a.cmd == "migrate":
+            from .migrate.cli import run as _run_migrate
+            return _run_migrate(a, transport)
     except SpecError as e:
         print(str(e), file=sys.stderr)
         return EXIT_SPEC

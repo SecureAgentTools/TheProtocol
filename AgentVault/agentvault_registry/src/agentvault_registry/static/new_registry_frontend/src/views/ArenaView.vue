@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { apiClient } from '@/services/api/client'
 import { useI18n } from '@/composables/useI18n'
 import { useAuthStore } from '@/stores/auth'
+import { hasAdminFlag } from '@/composables/usePermissions'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -295,6 +296,7 @@ function startPolling(matchId: string) {
 }
 
 async function createTestMatch() {
+  if (!hasAdminFlag(authStore.user, 'platform')) return   // V0662 admin guard (layer 3): a member's page never asks an admin route (CrowdSec counts each refusal)
   try {
     const res = await apiClient.post('/arena/matches?mode=battle_royale&add_bots=5')
     await fetchMatches()

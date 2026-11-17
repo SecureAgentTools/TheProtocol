@@ -28,7 +28,8 @@ export interface Proposal {
   description: string
   proposer: string
   status: 'pending' | 'active' | 'voting' | 'passed' | 'failed' | 'rejected' | 'executed'
-  proposalType: 'standard' | 'policy_change'
+  // the two a person proposes, and the two the registry opens itself (a federation ballot's members' vote; V0663 a code change)
+  proposalType: 'standard' | 'policy_change' | 'federation_ballot' | 'code_change'
   votingStart: string
   votingEnd: string
   votes: {

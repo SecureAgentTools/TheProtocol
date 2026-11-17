@@ -17,8 +17,10 @@ describe('a link keeps target and rel through the sanitizer', () => {
     const spy = vi.spyOn(DOMPurify, 'sanitize')
     renderMarkdown('see [the docs](https://docs.theprotocol.cloud/x)')
     const cfg = spy.mock.calls[0][1] as Record<string, unknown>
-    expect(cfg.ADD_URI_SAFE_ATTR).toEqual(['target', 'rel'])
-    expect(URI_SAFE_ATTR).toEqual(['target', 'rel'])
+    // V0662: `type` joins them. A code block's copy button is written `type="button"`; judged as an address it failed the rule
+    // and a real browser dropped it (a button with no type submits). Same mechanism, same fix; href is still NOT on the list.
+    expect(cfg.ADD_URI_SAFE_ATTR).toEqual(['target', 'rel', 'type'])
+    expect(URI_SAFE_ATTR).toEqual(['target', 'rel', 'type'])
     expect(String(cfg.ALLOWED_URI_REGEXP)).toBe('/^(?:https?:|mailto:|#|\\/)/i')
     expect(cfg.ADD_URI_SAFE_ATTR).not.toContain('href')
   })

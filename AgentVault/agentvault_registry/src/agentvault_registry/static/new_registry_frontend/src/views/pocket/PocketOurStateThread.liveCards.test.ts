@@ -129,6 +129,20 @@ describe('a card updated in place, in the open thread', () => {
     w.unmount()
   })
 
+  it("a code change's card speaks as Code changes, not as System (V0666 D3)", async () => {
+    const cc = { id: 'm4', seq: 4, kind: 'card', body: null, card_rev: 1, card_updated_at: '2026-11-15T01:00:00Z',
+      sender_ptype: 'system', sender_id: 'code-changes', created_at: '2026-11-15T00:00:00Z',
+      card: { v: 1, type: 'code.change.live', refs: { code_change_id: 'cc_1' }, data: { change_id: 'cc_1', title: 'A seating chart', state: 'proposed',
+        line: { slug: 'lyceum', release_name: 'V0666_lyceum', organization_name: 'Lyceum Labs' }, checker: { state: 'none', reasons: [] },
+        reviews: { count: 0, approvals: 0, needed: 1, blockers: 0 }, ballot: { votes: 0, deciders: 0 } } } }
+    h.chat.getMessages = vi.fn().mockResolvedValue(page([text('m1', 1), cc]))
+    const w = mount(PocketOurStateThread, opts)
+    await flushPromises()
+    expect(w.find('[data-testid="ost-rail-author"]').text()).toContain('Code changes')
+    expect(w.find('[data-testid="ost-rail-author"]').text()).not.toContain('System')
+    w.unmount()
+  })
+
   it("History opens the card's history; Escape closes it", async () => {
     h.chat.getMessages = vi.fn().mockResolvedValue(page([cardMsg(1, progress('passed'))]))
     h.chat.cardHistory = vi.fn().mockResolvedValue({ card_rev: 1, posted_at: '2026-11-01T00:00:00Z', updates: [

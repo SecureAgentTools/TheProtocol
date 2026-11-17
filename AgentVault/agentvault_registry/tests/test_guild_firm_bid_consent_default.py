@@ -37,13 +37,16 @@ def _seed():
     # its BIGINT key is no rowid alias in SQLite, so the events table is declared by hand
     s.execute(text("CREATE TABLE guild_order_events (id INTEGER PRIMARY KEY, order_id TEXT, seq INTEGER, "
                    "event_type TEXT, actor_did TEXT, payload TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)"))
+    # V0663: a bid asks whether its order is a workflow step (an empty table here: this order is not one)
+    s.execute(text("CREATE TABLE agent_workflow_steps (workflow_id TEXT, step_key TEXT, order_id TEXT)"))
     s.add(models.Developer(id=1, name="d", email="d@example.org", hashed_password="x"))
+    s.add(models.Developer(id=2, name="p", email="p@example.org", hashed_password="x"))   # V0664: the poster is another developer's (no self-dealing)
     s.add(models.Organization(id="org-o", name="Org O", slug="o", owner_id=1, settings={},
                               treasury_agent_did="did:theprotocol:org-o-treasury"))
     db.agents = {}
-    for n, (did, org) in enumerate(((POSTER, None), (BIDDER, "org-o")), start=1):
+    for n, (did, org, dev) in enumerate(((POSTER, None, 2), (BIDDER, "org-o", 1)), start=1):
         db.agents[did] = models.Agent(id=n, did=did, client_id=f"c{n}", hashed_client_secret="x",
-                                      creator_developer_id=1, organization_id=org, status="active")
+                                      creator_developer_id=dev, organization_id=org, status="active")
         s.add(db.agents[did])
     s.add(models.GuildWorkOrder(id=ORDER, poster_did=POSTER, title="t", bounty=10, currency="SBXA", status="open"))
     s.commit()

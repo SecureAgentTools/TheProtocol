@@ -6,7 +6,7 @@
   "agentvault_registry/src/agentvault_registry/api_tests/categories/flow_mcp_lifecycle/test_flow_mcp_lifecycle.py": 2,
   "agentvault_registry/src/agentvault_registry/api_tests/contracts/earned_agent_public.py": 1,
   "agentvault_registry/src/agentvault_registry/api_tests/contracts/mcp_contracts.py": 3,
-  "agentvault_registry/src/agentvault_registry/api_tests/contracts/refusal_reasons.py": 2,
+  "agentvault_registry/src/agentvault_registry/api_tests/contracts/refusal_reasons.py": 1,
   "agentvault_registry/src/agentvault_registry/routers/mcp_tester.py": 1,
   "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/services/frameRequestForm.test.ts": 1,
   "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/services/mcpTester/__tests__/runReading.spec.ts": 1,

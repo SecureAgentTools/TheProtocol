@@ -440,6 +440,7 @@ An admin sometimes needs to tell every developer something at once: maintenance 
 | `scheduled_for` | Send later instead of now. When it is due, the scheduler sends it as an immediate broadcast is sent: the console notice and, with `send_email`, the email, once. A time already past sends it now |
 | `target_org_id` | Only the active members of one organisation: the console notice, the unread list, the community page and, with `send_email`, the email |
 | `target_developer_id` | One developer only (a direct notice: in the console only, sent now, and not combined with `send_email`, `scheduled_for` or `target_org_id`) |
+| `public` | Make it an announcement visitors can read without an account (default false; only for a broadcast to everyone). See [Public announcements](#public-announcements) |
 | `idempotency_key` | A key of your own for the broadcast |
 | `skip_self` | Do not push the notice to the sending admin |
 
@@ -548,6 +549,18 @@ flowchart TB
 - **Call to action.** Set `cta_url` and `cta_label`; the console's notice shows a labelled button.
 - **Acknowledgement required.** Set `requires_ack: true`. The console's notice stays on screen with an Acknowledge button instead of closing after a few seconds (a `critical` notice also stays). Acknowledging, or dismissing an ordinary notice, calls `POST /api/v1/notifications/{broadcast_id}/read`, which writes a `developer_notification_reads` row; the broadcast then no longer appears on the next visit.
 
+### Public announcements
+
+A broadcast has one more choice, **public**, off unless an admin sets it (`public: true` when composing, or on the edit). A public announcement is readable by anyone, **with no account**, on the console's **Announcements** page (`#/announcements`, in the Network views group; a visitor's sidebar also shows the newest three titles above its sign-in line, and the header's announcement bar shows a visitor the public ones as it shows a member theirs, opening the page on a press) and through `GET /api/v1/public/announcements`.
+
+- **Only what an admin marked.** The route serves the broadcasts marked public that are active (not retracted) and already sent (not scheduled for later), newest first, and nothing else. Retracting an announcement or unmarking it takes it off the page at once.
+- **Only a broadcast to everyone.** A broadcast aimed at an organization or at one developer is member-only text and can never be public: marking one is refused with `422`, and the route leaves such a row out whatever its mark says.
+- **Only what a visitor needs.** Each entry is `{"id", "title", "body", "broadcast_type", "created_at", "cta_url", "cta_label"}`: no author, no recipient counts, no e-mail flag, no schedule, no organization or developer id. The answer may be cached for a minute (`Cache-Control: public, max-age=60`).
+- **Local.** The mark belongs to this registry. A registry that copies the broadcast from its ledger gets an ordinary broadcast: nothing it copies is public there.
+- **Text only.** The page shows a body as plain text, never as markup, and a call to action only when its address is `http(s)` or a path on the console.
+
+An admin sets the mark in the compose form (**Make it public**, unavailable while an organization is named) and in a broadcast's edit drawer; a copy of a broadcast starts private, and a public one shows a **Public** pill in the list.
+
 ### Per-developer notification preferences
 
 Developers set their own filters with `GET` and `PATCH /api/v1/developers/me/notification-prefs`: `mute_info`, `mute_warning`, `mute_maintenance` (critical notices cannot be muted), `delivery_in_app`, `delivery_email`, and `quiet_hours_start` / `quiet_hours_end` (hours 0 to 23, UTC; during quiet hours the live push is skipped and the notice waits in the unread list). Email and in-console delivery are independent.
@@ -571,6 +584,14 @@ Besides broadcasts, the registry tells a developer about what concerns them thro
 
 Each notice is sent where its action happens, once: a reminder or a notice two workers could both send is claimed on its occasion first.
 
+### The bell, grouped by kind
+
+The console's alerts bell shows your unread feed (`GET /api/v1/notifications/feed`) as **one group per kind**, the category the notification catalog gives each type: Chat, Marketplace, Operations, Security, Agents, Contracts, Money, Governance, Organizations, Announcements and Legal. The kind with the newest entry comes first and each group lists its entries newest first. Each group has **Mark read** and **Mute**, and the bell has **Mark all read**.
+
+**Muting a kind is a choice about this device's bell and nothing else.** A muted kind folds into one quiet line that still counts what it holds ("12 muted") and shows again on a press, so nothing vanishes unseen; the choice is kept in this browser (`bell.mutedKinds`) and changes nothing the server sends: push, e-mail and the feed itself follow Settings, Notifications. **Security notices cannot be muted.**
+
+A **Mentions** group sits above the feed. It is read on its own, from `GET /api/v1/chat/mentions` ([OurChat](/docs/34#rooms)), because a mention leaves the group when you read the line and a busy feed cannot push it out; it is not part of the feed, so it has no mute and no mark-all.
+
 ### Two dedicated workers
 
 | Worker | Cadence | Job |
@@ -588,7 +609,7 @@ All paths are under `/api/v1`.
 |---|---|---|---|
 | `POST` | `/admin/broadcasts` | admin (`admin_support`) | Compose and send, or schedule, a broadcast |
 | `GET` | `/admin/broadcasts` | admin (`admin_support`) | List broadcasts (`skip`, `limit` up to 200, `include_inactive`) |
-| `PUT` | `/admin/broadcasts/{id}` | admin (`admin_support`) | Edit the title, body or type; emits `AdminBroadcastEdited` |
+| `PUT` | `/admin/broadcasts/{id}` | admin (`admin_support`) | Edit the title, body, type or `public` mark; emits `AdminBroadcastEdited` |
 | `DELETE` | `/admin/broadcasts/{id}` | admin (`admin_support`) | Retract (sets `is_active` false); emits `AdminBroadcastRetracted` |
 | `POST` | `/admin/broadcasts/{id}/reinstate` | admin (`admin_support`) | Undo a retraction (on this registry only) |
 | `GET` | `/admin/broadcasts/overview` | admin (`admin_support`) | Totals by type, last 24 hours and 7 days, emails sent, live connections, verified developers |
@@ -604,6 +625,7 @@ All paths are under `/api/v1`.
 | `GET` | `/admin/broadcast-scheduler/status` | admin (`admin_platform`) | Scheduler state and pending count |
 | `GET` | `/admin/broadcast-email-retry/status` | admin (`admin_platform`) | Email retry state and queue depth |
 | `GET` | `/admin/broadcast-email-retry/dead-letter` | admin (`admin_platform`) | Email batches that failed for good |
+| `GET` | `/public/announcements` | none | The announcements an admin marked public, newest first (`skip`, `limit` up to 50). See [Public announcements](#public-announcements). |
 | `GET` | `/community/announcements` | developer | The active broadcasts the caller may see (the unread list's audience, read or not), newest first, for the community page (`skip`, `limit` up to 50). |
 
 ::: tip Test a broadcast safely

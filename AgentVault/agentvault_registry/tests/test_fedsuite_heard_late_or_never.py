@@ -59,7 +59,7 @@ def test_a_missed_leg_is_reread_once_and_says_what_it_saw_then():
 def test_the_flow_rereads_before_it_deletes_the_hooks(monkeypatch):
     order = []
 
-    async def cleanup(_rig, _made, _hooks):
+    async def cleanup(_rig, _made, _hooks, _owners=None):
         order.append("cleanup")
         return []
 

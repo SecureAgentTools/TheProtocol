@@ -19,6 +19,10 @@ import { BASE_URL, API_URL, PEER_URL, OUT_DIR } from './env'
 import { routeLocalBuild, seedReturningVisitor } from './target'
 import { seedSession } from './accounts'
 import { CAPTURE_ATTACHMENT } from './names'
+import { OPT_OUT_TAG, guardOverlays, overlayNote } from './overlays'
+
+/** The annotation a dismissed overlay leaves on its test (read back into the page-clean row). */
+const OVERLAY_ANNOTATION = 'overlay-dismissed'
 
 export interface A11yFinding { page: string; id: string; impact: string; nodes: number; help: string; targets: string[] }
 
@@ -126,16 +130,19 @@ export const test = base.extend<Fixtures>({
   context: async ({ context }, use, testInfo) => {
     await routeLocalBuild(context)
     if (!/@first-visit/.test(testInfo.title)) await seedReturningVisitor(context)
+    // V0666: a real unlock can open the contributor track's celebration over the page; the suite presses its Close, and says so (support/overlays.ts)
+    if (!testInfo.title.includes(OPT_OUT_TAG)) await guardOverlays(context, (what) => { testInfo.annotations.push({ type: OVERLAY_ANNOTATION, description: what }) })
     await use(context)
   },
 
-  openAs: async ({ browser, capture }, use) => {
+  openAs: async ({ browser, capture }, use, testInfo) => {
     const opened: BrowserContext[] = []
     await use(async (token: string) => {
       const ctx = await browser.newContext({ locale: 'en-US', timezoneId: 'UTC', serviceWorkers: 'block', viewport: { width: 1440, height: 900 } })
       opened.push(ctx)
       await routeLocalBuild(ctx)
       await seedReturningVisitor(ctx)
+      if (!testInfo.title.includes(OPT_OUT_TAG)) await guardOverlays(ctx, (what) => { testInfo.annotations.push({ type: OVERLAY_ANNOTATION, description: what }) })
       await seedSession(ctx, token)
       const p = await ctx.newPage()
       capture.attach(p)
@@ -166,7 +173,8 @@ export const test = base.extend<Fixtures>({
       error: clean ? null : cleanError(v.unexpected.slice(0, 6).join(' | ')),
       skip_reason: null,
       response_excerpt: `${v.summary.requests} calls, ${v.summary.refused} refused (${v.allowedRefusals} expected), ${v.summary.console_errors} console errors, ${v.summary.env_drops} dropped by the host`
-        + (Number(v.summary.peer_cors_refused) ? `, ${v.summary.peer_cors_refused} refused by the peer's CORS (see peer_accepts_this_console)` : ''),
+        + (Number(v.summary.peer_cors_refused) ? `, ${v.summary.peer_cors_refused} refused by the peer's CORS (see peer_accepts_this_console)` : '')
+        + overlayNote(testInfo.annotations.filter((a) => a.type === OVERLAY_ANNOTATION).map((a) => String(a.description))),
       kind: clean ? null : 'bug',
     })
     if (!clean && testInfo.status === 'passed') {

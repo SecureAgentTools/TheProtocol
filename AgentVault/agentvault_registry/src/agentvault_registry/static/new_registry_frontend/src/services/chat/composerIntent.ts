@@ -39,6 +39,10 @@ export type ComposerIntent =
   | { kind: 'text' }
   | { kind: 'pay'; amount: number | null; currency: string | null; memo: string; refusal: 'currency-unresolved' | 'amount-missing' | null }
   | { kind: 'request'; amount: number | null; currency: string | null; memo: string; refusal: 'currency-unresolved' | 'amount-missing' | null }
+  // V0662 — opens the Guild order door pre-filled; parsing NEVER posts: the order locks its bounty, so the door confirms it
+  | { kind: 'order'; amount: number | null; currency: string | null; title: string; refusal: 'currency-unresolved' | 'amount-missing' | null }
+  // V0666 D3 — opens the proposal of a code change to the room's organization's release line; parsing never posts
+  | { kind: 'change'; title: string }
   | { kind: 'quote' }
   | { kind: 'call'; ask: string }
   | { kind: 'card'; query: string }
@@ -101,6 +105,7 @@ export const SLASH_COMMANDS: Array<{ cmd: string; usage: string; glossKey: strin
   group: CommandGroup }> = [
   { cmd: '/pay', usage: '/pay <amount> [ccy] [memo]', group: 'any', glossKey: 'ourstate.help.pay', glossFallback: 'open Send pre-filled for this counterparty' },
   { cmd: '/request', usage: '/request <amount> [ccy] [memo]', group: 'any', glossKey: 'ourstate.help.request', glossFallback: 'post a payment request card' },
+  { cmd: '/order', usage: '/order <bounty> [ccy] <title>', group: 'wallet', glossKey: 'ourstate.help.order', glossFallback: 'post a Guild order into this conversation (confirm before anything locks)' },
   { cmd: '/quote', usage: '/quote', group: 'agent', glossKey: 'ourstate.help.quote', glossFallback: 'price this agent’s service in your currency' },
   { cmd: '/call', usage: '/call [agent] <ask>', group: 'agent', glossKey: 'ourstate.help.call', glossFallback: 'stage a service call (confirm before anything moves)' },
   { cmd: '/card', usage: '/card <agent>', group: 'any', glossKey: 'ourstate.help.card', glossFallback: 'share an agent card into the thread' },
@@ -130,6 +135,7 @@ export const SLASH_COMMANDS: Array<{ cmd: string; usage: string; glossKey: strin
   { cmd: '/topic', usage: '/topic <text>', group: 'op', glossKey: 'ourstate.help.topic', glossFallback: 'set the room topic line' },
   { cmd: '/motd', usage: '/motd <text>', group: 'op', glossKey: 'ourstate.help.motd', glossFallback: 'edit the room genesis (history kept)' },
   { cmd: '/room', usage: '/room', group: 'room', glossKey: 'ourstate.help.room', glossFallback: 'room settings (mode, members)' },
+  { cmd: '/change', usage: '/change <title>', group: 'room', glossKey: 'ourstate.help.change', glossFallback: 'propose a code change to this organization’s release line (its live card follows here); /change content <title> proposes a change of its own content instead' },
   { cmd: '/invite', usage: '/invite', group: 'room', glossKey: 'ourstate.help.invite', glossFallback: 'invite to the ORGANIZATION — opens the org rail' },
 ]
 
@@ -168,6 +174,26 @@ function parseMoneyArgs(rest: string, ctx: ComposerCtx):
   return { amount, currency, memo, refusal }
 }
 
+/** `/order <bounty> [CCY] <title>`: as the money commands, except that a currency is only a token WRITTEN IN CAPITALS: a title
+ *  starts with ordinary words (`/order 20 Review the PR`), and "Review" must not become a currency. */
+function parseOrderArgs(rest: string, ctx: ComposerCtx):
+  { amount: number | null; currency: string | null; title: string; refusal: 'currency-unresolved' | 'amount-missing' | null } {
+  const parts = rest.trim().split(/\s+/).filter(Boolean)
+  let amount: number | null = null
+  let consumed = 0
+  for (const n of [2, 1]) {
+    if (parts.length >= n) {
+      const a = parseAmount(parts.slice(0, n).join(' '))
+      if (a !== null) { amount = a; consumed = n; break }
+    }
+  }
+  if (amount === null) return { amount: null, currency: null, title: rest.trim(), refusal: 'amount-missing' }
+  let currency: string | null = null
+  if (parts[consumed] && /^[A-Z]{2,6}$/.test(parts[consumed])) { currency = parts[consumed]; consumed += 1 }
+  else if (ctx.actingCurrency) currency = ctx.actingCurrency
+  return { amount, currency, title: parts.slice(consumed).join(' '), refusal: currency === null ? 'currency-unresolved' : null }
+}
+
 export function parseComposer(input: string, ctx: ComposerCtx = {}): ComposerIntent {
   const raw = (input || '').trim()
   if (!raw.startsWith('/')) return { kind: 'text' }
@@ -179,6 +205,7 @@ export function parseComposer(input: string, ctx: ComposerCtx = {}): ComposerInt
   switch (cmd) {
     case '/pay': return { kind: 'pay', ...parseMoneyArgs(rest, ctx) }
     case '/request': return { kind: 'request', ...parseMoneyArgs(rest, ctx) }
+    case '/order': return { kind: 'order', ...parseOrderArgs(rest, ctx) }
     case '/quote': return { kind: 'quote' }
     case '/balance': return { kind: 'balance' }
     case '/call': return { kind: 'call', ask: rest.trim() }
@@ -194,6 +221,7 @@ export function parseComposer(input: string, ctx: ComposerCtx = {}): ComposerInt
     case '/timer': return { kind: 'timer' }
     case '/find': return { kind: 'find', query: rest.trim() }
     case '/propose': return { kind: 'propose', title: rest.trim() }
+    case '/change': return { kind: 'change', title: rest.trim() }
     case '/here': return { kind: 'here' }
     case '/dispute': return { kind: 'dispute' }
     case '/help': return { kind: 'help' }
@@ -232,7 +260,7 @@ function roomValueOp(op: 'topic' | 'motd', rest: string, ctx: ComposerCtx): Comp
 /** Mirrors intentTouchesMoney for the composer set — these intents open a door
  *  that, once CONFIRMED by the human, moves value on an existing rail. */
 export function composerTouchesMoney(i: ComposerIntent): boolean {
-  return i.kind === 'pay' || i.kind === 'request' || i.kind === 'call'
+  return i.kind === 'pay' || i.kind === 'request' || i.kind === 'call' || i.kind === 'order'
 }
 
 /** Why a command is not usable HERE — or null when it is. The one predicate

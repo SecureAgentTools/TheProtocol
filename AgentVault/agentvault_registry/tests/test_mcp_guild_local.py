@@ -121,13 +121,19 @@ def _run(monkeypatch, guild, flow_values=None):
         return 404, {"detail": "not in this test"}
 
     closed = []
+    owners = {}
 
     class _Throwaways:
         def __init__(self, *a, **k):
             pass
 
+        async def developer(self, role, verify=True):
+            # V0664: the worker's developer, another than the runner's (the self-dealing gate)
+            return {"access_token": f"dev-{role}", "developer_id": 2}
+
         async def agent(self, dev, label=""):
-            return dict(AGENTS[label])
+            owners[label] = dev.get("access_token")
+            return {**AGENTS[label], "owner_jwt": dev.get("access_token")}
 
         async def close(self):
             closed.append(True)
@@ -137,6 +143,7 @@ def _run(monkeypatch, guild, flow_values=None):
     bag = SimpleNamespace(developer_jwt="d", developer_id="1", rpc_admin=None, flow_values=dict(flow_values or {}))
     outcomes = {}
     asyncio.run(E.lifecycle_earned_guild_local(guild.rpc, F._parse_rpc_result, bag, outcomes))
+    _run.owners = owners
     return outcomes, rest, closed
 
 
@@ -154,6 +161,8 @@ def test_on_a_sandbox_every_tool_is_measured_and_every_order_ends_terminal(monke
     assert [m for m, e, _b in rest if e.endswith("/fund-agent")] == ["POST"] and closed == [True]
     posts = [a for t, a in g.calls if t == "theprotocol_guildPostOrder"]
     assert len(posts) == 5 and {a["agent_jwt"] for a in posts} == {"jwt-poster"} and {a["bounty"] for a in posts} == {E.DUST}
+    # V0664 (session-lead seq 4287): the worker belongs to ANOTHER developer than the poster (the self-dealing gate)
+    assert _run.owners["worker"] == "dev-guild-worker" and _run.owners["poster"] != _run.owners["worker"]
 
 
 def test_an_order_left_open_fails_the_runs_own_row(monkeypatch):

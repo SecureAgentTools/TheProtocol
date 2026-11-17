@@ -432,6 +432,10 @@ async def suspend_developer(
         )
         # don't fail the whole dev suspend — admin still wants the dev blocked
 
+    # V0667: the repository account's pause leg rides this transaction (services/repo_accounts); a developer with
+    # no linked account queues nothing, and a failure to queue is logged and never blocks the act
+    from agentvault_registry.services.repo_accounts import enqueue_in
+    await enqueue_in(db, developer_id, "pause", f"developer_suspended by admin {admin.id}")
     await db.commit()
     logger.warning(
         f"[AdminDevelopers] Developer {developer_id} SUSPENDED by admin {admin.id} ({email_for_log(admin.email)}): {body.reason}"
@@ -533,6 +537,10 @@ async def reinstate_developer(
             f"[AdminDevelopers] Cascade-reinstate failed for developer {developer_id}: {exc}"
         )
 
+    # V0667: the repository account's restore leg rides this transaction (services/repo_accounts); a developer with
+    # no linked account queues nothing, and a failure to queue is logged and never blocks the act
+    from agentvault_registry.services.repo_accounts import enqueue_in
+    await enqueue_in(db, developer_id, "restore", f"developer_reinstated by admin {admin.id}")
     await db.commit()
     logger.info(
         f"[AdminDevelopers] Developer {developer_id} REINSTATED by admin {admin.id} ({email_for_log(admin.email)})"
@@ -953,6 +961,10 @@ async def delete_developer(
         card.updated_at = now
         unlisted_cards += 1
 
+    # V0667: the repository account's close leg rides this transaction (services/repo_accounts); a developer with
+    # no linked account queues nothing, and a failure to queue is logged and never blocks the act
+    from agentvault_registry.services.repo_accounts import enqueue_in
+    await enqueue_in(db, developer_id, "close", f"developer_deleted by admin {admin.id}")
     await db.commit()
     logger.warning(
         f"[AdminDevelopers] Developer {developer_id} ({email_for_log(original_email)}) SOFT-DELETED by admin {admin.id}: {body.reason}"

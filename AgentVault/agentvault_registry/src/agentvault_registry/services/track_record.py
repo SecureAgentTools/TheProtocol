@@ -735,30 +735,56 @@ _MEMBER_WORK_SQL = """
         JOIN organizations o ON o.id = a.organization_id
         WHERE a.organization_id IN :ids AND a.status = 'active'
           AND a.show_org = TRUE AND o.is_active = TRUE AND @@LISTED@@
-    ), own_work AS (
-        SELECT m.org_id, count(*) AS jobs
+    ), by_award AS (
+        -- V0666: the settled work of the agents the organization HAD when the order was awarded, on both sides of the
+        -- order: delivered (the awarded worker, paid to no firm) and commissioned (the posting agent; the firm's own
+        -- treasury posts as the firm and is the firm's count). The organization is the one written at the award
+        -- (guild_work_orders.worker_org_at_award / poster_org_at_award), so an agent that left keeps its past work here
+        -- and one that joined later brings none. The affiliation rules above still hold: an agent that is still in the
+        -- organization counts only while active and showing it; one that left is an affiliation the organization no
+        -- longer holds, and its work is counted as a number, never named.
+        SELECT w.worker_org_at_award AS org_id, w.worker_did AS did, 'jobs' AS side
         FROM guild_work_orders w
-        JOIN members m ON m.did = w.worker_did
-        WHERE w.status = 'settled' AND w.payee_org_id IS NULL
-        GROUP BY m.org_id
+        WHERE w.status = 'settled' AND w.payee_org_id IS NULL AND w.worker_org_at_award IN :ids
         UNION ALL
-        SELECT m.org_id, count(*) AS jobs
+        SELECT w.poster_org_at_award AS org_id, w.poster_did AS did, 'commissioned' AS side
+        FROM guild_work_orders w
+        WHERE w.status = 'settled' AND w.poster_org_at_award IN :ids
+    ), by_agents AS (
+        SELECT x.org_id, x.side, count(*) AS n
+        FROM by_award x
+        JOIN agents a ON a.did = x.did AND a.status = 'active'
+        JOIN organizations o ON o.id = x.org_id
+        WHERE o.is_active = TRUE AND @@LISTED@@
+          AND x.did IS DISTINCT FROM o.treasury_agent_did
+          AND NOT (a.organization_id = x.org_id AND a.show_org = FALSE)
+        GROUP BY x.org_id, x.side
+    ), travel AS (
+        -- the agent's own work on another registry, read from its verified travel credential: no award on this
+        -- registry wrote an organization for it, so it follows the agent's present, public affiliation (as before)
+        SELECT m.org_id, count(*) AS n
         FROM guild_travel_credentials c
         JOIN members m ON m.did = c.worker_did
         WHERE c.verified
           AND COALESCE(c.bundle->>'payee_org_id', '') = ''
           AND COALESCE(c.bundle->>'payee_did', c.worker_did) = c.worker_did
         GROUP BY m.org_id
+    ), orgs AS (
+        SELECT org_id FROM by_agents UNION SELECT org_id FROM travel
     )
-    SELECT org_id, sum(jobs)::bigint AS jobs
-    FROM own_work
-    GROUP BY org_id
+    SELECT orgs.org_id,
+           (COALESCE((SELECT n FROM by_agents b WHERE b.org_id = orgs.org_id AND b.side = 'jobs'), 0)
+            + COALESCE((SELECT n FROM travel t WHERE t.org_id = orgs.org_id), 0))::bigint AS jobs,
+           COALESCE((SELECT n FROM by_agents b WHERE b.org_id = orgs.org_id AND b.side = 'commissioned'), 0)::bigint
+               AS commissioned
+    FROM orgs
 """.replace("@@LISTED@@", sql_listed_public("o"))
 
 
 async def member_agents_work(db: AsyncSession, org_ids: List[Any]) -> Dict[str, Dict[str, int]]:
-    """{org_id: {"jobs": n}} for a page of organizations, one statement: the settled Guild work their active member
-    agents did on their own (see _MEMBER_WORK_SQL), counted only where this registry states the affiliation in public.
+    """{org_id: {"jobs": n, "commissioned": m}} for a page of organizations, one statement: the settled Guild work their
+    agents did on their own, delivered and commissioned (see _MEMBER_WORK_SQL; V0666: by the organization each agent
+    belonged to at the award), counted only where this registry states the affiliation in public.
     The rule is the statement's own; a caller cannot widen or narrow it. An organization with none is absent (the
     caller states that zero, having asked, and only for an organization it names in public). The number of agents
     behind the jobs is read by no surface, so it is not answered. Raises on a failed read: the caller decides what an
@@ -768,4 +794,29 @@ async def member_agents_work(db: AsyncSession, org_ids: List[Any]) -> Dict[str, 
         return {}
     rows = (await db.execute(text(_MEMBER_WORK_SQL).bindparams(bindparam("ids", expanding=True)),
                              {"ids": ids})).mappings().all()
-    return {str(r["org_id"]): {"jobs": int(r["jobs"] or 0)} for r in rows}
+    return {str(r["org_id"]): {"jobs": int(r["jobs"] or 0), "commissioned": int(r["commissioned"] or 0)} for r in rows}
+
+
+# V0662 console polish, item 7: does the card declare a live service? The health checker probes the first card URL
+# that is not loopback (url, then supportedInterfaces[0..1].url: background_tasks/agent_health_checker), placeholders
+# included, so its "unreachable" for a spawned child's sub-<uuid>.agents.local reads as a service that is down when
+# the agent never declared one. Declared = that same first URL, on a host that is not a special-use TLD (the rule the
+# pull-sync and create_agent use: agent_card_pullsync.reserved_tld_of).
+_LOOPBACK_MARKS = ("localhost", "127.0.0.1", "0.0.0.0")
+
+
+def declares_live_service(card_data) -> bool:
+    if not isinstance(card_data, dict):
+        return False
+    candidates = [card_data.get("url")]
+    interfaces = card_data.get("supportedInterfaces")
+    if isinstance(interfaces, list):
+        candidates += [i.get("url") for i in interfaces[:2] if isinstance(i, dict)]
+    for url in candidates:
+        if not isinstance(url, str) or not url.strip():
+            continue
+        if any(m in url.lower() for m in _LOOPBACK_MARKS):
+            continue
+        from agentvault_registry.background_tasks.agent_card_pullsync import reserved_tld_of
+        return reserved_tld_of(url) is None
+    return False

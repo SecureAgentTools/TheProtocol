@@ -263,6 +263,22 @@ async def docker_registry_token(
             }
     username, password = _parse_basic_auth(auth_header)
 
+    # V0667 D6 part 3: a distribution's pull grant (username dist.<registry>), given by the scoped release channel to a registry the line's
+    # index names. It holds pull on distributions/<tag>/* of that line alone; the grant, the listing and the licence are read again here.
+    from agentvault_registry.services import distribution_releases
+    if username.startswith(distribution_releases.USER_PREFIX):
+        dist_access = await distribution_releases.token_access(db, username, password, _parse_scope(scope))
+        if dist_access is None:
+            logger.warning("Docker token auth: distribution pull grant refused for %s from %s", username,
+                           request.client.host if request.client else "unknown")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        _expiry = getattr(settings, "DOCKER_TOKEN_EXPIRY_SECONDS", None) or int(os.getenv("DOCKER_TOKEN_EXPIRY_SECONDS", "900"))
+        return {
+            "token": _build_token(dist_access, username),
+            "expires_in": _expiry,
+            "issued_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+        }
+
     # 2. Authenticate
     is_admin = False
     allowed_repos = DEFAULT_ALLOWED_REPOS

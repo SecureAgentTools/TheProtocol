@@ -41,6 +41,19 @@
             </span>
           </li>
         </ul>
+        <!-- V0663: archive takes the room out of the lists and out of its owner's cap of 20 rooms, history kept and readable;
+             close removes a room nobody has spoken in (a room with messages is archived instead) -->
+        <p v-if="info.archived" class="rp-note" data-testid="room-archived-note">
+          {{ t('ourstate.rooms.archivedNote', 'This room is archived: it can be read, not posted in.') }}</p>
+        <div v-if="info.i_moderate && info.hosted_here" class="rp-lifecycle" data-testid="room-lifecycle">
+          <button v-if="!info.archived" type="button" class="rp-btn" :disabled="busy" data-testid="room-archive" @click="act('archive')">
+            {{ t('ourstate.rooms.archive', 'Archive this room') }}</button>
+          <button v-else type="button" class="rp-btn" :disabled="busy" data-testid="room-unarchive" @click="act('unarchive')">
+            {{ t('ourstate.rooms.unarchive', 'Unarchive this room') }}</button>
+          <button type="button" class="rp-btn" :disabled="busy" data-testid="room-close" @click="closeIt">
+            {{ t('ourstate.rooms.close', 'Close this room') }}</button>
+          <p class="rp-note">{{ t('ourstate.rooms.lifecycleNote', 'Archiving takes the room out of your lists and out of your cap of 20 rooms; its history stays readable. Closing removes a room nobody has spoken in.') }}</p>
+        </div>
         <p v-if="error" class="rp-error" data-testid="room-error">{{ error }}</p>
       </div>
     </template>
@@ -56,7 +69,7 @@ import { JOIN_RULES, actsOn, type RoomMember } from '@/services/chat/rooms'
 import { useI18n } from '@/composables/useI18n'
 
 const props = defineProps<{ conversationId: string; token: string }>()
-const emit = defineEmits<{ (e: 'acted', action: string): void }>()
+const emit = defineEmits<{ (e: 'acted', action: string): void; (e: 'closed'): void }>()
 const { t, tp } = useI18n()
 
 interface RoomInfo {
@@ -65,6 +78,7 @@ interface RoomInfo {
   hosted_here: boolean
   host_registry: string | null
   i_moderate: boolean
+  archived?: boolean
   my_role: string
   member_count: number
   members: RoomMember[]
@@ -97,6 +111,19 @@ async function act(action: string, member?: string, value?: string) {
     await chatApi.roomAct(props.token, props.conversationId, { action: action as RoomAction, member, value })
     emit('acted', action)
     await load()
+  } catch (e: any) {
+    error.value = e?.detail || e?.message || t('ourstate.rooms.actFailed', 'That did not go through.')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function closeIt() {
+  busy.value = true
+  error.value = ''
+  try {
+    await chatApi.closeRoom(props.token, props.conversationId)
+    emit('closed')
   } catch (e: any) {
     error.value = e?.detail || e?.message || t('ourstate.rooms.actFailed', 'That did not go through.')
   } finally {
@@ -146,6 +173,7 @@ defineExpose({ load })
 .rp-addr code { word-break: break-all; font-size: .76rem; }
 .rp-label { color: #8b96a5; }
 .rp-note { margin: 0; color: #8b96a5; font-size: .76rem; }
+.rp-lifecycle { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }   /* V0663 */
 .rp-members { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; }
 .rp-member { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 .rp-tag { font-size: .7rem; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; padding: 0 .4rem; color: #b6c0cc; }

@@ -24,8 +24,8 @@
       <section class="aap-sec">
         <header class="aap-h">{{ t('agentAccess.roles.title', 'Roles') }}</header>
         <div class="aap-chips">
-          <span v-for="r in roles" :key="r" class="aap-chip" :class="{ 'aap-chip--legacy': r === 'legacy-full' }">
-            {{ r }}<span v-if="roleExpiry(r)" class="aap-chip-exp" :title="t('agentAccess.roles.expiresTitle', 'expires') + ' ' + roleExpiry(r)">⏳{{ roleExpiryShort(r) }}</span>
+          <span v-for="r in roles" :key="r" class="aap-chip" :class="{ 'aap-chip--legacy': r === 'legacy-full' }" :title="roleTitle(r, t) || undefined">
+            {{ roleLabel(r, t) }}<span v-if="roleExpiry(r)" class="aap-chip-exp" :title="t('agentAccess.roles.expiresTitle', 'expires') + ' ' + roleExpiry(r)">⏳{{ roleExpiryShort(r) }}</span>
             <button v-if="canEdit && r !== 'legacy-full'" class="aap-chip-x" :title="t('agentAccess.roles.remove', 'remove')" @click="toggleRole(r)">×</button>
           </span>
           <span v-if="!roles.length" class="aap-muted">{{ t('agentAccess.roles.none', 'No roles') }}</span>
@@ -39,8 +39,9 @@
             :key="r"
             class="aap-role-opt"
             :class="{ 'aap-role-opt--on': roles.includes(r) }"
+            :title="roleTitle(r, t) || undefined"
             @click="toggleRole(r)"
-          >{{ r }}</button>
+          >{{ roleLabel(r, t) }}</button>
         </div>
         <!-- B2 — optional time-box applied to the role set on the next save -->
         <label v-if="canEdit" class="aap-field aap-expiry" data-tour="aap-roles-expiry">
@@ -424,6 +425,7 @@ import AgentLineageTree from './AgentLineageTree.vue'
 import { refusalText } from './accessRefusal'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import { permissionLabel, permissionTitle } from '@/services/permissionLabel'
+import { roleLabel, roleTitle } from '@/services/agent/roleLabel'
 
 const { t, tp } = useI18n()
 

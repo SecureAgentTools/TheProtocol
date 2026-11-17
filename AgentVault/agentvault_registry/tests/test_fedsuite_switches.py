@@ -47,7 +47,8 @@ class _Rig(rig_mod.FederationTestRig):
 
 
 OFF = {"staking_enabled": False, "staking_rewards_enabled": False, "agora_distributions_enabled": True,
-       "governance_weight_mode": "member", "governance_presence_mode": "off", "fx_enabled": True}
+       "governance_weight_mode": "member", "governance_presence_mode": "off", "fx_enabled": True,
+       "games_enabled": True}   # V0666: a registry-config reports its games switch too (rig._SWITCH_KEYS reads it)
 ON = {"staking_enabled": True, "staking_rewards_enabled": True, "governance_weight_mode": "lock"}
 
 

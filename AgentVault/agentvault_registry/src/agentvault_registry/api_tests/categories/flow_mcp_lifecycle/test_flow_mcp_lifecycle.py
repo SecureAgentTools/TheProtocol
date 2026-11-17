@@ -1340,6 +1340,9 @@ class ContractOutcome:
     #     means the tool is being walked but not really tested. Fail loudly.
     tier_drift: bool = False
     contract_gap: bool = False
+    # V0666 (session-lead seq 4442): a failed row a contract declares red by design (McpContract.known_red); the router
+    # lists it apart from the new reds (mcp_tester._split_red_rows), never as a pass
+    expected_red: Optional[str] = None
 
 
 def _parse_rpc_result(parsed: dict) -> Dict[str, Any]:
@@ -1627,7 +1630,7 @@ def _inner_transport_status(text: str) -> Optional[int]:
 # and among them the ones whose NAME says they act are the ones whose
 # accidental execution is not an acceptable price for the finding:
 # rotateRegistrySigningKey, startSimulation/stopSimulation (the standing sim
-# rule), fundSimulationAgents, issueFrameBSimulation,
+# rule), issueFrameBSimulation,
 # cloudOperatorSelfRestart, the canary fleet pause/resume.
 #
 # A hand list would rot as tools are added; this asks the SCHEMA and the verb.
@@ -2923,6 +2926,23 @@ def _contract_v2_candidate(row: Any) -> Optional[str]:
     return v.strip() if isinstance(v, str) and v.strip().startswith("ctr_") else None
 
 
+async def _guild_worker_allowed(container: str) -> Tuple[bool, str]:
+    """V0664 (session-lead seq 4292): whether phase-3 may mint the Guild's counterparty (a developer, a funded and bonded
+    agent) on this target: only where the target ITSELF states "sandbox" (registry-config's `environment`, exactly;
+    earned_agent_public.sandbox_stated). The tester ships in production's image too; a production frame never gets a
+    run's account or bond. (allowed, why not)."""
+    from agentvault_registry.api_tests.contracts.earned_agent_public import sandbox_stated
+    code, text = await _http_in_target(container, "GET", "/api/v1/public/registry-config")
+    cfg: Any = None
+    if code == "200":
+        try:
+            cfg = json.loads(text)
+        except Exception:                                    # noqa: BLE001
+            cfg = None
+    stated, why = sandbox_stated(code == "200", code, cfg)
+    return stated, ("" if stated else f"not a stated sandbox ({why}): no developer, agent or bond is made here")
+
+
 async def _phase3_setup_entities(target, bag: McpFixtureBag,
                                   setup_outcomes: Optional[Dict[str, "ContractOutcome"]] = None) -> Dict[str, Any]:
     """Create entities the phase-3 contracts will exercise.
@@ -3178,8 +3198,7 @@ async def _phase3_setup_entities(target, bag: McpFixtureBag,
     r = await _call(
         "theprotocol_createWebhook",
         {"url": "https://webhook.example.test/phase3-mcp-tester",
-         "events": ["agent.created", "agent.updated"],
-         "description": "phase-3 mcp-tester fixture"},
+         "events": ["agent.created", "agent.updated"]},
         bag.developer_jwt,
     )
     if r and r.get("id"):
@@ -3584,6 +3603,64 @@ async def _phase3_setup_entities(target, bag: McpFixtureBag,
     else:
         summary["second_agent_did"] = "FAILED"
 
+    # ── 14c. The Guild's counterparty: ANOTHER developer's agent (V0664, session-lead seq 4287) ─────────────────
+    # GUILD_SELF_DEALING_MODE (V0664, default enforce) refuses an order whose bidder or worker belongs to the poster's
+    # developer ("a Guild order is for someone else's work"), and it is right. The sentinel posts and the second agent is
+    # the runner's too, so the worker is an agent of a developer this run mints (mcp-throwaway-, the reserved domain, no
+    # Terms acceptance), verified by the admin where the target verifies mail, funded from the treasury and bonded from
+    # its own balance (the second agent's two steps). guildBid, guildSubmitWork and the staged Guild orders take it; the
+    # second agent keeps every other role (a member's second vote must be the SAME developer's). Its login lives on the
+    # bag only, never in flow_values (a run record), and _phase3_teardown sends its own deletion request.
+    _gw_ok, _gw_why = await _guild_worker_allowed(target.a_registry_container)
+    _gw = (await _mint_throwaway_developer(target.a_registry_container, "guild-worker")) if _gw_ok else {"why": _gw_why}
+    _gw_tok = _gw.get("access_token")
+    if _gw_tok:
+        bag._guild_worker_account = {"email": _gw.get("email"), "password": _gw.get("password"), "token": _gw_tok}
+        if _gw.get("developer_id"):
+            await asyncio.to_thread(
+                exec_in_container, target.a_registry_container, [
+                    "sh", "-c",
+                    f"curl -sS -X POST -H 'Authorization: Bearer {bag.developer_jwt}' "
+                    f"-H 'Content-Type: application/json' "
+                    f"-d '{{\"reason\":\"phase-3 mcp-tester: the Guild's counterparty developer\"}}' "
+                    f"http://localhost:8000/api/v1/admin/developers/{int(_gw['developer_id'])}/force-email-verify "
+                    "> /dev/null 2>&1",
+                ], 15,
+            )
+        r = await _call("theprotocol_createAgent",
+                        {"name": "phase3-guild-worker",
+                         "description": "phase-3 mcp-tester: the Guild's counterparty, another developer's agent"},
+                        _gw_tok)
+        _gwid = (r or {}).get("agent_did") or (r or {}).get("did") if isinstance(r, dict) else None
+        tok = (await _call("theprotocol_getAgentToken",
+                           {"client_id": r.get("client_id"), "client_secret": r.get("client_secret") or ""}, _gw_tok)
+               if isinstance(r, dict) and r.get("client_id") else None)
+        _gwjwt = (tok or {}).get("access_token") if isinstance(tok, dict) else None
+        if _gwid and _gwjwt:
+            bag.flow_values["guild_worker_jwt"] = _gwjwt
+            bag.flow_values["guild_worker_did"] = _gwid
+            summary["guild_worker_did"] = _gwid
+            _fund_rc, _ = await asyncio.to_thread(
+                exec_in_container, target.a_registry_container, [
+                    "sh", "-c",
+                    f"curl -sS -X POST -H 'Authorization: Bearer {bag.developer_jwt}' "
+                    f"-H 'Content-Type: application/json' "
+                    f"-d '{{\"target_agent_did\":\"{_gwid}\",\"amount\":\"5000\","
+                    f"\"reason\":\"phase-3 mcp-tester guild-worker bond fund\"}}' "
+                    "http://localhost:8000/api/v1/teg/treasury/fund-agent > /dev/null 2>&1",
+                ], 15,
+            )
+            _gw_bond = await _required_bond_amount(getattr(target, "a_registry_container", "") or "")
+            if _gw_bond is not None:
+                _br = await _call("theprotocol_depositReputationBond",
+                                  {"agent_jwt": _gwjwt, "amount": float(_gw_bond)}, _gw_tok)
+                logger.info("phase-3 guild-worker bond: fund_rc=%s policy=%s bond_id=%r", _fund_rc, _gw_bond,
+                            (_br or {}).get("bond_id") if isinstance(_br, dict) else None)
+        else:
+            summary["guild_worker_did"] = "FAILED(agent)"
+    else:
+        summary["guild_worker_did"] = "FAILED(" + str(_gw.get("why") or "no developer")[:80] + ")"
+
     # ── 15. Guild work order (throwaway) ───────────────────────────────────
     # bounty 1 AVT from the sentinel, which phase-3 funded above. Unlocks
     # guildGetOrder / guildMyWork / guildBid, which have no id to point at
@@ -3712,7 +3789,7 @@ async def _phase3_setup_entities(target, bag: McpFixtureBag,
     #   guildAward      -> {ok, order_id, status, worker, payee, firm}
     #   guildSubmitWork -> {ok, order_id, status}
     #   guildVerify     -> {ok, order_id, status, payout, fee, stars, ...}
-    _worker_jwt = bag.flow_values.get("second_agent_jwt")
+    _worker_jwt = bag.flow_values.get("guild_worker_jwt")      # V0664: another developer's agent (14c)
     _stages = [("guild_award", 0), ("guild_submit", 1), ("guild_verify", 2)]
     for _name, _advance in _stages:
         try:
@@ -3722,7 +3799,7 @@ async def _phase3_setup_entities(target, bag: McpFixtureBag,
             _oid = (_o or {}).get("order_id") if isinstance(_o, dict) else None
             if not _oid or not _worker_jwt:
                 summary[_name] = "FAILED(post)"; continue
-            # the counterparty bids — the sentinel cannot bid on its own task
+            # the counterparty bids: another developer's agent (14c), never the sentinel's own developer
             await _call("theprotocol_guildBid",
                         {"order_id": _oid, "price": "1", "agent_jwt": _worker_jwt},
                         bag.developer_jwt)
@@ -4466,6 +4543,11 @@ async def _phase3_teardown(target, bag: McpFixtureBag) -> None:
         await _mcp_rpc_call(target, tool, args, jwt=jwt, timeout=10)
 
     fv = bag.flow_values
+    # V0664: the Guild's counterparty developer (phase-3 14c) asks for its own deletion, as a person does
+    _gwa = getattr(bag, "_guild_worker_account", None)
+    if isinstance(_gwa, dict) and _gwa.get("token") and _gwa.get("password"):
+        await _call("theprotocol_requestAccountDeletion",
+                    {"password": _gwa["password"], "confirmation": "DELETE MY ACCOUNT"}, _gwa["token"])
     if fv.get("payment_token"):
         await _call("theprotocol_releasePayment",
                     {"agent_jwt": bag.sentinel_jwt, "token": fv["payment_token"]},
@@ -4768,7 +4850,8 @@ def _real_success(d: Dict[str, Any]) -> bool:
 
 
 def kept_lifecycle_rows(lifecycle_rows: Dict[str, Dict[str, Any]], listed: set, present: set,
-                        pinned: Callable[[str], bool]) -> List[Tuple[str, Dict[str, Any]]]:
+                        pinned: Callable[[str], bool],
+                        known_red: Callable[[str], Optional[str]] = lambda _n: None) -> List[Tuple[str, Dict[str, Any]]]:
     """§MCPTEST30 (V0636): the lifecycle rows a sweep keeps beside its own, as (row name, row).
 
     A sweep consults a lifecycle row BY TOOL NAME, and where the tool's contract pins a refusal (override_coverage_fan,
@@ -4777,7 +4860,13 @@ def kept_lifecycle_rows(lifecycle_rows: Dict[str, Dict[str, Any]], listed: set, 
     itself read refusal-only on V0635 for that reason. Such a success is kept as `earned: <tool>`, beside the pinned
     refusal. A row named for no tool (a `<family>: ` prefix of _SYNTHETIC_ROW_PREFIXES) is kept under its own name: the
     public sweep always did, the admin sweep dropped them. `present` holds the names the sweep has already emitted;
-    nothing is emitted twice."""
+    nothing is emitted twice.
+
+    V0666 (session-lead seq 4442, his rule "failed is failed"): a pinned tool's FAILED lifecycle row (not healthy, no
+    named skip) is kept as `earned: <tool>` too, and reads FAIL; before, only a real success was kept and a failure
+    vanished with no red (the V0664 pair's triggerDiagnosticAction). Where the tool's contract declares the failure
+    red by design (`known_red`, via the `known_red` callable), the row carries it as `expected_red`. A named skip is
+    still not counted: the pinned refusal row stands, and the skip is said on the lifecycle's own rows."""
     out: List[Tuple[str, Dict[str, Any]]] = []
     seen = set(present)
     for name in sorted(lifecycle_rows):
@@ -4785,9 +4874,14 @@ def kept_lifecycle_rows(lifecycle_rows: Dict[str, Dict[str, Any]], listed: set, 
         if not isinstance(d, dict):
             continue
         if name in listed:
-            if not (pinned(name) and _real_success(d)):
+            if not pinned(name):
+                continue
+            failed = not d.get("healthy") and not d.get("skip_reason")
+            if not (_real_success(d) or failed):
                 continue
             row_name = "earned: " + name.replace("theprotocol_", "", 1)
+            if failed:
+                d = {**d, "healthy": False, "expected_red": known_red(name) or None}
         elif name.startswith(_SYNTHETIC_ROW_PREFIXES):
             row_name = name
         else:
@@ -5687,14 +5781,26 @@ class TestFlowMcpLifecycle(APITestBase):
         # (kept_lifecycle_rows: `earned: <tool>`).
         _listed_names = {t.get("name") for t in tools if isinstance(t, dict)}
         for _lname, _d in kept_lifecycle_rows(lifecycle_outcomes, _listed_names, {o.tool_name for o in outcomes},
-                                              lambda n: bool(get_contract(n).override_coverage_fan)):
+                                              lambda n: bool(get_contract(n).override_coverage_fan),
+                                              known_red=lambda n: get_contract(n).known_red):
             outcomes.append(ContractOutcome(
                 tool_name=_lname, contract_tier=_d.get("contract_tier") or "protocol",
                 healthy=bool(_d.get("healthy")), status_code=int(_d.get("status_code") or 0),
                 elapsed_ms=int(_d.get("elapsed_ms") or 0), skip_reason=_d.get("skip_reason"),
                 fail_reason=_d.get("fail_reason"), has_explicit_contract=True,
                 args_used={}, result_excerpt=_d.get("result_excerpt") or {},
+                expected_red=_d.get("expected_red"),
             ))
+        # V0666 the games switch: where the target's games are off its game tools are not in tools/list, so the walk
+        # never meets them; each gets a NOT MEASURED row of its own (never passed, never failed), not silence
+        _present = {o.tool_name for o in outcomes}
+        for _g in sorted(_switches.UNMEASURED_WHEN_OFF):
+            _why = _switches.unmeasured_off(_g)
+            if _why and _g not in _listed_names and _g not in _present:
+                outcomes.append(ContractOutcome(
+                    tool_name=_g, contract_tier=get_contract(_g).tier or "1", healthy=False, status_code=0,
+                    elapsed_ms=0, skip_reason=_why, fail_reason=None, has_explicit_contract=True, args_used={},
+                    result_excerpt={}))
 
         # §EVTYPES7 — say what decided the rows, not just how many passed.
         _dec_total = sum(_decided_by.values()) or 1
@@ -6141,13 +6247,15 @@ class TestFlowMcpLifecycle(APITestBase):
         # contract pins a refusal, are kept beside the sweep's rows (kept_lifecycle_rows); they were dropped here.
         _adm_listed = {t.get("name") for t in admin_tools if isinstance(t, dict)}
         for _lname, _d in kept_lifecycle_rows(admin_lifecycle_outcomes, _adm_listed, {o.tool_name for o in outcomes},
-                                              lambda n: bool(get_contract(n).override_coverage_fan)):
+                                              lambda n: bool(get_contract(n).override_coverage_fan),
+                                              known_red=lambda n: get_contract(n).known_red):
             outcomes.append(ContractOutcome(
                 tool_name=_lname, contract_tier=_d.get("contract_tier") or "admin_effect",
                 healthy=bool(_d.get("healthy")), status_code=int(_d.get("status_code") or 0),
                 elapsed_ms=int(_d.get("elapsed_ms") or 0), skip_reason=_d.get("skip_reason"),
                 fail_reason=_d.get("fail_reason"), has_explicit_contract=True,
                 args_used={}, result_excerpt=_d.get("result_excerpt") or {},
+                expected_red=_d.get("expected_red"),
             ))
 
         # ── Phase 6b · the ADMIN surface's wrong-tier matrix (§ADMINMATRIX) ──
@@ -6496,6 +6604,8 @@ class TestFlowMcpLifecycle(APITestBase):
                     "elapsed_ms": o.elapsed_ms,
                     "tier_drift": o.tier_drift,
                     "contract_gap": o.contract_gap,
+                    # V0666: a failed row declared red by design (mcp_tester._hard_fail_row reads it here)
+                    "expected_red": o.expected_red,
                 },
                 "error": o.fail_reason,
                 "expected_failure": o.skip_reason is not None,
@@ -7637,13 +7747,15 @@ class TestFlowMcpLifecycle(APITestBase):
         # measured where the tool's contract pins a refusal (`earned: <tool>`), kept as the central sweep keeps them
         _cop_listed = {t.get("name") for t in tools if isinstance(t, dict)}
         for _lname, _d in kept_lifecycle_rows(lifecycle_outcomes, _cop_listed, {o.tool_name for o in outcomes},
-                                              lambda n: bool(get_contract(n).override_coverage_fan)):
+                                              lambda n: bool(get_contract(n).override_coverage_fan),
+                                              known_red=lambda n: get_contract(n).known_red):
             outcomes.append(ContractOutcome(
                 tool_name=_lname, contract_tier=_d.get("contract_tier") or "protocol",
                 healthy=bool(_d.get("healthy")), status_code=int(_d.get("status_code") or 0),
                 elapsed_ms=int(_d.get("elapsed_ms") or 0), skip_reason=_d.get("skip_reason"),
                 fail_reason=_d.get("fail_reason"), has_explicit_contract=True,
                 args_used={}, result_excerpt=_d.get("result_excerpt") or {},
+                expected_red=_d.get("expected_red"),
             ))
 
         public_tool_total = len(tools)
@@ -7855,13 +7967,15 @@ class TestFlowMcpLifecycle(APITestBase):
         # §MCPTEST30 (V0637): and the admin lifecycle rows that name no tool, or a success where a pin refuses
         _cop_adm_listed = {t.get("name") for t in admin_tools if isinstance(t, dict)}
         for _lname, _d in kept_lifecycle_rows(admin_lifecycle_outcomes, _cop_adm_listed, {o.tool_name for o in outcomes},
-                                              lambda n: bool(get_contract(n).override_coverage_fan)):
+                                              lambda n: bool(get_contract(n).override_coverage_fan),
+                                              known_red=lambda n: get_contract(n).known_red):
             outcomes.append(ContractOutcome(
                 tool_name=_lname, contract_tier=_d.get("contract_tier") or "admin_effect",
                 healthy=bool(_d.get("healthy")), status_code=int(_d.get("status_code") or 0),
                 elapsed_ms=int(_d.get("elapsed_ms") or 0), skip_reason=_d.get("skip_reason"),
                 fail_reason=_d.get("fail_reason"), has_explicit_contract=True,
                 args_used={}, result_excerpt=_d.get("result_excerpt") or {},
+                expected_red=_d.get("expected_red"),
             ))
 
         # §pass73.3.21: cloud-op tier-gating reclassification. A consumer cloud-op

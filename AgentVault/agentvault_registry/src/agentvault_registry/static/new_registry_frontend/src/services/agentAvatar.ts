@@ -1,3 +1,5 @@
+import { config } from '@/config'
+
 /**
  * What UserAvatar needs to draw an agent as its owner dressed it (agentvault2-56, 2026-10-23: the agent page
  * drew SYBIL as a letter, missing the custom avatar SYBIL and others have). One rule for every view that shows an agent's face: Discovery's agent view and the agent page.
@@ -32,8 +34,40 @@ export function agentAvatarUser(a: any): Record<string, any> | null {
   }
 }
 
-/** The agent's own picture, from whichever place its card or its row carries it; null draws the initial. */
+/** The address the agent's card names for its picture, as written (its owner's edit field shows it). Never an image
+ *  source: draw it through agentAvatarUrl or cardIconSrc. */
+export function rawCardIcon(a: any): string | null {
+  const cd: any = a?.rawCardData || a?.card_data || {}
+  const v = cd.iconUrl || cd.icon_url || a?.icon_url
+  return typeof v === 'string' && v.trim() ? v : null
+}
+
+/** A short, stable version of an icon address, so a card that names another icon gets another image address and the
+ *  browser does not show the one it cached (FNV-1a, 32 bit). */
+function iconVersion(address: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < address.length; i++) {
+    h ^= address.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h.toString(36)
+}
+
+/**
+ * V0662, item 14: where the console draws a card's icon from. Never the address the card names (every reader's
+ * browser dialled it, and whoever runs that host learned who looked): the registry this console talks to fetched it
+ * once through its outbound guard and serves it from its own origin (GET /agent-cards/{did}/icon). Null, with no
+ * icon or no DID to ask by, draws the initial. services/cardIconSites.test.ts keeps every view on this.
+ */
+export function cardIconSrc(did: unknown, iconUrl: unknown): string | null {
+  if (typeof iconUrl !== 'string' || !iconUrl.trim()) return null
+  if (typeof did !== 'string' || !/^did:[a-z0-9]+:\S+$/i.test(did)) return null
+  return `${config.api.baseURL}/agent-cards/${encodeURIComponent(did)}/icon?v=${iconVersion(iconUrl.trim())}`
+}
+
+/** The agent's own picture, from whichever place its card or its row carries it, drawn from the registry; null draws
+ *  the initial. */
 export function agentAvatarUrl(a: any): string | null {
   const cd: any = a?.rawCardData || a?.card_data || {}
-  return cd.iconUrl || cd.icon_url || a?.icon_url || a?.avatar || null
+  return cardIconSrc(a?.did || a?.agent_did || cd.did, rawCardIcon(a))
 }

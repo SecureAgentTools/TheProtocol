@@ -380,12 +380,34 @@ function togglePin(did: string) {
   void hydratePins()
 }
 
-async function refreshDetail() {
+/**
+ * V0662 console polish, item 13 — ONE PASS AT A TIME. The page size follows the tile's height, which settles in several
+ * steps after mount, and each step re-ran this whole pass while the last was still running: four overlapping passes,
+ * 2 × pageSize reads each, in about two seconds. CrowdSec read that as a crawl and banned his phone (2026-11-08 03:58Z,
+ * http-crawl-non_statics; every request it kept was GET /agent-metrics/<did>). A call during a pass now asks for ONE
+ * more pass, over the page as it is when the running one ends; a pass stops when the pane goes.
+ */
+let passRunning = false
+let passAgain = false
+let alive = true
+async function refreshDetail(): Promise<void> {
+  if (passRunning) { passAgain = true; return }
+  passRunning = true
+  try {
+    do {
+      passAgain = false
+      await refreshPass()
+    } while (passAgain && alive)
+  } finally { passRunning = false }
+}
+
+async function refreshPass() {
   // Bounded BY CONSTRUCTION: only the rows ON SCREEN. §COCKPITFRAME F3 — this is the whole
   // reason paging is the right answer to "lift the limit": the pin list may now be 200
   // long and the work per cycle is still `2 × pageSize`. A pane that fanned out over the
   // whole fleet is how §TROPHYALIAS turned one page into 89,576 requests.
   for (const did of visiblePins.value) {
+    if (!alive) return
     try {
       let mFailed = false
       let dFailed = false
@@ -428,7 +450,7 @@ onMounted(async () => {
   await refreshDetail()
   poll = setJitteredInterval(refreshDetail, Math.max(10, props.pollSeconds) * 1000)
 })
-onUnmounted(() => { if (poll) clearInterval(poll); poll = null })
+onUnmounted(() => { alive = false; if (poll) clearInterval(poll); poll = null })
 
 defineExpose({ reload: async () => { await loadMine(); await refreshDetail() } })
 </script>

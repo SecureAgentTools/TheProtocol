@@ -22,6 +22,7 @@ import PaymentTokensPanel from '@/components/myagents/PaymentTokensPanel.vue'
 import StatementPanel from '@/components/myagents/StatementPanel.vue'
 import FlareBadge from '@/components/common/FlareBadge.vue'
 import UserAvatar from '@/components/common/UserAvatar.vue'
+import { agentAvatarUrl, rawCardIcon } from '@/services/agentAvatar'   // V0662 item 14: drawn from the registry; the raw address only in the edit field
 
 const AddCredentialsModal = defineAsyncComponent(() =>
   import('@/components/common/AddCredentialsModal.vue'),
@@ -420,7 +421,7 @@ const avatarErrorByDid = ref<Record<string, string>>({})
 
 function openAvatarEditor(agent: any) {
   avatarEditingDid.value = agent.did
-  avatarEditingValue.value = agent.card_data?.iconUrl || agent.card_data?.icon_url || ''
+  avatarEditingValue.value = rawCardIcon(agent) || ''
   avatarErrorByDid.value = { ...avatarErrorByDid.value, [agent.did]: '' }
 }
 
@@ -1141,7 +1142,7 @@ onMounted(async () => {
                      a concrete preview. -->
                 <UserAvatar
                   :user="agent"
-                  :avatar-url="agent.card_data?.iconUrl || agent.card_data?.icon_url || null"
+                  :avatar-url="agentAvatarUrl(agent)"
                   :display-name="agentName(agent)"
                   size="sm"
                   class="card-flare-avatar"
@@ -1399,8 +1400,8 @@ onMounted(async () => {
                 </template>
                 <template v-else>
                   <span class="card-variant-label">{{ t('myAgentsView.card.avatar', 'AVATAR') }}</span>
-                  <span class="card-avatar-display" :title="agent.card_data?.iconUrl || ''">
-                    {{ agent.card_data?.iconUrl ? truncMid(agent.card_data.iconUrl, 28, 14) : t('myAgentsView.card.avatarNone', '(none — using initials)') }}
+                  <span class="card-avatar-display" :title="rawCardIcon(agent) || ''">
+                    {{ rawCardIcon(agent) ? truncMid(rawCardIcon(agent)!, 28, 14) : t('myAgentsView.card.avatarNone', '(none — using initials)') }}
                   </span>
                   <button
                     class="card-avatar-btn"
@@ -1494,7 +1495,7 @@ onMounted(async () => {
                 <div class="card-name-row">
                   <UserAvatar
                     :user="agent"
-                    :avatar-url="agent.card_data?.iconUrl || agent.card_data?.icon_url || null"
+                    :avatar-url="agentAvatarUrl(agent)"
                     :display-name="agent.did.slice(-12)"
                     size="sm"
                     class="card-flare-avatar"

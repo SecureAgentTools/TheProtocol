@@ -36,6 +36,7 @@ from .audit import emit_mcp_audit
 from .protocol_version import negotiate_protocol_version
 from .tool_aliases import resolve_alias  # §AGORAWORDS (V0419)
 from .tool_switches import filter_listed, listed as _tool_listed   # W3: the registry's switches decide the listing
+from .tool_switches import dispatchable as _tool_dispatchable, not_dispatchable_sentence as _not_dispatchable_sentence   # V0666 games
 
 from .auth_bridge import (
     authenticate_mcp_token, MCPAuthError, set_mcp_client_ip, set_mcp_bearer,
@@ -79,6 +80,7 @@ from .tools_discovery import (
     get_attestation_signing_pubkey,
     # §pass70 Sprint 6
     get_achievement_catalog,
+    get_contributor_track,
     get_attestation_health,
     get_circuits,
     get_staking_distributions,
@@ -366,6 +368,8 @@ from .tools_developer import (
     update_notification_prefs,
     get_my_signing_keys,
     get_my_flare_status,
+    get_my_contributor_track,
+    equip_title,
     get_my_fiat_purchases,
     get_my_2fa_status,
     # §pass70 Sprint 10 (Tier 3 — CI/CD mutations + re-tiered from Tier 2)
@@ -684,6 +688,7 @@ TOOL_DISPATCH: Dict[str, Any] = {
     "theprotocol_getFeaturedBundles": get_featured_bundles,
     # ─── §pass70 Sprint 6 (Tier 1 public) ─────────────────────────────────
     "theprotocol_getAchievementCatalog": get_achievement_catalog,
+    "theprotocol_getContributorTrack": get_contributor_track,
     "theprotocol_getAttestationHealth": get_attestation_health,
     "theprotocol_getCircuits": get_circuits,
     "theprotocol_getLockPayoutRuns": get_staking_distributions,
@@ -778,6 +783,8 @@ TOOL_DISPATCH: Dict[str, Any] = {
     "theprotocol_updateNotificationPrefs": update_notification_prefs,
     "theprotocol_getMySigningKeys": get_my_signing_keys,
     "theprotocol_getMyFlareStatus": get_my_flare_status,
+    "theprotocol_getMyContributorTrack": get_my_contributor_track,
+    "theprotocol_equipTitle": equip_title,
     "theprotocol_getMyFiatPurchases": get_my_fiat_purchases,
     "theprotocol_getMy2FAStatus": get_my_2fa_status,
     # ─── §pass70 Sprint 10 (Tier 1 — 2 new) ───────────────────────────────
@@ -1268,6 +1275,8 @@ TIER3_TOOLS = {
     "theprotocol_updateNotificationPrefs",
     "theprotocol_getMySigningKeys",
     "theprotocol_getMyFlareStatus",
+    "theprotocol_getMyContributorTrack",
+    "theprotocol_equipTitle",
     "theprotocol_getMyFiatPurchases",
     "theprotocol_getMy2FAStatus",
     # §pass70 Sprint 10 (Tier 3 — 15 new: 13 CI/CD mutations + 2 re-tiered)
@@ -1628,6 +1637,8 @@ async def _handle_tools_call(
     tool_name = resolve_alias(tool_name)   # §AGORAWORDS: tasks re-enter here with the name they were given
     if tool_name not in TOOL_DISPATCH:
         raise ValueError(f"Unknown tool: {tool_name}")
+    if not _tool_dispatchable(tool_name):   # V0666: a game tool where GAMES_ENABLED is off
+        raise ValueError(_not_dispatchable_sentence(tool_name))
 
     tool_fn = TOOL_DISPATCH[tool_name]
 
@@ -2064,10 +2075,11 @@ async def handle_rpc(request: Request) -> JSONResponse:
                 )
                 return _jsonrpc_success(request_id, _tool_result_payload(sel_result))
 
-            if tool_name not in TOOL_DISPATCH:
+            if tool_name not in TOOL_DISPATCH or not _tool_dispatchable(tool_name):
                 return _jsonrpc_error(
                     request_id, -32601,
-                    f"Tool not found: '{tool_name}'. Use tools/list to see available tools."
+                    (_not_dispatchable_sentence(tool_name) if tool_name in TOOL_DISPATCH else
+                     f"Tool not found: '{tool_name}'. Use tools/list to see available tools.")
                 )
 
             # §MCPTEST30 (V0524): an argument its tool's inputSchema cannot take is the caller's -32602, before the tool
@@ -2638,6 +2650,73 @@ TOOL_DISPATCH.update({
 })
 DISCOVERY_TOOL_SCHEMAS.extend(QUANTUM_TOOL_SCHEMAS)
 ALL_TOOL_SCHEMAS.extend(QUANTUM_TOOL_SCHEMAS)
+
+
+# ---------------------------------------------------------------------------
+# V0664 "Migrate a system", M4 (2026-11-14): the workflow (migration) template library (mcp/tools_workflow_templates.py),
+# late-wired. The two reads are tier 1 by absence from TIER2/TIER3; the six others are tier 2 (the inline agent_jwt swap).
+# ---------------------------------------------------------------------------
+from .tools_workflow_templates import (  # noqa: E402
+    WORKFLOW_TEMPLATE_AGENT_TOOL_SCHEMAS,
+    WORKFLOW_TEMPLATE_PUBLIC_TOOL_SCHEMAS,
+    create_workflow_template as _wtpl_create,
+    fork_workflow_template as _wtpl_fork,
+    get_workflow_template as _wtpl_get,
+    get_workflow_template_version as _wtpl_version,
+    instantiate_workflow_template as _wtpl_instantiate,
+    list_my_workflow_templates as _wtpl_mine,
+    list_workflow_templates as _wtpl_list,
+    publish_workflow_template_version as _wtpl_publish,
+    purchase_workflow_template as _wtpl_purchase,
+)
+
+# a literal dict: the CI tier gate (.forgejo/checks/mcp_audit_tier_coverage.py) reads the dispatch keys by AST
+TOOL_DISPATCH.update({
+    "theprotocol_listWorkflowTemplates": _wtpl_list,
+    "theprotocol_getWorkflowTemplate": _wtpl_get,
+    "theprotocol_getWorkflowTemplateVersion": _wtpl_version,
+    "theprotocol_purchaseWorkflowTemplate": _wtpl_purchase,
+    "theprotocol_forkWorkflowTemplate": _wtpl_fork,
+    "theprotocol_instantiateWorkflowTemplate": _wtpl_instantiate,
+    "theprotocol_createWorkflowTemplate": _wtpl_create,
+    "theprotocol_publishWorkflowTemplateVersion": _wtpl_publish,
+    "theprotocol_listMyWorkflowTemplates": _wtpl_mine,
+})
+_WTPL_T2 = {"theprotocol_getWorkflowTemplateVersion", "theprotocol_purchaseWorkflowTemplate",
+            "theprotocol_forkWorkflowTemplate", "theprotocol_instantiateWorkflowTemplate",
+            "theprotocol_createWorkflowTemplate", "theprotocol_publishWorkflowTemplateVersion",
+            "theprotocol_listMyWorkflowTemplates"}
+TIER2_TOOLS.update(_WTPL_T2)
+AUTH_REQUIRED_TOOLS.update(_WTPL_T2)
+DISCOVERY_TOOL_SCHEMAS.extend(WORKFLOW_TEMPLATE_PUBLIC_TOOL_SCHEMAS)
+AGENT_TOOL_SCHEMAS.extend(WORKFLOW_TEMPLATE_AGENT_TOOL_SCHEMAS)
+ALL_TOOL_SCHEMAS.extend(WORKFLOW_TEMPLATE_PUBLIC_TOOL_SCHEMAS + WORKFLOW_TEMPLATE_AGENT_TOOL_SCHEMAS)
+
+# V0666 D1 (2026-11-15): an organization's code distributions (mcp/tools_code_distributions.py: release lines, never AGORA
+# payouts). The reads are a developer's (tier 3: the organization's members); propose and vote speak as an agent (tier 2).
+from .tools_code_distributions import (  # noqa: E402
+    CODE_DISTRIBUTION_AGENT_TOOL_SCHEMAS,
+    CODE_DISTRIBUTION_DEVELOPER_TOOL_SCHEMAS,
+    get_code_distribution as _cdst_get,
+    list_organization_code_distributions as _cdst_list,
+    propose_code_distribution_change as _cdst_propose,
+    vote_code_distribution_change as _cdst_vote,
+)
+
+TOOL_DISPATCH.update({
+    "theprotocol_getCodeDistribution": _cdst_get,
+    "theprotocol_listOrganizationCodeDistributions": _cdst_list,
+    "theprotocol_proposeCodeDistributionChange": _cdst_propose,
+    "theprotocol_voteCodeDistributionChange": _cdst_vote,
+})
+_CDST_T2 = {"theprotocol_proposeCodeDistributionChange", "theprotocol_voteCodeDistributionChange"}
+_CDST_T3 = {"theprotocol_getCodeDistribution", "theprotocol_listOrganizationCodeDistributions"}
+TIER2_TOOLS.update(_CDST_T2)
+TIER3_TOOLS.update(_CDST_T3)
+AUTH_REQUIRED_TOOLS.update(_CDST_T2 | _CDST_T3)
+AGENT_TOOL_SCHEMAS.extend(CODE_DISTRIBUTION_AGENT_TOOL_SCHEMAS)
+DEVELOPER_TOOL_SCHEMAS.extend(CODE_DISTRIBUTION_DEVELOPER_TOOL_SCHEMAS)
+ALL_TOOL_SCHEMAS.extend(CODE_DISTRIBUTION_DEVELOPER_TOOL_SCHEMAS + CODE_DISTRIBUTION_AGENT_TOOL_SCHEMAS)
 
 
 # ---------------------------------------------------------------------------

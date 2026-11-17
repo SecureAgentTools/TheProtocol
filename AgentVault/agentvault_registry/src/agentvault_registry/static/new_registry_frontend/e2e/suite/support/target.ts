@@ -72,11 +72,16 @@ export async function routeLocalBuild(context: BrowserContext): Promise<void> {
  * visit (onboarding) opt out with { firstVisit: true } and meet the banner and the tour like a person does.
  */
 export async function seedReturningVisitor(context: BrowserContext): Promise<void> {
-  await context.addInitScript(() => {
+  // FESUITE_LOCAL_STORAGE: a JSON object of localStorage entries the returning visitor already holds on this device (V0665: the unlock celebration shows what this device has
+  // not seen yet, so an account whose unlocks a preview seeded would open it over every page; the seed script prints the entry: seed_sbx_beta.py seen)
+  let extra: Record<string, string> = {}
+  try { extra = JSON.parse(process.env.FESUITE_LOCAL_STORAGE || '{}') } catch { throw new Error('FESUITE_LOCAL_STORAGE is not a JSON object of strings') }
+  await context.addInitScript((entries: Record<string, string>) => {
     try {
       if (!localStorage.getItem('beta_banner_dismissed')) localStorage.setItem('beta_banner_dismissed', '1')
       if (!localStorage.getItem('pk_tour_done')) localStorage.setItem('pk_tour_done', '1')
       if (!localStorage.getItem('gt_dismissed')) localStorage.setItem('gt_dismissed', '[]')
+      for (const [k, v] of Object.entries(entries)) if (!localStorage.getItem(k)) localStorage.setItem(k, v)
     } catch { /* storage blocked: the page will show the banner, which the lifecycle then handles */ }
-  })
+  }, extra)
 }

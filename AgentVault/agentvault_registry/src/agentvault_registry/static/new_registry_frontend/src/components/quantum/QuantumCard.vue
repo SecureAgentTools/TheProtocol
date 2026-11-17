@@ -122,7 +122,7 @@ import { useQuantumWorkloads } from '@/composables/useQuantumWorkloads'
 import { useI18n } from '@/composables/useI18n'
 import { readQuantumAgent, type QuantumRead } from '@/services/api/quantum'
 import {
-  ageOf, backendTimeKind, backendsOf, latticeFor, percent, receiptFacts, rungRows, secondsSince, shortDigest,
+  ageOf, availabilityWindows, backendTimeKind, backendsOf, latticeFor, percent, receiptFacts, rungRows, secondsSince, shortDigest,
   type QuantumFacets, type RungRow,
 } from '@/services/quantum/quantumCard'
 
@@ -233,7 +233,7 @@ function ageText(seconds: number | null | undefined): string {
   const unit = { s: t('quantumCard.age.s', 's'), m: t('quantumCard.age.m', 'min'), h: t('quantumCard.age.h', 'h'), d: t('quantumCard.age.d', 'd') }[a.unit]
   return tp('quantumCard.age.read', 'read {n} {u} ago', { n: a.n, u: unit })
 }
-function ageFor(block: 'facts' | 'calibration' | 'queue', asOf: unknown): string {
+function ageFor(block: 'facts' | 'calibration' | 'queue' | 'availability', asOf: unknown): string {
   const fr = read.value?.freshness?.backends?.find((r) => r.id === backend.value?.id)
   const s = fr?.age_seconds?.[block]
   return ageText(typeof s === 'number' ? s : secondsSince(asOf))
@@ -281,6 +281,15 @@ const facts = computed(() => {
     const wait = typeof qu.estimated_wait_seconds === 'number' ? ` · ${tp('quantumCard.fact.wait', 'about {n} s wait', { n: qu.estimated_wait_seconds })}` : ''
     rows.push({ key: 'queue', label: t('quantumCard.fact.queue', 'Queue'), value: statusWord(qu.status) + wait, age: ageFor('queue', qu.as_of) })
   }
+  // V0662 item 6: when the backend takes work, in UTC as the card states it, with when that was read
+  const av = availabilityWindows(b)
+  if (av.length) {
+    const value = av.map((w) => {
+      const span = tp('quantumCard.avail.window', '{days} {start}–{end} UTC', { days: daysWord(w.days), start: w.start, end: w.end })
+      return w.overnight ? `${span} ${t('quantumCard.avail.overnight', '(into the next day)')}` : span
+    }).join('; ')
+    rows.push({ key: 'availability', label: t('quantumCard.fact.availability', 'Available'), value, age: ageFor('availability', b.availability?.as_of) })
+  }
   return rows
 })
 
@@ -311,6 +320,16 @@ function roleWord(r: string): string {
     router: t('quantumCard.role.router', 'router'), meter: t('quantumCard.role.meter', 'meter'),
   }
   return m[r] || r
+}
+function daysWord(d: string): string {
+  const m: Record<string, string> = {
+    everyday: t('quantumCard.days.everyday', 'every day'), weekdays: t('quantumCard.days.weekdays', 'weekdays'),
+    weekend: t('quantumCard.days.weekend', 'weekends'), monday: t('quantumCard.days.monday', 'Monday'),
+    tuesday: t('quantumCard.days.tuesday', 'Tuesday'), wednesday: t('quantumCard.days.wednesday', 'Wednesday'),
+    thursday: t('quantumCard.days.thursday', 'Thursday'), friday: t('quantumCard.days.friday', 'Friday'),
+    saturday: t('quantumCard.days.saturday', 'Saturday'), sunday: t('quantumCard.days.sunday', 'Sunday'),
+  }
+  return m[d] || d
 }
 function kindWord(k: unknown): string {
   const m: Record<string, string> = { qpu: t('quantumCard.kind.qpu', 'QPU'), simulator: t('quantumCard.kind.simulator', 'Simulator'), emulator: t('quantumCard.kind.emulator', 'Emulator') }

@@ -104,6 +104,7 @@ from ..es_ssl_helper import get_httpx_verify  # noqa: E402
 # §FLARESHOP (2026-08-16) — THE flare grant writer + tier tables live here now.
 from ..services import flare_grants as _flare_grants  # noqa: E402
 from agentvault_registry.core.log_identity import email_for_log   # V0653 (am) item 7: no address in a log
+from ..core.registry_identity import EARNED_CORNERS, EARNED_ENCIRCLEMENTS   # V0665: the earned catalogs (the shop never sells them)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/fiat")
@@ -3922,6 +3923,9 @@ class FlareStatusResponse(BaseModel):
     # winner is picked).
     flare_encirclement_overlay: Optional[str] = None
     available_encirclement_overlays: List[str] = []
+    # V0665 the contributor track: the title worn, and what the caller has EARNED (kind, key) so the flare manager lists it beside the bought
+    flare_title: Optional[str] = None
+    earned: List[Dict[str, str]] = []
 
 
 # Valid encirclement variants — must stay in sync with FlareEncirclement.vue
@@ -4249,6 +4253,14 @@ def _unlocked_encirclement_flares_for(dev: Developer) -> List[str]:
     return []
 
 
+async def _earned_for(dev: Developer, db: Optional[AsyncSession]) -> List[Dict[str, str]]:
+    """V0665: the earned items the developer holds ((kind, key), read only; services/contributor_track writes them)."""
+    if db is None:
+        return []
+    from ..services import contributor_track
+    return [{"kind": k, "key": i} for (k, i) in sorted(await contributor_track.unlocked_set(db, dev.id))]
+
+
 async def _flare_status_payload(
     dev: Developer,
     db: Optional[AsyncSession] = None,
@@ -4323,6 +4335,8 @@ async def _flare_status_payload(
         # §28 (2026-05-13) — broken-machine overlay axis
         flare_encirclement_overlay=getattr(dev, 'flare_encirclement_overlay', None),
         available_encirclement_overlays=sorted(ENCIRCLEMENT_OVERLAYS),
+        flare_title=getattr(dev, 'flare_title', None),
+        earned=await _earned_for(dev, db),
     )
 
 
@@ -4452,6 +4466,14 @@ async def update_my_flare_selection(
         new_variant = sent["variant"]
         if new_variant is None or new_variant == CLEAR:
             current_dev.flare_encirclement_variant = None
+        elif new_variant in EARNED_ENCIRCLEMENTS:
+            # V0665: an earned ring is worn on the unlock row alone (no flare tier needed, no admin); never bought, never granted by hand
+            from ..services import contributor_track
+            await contributor_track.require_unlocked(db, current_dev.id, "encirclement", new_variant)
+            current_dev.flare_encirclement_variant = new_variant
+            # one copy, one bearer at a time: an agent that wore this ring gives it up (V0666)
+            await db.execute(sa.update(Agent).where(Agent.creator_developer_id == current_dev.id, Agent.flare_encirclement_variant == new_variant)
+                             .values(flare_encirclement_variant=None))
         elif new_variant in ENCIRCLEMENT_VARIANTS:
             unlocked_enc_for_variant = set(_unlocked_encirclement_flares_for(current_dev))
             if not unlocked_enc_for_variant:
@@ -4477,6 +4499,14 @@ async def update_my_flare_selection(
         new_cv = sent["corner_variant"]
         if new_cv is None or new_cv == CLEAR:
             current_dev.flare_corner_variant = None
+        elif new_cv in EARNED_CORNERS:
+            # V0665: an earned corner badge is worn on the unlock row alone (the old badges stay admin-only, as before)
+            from ..services import contributor_track
+            await contributor_track.require_unlocked(db, current_dev.id, "corner", new_cv)
+            current_dev.flare_corner_variant = new_cv
+            # one copy, one bearer at a time: an agent that wore this badge gives it up (V0666)
+            await db.execute(sa.update(Agent).where(Agent.creator_developer_id == current_dev.id, Agent.flare_corner_variant == new_cv)
+                             .values(flare_corner_variant=None))
         elif new_cv not in CORNER_VARIANTS:
             raise HTTPException(
                 400,
@@ -4518,6 +4548,16 @@ async def update_my_flare_selection(
                 )
             current_dev.flare_encirclement_overlay = new_ov
 
+    if "variant" in sent or "corner_variant" in sent:
+        # V0665 §FLARETOUCH, same class as the grant and the revoke: a worn ring or badge that never touches the CARD is invisible to every
+        # peer until something else moves that card. Every agent the developer owns, not a filtered subset.
+        try:
+            from ..services import enforcement_propagation as _ep
+            for _a in (await db.execute(select(Agent).where(Agent.creator_developer_id == current_dev.id))).scalars().all():
+                if getattr(_a, "did", None):
+                    await _ep.touch_native_card_no_commit(db, _a.did)
+        except Exception as _e:  # noqa: BLE001
+            logger.warning("[flare] card touch after a variant change failed (mirrors will lag): %s", _e)
     db.add(current_dev)
     await db.commit()
     await db.refresh(current_dev)
@@ -4600,7 +4640,8 @@ async def update_agent_flare_variant(
         or req.variant == "__clear__"
         or req.variant == ""
     )
-    if not is_clear and req.variant not in ALL_ENCIRCLEMENT_VARIANTS:
+    is_earned = not is_clear and req.variant in EARNED_ENCIRCLEMENTS
+    if not is_clear and not is_earned and req.variant not in ALL_ENCIRCLEMENT_VARIANTS:
         raise HTTPException(
             400,
             f"Unknown encirclement variant '{req.variant}'. "
@@ -4613,6 +4654,50 @@ async def update_agent_flare_variant(
         raise HTTPException(404, f"Agent {agent_did} not found")
     if agent.creator_developer_id != current_dev.id:
         raise HTTPException(403, "You do not own this agent")
+
+    # V0666 (the Flare view reworked): an agent wears an EARNED ring its developer unlocked. The unlock row is the gate (the contributor track's evaluator is
+    # the only writer of that table; this route reads it), a ring the developer has not earned is refused with the sentence that unlocks it, and an agent that
+    # already wears a BOUGHT ring is told to take it off first (one ring per agent). An earned ring is worn by one agent at a time, as the bought variants are.
+    # Taking an earned ring off needs no bought flare.
+    if is_earned or (is_clear and agent.flare_encirclement_variant in EARNED_ENCIRCLEMENTS):
+        if is_earned:
+            from ..services import contributor_track
+            await contributor_track.require_unlocked(db, current_dev.id, "encirclement", req.variant)
+            if bool(getattr(agent, "bears_encirclement_flare", False)) or agent.flare_tier:
+                raise HTTPException(
+                    409,
+                    "This agent wears a bought ring. Take it off first, then give it the unlocked one.",
+                )
+            await db.execute(
+                sa.update(Agent)
+                .where(
+                    Agent.creator_developer_id == current_dev.id,
+                    Agent.did != agent.did,
+                    Agent.flare_encirclement_variant == req.variant,
+                )
+                .values(flare_encirclement_variant=None)
+            )
+            agent.flare_encirclement_variant = req.variant
+            # one copy, one bearer at a time: the developer's own wear of this ring moves to the agent
+            if current_dev.flare_encirclement_variant == req.variant:
+                current_dev.flare_encirclement_variant = None
+                db.add(current_dev)
+        else:
+            agent.flare_encirclement_variant = None
+        db.add(agent)
+        try:
+            from ..services import enforcement_propagation as _ep
+            await _ep.touch_native_card_no_commit(db, agent.did)
+        except Exception as _e:  # noqa: BLE001
+            logger.warning("[flare] card touch after an agent ring change failed (mirrors will lag): %s", _e)
+        await db.commit()
+        await db.refresh(agent)
+        logger.info("[fiat] agent earned ring set dev=%s agent=%s variant=%s", current_dev.id, agent.did, agent.flare_encirclement_variant)
+        return {
+            "did": agent.did,
+            "flare_tier": agent.flare_tier,
+            "flare_encirclement_variant": agent.flare_encirclement_variant,
+        }
 
     # §pass39 (2026-05-18) — Sovereign variants are DID-locked. Reject any
     # write where the variant ∈ SOVEREIGN_VARIANTS and the target agent.did
@@ -4928,6 +5013,12 @@ async def equip_flare_slot(
 
     column = "bears_corner_flare" if slot == "corner" else "bears_encirclement_flare"
 
+    # V0666: one ring and one corner per agent. An agent that wears an UNLOCKED ring or badge (the contributor track's) is told to take it off first: the bought
+    # equip below would overwrite the per-agent variant column that holds it.
+    _worn_col, _worn_set, _worn_word = (("flare_corner_variant", EARNED_CORNERS, "badge") if slot == "corner" else ("flare_encirclement_variant", EARNED_ENCIRCLEMENTS, "ring"))
+    if getattr(target, _worn_col, None) in _worn_set:
+        raise HTTPException(409, f"This agent wears an unlocked {_worn_word}. Take it off first, then give it the bought flare.")
+
     # Capture the "was this a fresh equip?" state BEFORE flipping the flag.
     # A fresh equip (going from bears=false → true) force-inherits the dev's
     # current variant choice — even if the target has a stale per-agent
@@ -5178,19 +5269,67 @@ async def set_agent_corner_variant(
 
     Auth: caller must be is_admin OR have any admin_* sub-flag.
     """
-    if not _is_admin_developer(current_dev):
-        raise HTTPException(403, "Per-agent corner-badge variant is admin-only.")
-
     row = await db.execute(select(Agent).where(Agent.did == agent_did))
     agent = row.scalar_one_or_none()
+    raw = req.variant
+    is_clear = raw is None or raw == "__clear__" or raw == ""
+    # V0666 (the Flare view reworked): an agent wears an EARNED badge its developer unlocked, with no admin flag. A person who is not an admin is told "you do not
+    # own this agent" for a missing agent as well as for another person's, so the route does not say which DIDs exist. An earned badge is worn by one agent at
+    # a time; an agent that wears a BOUGHT corner is told to take it off first. Taking an earned badge off needs no admin either. The old badges stay admin-only.
+    owner_ok = agent is not None and agent.creator_developer_id == current_dev.id
+    earned_set = (not is_clear and raw in EARNED_CORNERS)
+    earned_clear = (is_clear and owner_ok and agent.flare_corner_variant in EARNED_CORNERS)
+    if earned_set or earned_clear:
+        if not owner_ok:
+            raise HTTPException(403, "You do not own this agent")
+        if earned_set:
+            from ..services import contributor_track
+            await contributor_track.require_unlocked(db, current_dev.id, "corner", raw)
+            if bool(getattr(agent, "bears_corner_flare", False)):
+                raise HTTPException(
+                    409,
+                    "This agent wears a bought corner. Take it off first, then give it the unlocked badge.",
+                )
+            await db.execute(
+                sa.update(Agent)
+                .where(
+                    Agent.creator_developer_id == current_dev.id,
+                    Agent.did != agent.did,
+                    Agent.flare_corner_variant == raw,
+                )
+                .values(flare_corner_variant=None)
+            )
+            agent.flare_corner_variant = raw
+            # one copy, one bearer at a time: the developer's own wear of this badge moves to the agent
+            if getattr(current_dev, "flare_corner_variant", None) == raw:
+                current_dev.flare_corner_variant = None
+                db.add(current_dev)
+        else:
+            agent.flare_corner_variant = None
+        db.add(agent)
+        try:
+            from ..services import enforcement_propagation as _ep
+            await _ep.touch_native_card_no_commit(db, agent.did)
+        except Exception as _e:  # noqa: BLE001
+            logger.warning("[flare] card touch after an agent badge change failed (mirrors will lag): %s", _e)
+        await db.commit()
+        await db.refresh(agent)
+        logger.info("[fiat] agent earned badge set dev=%s agent=%s variant=%s", current_dev.id, agent.did, agent.flare_corner_variant)
+        return {
+            "did": agent.did,
+            "flare_corner_variant": agent.flare_corner_variant,
+            "bears_corner_flare": bool(agent.bears_corner_flare),
+        }
+
+    if not _is_admin_developer(current_dev):
+        raise HTTPException(403, "Per-agent corner-badge variant is admin-only.")
     if not agent:
         raise HTTPException(404, f"Agent {agent_did} not found")
     if agent.creator_developer_id != current_dev.id:
         raise HTTPException(403, "You do not own this agent")
 
     # Normalize the input: null OR explicit __clear__ sentinel → drop override
-    raw = req.variant
-    if raw is None or raw == "__clear__" or raw == "":
+    if is_clear:
         agent.flare_corner_variant = None
     else:
         if raw not in {"rocket", "crown", "vault", "gavel", "atom", "network"}:

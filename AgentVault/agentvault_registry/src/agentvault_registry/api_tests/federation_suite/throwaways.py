@@ -119,7 +119,8 @@ async def return_balance(rig: Any, did: str, label: str) -> Optional[str]:
     if held <= 0:
         return None
     amount = format(held, "f")
-    admin = label if label.endswith("-admin") else label + "-admin"
+    base = rig.base_of(label) if hasattr(rig, "base_of") else label   # a test's own developer: its registry's admin
+    admin = base if base.endswith("-admin") else base + "-admin"
     _, refused = await call(rig, admin, "tegTreasuryReceive", {
         "source_agent_did": did, "amount": amount, "reason": "federation_suite_fixture_retired",
         "reference_id": f"fedsuite-retire-{did[-12:]}"})

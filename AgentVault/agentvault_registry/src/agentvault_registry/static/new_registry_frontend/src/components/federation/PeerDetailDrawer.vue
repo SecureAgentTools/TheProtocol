@@ -396,6 +396,7 @@
             </header>
             <div v-if="eventsLoading && events.length === 0" class="pdd-center"><div class="pdd-spinner"></div></div>
             <ReadFailedNotice v-else-if="eventsFailed" dense :retry="loadEvents" data-testid="pdd-events-unread" />
+            <p v-else-if="eventsAdminOnly" class="pdd-empty pdd-empty--inline" data-testid="pdd-events-admin">A peer's event log is read by a federation admin.</p>
             <div v-else-if="events.length === 0" class="pdd-empty pdd-empty--inline">
               <Icon name="mdi:history" :size="20" />
               <p>{{ isLocal ? 'No federation events on aggregate registry:self.' : 'No events for this peer.' }}</p>
@@ -424,6 +425,8 @@ import Icon from '@/components/Icon.vue'
 import PeerOrb from '@/components/federation/PeerOrb.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import { apiClient } from '@/services/api/client'
+import { hasAdminFlag } from '@/composables/usePermissions'
+import { useAuthStore } from '@/stores/auth'
 import {
   fetchRegistryStats,
   fetchOperatorLifecycle,
@@ -485,6 +488,8 @@ const lifecycle = ref<OperatorLifecycle | null>(null)
 // ── Events state (used for both local + peer) ───────────────
 const events = ref<any[]>([])
 const eventsLoading = ref(false)
+/** V0662 admin guard: a member's drawer does not ask a peer's event log (an admin_federation read), and says so */
+const eventsAdminOnly = ref(false)
 /** §FESUITE V0577: a failed events read said "No events for this peer." (the catch set the list to []) */
 const eventsFailed = ref(false)
 
@@ -510,6 +515,9 @@ async function loadEvents() {
       const r = await fetchLocalFederationEvents(50)
       events.value = r.events || []
     } else {
+      // a peer's event log is an admin_federation read: a member's drawer does not ask (V0662 admin guard, layer 3)
+      if (!hasAdminFlag(useAuthStore().user, 'federation')) { events.value = []; eventsFailed.value = false; eventsAdminOnly.value = true; return }
+      eventsAdminOnly.value = false
       const r = await apiClient.get(`/admin/federation/topology/peers/${props.peer.id}/events`, { params: { limit: 50 } })
       events.value = r.data?.events || []
     }

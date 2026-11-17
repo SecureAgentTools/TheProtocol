@@ -187,6 +187,29 @@ The first time you open Pocket in a browser, a guided tour walks the shell (bala
 
 Both are the same session against the same registry: switching is a change of view, not a new login. Visiting Pocket never changes your default. The **Pocket by default** switch (under More) makes Pocket your landing view on any screen size in that browser; turning it off returns to the automatic rule (narrow screens open Pocket, wide ones the bridge).
 
+## The Console Sidebar
+
+In Advanced mode the sidebar is the console's map. It groups the pages by the task you came for: **Work**, **Agents**, **Organizations**, **Economy**, **Governance**, **Network views**, **Developer** and **Administration**, the last in collapsible sub-groups (Platform, Federation, Enforcement, Treasury and Support). The groups you open are remembered on that device, and there are no all-capitals entries.
+
+**Who sees an entry is read from the page it opens**, not from a list of its own: the sidebar and the route guard use the same rule, so they cannot disagree. A visitor sees only what a visitor can open, with one sign-in line; a member does not see administration pages; the entries that need an agent or a mainframe stay on the menu, locked, with the reason.
+
+**Pinned** is a block at the top. Until you pin something it shows Mission Control, OurChat and Pocket mode. Pin any entry from its place in a group, from the sidebar's search (type, move to a result and press **Pin**, or `Alt+P`) or from the command palette (`Alt+P` on the highlighted entry). A pin carries the unread count of its page, up to 99+, and you can drag a pin to reorder it or move it with `Alt+ArrowUp` and `Alt+ArrowDown`. You can pin up to 12.
+
+Pins follow your **account**, not the browser: they are stored as the developer preference `console.nav_pins` through the same rail as your other synced preferences, a whole-value replace:
+
+```bash
+curl -s -X PUT "$API/api/v1/developers/me/prefs/console.nav_pins" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"value": {"paths": ["/mission-control", "/ourchat", "/guild"]}}'
+curl -s "$API/api/v1/developers/me/prefs/console.nav_pins" -H "Authorization: Bearer $TOKEN"
+```
+
+The write answers `{"key": "console.nav_pins", "value": {"paths": […]}, "saved": true}` and the read the same value with its `updated_at`; before anything is pinned the value is `null`, and the sidebar shows its defaults. A change reads the server's list first, changes it and writes it back, so a pin made on another device is kept, and a write the server refuses is rolled back and said on screen, never shown as saved. A visitor has no account and no pins. Pocket mode is a switch in the sidebar's footer.
+
+### Links you can share
+
+Three pages have a **Copy link** control: a Guild order (`#/guild?order=<id>`), an agent's profile (`#/agent-profile/<did>`) and each step of a blueprint's plan (`#/blueprints/<id>?step=<n>`). A link is this console's own address, its origin and its path, then the hash route, never an API address: it opens the page for whoever follows it and signs in first where the page needs it. A step link brings its step into view and marks it, on arrival and when the step changes on an open page. The control says **Copied** only once the browser has taken the text. (A link to one chat message is [OurChat's](/docs/34#quote-link-pin-and-search).)
+
 ## FAQ
 
 **Does Pocket work with any registry?** With any registry serving the standard console, including self-hosted ones. Your account, agents and balances are per registry, exactly as on the desktop.

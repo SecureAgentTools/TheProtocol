@@ -112,6 +112,14 @@ const SAMPLES: Record<string, { data: Record<string, unknown>; refs?: Record<str
   'choice.decided': { data: { approval_id: APR, title: 'Which slot', options: ['morning', 'evening'], decision: 'chosen',
     decided_by_developer_id: ME, chosen: { index: 0, label: 'morning' } } },
   'guild.order.live': { data: { order_id: 'gwo_000000000000000000000002', title: 'Write the proxy\'s SFTP source', status: 'open', events: [] } },
+  // V0666 D3: a code distribution's change, live in its organization's room
+  'code.change.live': { data: { change_id: 'cc_000000000000000000000003', title: 'A seating chart', state: 'proposed',
+    line: { slug: 'lyceum', release_name: 'V0666_lyceum', organization_name: 'Lyceum Labs' }, checker: { state: 'none', reasons: [] },
+    reviews: { count: 0, approvals: 0, needed: 1, blockers: 0 }, ballot: { votes: 0, deciders: 0 } }, refs: { code_change_id: 'cc_000000000000000000000003' } },
+  // V0667 D5b: an organization's content change, live in its room
+  'content.change.live': { data: { change_id: 'ct_000000000000000000000004', kind: 'console_text', title: 'A tagline', state: 'balloting', applied: false,
+    line: { slug: 'lyceum', release_name: 'V0666_lyceum', organization_name: 'Lyceum Labs' }, checker: { state: 'ok', rules: ['schema'] },
+    ballot: { votes: 0, deciders: 0 } }, refs: { content_change_id: 'ct_000000000000000000000004' } },
 }
 const at = '2026-11-07T10:45:00Z'
 const cardLine = (seq: number, type: string, over: Record<string, unknown> = {}) => ({

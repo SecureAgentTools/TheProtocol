@@ -26,7 +26,7 @@ import json
 import uuid
 from typing import Any, Dict, Optional, Tuple
 
-from agentvault_registry.api_tests.federation_suite import throwaways
+from agentvault_registry.api_tests.federation_suite import own_developer, throwaways
 from agentvault_registry.api_tests.federation_suite.decorator import federation_test
 from agentvault_registry.api_tests.federation_suite.rig import (
     FederationTestRig, AssertionResult, PreconditionUnmet,
@@ -86,8 +86,10 @@ async def _delta(rig) -> Optional[float]:
     return None if d is None else _num(d)
 
 
-async def _new_agent(rig, tag: str) -> Dict[str, str]:
-    r, refused = await _call(rig, "sandbox-A", "createAgent", {
+async def _new_agent(rig, tag: str, label: str = "sandbox-A", bond: bool = True) -> Dict[str, str]:
+    """An agent made as `label` (the admin's public path, or a developer the flow registered for itself), bonded only
+    when it will act as a provider (`bond`): a bid is the provider's act, posting an order is not."""
+    r, refused = await _call(rig, label, "createAgent", {
         "name": f"fedsuite-lifecycle-{tag}-{uuid.uuid4().hex[:8]}",
         "description": "federation suite guild lifecycle probe",
     })
@@ -100,12 +102,12 @@ async def _new_agent(rig, tag: str) -> Dict[str, str]:
     cid = r.get("client_id") or (r.get("credentials") or {}).get("client_id")
     sec = r.get("client_secret") or (r.get("credentials") or {}).get("client_secret")
     did = r.get("did") or r.get("agent_did") or (r.get("agent") or {}).get("did")
-    throwaways.made("sandbox-A", did)  # V0641: retired once its test's verdict is in (throwaways)
+    throwaways.made(label, did)  # V0641: retired once its test's verdict is in (throwaways)
     if not (cid and sec and did):
         raise PreconditionUnmet(
             f"createAgent for {tag} returned no usable credential triple "
             f"(keys={sorted(r)[:8]})")
-    t, tref = await _call(rig, "sandbox-A", "getAgentToken",
+    t, tref = await _call(rig, label, "getAgentToken",
                           {"client_id": cid, "client_secret": sec})
     if tref or not isinstance(t, dict):
         raise PreconditionUnmet(f"getAgentToken refused for {tag}: {tref}")
@@ -114,8 +116,9 @@ async def _new_agent(rig, tag: str) -> Dict[str, str]:
         raise PreconditionUnmet(f"no agent JWT for {tag}")
     # §REPBOND: creation does NOT bond, so on an enforcing tier this fixture
     # is born refused at discovery/listing/pricing/guild/contract/a2a-payee.
-    await ensure_bonded(rig, "sandbox-A", did)
-    return {"did": did, "jwt": jwt, "client_id": cid}
+    if bond:
+        await ensure_bonded(rig, label, did)
+    return {"did": did, "jwt": jwt, "client_id": cid, "label": label}
 
 
 async def _balance(rig, jwt: str) -> float:
@@ -207,6 +210,18 @@ _GUILD_LIFECYCLE_EVENTS = ["GuildOrderPosted", "GuildBidPlaced", "GuildOrderAwar
     tags=["guild", "economic", "money", "delta"],
 )
 async def test_guild_lifecycle(rig: FederationTestRig) -> AssertionResult:
+    """V0664 (session-lead seq 4287): the poster and the worker belong to two developers. The self-dealing gate refuses
+    an order one developer posts and bids on ("a Guild order is for someone else's work"), and the gate is right: the
+    poster is an agent of a developer this flow registers for itself (own_developer, no Terms acceptance), funded by the
+    treasury; the worker stays the admin's bonded agent. That developer's own deletion request ends the flow."""
+    owners: list = []
+    try:
+        return await _guild_lifecycle(rig, owners)
+    finally:
+        await own_developer.retire(rig, owners)
+
+
+async def _guild_lifecycle(rig: FederationTestRig, owners: list) -> AssertionResult:
     """Post → bid → award → submit → verify, and the bounty actually moves.
 
     The assertion is on BALANCES and on Δ, not on status codes. Every step of
@@ -224,7 +239,8 @@ async def test_guild_lifecycle(rig: FederationTestRig) -> AssertionResult:
         # Do not add motion to a ledger that is already inconsistent.
         raise PreconditionUnmet(f"Δ is already {d0}, not 0 — refusing to run an economic test")
 
-    poster = await _new_agent(rig, "poster")
+    own = await own_developer.register(rig, "sandbox-A", "sandbox-A-admin", "fedsuite-guild", owners)
+    poster = await _new_agent(rig, "poster", label=own, bond=False)
     worker = await _new_agent(rig, "worker")
     state["poster"] = poster["did"]
     state["worker"] = worker["did"]
@@ -347,7 +363,7 @@ async def test_guild_lifecycle(rig: FederationTestRig) -> AssertionResult:
     # the developer is deleteMyAgentByDev. Passing agent_did to the former would
     # have silently done nothing and left this run's agents behind every time.
     for who in (poster, worker):
-        await throwaways.retire(rig, "sandbox-A", who["did"])
+        await throwaways.retire(rig, who["label"], who["did"])
     return result
 
 

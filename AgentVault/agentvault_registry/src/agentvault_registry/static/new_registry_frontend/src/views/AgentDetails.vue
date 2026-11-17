@@ -29,6 +29,7 @@ import TrackRecordPanel from '@/components/common/TrackRecordPanel.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import UserAvatar from '@/components/common/UserAvatar.vue'
 import { useI18n } from '@/composables/useI18n'
+import { roleLabel, roleTitle } from '@/services/agent/roleLabel'
 import { useCurrency } from '@/composables/useCurrency'
 import QuantumCard from '@/components/quantum/QuantumCard.vue'
 import { useQuantumWorkloads } from '@/composables/useQuantumWorkloads'
@@ -868,7 +869,7 @@ onMounted(async () => {
            because a confident 0 is a lie about an unfinished fetch. -->
       <div class="ad-glance" data-testid="ad-glance">
         <span class="glance-item"><i>{{ t('agentDetails.gSeen', 'last seen') }}</i>{{ agent.last_active_at ? formatTimeAgo(agent.last_active_at) : '—' }}</span>
-        <span v-if="canSeeAuthz" class="glance-item"><i>{{ t('agentDetails.gRoles', 'roles') }}</i>{{ authz ? (authz.roles.length ? authz.roles.join(', ') : t('agentDetails.gNoRoles', 'none')) : '—' }}</span>
+        <span v-if="canSeeAuthz" class="glance-item"><i>{{ t('agentDetails.gRoles', 'roles') }}</i>{{ authz ? (authz.roles.length ? authz.roles.map((r: string) => roleLabel(r, t)).join(', ') : t('agentDetails.gNoRoles', 'none')) : '—' }}</span>
         <span v-if="canSeeAuthz" class="glance-item"><i>{{ t('agentDetails.gCeiling', 'per-tx ceiling') }}</i>{{ spendCeiling }}</span>
         <span class="glance-item"><i>{{ t('agentDetails.gDiscovery', 'discovery') }}</i>{{ listingUnlisted ? t('agentDetails.gUnlisted', 'unlisted') : bondHidesListing ? t('agentDetails.gUnbonded', 'hidden until bonded') : t('agentDetails.gListed', 'listed') }}</span>
         <span class="glance-item"><i>{{ t('agentDetails.gHands', 'spawned') }}</i>{{ handCount === null ? '—' : handCount }}</span>
@@ -1267,7 +1268,7 @@ onMounted(async () => {
               <div class="authz-block">
                 <div class="authz-block-label">{{ t('agentDetails.roles', 'ROLES') }}</div>
                 <div v-if="authz.roles && authz.roles.length" class="authz-chips">
-                  <span v-for="r in authz.roles" :key="r" class="authz-chip authz-chip--role">{{ r }}</span>
+                  <span v-for="r in authz.roles" :key="r" class="authz-chip authz-chip--role" :title="roleTitle(r, t) || undefined">{{ roleLabel(r, t) }}</span>
                 </div>
                 <div v-else class="authz-none">{{ t('agentDetails.noRoles', 'No IRONKEY roles resolved') }}</div>
               </div>

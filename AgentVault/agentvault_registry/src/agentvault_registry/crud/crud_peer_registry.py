@@ -35,9 +35,21 @@ try:
         "Federated agent card copies the ingest did not write, by peer and reason",
         labelnames=["peer", "reason"],
     )
+    # V0662, item 18: a card whose content the ingest withholds while its own HOME states a denial (suspended, revoked
+    # or deactivated there: §QUARANTINEDENY lands that denial on our copy) is the gate working, not a refusal. Such a
+    # card stays invalid for good and its home keeps exporting it, so counting it as a refusal made the day-long
+    # refusal alert fire for ever. It counts here, by peer and first failing field; the refusal counter counts
+    # refusals only.
+    FEDERATION_CARD_INGEST_WITHHELD_TOTAL = _IngestCounter(
+        "federation_card_ingest_withheld_total",
+        "Federated agent cards whose content the fail-closed ingest withheld while their home states a denial "
+        "(suspended, revoked or deactivated there), by peer and first failing field",
+        labelnames=["peer", "field"],
+    )
 except Exception:  # pragma: no cover  (no prometheus_client, or the name already registered)
     FEDERATION_CARD_INGEST_REFUSED_TOTAL = None
     FEDERATION_CARD_INGEST_SKIPPED_TOTAL = None
+    FEDERATION_CARD_INGEST_WITHHELD_TOTAL = None
 
 _SKIP_NAMED: set = set()   # (card, reason) pairs this worker has already named in the log; capped below
 
@@ -817,6 +829,19 @@ async def _apply_home_denials_despite_quarantine(db: AsyncSession, card_uuid, ag
     return "updated"
 
 
+def home_states_a_denial(agent_card) -> bool:
+    """V0662, item 18: does this card, as presented, carry a deny-only fact §QUARANTINEDENY applies from its home (an
+    enforced status in the enforcement extension, or is_active false)? Whether it landed now or long ago does not
+    matter: the card is withheld at its home's word either way. The caller asks only for a copy from the card's home."""
+    if not isinstance(agent_card, dict):
+        return False
+    if agent_card.get('is_active') is False:
+        return True
+    from ..services import enforcement_propagation as _ep
+    incoming = _ep.extension_from_card(agent_card.get('card_data')) or {}
+    return _ep.is_enforced_status(str(incoming.get('status') or '').strip().lower())
+
+
 def is_erasure_tombstone(agent_card) -> bool:
     """D6-816 — the card a home exports after an account deletion redacted it (routers/account_deletion.py, step 5):
     inactive, its card_data reduced to the DID, the capabilities and `anonymized: true`. It is not an AgentCard and names no
@@ -1104,9 +1129,12 @@ async def upsert_agent_cards_from_peer(
                     "%d error(s): %s", card_uuid, peer_svid, len(_fields),
                     "; ".join(f"{p} ({t}): {m}" for p, t, m in _fields[:8]) + (" ..." if len(_fields) > 8 else ""),
                 )
-                if FEDERATION_CARD_INGEST_REFUSED_TOTAL is not None:
+                # V0662, item 18: withheld (the card's own home states a denial) or refused, never both
+                _counter = (FEDERATION_CARD_INGEST_WITHHELD_TOTAL if from_origin and home_states_a_denial(agent_card)
+                            else FEDERATION_CARD_INGEST_REFUSED_TOTAL)
+                if _counter is not None:
                     try:
-                        FEDERATION_CARD_INGEST_REFUSED_TOTAL.labels(peer=str(peer_svid)[:120], field=_fields[0][0]).inc()
+                        _counter.labels(peer=str(peer_svid)[:120], field=_fields[0][0]).inc()
                     except Exception:  # a metrics failure never decides an ingest
                         pass
                 # §QUARANTINEDENY (2026-09-29): the quarantine refuses the NEW content, and the copy we already hold

@@ -39,20 +39,8 @@ AGENT = "did:theprotocol:eu.theprotocol.cloud:0f1e2d3c-0000-4000-8000-0000000000
 DATA = {"message": "hi", "data": {"nested": 1}}
 
 
-class _Resp:
-    def __init__(self, code):
-        self.status_code = code
-        self.text = "ok" if code < 300 else "nope"
-
-
-class _Client:
-    def __init__(self, code=200):
-        self.code = code
-        self.received = []
-
-    async def post(self, url, **kw):
-        self.received.append({"url": url, **kw})
-        return _Resp(self.code)
+# V0662 (item 16): a webhook send goes through the outbound guard, which needs a real client's connection layer
+from tests._doubles import RecordingWebhookClient as _Client  # noqa: E402
 
 
 class _Db:
@@ -75,7 +63,7 @@ def _run(coro):
 
 
 def _hook(**kw):
-    d = dict(id="wh1", url="http://receiver.invalid/hook", secret=SECRET, failure_count=0, is_active=True,
+    d = dict(id="wh1", url="http://receiver.example.org/hook", secret=SECRET, failure_count=0, is_active=True,
              last_triggered_at=None, developer_id=7)
     d.update(kw)
     return types.SimpleNamespace(**d)

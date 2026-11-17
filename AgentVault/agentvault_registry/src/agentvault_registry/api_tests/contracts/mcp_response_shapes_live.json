@@ -305,10 +305,6 @@
     "last_snapshot",
     "thresholds"
   ],
-  "theprotocol_getAdminSimulationFundStatus": [
-    "lines",
-    "total"
-  ],
   "theprotocol_getAdminSimulationLogs": [
     "lines",
     "total"

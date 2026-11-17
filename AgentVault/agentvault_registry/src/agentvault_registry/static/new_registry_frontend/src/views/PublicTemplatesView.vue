@@ -9,8 +9,10 @@ import axios from 'axios'
 import Icon from '@/components/Icon.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useI18n } from '@/composables/useI18n'
+import { useRegistryConfig } from '@/composables/useRegistryConfig'
 
 const { t } = useI18n()
+const { workflowTemplatesEnabled } = useRegistryConfig()
 const router = useRouter()
 const authStore = useAuthStore()
 
@@ -65,6 +67,9 @@ function handleTry(tpl: any) {
           {{ t('publicTemplatesView.hero.signInToFork') }}
         </router-link>
         <a href="/" class="pt-hero-btn pt-hero-btn--ghost">{{ t('publicTemplatesView.hero.backToMainSite') }}</a>
+        <router-link v-if="workflowTemplatesEnabled" :to="{ name: 'migrate' }" class="pt-hero-btn pt-hero-btn--ghost" data-testid="pt-migrate-link">
+          {{ t('publicTemplatesView.hero.migrate', 'Migrating a system? Migration templates') }}
+        </router-link>
       </div>
     </header>
 

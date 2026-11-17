@@ -109,7 +109,7 @@
                 <th>{{ t('adminCicdView.cols.env') }}</th>
                 <th>{{ t('adminCicdView.cols.started') }}</th>
                 <th>{{ t('adminCicdView.cols.duration') }}</th>
-                <th></th>
+                <th><span class="sr-only">Organization</span></th>
               </tr>
             </thead>
             <tbody>
@@ -495,7 +495,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   --red: #ff3366;
   --green: #00ff88;
   --amber: #ff9500;
-  --muted: #6b7785;
+  --muted: var(--nc-text-muted, #8f9399);   /* the theme's AA muted text: 4.9:1 or better on every surface here (was #6b7785, 3.4 to 4.1:1) */
   --border: rgba(var(--cyan-rgb), 0.18);
   --surface: #0a0d16;
   --mono: 'IBM Plex Mono', 'Fira Code', monospace;
@@ -644,7 +644,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 }
 .dd-drawer__head h3 { margin: 0; font-size: 14px; font-weight: 700; }
 .dd-drawer__close {
-  background: transparent; border: none; color: #6b7785; font-size: 22px; cursor: pointer;
+  background: transparent; border: none; color: var(--nc-text-muted, #8f9399); font-size: 22px; cursor: pointer;
   width: 32px; height: 32px; display: grid; place-items: center; border-radius: 4px;
 }
 .dd-drawer__close:hover { background: rgba(255,68,68,0.1); color: #ff4444; }
@@ -707,7 +707,7 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
   font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
 }
 .ac-st-success { background: rgba(0, 255, 136, 0.16); color: var(--green); }
-.ac-st-failed  { background: rgba(255, 51, 102, 0.18); color: var(--red); }
+.ac-st-failed  { background: rgba(255, 51, 102, 0.18); color: color-mix(in srgb, var(--red) 85%, #fff); }   /* 5.1:1 on the pill (the red alone was 4.48:1) */
 .ac-st-pending,
 .ac-st-running { background: rgba(255, 149, 0, 0.18); color: var(--amber); }
 .ac-st-cancelled { background: rgba(120,120,120,0.18); color: var(--muted); }

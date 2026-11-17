@@ -150,6 +150,11 @@ async def run_range(raw: Optional[Callable], bag: Any, outcomes: Dict[str, dict]
         tool, tier, base, cases = target
         t0 = time.time()
         name = PREFIX + tool.replace("theprotocol_", "")
+        from agentvault_registry.api_tests.contracts import mcp_switches as _sw   # V0664: a switched-off tool
+        _off = _sw.probe_skip(tool)
+        if _off:
+            outcomes[name] = make_outcome(name, "range", False, "0", 0, None, {}, expect_status="any", skip_reason=_off)
+            return
         if raw is None:
             outcomes[name] = make_outcome(name, "range", False, "0", 0, None, {}, expect_status="any",
                                           skip_reason="NOT MEASURED: the runner injected no raw JSON-RPC transport")

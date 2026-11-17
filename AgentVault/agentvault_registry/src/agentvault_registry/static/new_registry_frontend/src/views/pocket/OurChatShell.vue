@@ -52,6 +52,7 @@ import Icon from '@/components/Icon.vue'
 import PocketOurState from '@/views/pocket/PocketOurState.vue'
 import { useAuthStore } from '@/stores/auth'
 import { OURCHAT_LIST_FOLD, listAsRail, listFolded, saveListFolded } from '@/services/chat/listFold'
+import { pinnedBounds } from '@/services/chat/viewport'
 
 const { t, tp } = useI18n()
 const route = useRoute()
@@ -100,6 +101,8 @@ provide(OURCHAT_LIST_FOLD, { twoPane: wide, folded, canFold, toggle: toggleList,
 const rootEl = ref<HTMLElement | null>(null)
 const topPx = ref(0)
 const bottomPx = ref(0)
+/* V0662: the visible bottom edge while a phone's keyboard is open (services/chat/viewport.ts); null with none */
+const visibleBottomPx = ref<number | null>(null)
 /** The padding-bottom of the nearest scrolling ancestor: the room a page keeps under its content for a bar that
  *  overlays it (Pocket's .pk-main reserves its tab bar this way). Read, never an assumed bar height. */
 function scrollerPaddingBottom(el: HTMLElement): number {
@@ -115,6 +118,9 @@ const measure = () => {
       topPx.value = Math.max(0, Math.round(rootEl.value.getBoundingClientRect().top + (window.scrollY || 0)))
       bottomPx.value = scrollerPaddingBottom(rootEl.value)
     }
+    const vv = window.visualViewport
+    visibleBottomPx.value = pinnedBounds({ innerH: window.innerHeight, vvH: vv ? vv.height : null, vvTop: vv ? vv.offsetTop : null,
+      topPx: topPx.value, bottomPx: bottomPx.value }).visibleBottomPx
   } catch { /* noop */ }
 }
 const bounded = computed(() => !wide.value && threadOpen.value)
@@ -122,7 +128,12 @@ const paneStyle = computed(() => {
   // V0652 (ad): the two panes leave the page's bottom space too (Pocket wide keeps its tab bar there; the console's
   // dashboard keeps none), or the composer sat under Pocket's tab bar on a wide screen (measured at 1920 on V0651)
   if (wide.value) return { height: `calc(100vh - ${topPx.value + bottomPx.value}px)` }
-  if (bounded.value) return { '--ocs-offset': `${topPx.value + bottomPx.value}px` }
+  if (bounded.value) {
+    // V0662: with a keyboard open the thread is the visible area (its composer stays above the keyboard, the page does not
+    // move); with none this is what it was
+    if (visibleBottomPx.value != null) return { '--ocs-offset': `${topPx.value}px`, '--ocs-vh': `${visibleBottomPx.value}px` }
+    return { '--ocs-offset': `${topPx.value + bottomPx.value}px` }
+  }
   return undefined
 })
 watch(threadOpen, () => { void nextTick().then(measure) })
@@ -133,12 +144,15 @@ onMounted(() => {
     sync()
     mq.addEventListener ? mq.addEventListener('change', sync) : mq.addListener(sync)
     window.addEventListener('resize', measure, { passive: true })
+    window.visualViewport?.addEventListener('resize', measure)       // V0662: the keyboard opens and closes
+    window.visualViewport?.addEventListener('scroll', measure)
     requestAnimationFrame(measure)
   } catch { wide.value = false }
 })
 onBeforeUnmount(() => {
   try { mq?.removeEventListener ? mq.removeEventListener('change', sync) : mq?.removeListener(sync) } catch { /* noop */ }
   try { window.removeEventListener('resize', measure) } catch { /* noop */ }
+  try { window.visualViewport?.removeEventListener('resize', measure); window.visualViewport?.removeEventListener('scroll', measure) } catch { /* noop */ }
 })
 </script>
 
@@ -175,7 +189,7 @@ onBeforeUnmount(() => {
   font: 600 .72rem/1.5 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums;
 }
 
-.ocs-bounded { height: calc(100vh - var(--ocs-offset, 0px)); height: calc(100dvh - var(--ocs-offset, 0px)); overflow: hidden; }
+.ocs-bounded { height: calc(100vh - var(--ocs-offset, 0px)); height: calc(100dvh - var(--ocs-offset, 0px)); height: calc(var(--ocs-vh, 100dvh) - var(--ocs-offset, 0px)); overflow: hidden; overscroll-behavior: contain; }
 .ocs-bounded > .ocs-thread { overflow: hidden; }
 .ocs-bounded > .ocs-thread > :deep(.ost) { flex: 1; min-height: 0; }
 

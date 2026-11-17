@@ -109,11 +109,16 @@ describe('the frame\'s unit, never AVT on every frame', () => {
 
 describe('Fiat Operations greys out in the sidebar while the euro on-ramp is off (D6-836)', () => {
   const src = read('components/DashboardSidebar.vue')
+  // V0662 sidebar: the entries live in services/nav/navTable.ts and the lock rule in services/nav/navAccess.ts; the
+  // sidebar hands the rule the registry's own switch (navCtx.fiatEnabled = _fiatEnabled)
+  const table = read('services/nav/navTable.ts')
+  const access = read('services/nav/navAccess.ts')
   it('the item asks for the on-ramp, and the lock reads the registry\'s own switch', () => {
-    const item = src.match(/\{ name: 'Fiat Operations',[^\n]*\}/)
+    const item = table.match(/\{ name: 'Fiat Operations',[^\n]*\}/)
     expect(item, 'the Fiat Operations item').not.toBeNull()
     expect(item![0]).toContain('requiresFiat: true')
-    expect(src).toMatch(/if \(item\.requiresFiat && !_fiatEnabled\.value\) return true/)
+    expect(access).toMatch(/if \(item\.requiresFiat && !ctx\.fiatEnabled\) return 'lock'/)
+    expect(src).toMatch(/fiatEnabled: _fiatEnabled\.value,/)
     expect(src).toMatch(/const _fiatEnabled = computed\(\(\) => !!_sharedCfg\.value\.fiat_onramp_enabled\)/)
   })
   it('the lock says why, naming the switch', () => {

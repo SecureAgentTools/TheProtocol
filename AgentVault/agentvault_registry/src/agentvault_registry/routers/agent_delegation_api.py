@@ -376,7 +376,7 @@ async def _issue_root_token(db: AsyncSession, issuer_did: str, body: IssueIn,
             "note": "token shown once — store it now"}
 
 
-@router.post("/agents/capabilities", summary="Issue an att_ capability token to a sub-agent (L4)")
+@router.post("/agents/capabilities", summary="Issue an att_ capability permit to a sub-agent (L4)")
 async def issue_capability(
     body: IssueIn,
     issuer: models.Agent = Depends(require_agent_permission("authz.delegate")),
@@ -386,7 +386,7 @@ async def issue_capability(
 
 
 @router.post("/agents/{did}/capabilities/issue-as-owner",
-             summary="Issue a root att_ token FOR one of your agents (owner, L4)")
+             summary="Issue a root att_ permit FOR one of your agents (owner, L4)")
 async def issue_capability_as_owner(
     did: str,
     body: IssueIn,
@@ -427,7 +427,7 @@ async def issue_capability_as_owner(
     return await _issue_root_token(db, did, body, issued_via=f"owner_dev:{developer.id}")
 
 
-@router.post("/agents/capabilities/{token_id}/attenuate", summary="Derive a strictly-weaker child token (L4)")
+@router.post("/agents/capabilities/{token_id}/attenuate", summary="Derive a strictly-weaker child permit (L4)")
 async def attenuate_capability(
     token_id: int,
     body: AttenuateIn,
@@ -506,7 +506,7 @@ async def attenuate_capability(
             "max_uses": body.max_uses, "expires_at": exp.isoformat()}
 
 
-@router.post("/agents/capabilities/consume", summary="Debit a capability token's delegated budget (L4)")
+@router.post("/agents/capabilities/consume", summary="Debit a capability permit's delegated budget (L4)")
 async def consume_capability(
     body: ConsumeIn,
     holder: models.Agent = Depends(get_current_agent),
@@ -564,7 +564,7 @@ async def consume_capability(
             "effective_permissions": sorted(cap["permissions"])}
 
 
-@router.delete("/agents/capabilities/{token_id}", summary="Revoke a capability token + its whole subtree (L4)")
+@router.delete("/agents/capabilities/{token_id}", summary="Revoke a capability permit + its whole subtree (L4)")
 async def revoke_capability(
     token_id: int,
     holder: models.Agent = Depends(get_current_agent),
@@ -607,7 +607,7 @@ async def revoke_capability(
     return {"ok": True, "root_token_id": token_id, "revoked_count": n}
 
 
-@router.get("/agents/capabilities/mine", summary="Capability tokens I issued or hold")
+@router.get("/agents/capabilities/mine", summary="Capability permits I issued or hold")
 async def my_capabilities(
     agent: models.Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
@@ -638,7 +638,7 @@ async def _owned_agent_did(db: AsyncSession, did: str, dev: models.Developer) ->
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Not your agent")
 
 
-@router.get("/agents/{did}/capabilities", summary="Oversight: capability tokens an agent issued/holds (owner/admin)")
+@router.get("/agents/{did}/capabilities", summary="Oversight: capability permits an agent issued/holds (owner/admin)")
 async def agent_capabilities_oversight(
     did: str,
     current: models.Developer = Depends(get_current_developer),
@@ -667,7 +667,7 @@ async def agent_capabilities_oversight(
         for r in rows]}
 
 
-@router.delete("/agents/{did}/capabilities/{token_id}", summary="Oversight: revoke a token + subtree (owner/admin)")
+@router.delete("/agents/{did}/capabilities/{token_id}", summary="Oversight: revoke a permit + subtree (owner/admin)")
 async def agent_capability_revoke_oversight(
     did: str,
     token_id: int,
@@ -792,7 +792,7 @@ class SpawnIn(BaseModel):
     no_redelegate: bool = False
 
 
-@router.post("/agents/spawn", summary="Spawn a scoped sub-agent under yourself (L4 birth token)")
+@router.post("/agents/spawn", summary="Spawn a scoped sub-agent under yourself (L4 birth permit)")
 async def spawn_subagent(
     body: SpawnIn,
     parent: models.Agent = Depends(require_agent_permission("authz.delegate")),
@@ -1756,7 +1756,7 @@ class ActTokenIn(BaseModel):
     act_as: str = Field(..., max_length=160, description="principal to act on behalf of, e.g. agent:did:theprotocol:XXX")
 
 
-@router.post("/agents/act-token", summary="Create an on-behalf-of (act) agent token for a principal that delegated to you")
+@router.post("/agents/act-token", summary="Create an on-behalf-of (act) agent access key for a principal that delegated to you")
 async def mint_act_token(
     body: ActTokenIn,
     agent: models.Agent = Depends(get_current_agent),

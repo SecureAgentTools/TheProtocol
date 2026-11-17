@@ -92,7 +92,7 @@
         <p class="lp-lead">
           {{ tp('landingPage.hero.lead', 'A five-pillar distributed system for deploying, federating, and governing AI agents. {count} sovereign registries, federated and live in production. Identity fabric. Unit ledger. Immutable event sourcing. Bilateral federation via mTLS. Built from scratch. Self-hosted. Sovereign.', { count: lpFleetWord }) }}
         </p>
-        <div class="lp-hero-stats">
+        <div class="lp-hero-stats" data-static="omit">
           <div class="lp-hero-stat" v-for="hs in heroStats" :key="hs.label">
             <span class="lp-hero-stat-val">{{ hs.val }}</span>
             <span class="lp-hero-stat-label">{{ hs.label }}</span>
@@ -233,6 +233,12 @@
         </div>
       </div>
     </section>
+
+
+    <!-- ═══ SYSTEMS YOU ALREADY RUN (V0666, room seq 4404): Migrate a system, the Proxy, Code changes ═══ -->
+    <LandingSurfaces />
+    <!-- ═══ WHAT'S NEW (V0666, room seq 4424): the newest release's member lines, from the docs' release notes ═══ -->
+    <LandingWhatsNew />
 
 
     <!-- ═══ SECTION C: SOVEREIGN OPERATOR MODEL ═══ -->
@@ -881,7 +887,7 @@
         <div class="sdk-header">
           <div class="sdk-badge-row">
             <span class="sdk-badge">{{ t('landingPage.sdk.released') }}</span>
-            <span class="sdk-badge sdk-badge-ver">v0.7.6</span>
+            <span v-if="sdkVersion" class="sdk-badge sdk-badge-ver">v{{ sdkVersion }}</span>
             <span class="sdk-badge sdk-badge-ver">A2A v1.0</span>
           </div>
           <h2 class="sdk-h2">theprotocol-sdk</h2>
@@ -893,12 +899,11 @@
             <strong class="sdk-a2a-note-title">{{ t('landingPage.sdk.a2aNoteTitle') }}</strong>
             <span>{{ t('landingPage.sdk.a2aNoteBody') }}</span>
           </div>
-          <p class="sdk-lead">{{ t('landingPage.sdk.newIn070') }}</p>
+          <p class="sdk-lead">{{ t('landingPage.sdk.carries', 'It carries the proxy and the migration tool: tp-proxy connects a system that stays, or moves one off, from one spec file.') }}</p>
         </div>
 
-        <div class="sdk-install">
-          <code class="sdk-install-cmd">pip install "theprotocol-sdk[all]"</code>
-        </div>
+        <!-- V0666: the install line with the catalog's version, PyPI and the proxy chapter (components/landing/LandingSdkLine.vue) -->
+        <LandingSdkLine />
 
         <!-- Bridge cards -->
         <div class="sdk-bridges">
@@ -1821,6 +1826,13 @@ import { useFrames } from '@/composables/useFrames'
 // §SHOWCASEGATE — one shared read of /public/registry-config (module-cached; N callers = 1 request).
 import { useRegistryConfig } from '@/composables/useRegistryConfig'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
+// V0666 (gwo_dc5050837e93b0a64d1fdae7): the systems you already run, what is new, and the SDK on PyPI; the SDK version is the
+// console's catalog's, read after the page is up (useSdkVersion: the landing's first load does not carry the catalog)
+import LandingSurfaces from '@/components/landing/LandingSurfaces.vue'
+import LandingWhatsNew from '@/components/landing/LandingWhatsNew.vue'
+import LandingSdkLine from '@/components/landing/LandingSdkLine.vue'
+import { useSdkVersion } from '@/composables/useSdkVersion'
+const { sdkVersion } = useSdkVersion()
 import { governanceMode, presenceMode, commonsEnabled, type MembershipStats } from '@/services/membership/membership'
 import { useShowcaseRoster } from '@/composables/useShowcaseRoster'
 import { registryBase, mcpEndpoints, sdkSnippetHost } from '@/services/frameHost'
@@ -5028,16 +5040,6 @@ select.op-form-input { appearance: none; -webkit-appearance: none; background-im
 }
 .sdk-tagline { font-size: 0.7rem; letter-spacing: 0.2em; color: rgba(255,255,255,0.2); margin-bottom: 1rem; text-transform: uppercase; }
 .sdk-lead { font-size: 0.85rem; color: rgba(255,255,255,0.35); max-width: 600px; margin: 0 auto; line-height: 1.7; }
-
-.sdk-install {
-  text-align: center; margin: 2rem 0;
-}
-.sdk-install-cmd {
-  display: inline-block; padding: 0.6rem 1.5rem; border-radius: 6px;
-  background: rgba(0,0,0,0.4); border: 1px solid rgba(245,180,30,0.15);
-  font-family: 'Fira Code', monospace; font-size: 0.85rem;
-  color: rgba(245,180,30,0.8); letter-spacing: 0.03em;
-}
 
 /* Bridge cards */
 .sdk-bridges { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-bottom: 2.5rem; }

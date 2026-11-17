@@ -1,0 +1,1044 @@
+{
+ "note": "produced by scratchpad/cc/gen_path_vectors.py with the registry services/code_changes.py itself (check_paths, _SHA, reviews_verdict)",
+ "repo": "theprotocol/AgentVault",
+ "prefix": "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/",
+ "paths": [
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/X.vue"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": false,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/X.vue"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": false,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": false,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/stores/auth.ts"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": true,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/stores/auth.ts"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/services/api/client.ts"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": true,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/services/api/client.ts"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/services/safeUrl.ts"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": true,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/services/safeUrl.ts"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/AdminDashboard.vue"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": true,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/AdminDashboard.vue"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/FiatPurchase.vue"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": true,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/FiatPurchase.vue"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/services/federation/trust.ts"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": true,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/services/federation/trust.ts"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/assets/docs/intro.md"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": false,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/assets/docs/intro.md"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/components/Wallet.vue"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": true,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/components/Wallet.vue"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/router/index.ts"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": true,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/router/index.ts"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/Bond.vue"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": true,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/Bond.vue"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/StakeThing.vue"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": true,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/StakeThing.vue"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/EscrowView.vue"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": true,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/EscrowView.vue"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/Payments.vue"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": true,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/Payments.vue"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/signing.ts"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": true,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/signing.ts"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/Treasury.vue"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": true,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/Treasury.vue"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    ".env"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: .env (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/.env"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/.env (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/secret.ts"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/secret.ts (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/credentials.ts"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/credentials.ts (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/password.vue"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/password.vue (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "x/key/y"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: x/key/y (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "x/keys/y"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: x/keys/y (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a.pem"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a.pem (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a.key"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a.key (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a.p12"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a.p12 (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a.crt"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a.crt (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "package.json"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: package.json (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/package-lock.json"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/package-lock.json (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/Dockerfile"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/Dockerfile (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/vite.config.ts"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/vite.config.ts (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/tsconfig.json"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/tsconfig.json (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/.npmrc"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/.npmrc (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/main.py"
+   ],
+   "ok": false,
+   "reason": "agentvault_registry/src/agentvault_registry/main.py is not open in this phase (open: agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/alembic/versions/x.py"
+   ],
+   "ok": false,
+   "reason": "agentvault_registry/alembic/versions/x.py is not open in this phase (open: agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "README.md"
+   ],
+   "ok": false,
+   "reason": "README.md is not open in this phase (open: agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "../x"
+   ],
+   "ok": false,
+   "reason": "a malformed path: '../x' (relative, forward slashes, no '..')",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "/abs"
+   ],
+   "ok": false,
+   "reason": "a malformed path: '/abs' (relative, forward slashes, no '..')",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "a//b"
+   ],
+   "ok": false,
+   "reason": "a malformed path: 'a//b' (relative, forward slashes, no '..')",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "a\\b"
+   ],
+   "ok": false,
+   "reason": "a malformed path: 'a\\\\b' (relative, forward slashes, no '..')",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "."
+   ],
+   "ok": false,
+   "reason": "a malformed path: '.' (relative, forward slashes, no '..')",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "a/./b"
+   ],
+   "ok": false,
+   "reason": "a malformed path: 'a/./b' (relative, forward slashes, no '..')",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "a/../b"
+   ],
+   "ok": false,
+   "reason": "a malformed path: 'a/../b' (relative, forward slashes, no '..')",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    ""
+   ],
+   "ok": false,
+   "reason": "a malformed path: '' (relative, forward slashes, no '..')",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   ],
+   "ok": false,
+   "reason": "a malformed path: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' (relative, forward slashes, no '..')",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [],
+   "ok": false,
+   "reason": "no paths: name the files or directories the change touches",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a"
+   ],
+   "ok": false,
+   "reason": "a path is named twice",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a0",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a1",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a2",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a3",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a4",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a5",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a6",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a7",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a8",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a9",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a10",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a11",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a12",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a13",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a14",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a15",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a16",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a17",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a18",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a19",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a20",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a21",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a22",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a23",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a24",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a25",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a26",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a27",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a28",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a29",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a30",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a31",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a32",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a33",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a34",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a35",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a36",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a37",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a38",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a39",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a40",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a41",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a42",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a43",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a44",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a45",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a46",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a47",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a48",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a49"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": false,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a0",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a1",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a2",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a3",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a4",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a5",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a6",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a7",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a8",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a9",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a10",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a11",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a12",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a13",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a14",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a15",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a16",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a17",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a18",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a19",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a20",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a21",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a22",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a23",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a24",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a25",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a26",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a27",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a28",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a29",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a30",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a31",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a32",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a33",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a34",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a35",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a36",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a37",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a38",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a39",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a40",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a41",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a42",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a43",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a44",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a45",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a46",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a47",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a48",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a49"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a0",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a1",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a2",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a3",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a4",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a5",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a6",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a7",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a8",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a9",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a10",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a11",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a12",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a13",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a14",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a15",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a16",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a17",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a18",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a19",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a20",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a21",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a22",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a23",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a24",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a25",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a26",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a27",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a28",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a29",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a30",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a31",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a32",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a33",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a34",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a35",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a36",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a37",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a38",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a39",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a40",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a41",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a42",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a43",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a44",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a45",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a46",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a47",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a48",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a49",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a50"
+   ],
+   "ok": false,
+   "reason": "more than 50 paths",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/Other",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a"
+   ],
+   "ok": false,
+   "reason": "the repository 'theprotocol/Other' is not open to proposals in this phase",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/a"
+   ],
+   "ok": false,
+   "reason": "the repository '' is not open to proposals in this phase",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/X.vue",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/stores/auth.ts"
+   ],
+   "ok": true,
+   "reason": null,
+   "sensitive": true,
+   "out": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/X.vue",
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/stores/auth.ts"
+   ]
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/X.vue",
+    ".env"
+   ],
+   "ok": false,
+   "reason": "a forbidden path: .env (secrets, keys, build and dependency files are never voted on)",
+   "sensitive": false,
+   "out": []
+  },
+  {
+   "repo": "theprotocol/AgentVault",
+   "paths": [
+    "agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/views/X.vue",
+    "README.md"
+   ],
+   "ok": false,
+   "reason": "README.md is not open in this phase (open: agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/)",
+   "sensitive": false,
+   "out": []
+  }
+ ],
+ "shas": [
+  {
+   "v": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "ok": true
+  },
+  {
+   "v": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+   "ok": false
+  },
+  {
+   "v": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "ok": true
+  },
+  {
+   "v": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "ok": false
+  },
+  {
+   "v": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "ok": false
+  },
+  {
+   "v": "gggggggggggggggggggggggggggggggggggggggg",
+   "ok": false
+  },
+  {
+   "v": "",
+   "ok": false
+  },
+  {
+   "v": " aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "ok": false
+  },
+  {
+   "v": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ",
+   "ok": false
+  }
+ ],
+ "reviews": [
+  {
+   "sensitive": false,
+   "reviews": [],
+   "commit": "c1",
+   "out": {
+    "ok": false,
+    "approvals": 0,
+    "needed": 1,
+    "blockers": []
+   }
+  },
+  {
+   "sensitive": false,
+   "reviews": [
+    {
+     "reviewer_developer_id": 1,
+     "verdict": "approve",
+     "commit": "c1",
+     "at": 1
+    }
+   ],
+   "commit": "c1",
+   "out": {
+    "ok": true,
+    "approvals": 1,
+    "needed": 1,
+    "blockers": []
+   }
+  },
+  {
+   "sensitive": false,
+   "reviews": [
+    {
+     "reviewer_developer_id": 1,
+     "verdict": "approve",
+     "commit": "c1",
+     "at": 1
+    },
+    {
+     "reviewer_developer_id": 2,
+     "verdict": "approve",
+     "commit": "c1",
+     "at": 2
+    }
+   ],
+   "commit": "c1",
+   "out": {
+    "ok": true,
+    "approvals": 2,
+    "needed": 1,
+    "blockers": []
+   }
+  },
+  {
+   "sensitive": false,
+   "reviews": [
+    {
+     "reviewer_developer_id": 1,
+     "verdict": "approve",
+     "commit": "c1",
+     "at": 1
+    },
+    {
+     "reviewer_developer_id": 1,
+     "verdict": "changes",
+     "commit": "c1",
+     "at": 2
+    }
+   ],
+   "commit": "c1",
+   "out": {
+    "ok": false,
+    "approvals": 0,
+    "needed": 1,
+    "blockers": [
+     1
+    ]
+   }
+  },
+  {
+   "sensitive": false,
+   "reviews": [
+    {
+     "reviewer_developer_id": 1,
+     "verdict": "approve",
+     "commit": "c0",
+     "at": 1
+    }
+   ],
+   "commit": "c1",
+   "out": {
+    "ok": false,
+    "approvals": 0,
+    "needed": 1,
+    "blockers": []
+   }
+  },
+  {
+   "sensitive": false,
+   "reviews": [
+    {
+     "reviewer_developer_id": 1,
+     "verdict": "changes",
+     "commit": "c1",
+     "at": 1
+    },
+    {
+     "reviewer_developer_id": 2,
+     "verdict": "approve",
+     "commit": "c1",
+     "at": 1
+    }
+   ],
+   "commit": "c1",
+   "out": {
+    "ok": false,
+    "approvals": 1,
+    "needed": 1,
+    "blockers": [
+     1
+    ]
+   }
+  },
+  {
+   "sensitive": true,
+   "reviews": [],
+   "commit": "c1",
+   "out": {
+    "ok": false,
+    "approvals": 0,
+    "needed": 2,
+    "blockers": []
+   }
+  },
+  {
+   "sensitive": true,
+   "reviews": [
+    {
+     "reviewer_developer_id": 1,
+     "verdict": "approve",
+     "commit": "c1",
+     "at": 1
+    }
+   ],
+   "commit": "c1",
+   "out": {
+    "ok": false,
+    "approvals": 1,
+    "needed": 2,
+    "blockers": []
+   }
+  },
+  {
+   "sensitive": true,
+   "reviews": [
+    {
+     "reviewer_developer_id": 1,
+     "verdict": "approve",
+     "commit": "c1",
+     "at": 1
+    },
+    {
+     "reviewer_developer_id": 2,
+     "verdict": "approve",
+     "commit": "c1",
+     "at": 2
+    }
+   ],
+   "commit": "c1",
+   "out": {
+    "ok": true,
+    "approvals": 2,
+    "needed": 2,
+    "blockers": []
+   }
+  },
+  {
+   "sensitive": true,
+   "reviews": [
+    {
+     "reviewer_developer_id": 1,
+     "verdict": "approve",
+     "commit": "c1",
+     "at": 1
+    },
+    {
+     "reviewer_developer_id": 1,
+     "verdict": "changes",
+     "commit": "c1",
+     "at": 2
+    }
+   ],
+   "commit": "c1",
+   "out": {
+    "ok": false,
+    "approvals": 0,
+    "needed": 2,
+    "blockers": [
+     1
+    ]
+   }
+  },
+  {
+   "sensitive": true,
+   "reviews": [
+    {
+     "reviewer_developer_id": 1,
+     "verdict": "approve",
+     "commit": "c0",
+     "at": 1
+    }
+   ],
+   "commit": "c1",
+   "out": {
+    "ok": false,
+    "approvals": 0,
+    "needed": 2,
+    "blockers": []
+   }
+  },
+  {
+   "sensitive": true,
+   "reviews": [
+    {
+     "reviewer_developer_id": 1,
+     "verdict": "changes",
+     "commit": "c1",
+     "at": 1
+    },
+    {
+     "reviewer_developer_id": 2,
+     "verdict": "approve",
+     "commit": "c1",
+     "at": 1
+    }
+   ],
+   "commit": "c1",
+   "out": {
+    "ok": false,
+    "approvals": 1,
+    "needed": 2,
+    "blockers": [
+     1
+    ]
+   }
+  }
+ ]
+}

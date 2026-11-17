@@ -311,7 +311,7 @@ class Settings(BaseSettings):
     # then stamps TOS_VERSION + a timestamp on the developer row — the audit trail the register form's
     # checkbox alone never produced. Env-gated so it can be enabled per-frame (frame-c canary first).
     TOS_CONSENT_REQUIRED: bool = False
-    TOS_VERSION: str = "2.4"  # §LEGALKIT: the ONE Terms version; fiat_onramp reads it, the FE asks GET /api/v1/legal/config
+    TOS_VERSION: str = "2.5"  # V0667: § 5.12 the code host (2.4 was §BAFIN's membership). §LEGALKIT: the ONE Terms version; fiat_onramp reads it, the FE asks GET /api/v1/legal/config
     # --- End ToS consent ---
 
     # --- TEG Layer Integration Settings ---

@@ -17,7 +17,7 @@
   --hm-cyan-10:        rgba(var(--nc-primary-rgb), 0.10);
   --hm-cyan-20:        rgba(var(--nc-primary-rgb), 0.20);
   --hm-text:           #c8d8e8;
-  --hm-text-dim:       #6b8aaa;
+  --hm-text-dim:       #7390ad;   /* 4.9:1 on the lightest service card (#6b8aaa was 4.49:1) */
   --hm-text-muted:     #6f8eb0;  /* §FESUITE: 4.78:1 on the lightest surface (#3d5570 was 2.2-2.35:1); it now reads like
                                      --hm-text-dim, which already sits at the 4.5:1 floor: no darker grey stays readable here */
   --hm-green:          #00e5a0;

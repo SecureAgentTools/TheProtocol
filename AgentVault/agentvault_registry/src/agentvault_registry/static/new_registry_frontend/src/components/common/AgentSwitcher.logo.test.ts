@@ -21,6 +21,7 @@ vi.mock('@/stores/ui', () => ({ useUIStore: () => h.ui }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ fullPath: '/', path: '/' }), useRouter: () => ({ push: vi.fn() }) }))
 
 import AgentSwitcher from './AgentSwitcher.vue'
+import { cardIconSrc } from '@/services/agentAvatar'
 
 const SHELDON_LOGO = 'https://docs.theprotocol.cloud/agents/shadowban-sheldon.png'
 const LEAD_LOGO = 'https://docs.theprotocol.cloud/agents/session-lead.png'
@@ -64,7 +65,8 @@ describe("the agent selector draws each agent's own logo", () => {
   it('the trigger: the logo inside the vanity ring, the rank around it, no black hole over the face', async () => {
     const w = await open([sheldon, lead], sheldon)
     const trig = w.find('.as-trigger')
-    expect(trig.find(`img[src="${SHELDON_LOGO}"]`).exists(), 'the agent\'s logo').toBe(true)
+    // V0662 item 14: drawn from the registry's icon route for that card, never the address the card names
+    expect(trig.find(`img[src="${cardIconSrc(sheldon.did, SHELDON_LOGO)}"]`).exists(), 'the agent\'s logo').toBe(true)
     expect(trig.find('.fc-encircle-blackhole').exists(), 'the vanity ring stays').toBe(true)
     expect(trig.find('.fc-blackhole-core').exists(), 'the vanity does not stand in for the logo').toBe(false)
     expect(trig.find('[data-testid^="earned-collar-"]').exists(), 'the rank, as before').toBe(true)
@@ -73,9 +75,9 @@ describe("the agent selector draws each agent's own logo", () => {
 
   it("each row: a plain agent's logo, and the vanity agent's logo in its ring", async () => {
     const w = await open([sheldon, lead], sheldon)
-    expect(row(w, 'session-lead').find(`img[src="${LEAD_LOGO}"]`).exists(), 'the session agent\'s logo').toBe(true)
+    expect(row(w, 'session-lead').find(`img[src="${cardIconSrc(lead.did, LEAD_LOGO)}"]`).exists(), 'the session agent\'s logo').toBe(true)
     const s = row(w, 'Shadowban Sheldon')
-    expect(s.find(`img[src="${SHELDON_LOGO}"]`).exists()).toBe(true)
+    expect(s.find(`img[src="${cardIconSrc(sheldon.did, SHELDON_LOGO)}"]`).exists()).toBe(true)
     expect(s.find('.fc-blackhole-core').exists()).toBe(false)
     expect(s.find('.fc-encircle-blackhole').exists()).toBe(true)
     w.unmount()

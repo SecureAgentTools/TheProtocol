@@ -20,6 +20,8 @@ import { unwrapEnvelope, involvesDids, VERB_TABLE, SILENT_BY_DESIGN } from '@/se
 import { createHistoryRing } from '@/services/bridge/historyRing'
 import BridgePayloadModal from '@/components/bridge/BridgePayloadModal.vue'
 import { ledgerEventLabel } from '@/services/ledgerEventLabel'
+import EmptyReason from '@/components/common/EmptyReason.vue'
+import { ledgerEmptyReason } from '@/services/emptyReasons'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -113,6 +115,8 @@ const ring = createHistoryRing<Row>()
 /** Bumped on every ring write so the counters above can be reactive. */
 const ringVersion = ref(0)
 const rows = ref<Row[]>([])
+/** V0663: why the list is empty (not connected yet, or connected and nothing has moved: mine says whose). */
+const emptyWhy = computed(() => ledgerEmptyReason({ connected: stream.anyConnected.value, scope: scope.value, scopeNote: props.scopeNote }))
 const paused = ref(false)
 const heldBack = ref(0)
 const shown = ref(MAX_ROWS)
@@ -372,6 +376,7 @@ function openForensics(): void {
             ? (scopeNote || t('bridge.ledger.awaitingMine', 'Awaiting events involving your agents'))
             : t('bridge.ledger.awaiting', 'Awaiting events') }}
       </p>
+      <EmptyReason v-if="rows.length === 0" :kind="emptyWhy.kind" :reason="emptyWhy.reason" data-testid="blg-empty-reason" />
       <!-- No TransitionGroup. Each row is keyed and enters with a CSS animation,
            which needs no leave bookkeeping: a leave transition that never fires
            its `transitionend` (a throttled or backgrounded tab does exactly that)

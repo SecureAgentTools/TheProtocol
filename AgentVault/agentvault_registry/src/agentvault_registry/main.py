@@ -100,12 +100,8 @@ from agentvault_registry.mcp.oauth import router as mcp_oauth_router
 from agentvault_registry.routers.funding_requests import agent_router as funding_agent_router, admin_router as funding_admin_router
 from agentvault_registry.routers.a2a_payment import router as a2a_payment_router
 from agentvault_registry.routers.teg_send import router as teg_send_router
-from agentvault_registry.arena.mcp_server import router as arena_mcp_router
-from agentvault_registry.arena.spectator import router as arena_spectator_router
-from agentvault_registry.arena.td_mcp_server import router as td_mcp_router
-from agentvault_registry.arena.snake_mcp_server import router as snake_mcp_router
-from agentvault_registry.arena.trading_mcp_server import router as trading_mcp_router
-from agentvault_registry.arena.lobby_mcp_server import router as lobby_mcp_router
+from agentvault_registry.arena.mount import mount_games   # V0666: the six game routers, behind GAMES_ENABLED
+from agentvault_registry.core.games import games_enabled as _games_enabled
 from agentvault_registry.routers.exchange import router as exchange_router  # AGORA (2026-06-12)
 from agentvault_registry.routers.dev_card import dev_router as dev_card_dev_router  # §V0064 Settings: preview/disclosures/consent
 from agentvault_registry.routers.dev_card import router as dev_card_router  # AGORA Passport / DevCard v0.1
@@ -715,6 +711,43 @@ def create_app() -> FastAPI:
         prefix=settings.API_V1_STR + "/agent-cards",
         tags=["Agent Cards"]
     )
+    # V0663: the admins' chat delivery panel (per peer, what waits in the federation outbox)
+    from agentvault_registry.routers import chat_delivery_admin as _chat_delivery_admin_router
+    app.include_router(_chat_delivery_admin_router.router)
+    # V0662, item 14: a card's icon served from this origin (GET /agent-cards/{did}/icon; two path segments, so no
+    # agent_cards route above can take it)
+    from agentvault_registry.routers import card_icons as _card_icons_router
+    app.include_router(
+        _card_icons_router.router,
+        prefix=settings.API_V1_STR + "/agent-cards",
+        tags=["Agent Cards"]
+    )
+    # V0663: the remaining outside images (peer logos, developer avatars, flare logos) from this origin
+    from agentvault_registry.routers import outside_images as _outside_images_router
+    app.include_router(_outside_images_router.router)
+    # V0663 governed code: code changes proposed, checked, reviewed, voted on and merged
+    from agentvault_registry.routers import code_changes as _code_changes_router
+    app.include_router(_code_changes_router.router)
+    # V0667 the developer passport, step 1 (gwo_fb84e57318de0802725ab511): relay propose and review from a home to the governing registry
+    from agentvault_registry.routers import code_passport as _code_passport_router
+    app.include_router(_code_passport_router.router)
+    # V0667: repository accounts on the public code host, linked only on the developer's own request (REPO_ACCOUNTS_ENABLED)
+    from agentvault_registry.routers import repo_accounts as _repo_accounts_router
+    app.include_router(_repo_accounts_router.router)
+    # V0666 D1: an organization's code distributions (its release lines; never AGORA payouts); CODE_DISTRIBUTIONS_ENABLED
+    from agentvault_registry.routers import code_distributions as _code_distributions_router
+    app.include_router(_code_distributions_router.router)
+    # V0667 D5: the fast lane, an organization's own content changed after its line's ballot and our check; the same switch
+    from agentvault_registry.routers import content_changes as _content_changes_router
+    app.include_router(_content_changes_router.router)
+    # V0667 D6 part 3 (gwo_fa3b8d7611f2573a2e63ac1c): a distribution's scoped release channel (admin, the console's view, the frames' reads)
+    from agentvault_registry.routers import distribution_releases as _distribution_releases_router
+    app.include_router(_distribution_releases_router.router)
+    # V0667 D7: the signed report of a release line and the signed record of one of its changes (read-only; the same switch)
+    from agentvault_registry.routers import distribution_reports as _distribution_reports_router
+    app.include_router(_distribution_reports_router.router)
+    from agentvault_registry.routers import contributor_track as _contributor_track_router   # V0665 the contributor track
+    app.include_router(_contributor_track_router.router)
     app.include_router(
         utils.router,
         prefix=settings.API_V1_STR + "/utils",
@@ -901,6 +934,12 @@ def create_app() -> FastAPI:
     app.include_router(contracts_v2_router.router)
     from agentvault_registry.routers import contract_templates as contract_templates_router
     app.include_router(contract_templates_router.router)
+    # V0664 "Migrate a system", M4: the migration template library (503 while WORKFLOW_TEMPLATES_ENABLED is off)
+    from agentvault_registry.routers import workflow_templates as workflow_templates_router
+    app.include_router(workflow_templates_router.router)
+    # V0664 consoles, C2: a proxy's status (agent posts, owner reads)
+    from agentvault_registry.routers import proxy_status as proxy_status_router
+    app.include_router(proxy_status_router.router)
     from agentvault_registry.routers import liability as liability_router
     app.include_router(liability_router.router)  # COCKPIT CARD (dark unless LIABILITY_MODE≠off)
     # §COCKPITA R4 — the two desk<->agent channels. Mounted UNCONDITIONALLY and gated by
@@ -1022,6 +1061,9 @@ def create_app() -> FastAPI:
             prefix=settings.API_V1_STR,
             tags=["Admin — MCP Tester"]
         )
+        # V0663 (gwo_0b31c0b849ebd207102d8bf4): the tester's coverage, per tool and per target (a read of its stored runs)
+        from agentvault_registry.routers import mcp_tester_coverage
+        app.include_router(mcp_tester_coverage.router, prefix=settings.API_V1_STR, tags=["Admin — MCP Tester"])
     except Exception as _e:  # pragma: no cover — keep registry boot resilient
         logger.warning(f"mcp_tester router not loaded: {_e!r}")
 
@@ -1427,14 +1469,12 @@ def create_app() -> FastAPI:
     app.include_router(teg_send_router)
     logger.info("AVT Funding Request system enabled (/api/v1/funding/*, /api/v1/admin/funding/*) + TEG smart send (/api/v1/teg/send)")
 
-    # Robo Wars Arena — MCP server + spectator API
-    app.include_router(arena_mcp_router, prefix="/mcp/arena")
-    app.include_router(arena_spectator_router)
-    app.include_router(td_mcp_router, prefix="/mcp/td")
-    app.include_router(snake_mcp_router, prefix="/mcp/snake")
-    app.include_router(trading_mcp_router, prefix="/mcp/trading")
-    app.include_router(lobby_mcp_router, prefix="/mcp/lobby")
-    logger.info("Game Arena enabled: /mcp/arena (12) + /mcp/td (10) + /mcp/snake (6) + /mcp/trading (11) + /mcp/lobby (5)")
+    # Robo Wars Arena — MCP server + spectator API, and the other games: behind GAMES_ENABLED since V0666 (arena/mount.py;
+    # off, every game path is an unknown route and no game loop starts)
+    if mount_games(app):
+        logger.info("Game Arena enabled: /mcp/arena (12) + /mcp/td (10) + /mcp/snake (6) + /mcp/trading (11) + /mcp/lobby (5)")
+    else:
+        logger.info("Games are off on this registry (GAMES_ENABLED=false): no game route, no game tool, no game loop")
 
     # §pass63 (2026-05-22) — Astraeus router mounts removed entirely.
 
@@ -1471,6 +1511,8 @@ def create_app() -> FastAPI:
     # THE GUILD — agent work exchange (2026-07-07; GUILD_ENABLED gate)
     from agentvault_registry.routers.guild import router as guild_router
     app.include_router(guild_router)
+    from agentvault_registry.routers.workflows import router as workflows_router  # V0663: agent workflows over Guild orders
+    app.include_router(workflows_router)
 
     # §OURSTATE-1 — OurChat chat (2026-08-24; mig 0155_chat_core). Dual-auth,
     # no money code: economic acts are typed cards over EXISTING rails.
@@ -4561,6 +4603,8 @@ def create_app() -> FastAPI:
         from agentvault_registry.core.legacy_surfaces import surface_enabled as _legacy_surface_on
         from agentvault_registry.routers.liability import liability_mode as _liability_mode
         from agentvault_registry.routers.contract_templates import templates_enabled as _contract_templates_enabled
+        from agentvault_registry.services.workflow_templates import templates_enabled as _workflow_templates_enabled
+        from agentvault_registry.services.code_distributions import enabled as _code_distributions_enabled
         from agentvault_registry.routers.sandbox_proxy import configured_sandboxes as _sandbox_proxies
         from agentvault_registry.core.phone_fabric_gate import phone_fabric_enabled as _phone_fabric_enabled
         from agentvault_registry.core.registry_environment import registry_environment as _registry_environment
@@ -4655,6 +4699,8 @@ def create_app() -> FastAPI:
             # the staking surfaces (nav, route, Pocket, the Senate's stake door) where staking_enabled is false, and
             # every rate where staking_rewards_enabled is false. Both default true: a registry that set neither is unchanged.
             "staking_enabled": _staking_enabled(),
+            # V0666 the games switch (core/games.py): false hides every game door in the console
+            "games_enabled": _games_enabled(),
             "staking_rewards_enabled": _staking_rewards_enabled(),
             # §BAFIN — may AGORA distributions be declared here (core/agora_gate.py)? The console hides the door if not.
             "agora_distributions_enabled": _agora_distributions_enabled(),
@@ -4679,6 +4725,10 @@ def create_app() -> FastAPI:
             # library (off = 503), and which sandbox registries the /sandbox/{a,b} proxy reaches (none = 503).
             "liability_mode": _liability_mode(),
             "contract_templates_enabled": _contract_templates_enabled(),
+            # V0664 "Migrate a system", M4: the template library, its sidebar entry and #/migrate read this one answer
+            "workflow_templates_enabled": _workflow_templates_enabled(),
+            # V0666 D1: an organization's code distributions (release lines, not AGORA payouts) are served
+            "code_distributions_enabled": _code_distributions_enabled(),
             "sandbox_proxy": _sandbox_proxies(),
             "flare_local_purchase_enabled": (
                 _os.environ.get("FLARE_LOCAL_PURCHASE_ENABLED", "false").strip().lower()
@@ -4893,6 +4943,9 @@ def create_app() -> FastAPI:
             start_federation_manifest_sync,
         )
         asyncio.create_task(start_federation_manifest_sync())
+        # V0664 (gwo_5374cd3a0eed96d787c4f813): tell the Directory when this registry's card epoch moves
+        from agentvault_registry.background_tasks.directory_push import start_directory_push
+        asyncio.create_task(start_directory_push())
 
         # W4 (2026-05-05): defunct-card GC. Leader-elected, gated by
         # FEDERATION_CARD_GC_ENABLED env (default off, ship dark).
@@ -5812,6 +5865,18 @@ def create_app() -> FastAPI:
         )
         asyncio.create_task(chat_federation_outbox_loop())
         logger.info("Started OurChat federation outbox worker (idle unless enabled)")
+
+        # V0667: the repository accounts' legs (pause, restore, close) on the public code host; idle unless
+        # REPO_ACCOUNTS_ENABLED, so a registry that has not opened the code host pays one sleep per cycle
+        from agentvault_registry.background_tasks.repo_account_worker import repo_account_worker_loop
+        asyncio.create_task(repo_account_worker_loop())
+        logger.info("Started repository account worker (idle unless REPO_ACCOUNTS_ENABLED)")
+
+        # V0667 the developer passport (gwo_fb84e57318de0802725ab511): the standing pull of contributors from other registries,
+        # so a suspension or deletion at home reaches their code host account; idle where this registry does not govern code
+        from agentvault_registry.background_tasks.code_passport_standing import code_passport_standing_loop
+        asyncio.create_task(code_passport_standing_loop())
+        logger.info("Started code passport standing pull (idle unless this registry governs code)")
 
         # §OURSTATE-6: the retention sweeper — the half of a disappearing timer
         # that makes it true. Visits ONLY threads that set a window, so a

@@ -234,3 +234,129 @@ def test_the_suffix_filter_keeps_other_files_out(tmp_path):
 def test_an_unknown_format_is_refused_at_construction(tmp_path):
     with pytest.raises(ValueError, match="format"):
         FileDropSource(_cfg(tmp_path, format="yaml"), FakeContext())
+
+
+# ═══ V0664 (Migrate a system, M2): poll_seconds ═════════════════════════════════════════════════════════════════════════════
+#
+# `poll_seconds: 0` lists the folder once, reads every settled file, then FINISHES (as sources/sftp.py does), so `tp-proxy run
+# --once` ends. A positive number keeps listing the folder every that many seconds (a file dropped later is read too). With none
+# the source behaves as it always has: one pass, then it finishes.
+
+import asyncio as _asyncio
+
+
+async def _drain(src, limit, timeout=3.0):
+    got = []
+
+    async def run():
+        async for rec in src.records():
+            got.append(rec)
+            await src.committed(rec)
+            if len(got) >= limit:
+                return
+    await _asyncio.wait_for(run(), timeout)
+    return got
+
+
+async def test_poll_seconds_zero_reads_what_is_there_and_finishes(tmp_path):
+    from theprotocol.proxy.sources import FileDropSource
+    from theprotocol.proxy.testing import FakeContext
+    (tmp_path / "a.csv").write_text("id,v\n1,x\n2,y\n")
+    (tmp_path / "b.csv").write_text("id,v\n3,z\n")
+    src = FileDropSource({"path": str(tmp_path), "format": "csv", "settle_seconds": 0, "poll_seconds": 0}, FakeContext())
+    await src.start()
+    got = []
+
+    async def run():
+        async for rec in src.records():
+            got.append(rec.record_id)
+    await _asyncio.wait_for(run(), 3)                                     # it returns: the source finished
+    assert got == ["a.csv#0", "a.csv#1", "b.csv#0"]
+
+
+async def test_a_positive_poll_keeps_watching_and_reads_a_file_dropped_later(tmp_path):
+    from theprotocol.proxy.sources import FileDropSource
+    from theprotocol.proxy.testing import FakeContext
+    (tmp_path / "a.csv").write_text("id,v\n1,x\n")
+    src = FileDropSource({"path": str(tmp_path), "format": "csv", "settle_seconds": 0, "poll_seconds": 0.05}, FakeContext())
+    await src.start()
+
+    async def drop_later():
+        await _asyncio.sleep(0.15)
+        (tmp_path / "b.csv").write_text("id,v\n2,y\n3,z\n")
+    task = _asyncio.ensure_future(drop_later())
+    got = await _drain(src, 3)
+    await task
+    assert [r.record_id for r in got] == ["a.csv#0", "b.csv#0", "b.csv#1"]
+
+
+async def test_a_row_appended_to_a_read_file_is_read_on_the_next_poll_and_none_twice(tmp_path):
+    from theprotocol.proxy.sources import FileDropSource
+    from theprotocol.proxy.testing import FakeContext
+    f = tmp_path / "a.csv"
+    f.write_text("id,v\n1,x\n")
+    src = FileDropSource({"path": str(tmp_path), "format": "csv", "settle_seconds": 0, "poll_seconds": 0.05}, FakeContext())
+    await src.start()
+
+    async def append_later():
+        await _asyncio.sleep(0.15)
+        f.write_text("id,v\n1,x\n2,y\n")
+    task = _asyncio.ensure_future(append_later())
+    got = await _drain(src, 2)
+    await task
+    assert [r.record_id for r in got] == ["a.csv#0", "a.csv#1"]
+
+
+async def test_with_no_poll_seconds_the_source_reads_once_and_finishes_as_it_always_did(tmp_path):
+    from theprotocol.proxy.sources import FileDropSource
+    from theprotocol.proxy.testing import FakeContext
+    (tmp_path / "a.csv").write_text("id,v\n1,x\n")
+    src = FileDropSource({"path": str(tmp_path), "format": "csv", "settle_seconds": 0}, FakeContext())
+    await src.start()
+    got = []
+
+    async def run():
+        async for rec in src.records():
+            got.append(rec.record_id)
+    await _asyncio.wait_for(run(), 3)
+    assert got == ["a.csv#0"]
+
+
+def test_poll_seconds_is_a_number_of_at_least_zero_in_the_schema():
+    from jsonschema import ValidationError, validate
+    from theprotocol.proxy.sources import FileDropSource
+    validate({"path": "/d", "poll_seconds": 0}, FileDropSource.config_schema)
+    validate({"path": "/d", "poll_seconds": 2.5}, FileDropSource.config_schema)
+    with pytest.raises(ValidationError):
+        validate({"path": "/d", "poll_seconds": -1}, FileDropSource.config_schema)
+
+
+async def test_a_file_not_settled_yet_is_looked_at_again_on_the_next_pass_and_read_once_it_has(tmp_path):
+    """A drop is not atomic: a file still being written is passed over (settle_seconds), and with poll_seconds the next pass reads it
+    once it has stopped changing: not never (the source used to list the folder once and so lost it), and not twice."""
+    import os
+    import time
+    from theprotocol.proxy.sources import FileDropSource
+    from theprotocol.proxy.testing import FakeContext
+    f = tmp_path / "late.csv"
+    f.write_text("id,v\n1,x\n2,y\n")
+    os.utime(f, None)                                                # modified just now: not settled for 0.4 s
+    src = FileDropSource({"path": str(tmp_path), "format": "csv", "settle_seconds": 0.4, "poll_seconds": 0.05}, FakeContext())
+    await src.start()
+    t0 = time.time()
+    got = await _drain(src, 2, timeout=5.0)
+    assert time.time() - t0 >= 0.3                                   # it did wait: the first passes found nothing ready
+    assert [r.record_id for r in got] == ["late.csv#0", "late.csv#1"]
+
+
+async def test_without_poll_seconds_a_file_not_settled_yet_is_passed_over_and_the_source_finishes(tmp_path):
+    """The old behaviour, kept for poll_seconds 0: one pass, an unsettled file is not read, the source ends (a --once run)."""
+    from theprotocol.proxy.sources import FileDropSource
+    from theprotocol.proxy.testing import FakeContext
+    (tmp_path / "late.csv").write_text("id,v\n1,x\n")
+    src = FileDropSource({"path": str(tmp_path), "format": "csv", "settle_seconds": 3600}, FakeContext())
+    await src.start()
+    got = []
+    async for rec in src.records():
+        got.append(rec)
+    assert got == []

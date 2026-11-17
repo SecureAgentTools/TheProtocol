@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { resolvePeerAsset } from './peerAssets'
 
+// V0663: a peer's asset is drawn from THIS registry (registryImageSrc), on the peer's own address
+const route = (a: string) => `/api/v1/public/images?src=${encodeURIComponent(a)}`
+
 describe('resolvePeerAsset', () => {
   it('resolves a peer card\'s same-origin icon against the peer, not the viewer', () => {
     expect(resolvePeerAsset('/static/registry-cards/b/icon.png', 'https://sandbox-b.example.org/'))
-      .toBe('https://sandbox-b.example.org/static/registry-cards/b/icon.png')
+      .toBe(route('https://sandbox-b.example.org/static/registry-cards/b/icon.png'))
   })
-  it('leaves an absolute address alone', () => {
-    expect(resolvePeerAsset('https://cdn.example.org/i.png', 'https://peer.example.org')).toBe('https://cdn.example.org/i.png')
+  it('sends an absolute address to the registry as it is', () => {
+    expect(resolvePeerAsset('https://cdn.example.org/i.png', 'https://peer.example.org')).toBe(route('https://cdn.example.org/i.png'))
   })
   it('leaves a relative address alone when there is no peer host (our own registry)', () => {
     expect(resolvePeerAsset('/static/x.png', '')).toBe('/static/x.png')

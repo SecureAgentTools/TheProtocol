@@ -166,16 +166,23 @@ async def get_track_record(
     # are fabricated — that history is not persisted. null when the DID has no agents row
     # (federated mirrors heartbeat on their home frame).
     liveness = None
+    # V0662 item 7: and whether the card declares a live service at all (services.track_record.declares_live_service),
+    # so "no live service declared" reads apart from "service not answering"
     lrow = (await db.execute(text("""
-        SELECT last_health, last_active_at,
-               (last_active_at IS NOT NULL AND last_active_at > now() - interval '24 hours') AS live_24h
-        FROM agents WHERE did = :d
+        SELECT a.last_health, a.last_active_at,
+               (a.last_active_at IS NOT NULL AND a.last_active_at > now() - interval '24 hours') AS live_24h,
+               ac.card_data
+        FROM agents a LEFT JOIN agent_cards ac ON ac.agent_did = a.did
+        WHERE a.did = :d
+        ORDER BY ac.is_active DESC NULLS LAST
+        LIMIT 1
     """), {"d": did})).first()
     if lrow:
         liveness = {
             "probe": lrow[0],
             "last_seen": lrow[1].isoformat() if lrow[1] else None,
             "live_24h": bool(lrow[2]),
+            "service_declared": track_record.declares_live_service(lrow[3]),
         }
 
     return JSONResponse({

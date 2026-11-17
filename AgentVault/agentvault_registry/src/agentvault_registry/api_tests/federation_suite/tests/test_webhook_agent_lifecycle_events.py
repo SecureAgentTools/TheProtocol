@@ -69,8 +69,7 @@ async def test_webhook_agent_lifecycle_events(rig: FederationTestRig) -> Asserti
     passed = False
     try:
         h, refused = await _call(rig, _A, "createWebhook", {
-            "url": f"https://fedsuite-agev-{uuid.uuid4().hex[:10]}.invalid/hook", "events": list(_EVENTS),
-            "description": "federation suite: agent lifecycle events (.invalid host)"})
+            "url": f"https://fedsuite-agev-{uuid.uuid4().hex[:10]}.invalid/hook", "events": list(_EVENTS)})
         if refused or not isinstance(h, dict) or not h.get("id"):
             raise PreconditionUnmet(f"createWebhook refused: {refused or str(h)[:160]}")
         hook = h["id"]

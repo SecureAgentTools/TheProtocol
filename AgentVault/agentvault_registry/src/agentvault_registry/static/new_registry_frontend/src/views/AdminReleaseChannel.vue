@@ -5,7 +5,8 @@ import { safeExternalUrl } from '@/utils/safeUrl'
 import { computed, onMounted, ref } from 'vue'
 import Icon from '@/components/Icon.vue'
 import { useI18n } from '@/composables/useI18n'
-import { releaseChannelApi, releaseChannelState } from '@/services/api/releaseChannel'
+import { distributionNote, distributionRows, releaseChannelApi, releaseChannelState } from '@/services/api/releaseChannel'
+import type { DistributionChannel } from '@/services/api/releaseChannel'
 
 const { t, tp } = useI18n()
 // the status the banner above every admin page shows too: each read and check here replaces it for both
@@ -69,7 +70,17 @@ async function clearSchedule() {
   catch (e: any) { error.value = e?.response?.data?.detail || e?.message || t('adminRelease.error', 'The request failed.') }
   finally { saving.value = false }
 }
-onMounted(load)
+// V0667 D6 part 3: this frame's own distribution channel, beside the public one (read on its own: a failure here never hides the public status)
+const dist = ref<DistributionChannel | null>(null)
+const distError = ref(false)
+const distRows = computed(() => distributionRows(dist.value))
+const distNote = computed(() => distributionNote(dist.value))
+async function loadDistributions() {
+  distError.value = false
+  try { dist.value = await releaseChannelApi.distributions() } catch { distError.value = true }
+}
+
+onMounted(() => { void load(); void loadDistributions() })
 </script>
 
 <template>
@@ -153,6 +164,20 @@ onMounted(load)
         <div class="rc-label">{{ t('adminRelease.command', 'Run on the host in your window') }}</div>
         <code data-testid="rc-command">{{ status.schedule ? status.rollout_command.replace(status.newer[0]?.version || '', status.schedule.version) : status.rollout_command }}</code>
       </div>
+    </section>
+
+    <section class="rc-card" data-testid="rc-distributions">
+      <div class="rc-label">{{ t('adminRelease.dist.title', 'Your distribution channel') }}</div>
+      <p class="rc-muted">{{ t('adminRelease.dist.what', "An organization's line built on our release is published on a channel of its own: only the registries its signed index names can read it and pull its images.") }}</p>
+      <p v-if="distError" class="rc-error" data-testid="rc-dist-error">{{ t('adminRelease.dist.error', 'The distribution channel could not be read.') }}</p>
+      <p v-else-if="distNote?.kind === 'none'" class="rc-muted" data-testid="rc-dist-none">{{ tp('adminRelease.dist.none', 'No distribution on {g} names this registry.', { g: distNote.governing || '' }) }}</p>
+      <p v-else-if="distNote?.kind === 'reason'" class="rc-muted" data-testid="rc-dist-reason">{{ distNote.reason }}</p>
+      <dl v-for="row in distRows" :key="row.name" class="rc-facts" data-testid="rc-dist-line">
+        <dt>{{ t('adminRelease.dist.line', 'Line') }}</dt><dd><strong>{{ row.name }}</strong></dd>
+        <dt>{{ t('adminRelease.dist.release', 'Release') }}</dt><dd>{{ row.release }}</dd>
+        <dt>{{ t('adminRelease.dist.published', 'Published') }}</dt><dd>{{ fmt(row.publishedAt) }}</dd>
+        <dt>{{ t('adminRelease.dist.image', 'Image') }}</dt><dd>{{ row.image }}<span v-if="row.digest" class="rc-muted"> {{ row.digest }}</span></dd>
+      </dl>
     </section>
   </div>
 </template>

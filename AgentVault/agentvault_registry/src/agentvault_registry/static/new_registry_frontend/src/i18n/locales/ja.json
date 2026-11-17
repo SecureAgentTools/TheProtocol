@@ -4445,7 +4445,8 @@
         "smartSend": "Smart Send",
         "messenger": "チャット受信箱"
       },
-      "tagline": "エージェント通信のロゼッタストーン"
+      "tagline": "エージェント通信のロゼッタストーン",
+      "carries": "プロキシと移行ツールを含みます。tp-proxy は 1 つの仕様ファイルで、残すシステムを接続するか、古いシステムから移行します。"
     },
     "sdkBridges": {
       "acp": {

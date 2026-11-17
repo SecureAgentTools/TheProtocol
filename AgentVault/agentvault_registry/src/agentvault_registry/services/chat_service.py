@@ -39,7 +39,7 @@ import uuid
 from decimal import Decimal, InvalidOperation
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
-from sqlalchemy import DateTime, bindparam, select, text as sa_text
+from sqlalchemy import DateTime, and_, bindparam, delete as sa_delete, func, not_, or_, select, text as sa_text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
@@ -48,6 +48,10 @@ from agentvault_registry.models import (
     ChatBlock,
     ChatCardUpdate,
     ChatMessage,
+    ChatMessageEdit,
+    ChatPin,
+    ChatReaction,
+    ChatAgentStatus,
     Conversation,
     ConversationParticipant,
 )
@@ -131,6 +135,10 @@ async def update_card(db: AsyncSession, conversation_id: str, message_id: str, a
         my_row = await resolve_membership(db, conv, actor)
         if my_row is None or my_row.state != "active":
             raise ChatError(409, "you have left this conversation")
+        if getattr(conv, "archived_at", None) is not None:
+            # V0664: a member's card (progress) is a change of a line. A rail's update (the Guild's live order card, an
+            # approval's decided card) passes like the host's system rows: it records an act decided elsewhere
+            raise ChatError(409, ARCHIVED_CHANGE)
     msg = (await db.execute(select(ChatMessage).where(
         ChatMessage.id == str(message_id), ChatMessage.conversation_id == conv.id).with_for_update())).scalars().first()
     if msg is None or msg.deleted_at is not None or (
@@ -212,8 +220,569 @@ async def card_history(db: AsyncSession, conversation_id: str, message_id: str, 
             "updates": out}
 
 
+# ---------------------------------------------------------------------------
+# V0662 (OurChat lane): edit and take back a message within a window (services/chat_edits.py holds the pure rules)
+# ---------------------------------------------------------------------------
+
+async def _change_target(db: AsyncSession, conversation_id: str, message_id: str, actor: Actor
+                         ) -> Tuple[Conversation, ConversationParticipant, ChatMessage]:
+    """The thread, my active row in it and the locked message a change is about. The refusals a card update makes for a
+    thread another registry hosts or reaches (its copy would not follow) and for a member who left."""
+    conv = await _get_conversation(db, conversation_id)
+    # V0663: a thread another registry hosts (a mirror) sends the change to its host, and one this registry hosts tells the
+    # registries that reach it (services/chat_fed_events): neither is refused any more
+    my_row = await resolve_membership(db, conv, actor)
+    if my_row is None or my_row.state != "active":
+        raise ChatError(409, "you have left this conversation")
+    if getattr(conv, "archived_at", None) is not None:
+        # V0664: an archived room is read, not changed, by its own members too (an edit, a take-back, a reaction, a pin, on or
+        # off); a mirror refuses from its own copy before relaying, as the host would. After the membership check, so a
+        # stranger is told what a stranger is told
+        raise ChatError(409, ARCHIVED_CHANGE)
+    msg = (await db.execute(select(ChatMessage).where(
+        ChatMessage.id == str(message_id), ChatMessage.conversation_id == conv.id).with_for_update())).scalars().first()
+    if msg is None or msg.seq <= int(my_row.hidden_before_seq or 0):
+        raise ChatError(404, "no such message in this thread")
+    return conv, my_row, msg
+
+
+async def _edit_revs(db: AsyncSession, message_id: str) -> int:
+    return int((await db.execute(sa_text(
+        "SELECT COALESCE(MAX(rev), 0) FROM chat_message_edits WHERE message_id = :m"), {"m": message_id})).scalar() or 0)
+
+
+async def edit_message(db: AsyncSession, conversation_id: str, message_id: str, actor: Actor,
+                       body: Any) -> Tuple[dict, Conversation, bool]:
+    """Change the text of my own message inside the window. Keeps the body it had (chat_message_edits), marks the message
+    edited and returns (the message, the conversation, whether anything changed). COMMITS. Never announces: the caller
+    fans the change out after the commit. A body equal to the current one is no revision."""
+    from agentvault_registry.services import chat_edits as ce
+    conv, my_row, msg = await _change_target(db, conversation_id, message_id, actor)
+    if getattr(conv, "host_registry", None):
+        from agentvault_registry.services import chat_fed_events as fev
+        res = await fev.relay_change(db, conv, actor, msg, "edit", body=body)      # the host decides; its event comes back
+        return res.get("message") or serialize_message(msg), conv, False
+    revs = await _edit_revs(db, msg.id)
+    why = ce.refusal(msg.kind, deleted=msg.deleted_at is not None, mirrored=msg.origin_registry is not None,
+                     mine=sender_key_of(msg) == principal_key(actor.ptype, actor.sender_id),
+                     created_at=msg.created_at, now=message_clock(), revs=revs)
+    if why:
+        raise ChatError(409 if sender_key_of(msg) == principal_key(actor.ptype, actor.sender_id) else 403, why)
+    if not isinstance(body, str) or not body.strip():
+        raise ChatError(422, "a message needs text: take it back instead of emptying it")
+    bad = validate_body(body)
+    if bad:
+        raise ChatError(422, bad)
+    await room_posting_gate(db, conv, my_row, actor)       # a member who may not post now cannot change a line either
+    if body == (msg.body or ""):
+        return serialize_message(msg), conv, False
+    when = message_clock()
+    db.add(ChatMessageEdit(message_id=msg.id, conversation_id=conv.id, rev=revs + 1, kind="edit",
+                           body_before=msg.body, actor_ptype=actor.ptype, actor_id=actor.sender_id, created_at=when))
+    msg.body = body
+    msg.edited_at = when
+    if int(conv.last_seq or 0) == int(msg.seq):
+        conv.last_preview = preview_for("text", body, None, getattr(actor, "display_name", None))
+    from agentvault_registry.services import chat_fed_events as fev
+    await fev.publish(db, conv, {"type": "edit", "message_seq": int(msg.seq), "body": body, "at": when.isoformat(),
+                                 "rev": revs + 1, "actor": await fev.local_actor_key(db, actor)})
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise ChatError(409, "another change of this message landed at the same moment: read it and try again")
+    return serialize_message(msg), conv, True
+
+
+async def delete_message(db: AsyncSession, conversation_id: str, message_id: str, actor: Actor
+                         ) -> Tuple[dict, Conversation]:
+    """Take back my own message inside the window: it becomes the thread's tombstone (deleted_at), and the body it had is
+    kept in chat_message_edits. Returns (the tombstone, the conversation). COMMITS; the caller fans it out."""
+    from agentvault_registry.services import chat_edits as ce
+    conv, my_row, msg = await _change_target(db, conversation_id, message_id, actor)
+    if getattr(conv, "host_registry", None):
+        from agentvault_registry.services import chat_fed_events as fev
+        res = await fev.relay_change(db, conv, actor, msg, "delete")
+        return res.get("message") or serialize_message(msg), conv
+    revs = await _edit_revs(db, msg.id)
+    mine = sender_key_of(msg) == principal_key(actor.ptype, actor.sender_id)
+    why = ce.refusal(msg.kind, deleted=msg.deleted_at is not None, mirrored=msg.origin_registry is not None,
+                     mine=mine, created_at=msg.created_at, now=message_clock(), revs=revs, editing=False)
+    if why:
+        raise ChatError(409 if mine else 403, why)
+    when = message_clock()
+    db.add(ChatMessageEdit(message_id=msg.id, conversation_id=conv.id, rev=revs + 1, kind="delete",
+                           body_before=msg.body, actor_ptype=actor.ptype, actor_id=actor.sender_id, created_at=when))
+    msg.deleted_at = when
+    await db.execute(sa_delete(ChatPin).where(ChatPin.message_id == msg.id))        # a line taken back loses its pin
+    if int(conv.last_seq or 0) == int(msg.seq):
+        conv.last_preview = ""
+    from agentvault_registry.services import chat_fed_events as fev
+    await fev.publish(db, conv, {"type": "delete", "message_seq": int(msg.seq), "at": when.isoformat(),
+                                 "actor": await fev.local_actor_key(db, actor)})
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise ChatError(409, "another change of this message landed at the same moment: read it and try again")
+    return serialize_message(msg), conv
+
+
+async def message_history(db: AsyncSession, conversation_id: str, message_id: str, actor: Actor) -> dict:
+    """The earlier bodies of a message, oldest first: when it changed, who (by name), the body it had before. A member of
+    the thread reads it (the original is kept for the record, not hidden from the room it was said in)."""
+    conv = await _get_conversation(db, conversation_id)
+    my_row = await resolve_membership(db, conv, actor)
+    msg = (await db.execute(select(ChatMessage).where(
+        ChatMessage.id == str(message_id), ChatMessage.conversation_id == conv.id))).scalars().first()
+    if msg is None or (my_row is not None and msg.seq <= int(my_row.hidden_before_seq or 0)):
+        raise ChatError(404, "no such message in this thread")
+    rows = (await db.execute(select(ChatMessageEdit).where(ChatMessageEdit.message_id == msg.id)
+                             .order_by(ChatMessageEdit.rev.asc()))).scalars().all()
+    keys = []
+    for r in rows:
+        try:
+            keys.append(principal_key(r.actor_ptype, r.actor_id))
+        except (ValueError, TypeError):
+            pass
+    names = await display_names(db, keys) if keys else {}
+    out = []
+    for r in rows:
+        try:
+            k = principal_key(r.actor_ptype, r.actor_id)
+        except (ValueError, TypeError):
+            k = None
+        out.append({"rev": int(r.rev), "kind": r.kind, "at": r.created_at.isoformat() if r.created_at else None,
+                    "by": {"ptype": r.actor_ptype, "id": r.actor_id, "name": names.get(k) if k else None},
+                    "body_before": r.body_before})
+    return {"conversation_id": conv.id, "message_id": msg.id, "seq": int(msg.seq), "deleted": msg.deleted_at is not None,
+            "posted_at": msg.created_at.isoformat() if msg.created_at else None, "changes": out}
+
+
+
+# ---------------------------------------------------------------------------
+# V0662 (OurChat lane): reactions (services/chat_reactions.py holds the closed word list)
+# ---------------------------------------------------------------------------
+
+async def reaction_summaries(db: AsyncSession, conv_id: str, message_ids: List[str], my_keys: Set[str]
+                             ) -> Dict[str, List[dict]]:
+    """{message id: [{key, count, mine}]} for the messages on a page, one query. `mine` is any of the caller's household."""
+    from agentvault_registry.services import chat_reactions as cr
+    if not message_ids:
+        return {}
+    rows = (await db.execute(select(ChatReaction.message_id, ChatReaction.word, ChatReaction.actor_ptype,
+                                    ChatReaction.actor_id).where(
+        ChatReaction.conversation_id == conv_id, ChatReaction.message_id.in_(list(message_ids))))).all()
+    per: Dict[str, List[Tuple[str, str]]] = {}
+    for mid, word, ptype, pid in rows:
+        try:
+            who = principal_key(ptype, pid)
+        except (ValueError, TypeError):
+            continue
+        per.setdefault(mid, []).append((word, who))
+    return {mid: cr.summarize(v, my_keys) for mid, v in per.items()}
+
+
+async def add_reaction(db: AsyncSession, conversation_id: str, message_id: str, actor: Actor, word: str
+                       ) -> Tuple[dict, Conversation, bool]:
+    """Put a reaction word on a message (once per person and word). Returns (the message's reactions as the caller reads
+    them, the conversation, whether a row was added). COMMITS. A reaction on a thread another registry reaches is refused
+    as an edit is (its copy would not follow)."""
+    from agentvault_registry.services import chat_reactions as cr
+    if not cr.valid(word):
+        raise ChatError(422, f"a reaction is one of: {', '.join(cr.VOCAB)}")
+    conv, my_row, msg = await _change_target(db, conversation_id, message_id, actor)
+    if getattr(conv, "host_registry", None):
+        from agentvault_registry.services import chat_fed_events as fev
+        await fev.relay_change(db, conv, actor, msg, "reaction", word=word, on=True)
+        keys = await household_keys(db, actor)
+        return {"message_id": msg.id, "seq": int(msg.seq),
+                "reactions": (await reaction_summaries(db, conv.id, [msg.id], keys)).get(msg.id, [])}, conv, False
+    why = cr.refusal(msg.kind, deleted=msg.deleted_at is not None)
+    if why:
+        raise ChatError(409, why)
+    await room_posting_gate(db, conv, my_row, actor)
+    existing = (await db.execute(select(ChatReaction.id).where(
+        ChatReaction.message_id == msg.id, ChatReaction.actor_ptype == actor.ptype,
+        ChatReaction.actor_id == actor.sender_id, ChatReaction.word == word))).first()
+    added = existing is None
+    if added:
+        db.add(ChatReaction(message_id=msg.id, conversation_id=conv.id, word=word, actor_ptype=actor.ptype,
+                            actor_id=actor.sender_id))
+        from agentvault_registry.services import chat_fed_events as fev
+        await fev.publish(db, conv, {"type": "reaction", "message_seq": int(msg.seq), "word": word, "on": True,
+                                     "actor": await fev.local_actor_key(db, actor)})
+        try:
+            await db.commit()
+        except IntegrityError:          # the same press twice at once: one row, as intended
+            await db.rollback()
+            added = False
+    keys = await household_keys(db, actor)
+    out = (await reaction_summaries(db, conv.id, [msg.id], keys)).get(msg.id, [])
+    return {"message_id": msg.id, "seq": int(msg.seq), "reactions": out}, conv, added
+
+
+async def remove_reaction(db: AsyncSession, conversation_id: str, message_id: str, actor: Actor, word: str
+                          ) -> Tuple[dict, Conversation, bool]:
+    """Take a reaction word off a message: the caller's own, or one of their household's (the key `mine` reads). COMMITS."""
+    from agentvault_registry.services import chat_reactions as cr
+    if not cr.valid(word):
+        raise ChatError(422, f"a reaction is one of: {', '.join(cr.VOCAB)}")
+    conv, my_row, msg = await _change_target(db, conversation_id, message_id, actor)
+    keys = await household_keys(db, actor)
+    if getattr(conv, "host_registry", None):
+        from agentvault_registry.services import chat_fed_events as fev
+        await fev.relay_change(db, conv, actor, msg, "reaction", word=word, on=False)
+        return {"message_id": msg.id, "seq": int(msg.seq),
+                "reactions": (await reaction_summaries(db, conv.id, [msg.id], keys)).get(msg.id, [])}, conv, False
+    rows = (await db.execute(select(ChatReaction).where(
+        ChatReaction.message_id == msg.id, ChatReaction.word == word))).scalars().all()
+    mine = [r for r in rows if principal_key(r.actor_ptype, r.actor_id) in keys]
+    for r in mine:
+        await db.delete(r)
+    if mine:
+        from agentvault_registry.services import chat_fed_events as fev
+        await fev.publish(db, conv, {"type": "reaction", "message_seq": int(msg.seq), "word": word, "on": False,
+                                     "actor": await fev.local_actor_key(db, actor)})
+        await db.commit()
+    out = (await reaction_summaries(db, conv.id, [msg.id], keys)).get(msg.id, [])
+    return {"message_id": msg.id, "seq": int(msg.seq), "reactions": out}, conv, bool(mine)
+
+
+
+# ---------------------------------------------------------------------------
+# V0662 (OurChat lane): search in a thread
+# ---------------------------------------------------------------------------
+
+SEARCH_MIN_CHARS = 2
+SEARCH_MAX_CHARS = 100
+SEARCH_LIMIT_MAX = 50
+
+
+def like_pattern(q: str) -> str:
+    """`%q%` with the user's own % _ and the escape character taken literally (a search for "50%" finds "50%")."""
+    esc = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{esc}%"
+
+
+async def search_messages(db: AsyncSession, conversation_id: str, actor: Actor, q: str, limit: int = 20,
+                          before_seq: Optional[int] = None) -> dict:
+    """The text lines of one thread whose words hold `q` (case ignored), newest first, a page at a time (`before_seq`
+    continues). Only what the reader may read: the thread's own rows after their hidden floor, never a line taken back,
+    only `text` lines. Each result is the thread's message (as the page shows it) with its sender's name."""
+    q = (q or "").strip()
+    if len(q) < SEARCH_MIN_CHARS:
+        raise ChatError(422, f"search takes at least {SEARCH_MIN_CHARS} characters")
+    if len(q) > SEARCH_MAX_CHARS:
+        raise ChatError(422, f"search takes at most {SEARCH_MAX_CHARS} characters")
+    limit = max(1, min(int(limit or 20), SEARCH_LIMIT_MAX))
+    conv = await _get_conversation(db, conversation_id)
+    my_row = await resolve_reader(db, conv, actor)
+    stmt = select(ChatMessage).where(
+        ChatMessage.conversation_id == conv.id,
+        ChatMessage.seq > int(my_row.hidden_before_seq or 0),
+        ChatMessage.deleted_at.is_(None),
+        ChatMessage.kind == "text",
+        ChatMessage.body.ilike(like_pattern(q), escape="\\"))
+    if before_seq is not None:
+        stmt = stmt.where(ChatMessage.seq < int(before_seq))
+    rows = list((await db.execute(stmt.order_by(ChatMessage.seq.desc()).limit(limit + 1))).scalars().all())
+    more = len(rows) > limit
+    rows = rows[:limit]
+    names = await display_names(db, [k for k in (sender_key_of(m) for m in rows) if k])
+    out = []
+    for m in rows:
+        d = serialize_message(m)
+        d["sender_name"] = names.get(sender_key_of(m) or "", "") or system_sender_name(m)
+        out.append(d)
+    return {"conversation_id": conv.id, "q": q, "results": out, "more": more,
+            "next_before_seq": int(rows[-1].seq) if rows and more else None}
+
+
+# ---------------------------------------------------------------------------
+# V0662 (OurChat lane): pinned messages (services/chat_pins.py holds the pure rules)
+# ---------------------------------------------------------------------------
+
+async def _pin_gate(db: AsyncSession, conv: Conversation, my_row: ConversationParticipant, actor: Actor) -> None:
+    """Who may pin or unpin here: a room's operators; in a direct or group thread, any member who can post."""
+    if conv.kind == "org":
+        if (await actor_org_role(db, conv.org_id or "", actor)) not in ROOM_OPS_ROLES:
+            raise ChatError(403, "in an organization room its owners and admins pin")
+        return
+    if conv.kind == "room":
+        from agentvault_registry.services import chat_rooms as _cr
+        if getattr(my_row, "role", None) not in _cr.OPERATOR_ROLES:
+            raise ChatError(403, "in a room its owner and moderators pin")
+        return
+    await room_posting_gate(db, conv, my_row, actor)
+
+
+async def _pin_count(db: AsyncSession, conv_id: str) -> int:
+    return int((await db.execute(sa_text("SELECT COUNT(*) FROM chat_pins WHERE conversation_id = :c"), {"c": conv_id})).scalar() or 0)
+
+
+async def pin_message(db: AsyncSession, conversation_id: str, message_id: str, actor: Actor) -> Tuple[dict, Conversation, bool]:
+    """Pin a message in its thread. Returns ({message_id, pinned, count}, the conversation, whether a pin was added). COMMITS."""
+    from agentvault_registry.services import chat_pins as cp
+    conv, my_row, msg = await _change_target(db, conversation_id, message_id, actor)
+    if getattr(conv, "host_registry", None):
+        from agentvault_registry.services import chat_fed_events as fev
+        await fev.relay_change(db, conv, actor, msg, "pin", on=True)
+        return {"message_id": msg.id, "conversation_id": conv.id, "pinned": True, "count": await _pin_count(db, conv.id)}, conv, False
+    await _pin_gate(db, conv, my_row, actor)
+    already = (await db.execute(select(ChatPin.id).where(
+        ChatPin.conversation_id == conv.id, ChatPin.message_id == msg.id))).first() is not None
+    n = await _pin_count(db, conv.id)
+    why = cp.refusal(conv.kind, msg.kind, deleted=msg.deleted_at is not None, pins_now=n, already=already)
+    if why:
+        raise ChatError(409, why)
+    if not already:
+        db.add(ChatPin(conversation_id=conv.id, message_id=msg.id, pinned_by_ptype=actor.ptype, pinned_by_id=actor.sender_id))
+        from agentvault_registry.services import chat_fed_events as fev
+        await fev.publish(db, conv, {"type": "pin", "message_seq": int(msg.seq), "on": True,
+                                     "actor": await fev.local_actor_key(db, actor)})
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            already = True
+        n = await _pin_count(db, conv.id)
+    return {"message_id": msg.id, "conversation_id": conv.id, "pinned": True, "count": n}, conv, not already
+
+
+async def unpin_message(db: AsyncSession, conversation_id: str, message_id: str, actor: Actor) -> Tuple[dict, Conversation, bool]:
+    """Take a message's pin off. Returns ({message_id, pinned, count}, the conversation, whether one was removed). COMMITS."""
+    conv, my_row, msg = await _change_target(db, conversation_id, message_id, actor)
+    if getattr(conv, "host_registry", None):
+        from agentvault_registry.services import chat_fed_events as fev
+        await fev.relay_change(db, conv, actor, msg, "pin", on=False)
+        return {"message_id": msg.id, "conversation_id": conv.id, "pinned": False, "count": await _pin_count(db, conv.id)}, conv, False
+    await _pin_gate(db, conv, my_row, actor)
+    res = await db.execute(sa_delete(ChatPin).where(ChatPin.conversation_id == conv.id, ChatPin.message_id == msg.id))
+    removed = bool(res.rowcount)
+    if removed:
+        from agentvault_registry.services import chat_fed_events as fev
+        await fev.publish(db, conv, {"type": "pin", "message_seq": int(msg.seq), "on": False,
+                                     "actor": await fev.local_actor_key(db, actor)})
+        await db.commit()
+    return {"message_id": msg.id, "conversation_id": conv.id, "pinned": False, "count": await _pin_count(db, conv.id)}, conv, removed
+
+
+async def list_pins(db: AsyncSession, conversation_id: str, actor: Actor) -> dict:
+    """The thread's pins, newest pin first: the message as the page shows it (with its sender's name), who pinned it and
+    when; whether the caller may pin here; the limit. Only what the reader may read (their floor, no line taken back)."""
+    from agentvault_registry.services import chat_pins as cp
+    conv = await _get_conversation(db, conversation_id)
+    my_row = await resolve_reader(db, conv, actor)
+    rows = (await db.execute(
+        select(ChatPin, ChatMessage).join(ChatMessage, ChatMessage.id == ChatPin.message_id).where(
+            ChatPin.conversation_id == conv.id, ChatMessage.deleted_at.is_(None),
+            ChatMessage.seq > int(my_row.hidden_before_seq or 0)).order_by(ChatPin.created_at.desc(), ChatPin.id.desc()))).all()
+    keys = [k for k in (sender_key_of(m) for _, m in rows) if k]
+    for pin, _ in rows:
+        try:
+            keys.append(principal_key(pin.pinned_by_ptype, pin.pinned_by_id))
+        except (ValueError, TypeError):
+            pass
+    names = await display_names(db, keys) if keys else {}
+    out = []
+    for pin, m in rows:
+        d = serialize_message(m)
+        d["sender_name"] = names.get(sender_key_of(m) or "", "") or system_sender_name(m)
+        try:
+            by_name = names.get(principal_key(pin.pinned_by_ptype, pin.pinned_by_id))
+        except (ValueError, TypeError):
+            by_name = None
+        out.append({"message": d, "pinned_by": {"ptype": pin.pinned_by_ptype, "id": pin.pinned_by_id, "name": by_name},
+                    "at": pin.created_at.isoformat() if pin.created_at else None})
+    can = False
+    if conv.kind in cp.PINNABLE_KINDS and getattr(my_row, "state", "active") == "active":
+        try:
+            await _pin_gate(db, conv, my_row, actor)
+            can = True
+        except ChatError:
+            can = False
+    return {"conversation_id": conv.id, "pins": out, "can_pin": can, "max": cp.MAX_PINS}
+
+
+# ---------------------------------------------------------------------------
+# V0662 (OurChat lane): a guest seat in an organization's room (services/chat_guests.py holds the pure rules)
+# ---------------------------------------------------------------------------
+
+def _guest_target(developer_id: Optional[int], agent_did: Optional[str]) -> Actor:
+    """The principal a seat is for: exactly one of a developer id or an agent DID, else a 422."""
+    if (developer_id is None) == (not agent_did):
+        raise ChatError(422, "name one principal: a developer_id or an agent_did")
+    if developer_id is not None:
+        return Actor("developer", developer_id=int(developer_id))
+    return Actor("agent", agent_did=str(agent_did).strip())
+
+
+async def _guest_count(db: AsyncSession, conv_id: str) -> int:
+    return int((await db.execute(sa_text(
+        "SELECT COUNT(*) FROM conversation_participants WHERE conversation_id = :c AND guest_seat = true AND state = 'active'"),
+        {"c": conv_id})).scalar() or 0)
+
+
+async def seat_guest(db: AsyncSession, conversation_id: str, actor: Actor, *, developer_id: Optional[int] = None,
+                     agent_did: Optional[str] = None) -> Tuple[dict, Conversation]:
+    """Seat one named principal as a GUEST of an organization's room. The room's owner or an admin of the organization only,
+    judged from the live organization table. A seat in this one room: it makes nobody a member of the organization, and a
+    live member needs none. Seating again (a guest who left, or already seated) renews the one seat. COMMITS.
+    Returns (the member as the member sheet shows them, the conversation)."""
+    from agentvault_registry.services import chat_guests as cg
+    conv = await _get_conversation(db, conversation_id)
+    if getattr(conv, "host_registry", None):
+        raise ChatError(409, "this room is hosted by another registry: its guests are seated there")
+    target = _guest_target(developer_id, agent_did)
+    is_org = conv.kind == "org" and bool(conv.org_id)
+    my_role = await actor_org_role(db, conv.org_id or "", actor) if is_org else None
+    if is_org and my_role is not None:
+        await resolve_membership(db, conv, actor)                # the actor must stand in the room too (a refused row is a 403)
+    if target.ptype == "developer":
+        exists = (await db.execute(sa_text("SELECT 1 FROM developers WHERE id = :d"), {"d": target.developer_id})).first()
+    else:
+        exists = (await db.execute(sa_text("SELECT 1 FROM agents WHERE lower(did) = lower(:a)"), {"a": target.agent_did})).first()
+    existing = None
+    if is_org:
+        for p in (await db.execute(select(ConversationParticipant).where(
+                ConversationParticipant.conversation_id == conv.id))).scalars().all():
+            if part_key(p) == target.key:
+                existing = p
+                break
+    why = cg.seating_refusal(
+        actor_org_role=my_role, is_org_room=is_org,
+        target_is_live_member=is_org and (await actor_org_role(db, conv.org_id or "", target)) is not None,
+        target_is_self=target.key == actor.key,
+        already_guest=bool(existing is not None and getattr(existing, "guest_seat", False) and existing.state == "active"),
+        guests_now=await _guest_count(db, conv.id) if is_org else 0)
+    if why:
+        raise ChatError(403 if "owners and admins" in why else 409, why)
+    if not exists:
+        raise ChatError(404, "no such principal on this registry")
+    when = message_clock()
+    if existing is None:
+        existing = ConversationParticipant(
+            conversation_id=conv.id, ptype=target.ptype,
+            developer_id=target.developer_id if target.ptype == "developer" else None,
+            agent_did=target.agent_did if target.ptype == "agent" else None, role="member", state="active")
+        db.add(existing)
+    existing.guest_seat = True
+    existing.state = "active"
+    existing.can_post = True
+    existing.guest_invited_by = actor.key
+    existing.guest_invited_at = when
+    await db.commit()
+    names = await display_names(db, [target.key])
+    return {"key": target.key, "ptype": target.ptype, "developer_id": existing.developer_id, "agent_did": existing.agent_did,
+            "name": names.get(target.key, ""), "guest": True, "can_post": True}, conv
+
+
+async def remove_guest(db: AsyncSession, conversation_id: str, actor: Actor, member_key: str) -> Tuple[dict, Conversation]:
+    """End a guest's seat: the room's owner or an admin of the organization, at any time. A guest who is also a live member of the
+    organization stays a member (only the seat ends); anyone else leaves the room. COMMITS."""
+    from agentvault_registry.services import chat_guests as cg
+    conv = await _get_conversation(db, conversation_id)
+    if conv.kind != "org" or not conv.org_id:
+        raise ChatError(409, "guests sit in an organization's room")
+    my_role = await actor_org_role(db, conv.org_id, actor)
+    if my_role not in cg.SEATING_ROLES:
+        raise ChatError(403, "only the organization's owners and admins remove a guest")
+    row = None
+    for p in (await db.execute(select(ConversationParticipant).where(
+            ConversationParticipant.conversation_id == conv.id))).scalars().all():
+        if part_key(p) == (member_key or "").strip() and bool(getattr(p, "guest_seat", False)):
+            row = p
+            break
+    if row is None:
+        raise ChatError(404, "no such guest in this room")
+    target = Actor(row.ptype, developer_id=row.developer_id, agent_did=row.agent_did)
+    row.guest_seat = False
+    row.guest_invited_by = None
+    row.guest_invited_at = None
+    if (await actor_org_role(db, conv.org_id, target)) is None:
+        row.state = "left"                    # no membership to keep the room: it is gone from their list at once
+    await db.commit()
+    return {"key": part_key(row), "guest": False, "still_member": row.state == "active"}, conv
+
+
+# ---------------------------------------------------------------------------
+# V0662 (OurChat lane): agent status in a room, the session board (services/chat_agent_status.py holds the pure rules)
+# ---------------------------------------------------------------------------
+
+async def _status_party(db: AsyncSession, conv: Conversation, actor: Actor) -> bool:
+    """Who writes and reads the board: the organization's owner or an admin, or an agent whose OWNER is one (the desk is a session
+    of its owner's, and an agent holds no organization role of its own). Judged from the live organization table."""
+    if conv.kind != "org" or not conv.org_id:
+        return False
+    if actor.ptype == "developer":
+        return (await org_role_of(db, conv.org_id, actor.developer_id)) in ROOM_OPS_ROLES
+    if actor.ptype == "agent" and actor.agent_did:
+        owner = (await agent_owner_map(db, [actor.agent_did])).get(actor.agent_did)
+        return owner is not None and (await org_role_of(db, conv.org_id, int(owner))) in ROOM_OPS_ROLES
+    return False
+
+
+async def report_agent_status(db: AsyncSession, conversation_id: str, actor: Actor, entries: Any) -> dict:
+    """Keep the desk's report of the room's sessions: one row per session (replaced by the next report). Only members of the room
+    are kept; a session the room does not hold is counted as skipped. COMMITS. Returns {kept, skipped, refused: [why, ...]}."""
+    from agentvault_registry.services import chat_agent_status as css
+    conv = await _get_conversation(db, conversation_id)
+    if conv.kind != "org":
+        raise ChatError(409, "agent status exists in an organization's room")
+    if not await _status_party(db, conv, actor):
+        raise ChatError(403, "only the organization's owners and admins, or an agent of one, report agent status")
+    good, refused = css.clean_report(entries)
+    members = {part_key(p) for p in (await db.execute(select(ConversationParticipant).where(
+        ConversationParticipant.conversation_id == conv.id, ConversationParticipant.state == "active"))).scalars().all()}
+    now = message_clock()
+    kept = skipped = 0
+    for e in good:
+        if e["key"] not in members:
+            skipped += 1
+            continue
+        row = (await db.execute(select(ChatAgentStatus).where(
+            ChatAgentStatus.conversation_id == conv.id, ChatAgentStatus.member_key == e["key"]))).scalars().first()
+        if row is None:
+            row = ChatAgentStatus(conversation_id=conv.id, member_key=e["key"], state=e["state"], reported_at=now)
+            db.add(row)
+        row.name, row.state, row.wake_mode = e["name"], e["state"], e["wake_mode"]
+        row.last_wake_at, row.wakes_24h, row.reported_at, row.reported_by = e["last_wake_at"], e["wakes_24h"], now, actor.key
+        kept += 1
+    await db.commit()
+    return {"kept": kept, "skipped": skipped, "refused": refused}
+
+
+async def read_agent_status(db: AsyncSession, conversation_id: str, actor: Actor) -> dict:
+    """The board: each session the desk reported, as it reads NOW (a stale report reads `unknown`), the sessions that spend most
+    first. The organization's owners and admins (and an agent of one) only."""
+    from agentvault_registry.services import chat_agent_status as css
+    conv = await _get_conversation(db, conversation_id)
+    if conv.kind != "org":
+        raise ChatError(409, "agent status exists in an organization's room")
+    if not await _status_party(db, conv, actor):
+        raise ChatError(403, "agent status is read by the organization's owners and admins")
+    now = message_clock()
+    rows = (await db.execute(select(ChatAgentStatus).where(ChatAgentStatus.conversation_id == conv.id))).scalars().all()
+    out = []
+    for r in rows:
+        age = (css._utc(now) - css._utc(r.reported_at)).total_seconds() if r.reported_at else None
+        fresh = css.effective_state(r.state, r.reported_at, now) != "unknown"
+        out.append({"key": r.member_key, "name": r.name or r.member_key,
+                    "state": css.effective_state(r.state, r.reported_at, now),
+                    # what was last reported is shown only while it is fresh: a stale wake mode or count is not news
+                    "wake_mode": r.wake_mode if fresh else None,
+                    "last_wake_at": r.last_wake_at.isoformat() if r.last_wake_at else None,
+                    "wakes_24h": int(r.wakes_24h or 0) if fresh else None,
+                    "reported_at": r.reported_at.isoformat() if r.reported_at else None,
+                    "age_s": int(age) if age is not None else None})
+    out.sort(key=lambda x: (-(x["wakes_24h"] or 0), (x["name"] or "").lower()))
+    return {"conversation_id": conv.id, "stale_after_s": css.STALE_AFTER_S, "sessions": out}
+
+
 async def fan_out_card_update(conv_id: str, conv_kind: str, message: dict, recipients: List[dict], actor_name: str,
-                              *, sender_owner_dev_id: Optional[int] = None) -> None:
+                              *, sender_owner_dev_id: Optional[int] = None, event: str = "chat.card_updated",
+                              wake: bool = True) -> None:
     """A card's update, after its commit: the WS envelope `chat.card_updated` to every recipient's owner and to the
     updater's own household (its other devices), and a wake for the sync calls waiting on these threads. No notice and
     no push: an update is the same card, read where it is."""
@@ -221,18 +790,18 @@ async def fan_out_card_update(conv_id: str, conv_kind: str, message: dict, recip
         from agentvault_registry.routers.websocket import manager
     except Exception:  # noqa: BLE001
         return
-    envelope = {"type": "chat.card_updated",
+    envelope = {"type": event,
                 "data": {"conversation_id": conv_id, "kind": conv_kind, "message": message, "actor_name": actor_name}}
     devs = {int(r["owner_developer_id"]) for r in recipients if r.get("owner_developer_id") is not None}
     if sender_owner_dev_id is not None:
         devs.add(int(sender_owner_dev_id))
     try:
-        wake = getattr(manager, "wake_chat", None)
+        wake_fn = getattr(manager, "wake_chat", None) if wake else None     # V0662: a reaction wakes no sync call
         keys = {principal_key("developer", d) for d in devs}
         keys |= {principal_key("agent", r.get("agent_did")) for r in recipients
                  if r.get("ptype") == "agent" and r.get("agent_did")}
-        if wake is not None and keys:
-            await wake(keys)
+        if wake_fn is not None and keys:
+            await wake_fn(keys)
     except Exception as e:  # noqa: BLE001 — a missed wake costs a waiting call its bound, never the update
         logger.debug("[CHAT] sync wake for the update of %s failed: %s", message.get("id"), e)
     for d in devs:
@@ -242,15 +811,16 @@ async def fan_out_card_update(conv_id: str, conv_kind: str, message: dict, recip
             logger.debug("[CHAT] WS card update to dev %s failed: %s", d, e)
 
 
-async def deliver_card_update(db: AsyncSession, conv: Conversation, message: dict, updater: Actor) -> None:
+async def deliver_card_update(db: AsyncSession, conv: Conversation, message: dict, updater: Actor,
+                              *, event: str = "chat.card_updated", wake: bool = True) -> None:
     """Who hears an update (the thread's active participants, the updater's blocks applied, as for a message) and its
     fan-out in the background."""
     recipients = await recipients_snapshot(db, conv, updater)
     owner = updater.developer_id if updater.ptype == "developer" else (
         (await agent_owner_map(db, [updater.agent_did or ""])).get(updater.agent_did or "") if updater.agent_did else None)
     spawn(fan_out_card_update(conv.id, conv.kind, message, recipients, updater.display_name or "",
-                              sender_owner_dev_id=owner),
-          what=f"the update of card {message.get('id')} (rev {message.get('card_rev')}) in {conv.id}")
+                              sender_owner_dev_id=owner, event=event, wake=wake),
+          what=f"the {event} of message {message.get('id')} in {conv.id}")
 
 
 PROGRESS_VERDICT_TAGS = {"passed": "white_check_mark", "failed": "x", "cancelled": "heavy_minus_sign"}
@@ -389,6 +959,11 @@ RAIL_ONLY_CARDS = frozenset({
     # V0652 (aa): a Guild order's lifecycle in the room its poster named, posted and kept current by the Guild rail
     # (a lifecycle a client could type is not the order's record)
     "guild.order.live",
+    # V0666 D3: a code distribution's change in its organization's room, posted and kept current by the code changes rail
+    # (services/code_change_card.py); a change's record a client could type is not the change's record
+    "code.change.live",
+    # V0667 D5b: an organization's content change in its room, posted and kept current by the same rail (services/content_change_card.py)
+    "content.change.live",
 })
 # §DOCSFIX D6-556 (2026-10-16): the rail that writes each rail-only card, and what its card records, for the refusal
 # a client meets when it types one. The refusal named the service-call rail for all eight.
@@ -406,6 +981,8 @@ RAIL_ONLY_WRITERS = {
     "choice.request": ("the chat approval rail", "a choice request"),
     "choice.decided": ("the chat approval rail", "a choice's decision"),
     "guild.order.live": ("the Guild rail", "an order's lifecycle"),
+    "code.change.live": ("the code changes rail", "a code change's record"),
+    "content.change.live": ("the code changes rail", "a content change's record"),
 }
 LATER_PHASE_CARDS = frozenset({"topup.offer"})
 # The one value that means "resolved, and open". Anything else — including the
@@ -425,10 +1002,18 @@ class ChatError(Exception):
     """Carries an HTTP status + a named, human-readable reason. The router
     translates; the service never imports FastAPI."""
 
-    def __init__(self, status_code: int, detail: str):
+    def __init__(self, status_code: int, detail: str, retry_after_s: Optional[int] = None):
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
+        # V0664: how long a limit says to wait (a 429 from the cross-frame relay), carried to the answer as Retry-After
+        self.retry_after_s = retry_after_s
+
+
+# V0663: an archived room is read, not posted in. One sentence for a post and one for a change of a line (an edit, a take-back,
+# a reaction, a pin), said by the host that decides and by a mirror that refuses first from its own copy.
+ARCHIVED_POST = "this room is archived: it can be read, not posted in"
+ARCHIVED_CHANGE = "this room is archived: it can be read, not changed"
 
 
 # ---------------------------------------------------------------------------
@@ -622,9 +1207,11 @@ def validate_card(card: Any, *, rail_author: bool = False,
         return "card.refs must be an object when present"
 
     # Per-type required fields (strict on structure, permissive on extras).
-    if ctype in ("progress", "guild.order.live"):     # V0652 (aa)
-        from .chat_live_cards import validate_guild_live, validate_progress
-        problem = validate_progress(data) if ctype == "progress" else validate_guild_live(data)
+    if ctype in ("progress", "guild.order.live", "code.change.live", "content.change.live"):     # V0652 (aa), V0666 D3, V0667 D5b
+        from .chat_live_cards import validate_code_change_live, validate_content_change_live, validate_guild_live, validate_progress
+        problem = (validate_progress(data) if ctype == "progress" else validate_guild_live(data)
+                   if ctype == "guild.order.live" else validate_content_change_live(data)
+                   if ctype == "content.change.live" else validate_code_change_live(data))
         if problem:
             return problem
     if ctype == "applet":
@@ -982,6 +1569,15 @@ def _card_sentence(card: dict) -> str:
                 "settled": "Guild order settled", "cancelled": "Guild order cancelled",
                 "disputed": "Guild order disputed"}.get(d.get("status"), "Guild order")
         return f"{word}: {_clip(d.get('title'), 80)}" if d.get("title") else word
+    if t == "code.change.live":  # V0666 D3
+        word = {"proposed": "Code change proposed", "accepted": "Code change checked", "balloting": "Code change balloting",
+                "passed": "Code change passed", "merged": "Code change merged", "failed": "Code change did not pass",
+                "vetoed": "Code change vetoed", "withdrawn": "Code change withdrawn"}.get(d.get("state"), "Code change")
+        return f"{word}: {_clip(d.get('title'), 80)}" if d.get("title") else word
+    if t == "content.change.live":  # V0667 D5b
+        word = {"balloting": "Content change balloting", "applied": "Content change applied", "failed": "Content change did not pass",
+                "apply_failed": "Content change not applied", "undone": "Content change undone", "withdrawn": "Content change withdrawn"}.get(d.get("state"), "Content change")
+        return f"{word}: {_clip(d.get('title'), 80)}" if d.get("title") else word
     if t == "choice.request":   # V0652 (ab)
         return f"Asks you to choose: {_clip(d.get('title'), 90)}" if d.get("title") else "Asks you to choose"
     if t == "choice.decided":
@@ -1105,7 +1701,22 @@ def preview_for(kind: str, body: Optional[str], card: Optional[dict],
         return _card_sentence(card)[:PREVIEW_LEN]
     if kind == "system":
         return _system_sentence(body, card, sender_name)[:PREVIEW_LEN]
-    return (body or "")[:PREVIEW_LEN]
+    return _quote_free(body or "")[:PREVIEW_LEN]
+
+
+_QUOTE_MARK = re.compile(r"^\s*(?:>\s?)+")
+
+
+def _quote_free(body: str) -> str:
+    """V0663 (the browser pass, seq 3591): the preview is a hint and never a render, so a quote's markdown marker never shows in it.
+    A message that quotes and then says something previews what it SAID (the quoted lines are left out); one that is only a quote
+    previews the quoted words without their markers. A body with no quote line is returned untouched."""
+    lines = body.split("\n")
+    if not any(l.lstrip().startswith(">") for l in lines):
+        return body
+    said = [l for l in lines if not l.lstrip().startswith(">")]
+    pick = said if any(l.strip() for l in said) else [_QUOTE_MARK.sub("", l) for l in lines]
+    return "\n".join(pick).strip()
 
 
 def result_client_ref(client_ref: str) -> str:
@@ -1550,6 +2161,11 @@ async def resolve_membership(db: AsyncSession, conv: Conversation, actor: Actor,
         if conv.kind == "org":
             live_role = await actor_org_role(db, conv.org_id or "", actor)
             if live_role is None:
+                # V0662: no live membership. An explicit GUEST SEAT in this room (services/chat_guests.py) is still a seat
+                # here and nowhere else; anything else is the same refusal as before. The seat is the flag on THIS row,
+                # never inferred from the organization table, and holding it grants no organization standing.
+                if bool(getattr(row, "guest_seat", False)):
+                    return row
                 raise ChatError(403, "you are not an active member of this organization")
             want = "owner" if live_role == "owner" else "member"
             if row.role != want:
@@ -1844,6 +2460,9 @@ async def insert_message(db: AsyncSession, conv: Conversation,
     client_ref = _validate_client_ref(client_ref)
     if kind not in ("text", "card", "system"):
         raise ChatError(422, "kind must be text, card or system")
+    if kind != "system" and getattr(conv, "archived_at", None) is not None:
+        # V0663: an archived room is read, not posted in (its operators' own system rows, the act of archiving among them, still post)
+        raise ChatError(409, ARCHIVED_POST)
     if my_row is None and not rail_author:
         raise ChatError(403, "only a rail may write without a participant row")
     if conv.kind == "support" and not rail_author:
@@ -2029,6 +2648,7 @@ def _reach_and_org_live(actor: Actor):
          OR EXISTS (SELECT 1 FROM agents ag
                     WHERE ag.creator_developer_id = :me
                       AND ag.organization_id = c.org_id)
+         OR p.guest_seat = true   -- V0662: an explicit guest seat in THIS room (services/chat_guests.py)
         )"""
     else:
         reach = "(p.ptype = 'agent' AND lower(p.agent_did) = lower(:med))"
@@ -2037,6 +2657,7 @@ def _reach_and_org_live(actor: Actor):
             EXISTS (SELECT 1 FROM agents ag
                     WHERE lower(ag.did) = lower(:med)
                       AND ag.organization_id = c.org_id)
+         OR p.guest_seat = true   -- V0662: an explicit guest seat in THIS room (services/chat_guests.py)
         )"""
     return reach, org_live, params
 
@@ -2061,6 +2682,7 @@ async def unread_total(db: AsyncSession, actor: Actor) -> dict:
             FROM conversations c
             JOIN conversation_participants p ON p.conversation_id = c.id
             WHERE ({reach})
+              AND c.archived_at IS NULL            -- V0663: an archived room waits on nobody
               AND (c.kind <> 'org' OR (EXISTS (
                     SELECT 1 FROM organizations o
                     WHERE o.id = c.org_id AND o.chat_enabled = true)
@@ -2091,10 +2713,103 @@ async def household_keys(db: AsyncSession, actor: Actor) -> Set[str]:
     return my_keys
 
 
+def _mention_where(actor: Actor, floors: Dict[str, int]) -> list:
+    """V0663 (order 418): the conditions of an unread mention of the caller: above its room's mark, naming it (its stored
+    mention key), not deleted, not its own line. Never reads the body: @all and @everyone name nobody in `mentions`."""
+    own = (and_(ChatMessage.sender_ptype == "developer", ChatMessage.sender_id == str(actor.developer_id))
+           if actor.ptype == "developer" else
+           and_(ChatMessage.sender_ptype == "agent", func.lower(ChatMessage.sender_id) == str(actor.agent_did or "").lower()))
+    return [or_(*[and_(ChatMessage.conversation_id == c, ChatMessage.seq > int(f)) for c, f in floors.items()]),
+            ChatMessage.mentions.isnot(None), ChatMessage.mentions.contains([{"key": actor.key}]),
+            ChatMessage.deleted_at.is_(None), not_(own)]
+
+
+def unread_mention_stmt(actor: Actor, floors: Dict[str, int]):
+    """The count per room (a function of its own so a test can read it as PostgreSQL would: JSONB containment is a
+    statement SQLite cannot run)."""
+    return select(ChatMessage.conversation_id, func.count()).where(*_mention_where(actor, floors)).group_by(
+        ChatMessage.conversation_id)
+
+
+def unread_mention_rows_stmt(actor: Actor, floors: Dict[str, int], limit: int):
+    """The newest unread mentions themselves, across the rooms in `floors`."""
+    return select(ChatMessage).where(*_mention_where(actor, floors)).order_by(
+        ChatMessage.created_at.desc(), ChatMessage.id.desc()).limit(limit)
+
+
+async def unread_mention_counts(db: AsyncSession, actor: Actor, floors: Dict[str, int]) -> Optional[Dict[str, int]]:
+    """V0663 (order 418): per room, how many messages that name THE CALLER (its stored mention key: a handle, a card name or a
+    DID; never @all or @everyone) sit above its read mark. `floors` is {conversation id: the highest of the caller's
+    last_read_seq and hidden_before_seq}. Deleted messages and the caller's own do not count. None when the read failed:
+    a count that could not be taken is not a zero (the list says nothing rather than "none")."""
+    if not floors:
+        return {}
+    try:
+        rows = (await db.execute(unread_mention_stmt(actor, floors))).all()
+        return {r[0]: int(r[1]) for r in rows}
+    except Exception as e:  # noqa: BLE001 — the list never fails over a mention count
+        logger.warning("chat list: the unread mention counts could not be read: %s", e)
+        return None
+
+
+def mention_floors_of(parts_by_conv: Dict[str, List[Any]], my_keys: Set[str]) -> Dict[str, int]:
+    """V0663 (order 418): per room, the LOWEST read mark among the caller's own participant rows (a developer reads through
+    his agents' rows too): a mention above it is unread by at least one side of the caller. Pure."""
+    out: Dict[str, int] = {}
+    for cid, plist in parts_by_conv.items():
+        marks = [max(int(p.last_read_seq or 0), int(p.hidden_before_seq or 0)) for p in plist if part_key(p) in my_keys]
+        if marks:
+            out[cid] = min(marks)
+    return out
+
+
+MENTION_PREVIEW = 160
+
+
+async def unread_mention_items(db: AsyncSession, actor: Actor, limit: int = 20) -> dict:
+    """V0663 (order 418): the bell's Mentions group: the newest unread messages that name the caller (its own name, handle or
+    DID; never @all), across the rooms it may see. The rooms are the LIST's own (the list asks the question the access path
+    asks, §ORGLEAK), so a room the caller left shows nothing. `total` is the count over every room, `mentions` the newest
+    `limit` of them, each {id, conversation_id, kind, title, seq, sender, preview, created_at}. A count that could not be
+    taken answers total None and no items: not a zero."""
+    limit = max(1, min(int(limit or 20), 50))
+    listing = await list_conversations(db, actor, state="active", cursor=None, limit=LIST_MAX)
+    rooms = {c["id"]: c for c in listing["conversations"]}
+    counts = {cid: int(c["unread_mentions"]) for cid, c in rooms.items() if c.get("unread_mentions")}
+    if any(c.get("unread_mentions") is None for c in rooms.values()):
+        return {"mentions": [], "total": None, "available": False}
+    if not counts:
+        return {"mentions": [], "total": 0, "available": True}
+    parts = (await db.execute(select(ConversationParticipant).where(
+        ConversationParticipant.conversation_id.in_(list(counts))))).scalars().all()
+    by_conv: Dict[str, List[Any]] = {}
+    for p in parts:
+        by_conv.setdefault(p.conversation_id, []).append(p)
+    floors = mention_floors_of(by_conv, await household_keys(db, actor))
+    try:
+        msgs = (await db.execute(unread_mention_rows_stmt(actor, floors, limit))).scalars().all()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("chat mentions: the unread mentions could not be read: %s", e)
+        return {"mentions": [], "total": None, "available": False}
+    names = await display_names(db, [k for k in {sender_key_of(m) for m in msgs} if k])
+    items = []
+    for m in msgs:
+        room = rooms.get(m.conversation_id) or {}
+        k = sender_key_of(m)
+        body = (m.body or "").strip()
+        items.append({"id": m.id, "conversation_id": m.conversation_id, "kind": room.get("kind"), "title": room.get("title"),
+                      "seq": int(m.seq), "sender": names.get(k, "") if k else "",
+                      "preview": body[:MENTION_PREVIEW] + ("…" if len(body) > MENTION_PREVIEW else ""),
+                      "created_at": m.created_at.isoformat() if m.created_at else None})
+    return {"mentions": items, "total": sum(counts.values()), "available": True}
+
+
 async def list_conversations(db: AsyncSession, actor: Actor, state: str = "active",
                              cursor: Optional[str] = None, limit: int = 30) -> dict:
     limit = max(1, min(int(limit or 30), LIST_MAX))
     want_state = "pending" if state == "requests" else "active"
+    # V0663: an archived room is in the "archived" lane only (its history stays readable there), in none of the others
+    archive_clause = "AND c.archived_at IS NOT NULL" if state == "archived" else "AND c.archived_at IS NULL"
 
     if actor.ptype == "developer":
         reach = _dev_reach_clause()
@@ -2112,6 +2827,7 @@ async def list_conversations(db: AsyncSession, actor: Actor, state: str = "activ
          OR EXISTS (SELECT 1 FROM agents ag
                     WHERE ag.creator_developer_id = :me
                       AND ag.organization_id = c.org_id)
+         OR p.guest_seat = true   -- V0662: an explicit guest seat in THIS room (services/chat_guests.py)
         )"""
     else:
         reach = "(p.ptype = 'agent' AND lower(p.agent_did) = lower(:med))"
@@ -2120,6 +2836,7 @@ async def list_conversations(db: AsyncSession, actor: Actor, state: str = "activ
             EXISTS (SELECT 1 FROM agents ag
                     WHERE lower(ag.did) = lower(:med)
                       AND ag.organization_id = c.org_id)
+         OR p.guest_seat = true   -- V0662: an explicit guest seat in THIS room (services/chat_guests.py)
         )"""
 
     cursor_clause = ""
@@ -2143,7 +2860,7 @@ async def list_conversations(db: AsyncSession, actor: Actor, state: str = "activ
                (SELECT o.name FROM organizations o WHERE o.id = c.org_id) AS org_name
         FROM conversations c
         JOIN conversation_participants p ON p.conversation_id = c.id
-        WHERE ({reach}) {cursor_clause}
+        WHERE ({reach}) {cursor_clause} {archive_clause}
           -- §OURSTATE-7 A1 — THE OPT-IN IS RETROACTIVE OR IT IS NOT AN OPT-IN.
           -- This list selects by PARTICIPATION, so every room opened before
           -- §OURSTATE-6 kept listing regardless of `organizations.chat_enabled`
@@ -2180,6 +2897,10 @@ async def list_conversations(db: AsyncSession, actor: Actor, state: str = "activ
     names = await display_names(db, all_keys)
 
     my_keys = await household_keys(db, actor)
+
+    # V0663 (order 418): mentions of the caller above its read mark, per room (the lowest mark among the caller's own rows)
+    mention_floors = mention_floors_of(parts_by_conv, my_keys)
+    mention_counts = await unread_mention_counts(db, actor, mention_floors)
 
     # V0658 (t): a room's entry wears its organization's hosted logo, as the thread's header does: the same block
     # (org_mark.room_org's), for every room on the page in one statement. A list never fails over a logo: when the read
@@ -2219,7 +2940,10 @@ async def list_conversations(db: AsyncSession, actor: Actor, state: str = "activ
             "service_inflight": bool(r[7]) and
                 (datetime.datetime.now(datetime.timezone.utc) - r[7]).total_seconds() < SERVICE_INFLIGHT_STALE_S,
             "created_at": r[8].isoformat() if r[8] else None,
+            "archived": state == "archived",
             "unread": int(r[10] or 0),
+            # V0663 (order 418): mentions of the caller above its read mark (None: the count could not be taken)
+            "unread_mentions": None if mention_counts is None else int(mention_counts.get(cid, 0)),
             "muted": bool(r[11]),
             "muted_until": r[18].isoformat() if r[18] else None,   # V0652 (ak): a mute set for a while ends then
             "my_state": want_state,
@@ -2343,6 +3067,10 @@ async def list_messages(db: AsyncSession, conversation_id: str, actor: Actor,
         d["sender_name"] = names.get(sender_key_of(m) or "", "") or system_sender_name(m)
         d["sender_is_my_agent"] = sender_is_my_agent(m.sender_ptype, m.sender_id, mine)
         out.append(d)
+    # V0662: the reaction words on this page (counts, and which are the reader's household's own)
+    reacts = await reaction_summaries(db, conv.id, [d["id"] for d in out if not d.get("deleted")], my_keys)
+    for d in out:
+        d["reactions"] = reacts.get(d["id"], [])
     room = None
     if conv.kind == "org":
         # Live room state travels with the page: what the wall says (genesis),
@@ -2468,6 +3196,11 @@ async def set_state(db: AsyncSession, conversation_id: str, actor: Actor, action
     my_row = await resolve_membership(db, conv, actor, announce_ok=True)
     before = my_row.state
     my_row.state = transition_state(before, action)
+    if action == "leave" and bool(getattr(my_row, "guest_seat", False)):
+        # V0662: a guest may always leave, and leaving ends the seat (the owner or an admin seats again to bring them back)
+        my_row.guest_seat = False
+        my_row.guest_invited_by = None
+        my_row.guest_invited_at = None
     notice = accepted_knock_notice(conv, before, my_row.state, my_row)
     name = actor.display_name
     if notice is not None and actor.ptype == "agent" and actor.agent_did:
@@ -2904,6 +3637,9 @@ async def sync_since(db: AsyncSession, actor: Actor, since: Optional[str], *,
     updates: List[dict] = []
     if cursor and not for_me:
         updates, upd_returned = await _card_updates_since(db, reach, actor, prev_t, upd_seen)
+        # V0662: the messages edited or taken back since the cursor ride the same lane (`change` names which)
+        changes, change_returned = await _message_changes_since(db, reach, actor, prev_t, upd_seen)
+        updates, upd_returned = updates + changes, upd_returned + change_returned
         # the updates returned inside the overlap join the seen list (within its bound: an update that finds no room
         # may come once more, which a client applies by its rev and sees nothing)
         keep = {k: t for k, t in upd_seen + upd_returned if t >= nt}
@@ -2956,6 +3692,46 @@ async def _card_updates_since(db: AsyncSession, reach: str, actor: Actor, ts: da
         out.append({"id": r[0], "conversation_id": r[1], "seq": int(r[2]), "card": card, "card_rev": int(r[4] or 0),
                     "card_updated_at": at.isoformat()})
         returned.append((f"u:{r[0]}:{int(r[4] or 0)}", at))
+    return out, returned
+
+
+async def _message_changes_since(db: AsyncSession, reach: str, actor: Actor, ts: datetime.datetime,
+                                 seen: List[Tuple[str, datetime.datetime]]) -> Tuple[List[dict], List[Tuple[str, datetime.datetime]]]:
+    """V0662 (OurChat lane): the messages in my active threads that were edited or taken back since `ts` (a cursor's
+    position), each as `{id, conversation_id, seq, change: "edit"|"delete", body, edited_at, deleted_at}`, minus the changes
+    the cursor already returned; and their seen-list entries (`u:<id>:e<epoch ms>` / `u:<id>:d`). A client applies a change by
+    its time (services/chat/messageEdit.ts), so one arriving twice changes nothing. Read by ix_chat_msg_edited /
+    ix_chat_msg_deleted."""
+    params: Dict[str, Any] = ({"me": actor.developer_id} if actor.ptype == "developer" else {"med": actor.agent_did})
+    params.update({"ts": ts, "lim": SYNC_MAX})
+    stmt = sa_text(f"""
+        SELECT m.id, m.conversation_id, m.seq, m.body, m.edited_at, m.deleted_at
+        FROM chat_messages m
+        JOIN conversation_participants p ON p.conversation_id = m.conversation_id
+        WHERE ({reach}) AND p.state = 'active'
+          AND ((m.edited_at IS NOT NULL AND m.edited_at >= :ts) OR (m.deleted_at IS NOT NULL AND m.deleted_at >= :ts))
+          AND m.seq > COALESCE(p.hidden_before_seq, 0)
+        ORDER BY COALESCE(m.deleted_at, m.edited_at) ASC, m.id ASC
+        LIMIT :lim
+    """).bindparams(bindparam("ts", type_=DateTime(timezone=True))).columns(
+        edited_at=DateTime(timezone=True), deleted_at=DateTime(timezone=True))
+    rows = (await db.execute(stmt, params)).all()
+    have = {k for k, _ in seen}
+    out, returned, ids = [], [], set()
+    for r in rows:
+        if r[0] in ids:             # dev + their agent both in a thread: one copy
+            continue
+        ids.add(r[0])
+        deleted = r[5] is not None
+        at = _as_utc(r[5] if deleted else r[4])
+        key = f"u:{r[0]}:d" if deleted else f"u:{r[0]}:e{int(at.timestamp() * 1000)}"     # a cursor's seen key is at most 64 chars
+        if key in have:
+            continue
+        out.append({"id": r[0], "conversation_id": r[1], "seq": int(r[2]), "change": "delete" if deleted else "edit",
+                    "body": None if deleted else r[3],
+                    "edited_at": _as_utc(r[4]).isoformat() if r[4] else None,
+                    "deleted_at": _as_utc(r[5]).isoformat() if r[5] else None})
+        returned.append((key, at))
     return out, returned
 
 
@@ -4121,6 +4897,10 @@ async def room_members(db: AsyncSession, conversation_id: str, actor: Actor) -> 
             "is_me": k == actor.key,
             "key": k,
             "wake_mode": getattr(p, "wake_mode", None) or "listen",   # V0654 (aq)
+            # V0662: a seat of this room only, held with no live membership in the organization (a member who also holds a seat
+            # is shown as the member they are)
+            "guest": bool(getattr(p, "guest_seat", False)) and not (
+                (int(p.developer_id) in dev_roles) if p.ptype == "developer" and p.developer_id is not None else False),
         })
     members.sort(key=lambda m: (-(ROOM_ROLE_RANK.get(m["org_role"] or "", -1)), (m["name"] or "").lower()))
     return {"conversation_id": conv.id, "org_id": conv.org_id,
@@ -4435,6 +5215,10 @@ async def insert_remote_message(db: AsyncSession, conv: Conversation,
     they are checked by the caller (routers/chat_federation.py).
     """
     client_ref = _validate_client_ref(client_ref)
+    if kind != "system" and getattr(conv, "archived_at", None) is not None:
+        # V0663 recut: a member on another frame posts through here (relay-send); an archived room takes no post from a member
+        # on any frame. The host's own system row (a join, the act of archiving) is not a member's post and still passes.
+        raise ChatError(409, ARCHIVED_POST)
     if kind == "system" and system_row:
         # §TWOAGENT G1 household seat: the HOST writes this row (a visible join), never a peer's relay
         card = None

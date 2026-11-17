@@ -99,8 +99,9 @@ async function open(lastRead: number) {
   const hold = FakeRO.all.find(r => r.observed.includes(sc)) || null
   return { w, sc, writes, hold }
 }
-async function live(seq: number) {
-  h.stream.onMessage({ conversation_id: 'cA', message: msg(seq) })
+const own = (seq: number) => ({ ...msg(seq), sender_id: 1 })   // developer 1 is the reader (the auth mock above)
+async function live(seq: number, mine = false) {
+  h.stream.onMessage({ conversation_id: 'cA', message: mine ? own(seq) : msg(seq) })
   await flushPromises()
 }
 
@@ -133,7 +134,12 @@ describe('a thread that opens at its NEW line keeps it in view while it settles'
     hold!.fire()
     expect(writes.length, 'nothing re-runs once the reader moved').toBe(after)
     await live(10)
-    expect(writes[writes.length - 1], 'control: after the hold a live message goes to the end').toBe(END)
+    // V0665 (his report, seq 4218): after the hold the reader is where they stopped (the NEW line, not near the bottom): a line
+    // of someone else no longer takes them to the end ...
+    expect(writes[writes.length - 1], 'after the hold a live line of someone else leaves the reader where they are').not.toBe(END)
+    await live(11, true)
+    // ... and their own line still does
+    expect(writes[writes.length - 1], "control: the reader's own line goes to the end").toBe(END)
     w.unmount()
   })
 
@@ -142,7 +148,7 @@ describe('a thread that opens at its NEW line keeps it in view while it settles'
     expect(hold).not.toBeNull()
     w.find('[data-testid="ost-input"]').element.dispatchEvent(new Event('keydown', { bubbles: true }))
     expect(hold!.disconnected).toBe(true)
-    await live(9)
+    await live(9, true)
     expect(writes[writes.length - 1]).toBe(END)
     w.unmount()
   })

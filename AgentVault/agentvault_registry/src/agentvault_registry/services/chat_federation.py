@@ -476,11 +476,15 @@ def _due_conditions() -> list:
     held = sa_text("""NOT EXISTS (SELECT 1 FROM chat_federation_outbox e
                        WHERE e.conversation_id = chat_federation_outbox.conversation_id
                          AND e.peer_base_url = chat_federation_outbox.peer_base_url
-                         AND e.delivered_at IS NULL AND e.attempts < :max_attempts
-                         AND e.seq < chat_federation_outbox.seq AND e.next_attempt_at > now())""").bindparams(
+                         AND e.delivered_at IS NULL AND e.dropped_at IS NULL AND e.attempts < :max_attempts
+                         AND (e.seq < chat_federation_outbox.seq
+                              OR (e.seq = chat_federation_outbox.seq AND e.created_at < chat_federation_outbox.created_at))
+                         AND e.next_attempt_at > now())""").bindparams(
         max_attempts=MAX_ATTEMPTS)
-    return [ChatFederationOutbox.delivered_at.is_(None), ChatFederationOutbox.next_attempt_at <= sa_text("now()"),
-            ChatFederationOutbox.attempts < MAX_ATTEMPTS, held]
+    # V0664 (gwo_efdd53bd198423a5ec2b742d; session-watch, room seq 3636): an admin's dropped row is never due, and a
+    # dropped head releases its thread (the held subquery above skips it too)
+    return [ChatFederationOutbox.delivered_at.is_(None), ChatFederationOutbox.dropped_at.is_(None),
+            ChatFederationOutbox.next_attempt_at <= sa_text("now()"), ChatFederationOutbox.attempts < MAX_ATTEMPTS, held]
 
 
 def _due_batch(limit: int):
@@ -492,7 +496,7 @@ def _due_batch(limit: int):
     oldest = func.min(ChatFederationOutbox.next_attempt_at).over(partition_by=pair)
     return (select(ChatFederationOutbox).where(*_due_conditions())
             .order_by(oldest, ChatFederationOutbox.conversation_id, ChatFederationOutbox.peer_base_url,
-                      ChatFederationOutbox.seq)
+                      ChatFederationOutbox.seq, ChatFederationOutbox.created_at)
             .limit(limit))
 
 
@@ -528,7 +532,8 @@ async def drain_outbox(db: AsyncSession, limit: int = OUTBOX_BATCH) -> dict:
     waits while an earlier row of its thread to the same peer is backing off)."""
     rows = (await db.execute(_due_batch(limit))).scalars().all()
     # each thread in seq order whatever order the store handed the batch back in (the order is what a peer may rely on)
-    rows = sorted(rows, key=lambda r: (str(r.peer_base_url), str(r.conversation_id), int(r.seq)))
+    # V0663: an event shares the seq of the message it came after and follows it (created_at breaks the tie)
+    rows = sorted(rows, key=lambda r: (str(r.peer_base_url), str(r.conversation_id), int(r.seq), str(getattr(r, "created_at", "") or "")))
 
     by_peer: Dict[str, List[ChatFederationOutbox]] = {}
     for row in rows:
@@ -635,8 +640,17 @@ async def relay_to_host(db: AsyncSession, conv: Conversation, sender_key: str, s
         detail = str((r.json() or {}).get("detail") or "")[:240]
     except ValueError:
         pass
+    wait = None
+    if r.status_code == 429:
+        # V0664: the host's limit says how long; an older host says nothing and the number stays None (nothing is invented)
+        try:
+            n = int(str((getattr(r, "headers", None) or {}).get("retry-after") or (getattr(r, "headers", None) or {}).get("Retry-After") or ""))
+            wait = n if n > 0 else None
+        except ValueError:
+            wait = None
     raise cs.ChatError(502 if r.status_code >= 500 else r.status_code,
-                       f"the thread's host registry refused the message ({r.status_code}: {detail}); it was NOT sent")
+                       f"the thread's host registry refused the message ({r.status_code}: {detail}); it was NOT sent",
+                       retry_after_s=wait)
 
 
 # ---------------------------------------------------------------------------
@@ -654,12 +668,32 @@ FED_RL = {
     # V0659 (f): uninvited joins of an 'anyone' room, per joining registry (services/chat_rooms.seat_remote; session-lead's
     # seq 2201, decision 5). Undeclared, the first such join raised KeyError on the host (500; 502 through the joiner's).
     "room_join_peer": (30, 60),
+    # V0663 (security read E2): the relay-event door a resident's member asks a change through (edit, take-back, reaction, pin).
+    # Per calling registry, per thread AND calling registry (one peer cannot starve another's use of a thread), and per actor
+    # (the local routes' own cap: reactions 120 a minute, the others fewer; a pin is capped by its place in the same budget).
+    "relay_event_peer": (600, 60), "relay_event_thread": (240, 60), "relay_event_actor": (120, 60),
 }
 
 
 async def fed_rate_ok(kind: str, *parts: str) -> bool:
     limit, window = FED_RL[kind]
     return await cs._rate_gate(f"fed:{kind}:" + ":".join(str(p) for p in parts), limit, window)
+
+
+async def fed_rate_wait(kind: str, *parts: str) -> int:
+    """V0664: the seconds a spent limit still has to wait, read from the counter fed_rate_ok keeps (the key's remaining life), never
+    longer than the limit's own window. When the counter cannot say (no Redis, no expiry, no key) the window itself: the bound."""
+    window = FED_RL[kind][1]
+    try:
+        from agentvault_registry.background_tasks.leader import get_redis
+        r = await get_redis()
+        if r is not None:
+            left = int(await r.ttl("chat:rl:" + f"fed:{kind}:" + ":".join(str(p) for p in parts)))
+            if left > 0:
+                return min(left, window)
+    except Exception:  # noqa: BLE001 — the bound is a safe answer
+        pass
+    return window
 
 
 async def home_key_for_mirror(db: AsyncSession, agent_did: str) -> Optional[str]:

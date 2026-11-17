@@ -29,8 +29,37 @@ on:
     - cron: '23 4 * * *'   # nightly on the default branch — catches drift (base images, deps) between pushes
 
 jobs:
+  # The cut gate (order gwo_0b4f9a0f, 2026-11-15): a branch whose commit is already inside a release cut (v06NN/cut*)
+  # is tested by the cut's own run, so its jobs are skipped in seconds; 43% of the runner's hours on 2026-11-14/15 went
+  # to such runs (sessionlogs2026/FINDINGS_2026-11-15_CI_MERGED_RUNS.md). main and every cut always run in full, and the
+  # gate FAILS OPEN: a gate that errors or cannot tell leaves every job running (the jobs' `if:` reads only an explicit
+  # skip=true; `!cancelled()` keeps them running when the gate itself failed). Its tests: .forgejo/cut-gate.test.sh (sanity).
+  cut-gate:
+    runs-on: docker
+    container:
+      image: python:3.14-bookworm
+    outputs:
+      skip: ${{ steps.gate.outputs.skip }}
+    steps:
+      - name: The gate's script alone (no tree, one blob)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git clone --quiet --depth 1 --filter=blob:none --no-checkout --branch "$GITHUB_REF_NAME" \
+            "http://token:${TOKEN}@forgejo:3000/${GITHUB_REPOSITORY}.git" .
+          git checkout --quiet "$GITHUB_SHA" -- .forgejo/cut-gate.sh
+      - name: Is this commit already inside a release cut?
+        id: gate
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sh .forgejo/cut-gate.sh "$GITHUB_REF_NAME" "$GITHUB_SHA" '^v06[0-9][0-9]/cut' \
+            "http://token:${TOKEN}@forgejo:3000/${GITHUB_REPOSITORY}.git"
+
   sanity:
     runs-on: docker
+    needs: cut-gate
+    if: ${{ !cancelled() && needs.cut-gate.outputs.skip != 'true' }}   # the cut gate: fails open
     container:
       # §EMITDIAG-3 2026-09-07 — THE COMPILE GATE MUST SPEAK THE IMAGE'S PYTHON.
       # Production images were python 3.11.15 when this job ran 3.12, and 3.12 accepts
@@ -48,6 +77,11 @@ jobs:
           git clone --quiet --depth 1 --branch "$GITHUB_REF_NAME" \
             "http://token:${TOKEN}@forgejo:3000/${GITHUB_REPOSITORY}.git" .
           echo "checked out $(git rev-parse --short HEAD) on $GITHUB_REF_NAME"
+
+      - name: The cut gate's tests (in a cut skipped; not in one, a cut branch, main and a failing lookup run)
+        run: |
+          git config --global user.email ci@theprotocol.invalid && git config --global user.name ci
+          sh .forgejo/cut-gate.test.sh
 
       - name: Compile gate (registry + TEG)
         run: |
@@ -122,6 +156,8 @@ jobs:
 
   migrations:
     runs-on: docker
+    needs: cut-gate
+    if: ${{ !cancelled() && needs.cut-gate.outputs.skip != 'true' }}   # the cut gate: fails open
     container:
       image: python:3.14-bookworm
     steps:
@@ -137,6 +173,8 @@ jobs:
 
   a2a-schema:
     runs-on: docker
+    needs: cut-gate
+    if: ${{ !cancelled() && needs.cut-gate.outputs.skip != 'true' }}   # the cut gate: fails open
     container:
       image: python:3.14-bookworm
     steps:
@@ -156,6 +194,8 @@ jobs:
 
   frontend:
     runs-on: docker
+    needs: cut-gate
+    if: ${{ !cancelled() && needs.cut-gate.outputs.skip != 'true' }}   # the cut gate: fails open
     container:
       image: python:3.14-bookworm
     steps:
@@ -171,6 +211,8 @@ jobs:
 
   image-build:
     runs-on: docker
+    needs: cut-gate
+    if: ${{ !cancelled() && needs.cut-gate.outputs.skip != 'true' }}   # the cut gate: fails open
     container:
       image: docker:29-cli
       options: -v /var/run/docker.sock:/var/run/docker.sock
@@ -267,6 +309,18 @@ jobs:
           STAGE=/tmp/registry-tests-w
           rm -rf "$STAGE" && mkdir -p "$STAGE/fe"
           cp -a agentvault_registry/tests agentvault_registry/alembic agentvault_registry/scripts agentvault_registry/config "$STAGE/"
+          # V0658 (b)'s Agent Forge starter tests (tests/test_forge_starter_v0658.py) read the starter template beside tests/
+          # (parents[1] / "minimal-template"), as the release build's suite finds it in the checkout. Not staged, the job failed
+          # 18 of them on every cut tip from V0658 to V0663 (FileNotFoundError /w/minimal-template/card.py; "Template 'minimal'
+          # is not available on this registry"), while the release builds, which mount the whole registry tree, passed.
+          # session-release, 2026-11-14 (tasks 16053 and 16059). No skip guard: a missing template fails here, legibly.
+          cp -a agentvault_registry/minimal-template "$STAGE/minimal-template"
+          # test_xdist_in_the_image.py (V0658) reads the image's pin list and its freeze beside the tests, never /app
+          cp -a agentvault_registry/Dockerfile agentvault_registry/constraints-network.txt "$STAGE/"
+          [ -f "$STAGE/Dockerfile" ] && [ -f "$STAGE/constraints-network.txt" ] || { echo "FATAL: the image pin files were not staged"; exit 1; }
+          NMT=$(find "$STAGE/minimal-template" -type f | wc -l)
+          echo "staged starter template files: ${NMT}"
+          if [ ! -f "$STAGE/minimal-template/card.py" ] || [ "$NMT" -lt 5 ]; then echo "FATAL: the starter template was not staged (${NMT} files)"; exit 1; fi
           cp -a agentvault_teg_layer_mvp/src "$STAGE/teg_src"
           cp -a agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/services/chat/orgRoomActions.ts "$STAGE/fe/orgRoomActions.ts"
           # §FEFRAME W3: the console's auth-tier map, so test_auth_tiers.py compares it with the running app
@@ -330,11 +384,20 @@ jobs:
               # only trace was a plugin warning in the log nobody reads.
               python -m pytest tests -q -p no:cacheprovider -o asyncio_mode=auto -rs
             ')
+          # A cancelled or hard-failing step never reaches the `docker rm` below, and a
+          # LEFTOVER CONTAINER PINS ITS IMAGE: `docker rmi` refuses while any container
+          # references it, so hygiene.yml's cleanup silently stops working. Measured
+          # 2026-10-26: 45 dead containers from this step held 39 throwaway ci- images
+          # (78GB of tags) alive, and their layers held the build cache alive with them.
+          trap 'docker rm -f -v "$CID" >/dev/null 2>&1 || true' EXIT INT TERM
           docker cp "$STAGE" "$CID:/w"
           # `docker start -a` returns the container's own exit status (measured
           # on this daemon: a container exiting 7 gives rc=7).
           docker start -a "$CID" > /tmp/registry-tests.log 2>&1 || RC=$?
-          docker rm -f "$CID" > /dev/null 2>&1 || true
+          # -v: `docker rm` WITHOUT it orphans a container's anonymous volumes.
+          # This image declares no VOLUME today, so it leaks nothing; the flag is
+          # here so it still leaks nothing the day the Dockerfile gains one.
+          docker rm -f -v "$CID" > /dev/null 2>&1 || true
           # ⚠ NOT `| tee`: a pipe hands `set -e` the exit status of tee, so a red
           # suite would sail through and only the floor gate below could catch
           # it — and 389 -> 360 with 29 failures still clears any floor. Capture
@@ -370,7 +433,9 @@ jobs:
           #                                              image has no git and this clone is --depth 1
           #   test_sovereign_owners_are_frame_data.py 1  the script it checks lives in the stack repo
           #   test_operator_runner_branch.py          7  §OPDIST: the real generator scripts and the auditor's source live in
-          #   test_operator_host_work_phases.py       9  the stack repo (absolute paths, the R50 class); guarded by skipif
+          #   test_operator_host_work_phases.py      13  the stack repo (absolute paths, the R50 class); guarded by skipif
+          #                                              (13 since V0660 (j) b9e8bbecf: four more tests behind the same
+          #                                              template guard; this gate first saw them on 2026-11-14)
           #   test_release_channel.py                 1  §RELEASECHANNEL: the one-copy public-key test reads the CLI's and the kit's
           #                                              copies in the stack repo (the R50 class); the image gate mounts them and runs it
           #   test_membership_db.py, test_commons_db.py, test_federation_ballot_db.py, test_card_key_migration_db.py and
@@ -396,7 +461,34 @@ jobs:
           #                                              REAL Postgres: test_membership_db.py's class (named here with V0659's cut)
           #   test_firm_member_work_v0658_db.py       1  V0658 (v)'s firm and its agents' own work on a REAL Postgres
           #                                              (FIRMS_TEST_DB): test_membership_db.py's class
-          ALLOW="test_spawn_anchor.py:1 test_api_tests_no_tier_literals.py:3 test_fund_origin_allowlist.py:1 test_admin_sweep_honours_skip_reason.py:2 test_sovereign_owners_are_frame_data.py:1 test_operator_runner_branch.py:7 test_operator_host_work_phases.py:9 test_release_channel.py:1 test_membership_db.py:1 test_commons_db.py:1 test_federation_ballot_db.py:1 test_card_key_migration_db.py:1 test_authz_role_add_db.py:1 test_operator_opa.py:1 test_operator_push.py:1 test_moira_template_words_db.py:1 test_webhook_delete_race_db.py:1 test_chat_named_sender_v0653.py:1 test_chat_read_floor_race_v0654.py:1 test_chat_assistant_v0654.py:1 test_chat_wake_modes_v0654.py:1 test_owner_reads_db.py:1 test_chat_org_room_logo_v0658.py:1 test_orgs_v2_db.py:1 test_dispute_correction_race_db.py:1 test_firm_member_work_v0658_db.py:1"
+          #   V0666's eight tests that need a REAL Postgres it may wipe or a real opa, 1 each (the whole-suite helper
+          #   agentvault_registry/scripts/test_databases.py gives them one in the sharded runs, where they run and are counted):
+          #   test_alembic_chain_0230_to_0233_db.py (FIRMS_TEST_DB), test_code_authority_v0666_db.py,
+          #   test_code_change_card_v0666_db.py, test_code_changes_bootstrap_hold_pg_v0666.py,
+          #   test_code_distributions_v0666_db.py (CODE_CHANGES_TEST_DB, CODE_DISTRIBUTIONS_TEST_DB),
+          #   V0667 D5 adds test_content_changes_v0667_db.py and test_content_change_card_v0667_db.py (CODE_DISTRIBUTIONS_TEST_DB), 1 each as well; D7 adds test_distribution_report_v0667_db.py, 1. The undo fix adds test_content_change_apply_once_v0667_db.py (CODE_DISTRIBUTIONS_TEST_DB), 1. The line-acceptance fix adds test_code_line_accept_v0667_db.py (CODE_CHANGES_TEST_DB), 1. The volume-leak fix adds test_test_databases_real_docker_v0667.py, 1 (it needs the docker CLI and the postgres:18.6 image, which the unit-test container does not carry; it runs on the host).
+          #   test_flare_agent_earned_wear_db_v0666.py (FLARE_WEAR_TEST_DB), test_opa_verifier_db_v0666.py
+          #   (OPA_VERIFIER_TEST_DB) and test_opa_verifier_rego_v0666.py (OPA_VERIFIER_BIN and OPA_VERIFIER_POLICY_DIR: the
+          #   verifier's Rego judged by a real opa and the stack's policies, which CI's layout does not carry); the image
+          #   build's own gate (build_v0666_finish.sh) and the sharded runner run all eight (session-tester, 2026-11-16)
+          #   test_guild_award_asyncpg_v0666.py, 1 more (session-code's award-bind, V0666's batched cut): the Guild award's bind
+          #   through asyncpg on a REAL Postgres it may wipe, which CI's layout does not carry; the sharded runner and the finish
+          #   gate run it (the cut's run 17318: image-build FATAL, a skip in that file, allowed 0)
+          #   V0667 (session-code), 1 each: test_repo_accounts_pg_v0666.py (REPO_ACCOUNTS_TEST_DB) and
+          #   test_code_passport_pg_v0667.py (CODE_PASSPORT_TEST_DB and CODE_PASSPORT_HOME_TEST_DB: two registries on two REAL
+          #   Postgres databases) run in the sharded runner, whose helper gives them their databases; test_repo_accounts_forgejo_v0666.py
+          #   needs a REAL throwaway Forgejo (FORGEJO_TEST_URL, FORGEJO_TEST_TOKEN) that neither layout carries: it ran against one
+          #   before its hand-in (5 passed, gwo_662c03447bcd627afa4a11e5)
+          #   test_code_upstream_v0667_db.py          1  V0667 D4's upstream on a REAL Postgres it may wipe (CODE_DISTRIBUTIONS_TEST_DB): the migration, the constraints and the
+          #                                              real route; the sharded runner and the image build's finish gate run it
+          #   test_distribution_releases_v0667_db.py  1  V0667 D6 part 3's scoped release channel on a REAL Postgres it may wipe
+          #                                              (DISTRIBUTION_RELEASES_TEST_DB): the real routes and the token server
+          #   test_code_distributions_org404_v0668_db.py 1  a missing organization's lines answer 404 for the admin too, on a REAL
+          #                                              Postgres it may wipe (CODE_DISTRIBUTIONS_TEST_DB), through the real route
+          #   test_code_changes_ballot_outcome_v0668_db.py  1  V0668 (gwo_2d51e1af): the ballot's outcome through the real
+          #                                              DbStore on a REAL Postgres it may wipe (CODE_CHANGES_TEST_DB): the votes' weight
+          #                                              and the tally's numbers; the sharded runner runs it (the cut's run 1991: FATAL, allowed 0)
+          ALLOW="test_spawn_anchor.py:1 test_api_tests_no_tier_literals.py:3 test_fund_origin_allowlist.py:1 test_admin_sweep_honours_skip_reason.py:2 test_sovereign_owners_are_frame_data.py:1 test_operator_runner_branch.py:7 test_operator_host_work_phases.py:13 test_release_channel.py:1 test_membership_db.py:1 test_commons_db.py:1 test_federation_ballot_db.py:1 test_card_key_migration_db.py:1 test_authz_role_add_db.py:1 test_operator_opa.py:1 test_operator_push.py:1 test_moira_template_words_db.py:1 test_webhook_delete_race_db.py:1 test_chat_named_sender_v0653.py:1 test_chat_read_floor_race_v0654.py:1 test_chat_assistant_v0654.py:1 test_chat_wake_modes_v0654.py:1 test_owner_reads_db.py:1 test_chat_org_room_logo_v0658.py:1 test_orgs_v2_db.py:1 test_dispute_correction_race_db.py:1 test_firm_member_work_v0658_db.py:1 test_alembic_chain_0230_to_0233_db.py:1 test_code_authority_v0666_db.py:1 test_code_change_card_v0666_db.py:1 test_code_changes_bootstrap_hold_pg_v0666.py:1 test_code_distributions_v0666_db.py:1 test_flare_agent_earned_wear_db_v0666.py:1 test_opa_verifier_db_v0666.py:1 test_opa_verifier_rego_v0666.py:1 test_guild_award_asyncpg_v0666.py:1 test_repo_accounts_pg_v0666.py:1 test_repo_accounts_forgejo_v0666.py:1 test_code_passport_pg_v0667.py:1 test_code_upstream_v0667_db.py:1 test_content_changes_v0667_db.py:1 test_content_change_card_v0667_db.py:1 test_content_change_apply_once_v0667_db.py:1 test_distribution_releases_v0667_db.py:1 test_distribution_report_v0667_db.py:1 test_code_distributions_org404_v0668_db.py:1 test_code_line_accept_v0667_db.py:1 test_test_databases_real_docker_v0667.py:1 test_code_changes_ballot_outcome_v0668_db.py:1"
           SKIPS=$(awk '/^SKIPPED \[[0-9]+\] tests\// { n = $2; gsub(/[][]/, "", n); f = $3; sub(/^tests\//, "", f); sub(/:.*/, "", f); c[f] += n } END { for (k in c) print k ":" c[k] }' /tmp/registry-tests.log | sort)
           echo "registry unit tests skipped, by file: $(echo $SKIPS)"
           BAD=0
@@ -441,7 +533,13 @@ jobs:
           set -e
           NET="tegci-${GITHUB_SHA}"
           PG="tegpg-${GITHUB_SHA}"
-          cleanup() { docker rm -f "$PG" >/dev/null 2>&1 || true; docker network rm "$NET" >/dev/null 2>&1 || true; }
+          # ⚠ `docker rm -f -v`, NOT `docker rm -f` (measured 2026-10-24): `--rm`
+          # below would have the daemon drop the anonymous data dir, but this trap
+          # races it, and `docker rm` without -v ORPHANS a container's anonymous
+          # volumes. 638 freshly-initdb'd ~70MB clusters (45G) had piled up since
+          # 2026-03-16 that way, one per run. -v removes only ANONYMOUS volumes,
+          # never a named one, so it cannot touch a volume a job declared.
+          cleanup() { docker rm -f -v "$PG" >/dev/null 2>&1 || true; docker network rm "$NET" >/dev/null 2>&1 || true; }
           trap cleanup EXIT
           docker network create "$NET" >/dev/null
           docker run -d --rm --name "$PG" --network "$NET" \
@@ -565,6 +663,8 @@ jobs:
 
   frontend-build:
     runs-on: docker
+    needs: cut-gate
+    if: ${{ !cancelled() && needs.cut-gate.outputs.skip != 'true' }}   # the cut gate: fails open
     container:
       # §DEPS FE (2026-09-28): node 24 LTS. Node 20 reached end of life 2026-04-30, and the toolchain needs >= 22.12
       # (vitest 5; vite-plugin-static-copy 4 needs >= 22); the npm it bundles (11.x) reads the same cache below.

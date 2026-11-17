@@ -1,0 +1,2051 @@
+{
+ "core_schema": {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+   "actions": {
+    "additionalProperties": {
+     "additionalProperties": false,
+     "properties": {
+      "config": {
+       "type": "object"
+      },
+      "limits": {
+       "additionalProperties": false,
+       "properties": {
+        "per_minute": {
+         "exclusiveMinimum": 0,
+         "type": "number"
+        }
+       },
+       "type": "object"
+      },
+      "type": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "type"
+     ],
+     "type": "object"
+    },
+    "propertyNames": {
+     "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$"
+    },
+    "type": "object"
+   },
+   "breaker": {
+    "additionalProperties": false,
+    "properties": {
+     "cooldown_s": {
+      "exclusiveMinimum": 0,
+      "type": "number"
+     },
+     "failures": {
+      "minimum": 1,
+      "type": "integer"
+     },
+     "refusals": {
+      "minimum": 1,
+      "type": "integer"
+     }
+    },
+    "type": "object"
+   },
+   "identity": {
+    "additionalProperties": false,
+    "properties": {
+     "agent_did": {
+      "type": "string"
+     },
+     "client_id": {
+      "type": "string"
+     },
+     "client_secret": {
+      "type": "string",
+      "x-secret": true
+     },
+     "mtls": {
+      "additionalProperties": false,
+      "properties": {
+       "dir": {
+        "type": "string"
+       },
+       "enabled": {
+        "type": "boolean"
+       }
+      },
+      "type": "object"
+     }
+    },
+    "required": [
+     "agent_did",
+     "client_id",
+     "client_secret"
+    ],
+    "type": "object"
+   },
+   "mappings": {
+    "items": {
+     "additionalProperties": false,
+     "properties": {
+      "fields": {
+       "type": "object"
+      },
+      "from": {
+       "type": "string"
+      },
+      "name": {
+       "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$",
+       "type": "string"
+      },
+      "to": {
+       "type": "string"
+      },
+      "version": {
+       "minimum": 1,
+       "type": "integer"
+      },
+      "when": {
+       "type": "object"
+      }
+     },
+     "required": [
+      "name",
+      "version",
+      "from",
+      "to",
+      "fields"
+     ],
+     "type": "object"
+    },
+    "type": "array"
+   },
+   "name": {
+    "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$",
+    "type": "string"
+   },
+   "registry": {
+    "pattern": "^https?://",
+    "type": "string"
+   },
+   "retry": {
+    "additionalProperties": false,
+    "properties": {
+     "attempts": {
+      "minimum": 1,
+      "type": "integer"
+     },
+     "first_s": {
+      "exclusiveMinimum": 0,
+      "type": "number"
+     },
+     "max_s": {
+      "exclusiveMinimum": 0,
+      "type": "number"
+     }
+    },
+    "type": "object"
+   },
+   "service": {
+    "additionalProperties": false,
+    "properties": {
+     "enabled": {
+      "type": "boolean"
+     },
+     "listen": {
+      "pattern": "^[^:]*:\\d+$",
+      "type": "string"
+     },
+     "report_every_s": {
+      "minimum": 10,
+      "type": "number"
+     }
+    },
+    "type": "object"
+   },
+   "sinks": {
+    "additionalProperties": {
+     "additionalProperties": false,
+     "properties": {
+      "config": {
+       "type": "object"
+      },
+      "limits": {
+       "additionalProperties": false,
+       "properties": {
+        "per_minute": {
+         "exclusiveMinimum": 0,
+         "type": "number"
+        }
+       },
+       "type": "object"
+      },
+      "type": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "type"
+     ],
+     "type": "object"
+    },
+    "propertyNames": {
+     "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$"
+    },
+    "type": "object"
+   },
+   "sources": {
+    "additionalProperties": {
+     "additionalProperties": false,
+     "properties": {
+      "config": {
+       "type": "object"
+      },
+      "limits": {
+       "additionalProperties": false,
+       "properties": {
+        "per_minute": {
+         "exclusiveMinimum": 0,
+         "type": "number"
+        }
+       },
+       "type": "object"
+      },
+      "type": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "type"
+     ],
+     "type": "object"
+    },
+    "propertyNames": {
+     "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$"
+    },
+    "type": "object"
+   },
+   "state": {
+    "type": "string"
+   },
+   "version": {
+    "const": 1
+   }
+  },
+  "required": [
+   "version",
+   "name"
+  ],
+  "type": "object"
+ },
+ "generated_by": "scripts/distribution/gen_proxy_catalog.py --write",
+ "migration": {
+  "kit_caps": {
+   "encoding": "utf-8",
+   "max_file_bytes": 262144,
+   "max_files": 64,
+   "max_total_bytes": 2097152,
+   "path_pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$"
+  },
+  "manifest_schema": {
+   "$id": "theprotocol.migration/v1",
+   "additionalProperties": false,
+   "properties": {
+    "cutover": {
+     "additionalProperties": false,
+     "properties": {
+      "checklist": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      }
+     },
+     "type": "object"
+    },
+    "from": {
+     "additionalProperties": false,
+     "properties": {
+      "engines": {
+       "items": {
+        "minLength": 1,
+        "type": "string"
+       },
+       "type": "array",
+       "uniqueItems": true
+      },
+      "kind": {
+       "enum": [
+        "sql",
+        "file",
+        "rest"
+       ]
+      },
+      "what": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "kind"
+     ],
+     "type": "object"
+    },
+    "load": {
+     "additionalProperties": false,
+     "properties": {
+      "batch_rows": {
+       "maximum": 1000000,
+       "minimum": 1,
+       "type": "integer"
+      },
+      "mappings": {
+       "items": {
+        "minLength": 1,
+        "type": "string"
+       },
+       "minItems": 1,
+       "type": "array",
+       "uniqueItems": true
+      }
+     },
+     "required": [
+      "mappings"
+     ],
+     "type": "object"
+    },
+    "name": {
+     "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+     "type": "string"
+    },
+    "parameters": {
+     "additionalProperties": {
+      "additionalProperties": false,
+      "properties": {
+       "default": {
+        "type": [
+         "string",
+         "number",
+         "integer",
+         "boolean"
+        ]
+       },
+       "description": {
+        "type": "string"
+       },
+       "enum": {
+        "minItems": 1,
+        "type": "array"
+       },
+       "secret": {
+        "type": "boolean"
+       }
+      },
+      "type": "object"
+     },
+     "propertyNames": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+     },
+     "type": "object"
+    },
+    "reconcile": {
+     "items": {
+      "additionalProperties": false,
+      "properties": {
+       "mapping": {
+        "minLength": 1,
+        "type": "string"
+       },
+       "pairs": {
+        "additionalProperties": {
+         "type": "string"
+        },
+        "minProperties": 1,
+        "type": "object"
+       },
+       "source": {
+        "additionalProperties": false,
+        "properties": {
+         "fields": {
+          "items": {
+           "type": "string"
+          },
+          "type": "array"
+         },
+         "key": {
+          "items": {
+           "minLength": 1,
+           "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+         }
+        },
+        "required": [
+         "key",
+         "fields"
+        ],
+        "type": "object"
+       },
+       "target": {
+        "additionalProperties": false,
+        "properties": {
+         "fields": {
+          "items": {
+           "type": "string"
+          },
+          "type": "array"
+         },
+         "key": {
+          "items": {
+           "minLength": 1,
+           "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+         },
+         "read": {
+          "additionalProperties": false,
+          "properties": {
+           "headers": {
+            "additionalProperties": {
+             "type": "string"
+            },
+            "type": "object"
+           },
+           "items_path": {
+            "type": "string"
+           },
+           "url": {
+            "minLength": 1,
+            "type": "string"
+           }
+          },
+          "required": [
+           "url"
+          ],
+          "type": "object"
+         }
+        },
+        "required": [
+         "key",
+         "fields"
+        ],
+        "type": "object"
+       }
+      },
+      "required": [
+       "mapping",
+       "source",
+       "target",
+       "pairs"
+      ],
+      "type": "object"
+     },
+     "type": "array"
+    },
+    "rollback": {
+     "enum": [
+      "auto",
+      "manual"
+     ]
+    },
+    "sample": {
+     "additionalProperties": {
+      "additionalProperties": false,
+      "properties": {
+       "file": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$",
+        "type": "string"
+       },
+       "format": {
+        "enum": [
+         "csv",
+         "json",
+         "jsonl",
+         "xml"
+        ]
+       }
+      },
+      "required": [
+       "file"
+      ],
+      "type": "object"
+     },
+     "type": "object"
+    },
+    "schema": {
+     "const": "theprotocol.migration/v1"
+    },
+    "summary": {
+     "maxLength": 2000,
+     "type": "string"
+    },
+    "title": {
+     "maxLength": 200,
+     "minLength": 1,
+     "type": "string"
+    },
+    "to": {
+     "additionalProperties": false,
+     "properties": {
+      "engines": {
+       "items": {
+        "minLength": 1,
+        "type": "string"
+       },
+       "type": "array",
+       "uniqueItems": true
+      },
+      "kind": {
+       "enum": [
+        "sql",
+        "file",
+        "rest"
+       ]
+      },
+      "what": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "kind"
+     ],
+     "type": "object"
+    },
+    "workflow": {
+     "items": {
+      "additionalProperties": false,
+      "properties": {
+       "acceptance": {
+        "minLength": 1,
+        "type": "string"
+       },
+       "budget_share": {
+        "maximum": 100,
+        "minimum": 0,
+        "type": "integer"
+       },
+       "input_from": {
+        "type": "string"
+       },
+       "key": {
+        "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+        "type": "string"
+       },
+       "role": {
+        "minLength": 1,
+        "type": "string"
+       }
+      },
+      "required": [
+       "key",
+       "role",
+       "acceptance"
+      ],
+      "type": "object"
+     },
+     "type": "array"
+    }
+   },
+   "required": [
+    "schema",
+    "name",
+    "title",
+    "from",
+    "to",
+    "load",
+    "rollback"
+   ],
+   "type": "object"
+  }
+ },
+ "plugins": {
+  "action": [
+   {
+    "class": "theprotocol.proxy.actions_builtin:A2ATaskAction",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "agent": {
+       "pattern": "^did:",
+       "type": "string"
+      },
+      "timeout_s": {
+       "exclusiveMinimum": 0,
+       "type": "number"
+      }
+     },
+     "type": "object"
+    },
+    "description": "Send a task to a named agent (A2A message/send) through the registry; free agents only",
+    "internal": false,
+    "kind": "action",
+    "name": "a2a_task"
+   },
+   {
+    "class": "theprotocol.proxy.actions_builtin:AttestationAction",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "attestation_type": {
+       "maxLength": 120,
+       "minLength": 1,
+       "type": "string"
+      },
+      "evidence_field": {
+       "minLength": 1,
+       "type": "string"
+      },
+      "target_agent_did": {
+       "pattern": "^did:",
+       "type": "string"
+      }
+     },
+     "required": [
+      "attestation_type"
+     ],
+     "type": "object"
+    },
+    "description": "Submit one attestation per record: a signed fact on TheProtocol, its data hashed onto the ledger",
+    "internal": false,
+    "kind": "action",
+    "name": "attestation"
+   },
+   {
+    "class": "theprotocol.proxy.actions_builtin:ChatMessageAction",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "conversation_id": {
+       "minLength": 8,
+       "type": "string"
+      }
+     },
+     "required": [
+      "conversation_id"
+     ],
+     "type": "object"
+    },
+    "description": "Post a message or a card into a chat thread or room (idempotent on the record's key)",
+    "internal": false,
+    "kind": "action",
+    "name": "chat_message"
+   },
+   {
+    "class": "theprotocol.proxy.actions_builtin:MilestoneEvidenceAction",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "contract_id": {
+       "minLength": 1,
+       "type": "string"
+      },
+      "seq": {
+       "minimum": 0,
+       "type": "integer"
+      }
+     },
+     "type": "object"
+    },
+    "description": "Deliver a contract milestone with the record as its evidence (the provider's submit)",
+    "internal": false,
+    "kind": "action",
+    "name": "milestone_evidence"
+   },
+   {
+    "class": "theprotocol.proxy.actions_builtin:PaymentAction",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "mandate": {
+       "pattern": "^lm_[A-Za-z0-9]+$",
+       "type": "string"
+      },
+      "max_amount": {
+       "type": [
+        "number",
+        "string"
+       ]
+      },
+      "payee": {
+       "pattern": "^did:",
+       "type": "string"
+      },
+      "per_day": {
+       "type": [
+        "number",
+        "string"
+       ]
+      },
+      "ttl_seconds": {
+       "minimum": 60,
+       "type": "integer"
+      }
+     },
+     "required": [
+      "mandate",
+      "max_amount"
+     ],
+     "type": "object"
+    },
+    "description": "Authorize and settle a payment to an agent, under a Cockpit mandate and inside its limits",
+    "internal": false,
+    "kind": "action",
+    "name": "payment"
+   },
+   {
+    "class": "theprotocol.proxy.quantum.plugins:QuantumReportAction",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "attestation_type": {
+       "maxLength": 120,
+       "minLength": 1,
+       "type": "string"
+      },
+      "meter_dir": {
+       "minLength": 1,
+       "type": "string"
+      },
+      "report_units_field": {
+       "default": "shots",
+       "type": "string"
+      },
+      "target_agent_did": {
+       "pattern": "^did:",
+       "type": "string"
+      }
+     },
+     "required": [
+      "meter_dir"
+     ],
+     "type": "object"
+    },
+    "description": "Report one finished job: its counts and receipt facts, with the metering claim beside them",
+    "internal": false,
+    "kind": "action",
+    "name": "quantum_report"
+   }
+  ],
+  "sink": [
+   {
+    "class": "theprotocol.proxy.sinks_builtin:CalendarSink",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "duration_minutes": {
+       "minimum": 1,
+       "type": "integer"
+      },
+      "keep": {
+       "minimum": 1,
+       "type": "integer"
+      },
+      "name": {
+       "type": "string"
+      },
+      "path": {
+       "pattern": "\\.ics$",
+       "type": "string"
+      }
+     },
+     "required": [
+      "path"
+     ],
+     "type": "object"
+    },
+    "description": "An ICS calendar file: one event per delivery (start, end, summary from the mapping)",
+    "internal": false,
+    "kind": "sink",
+    "name": "calendar"
+   },
+   {
+    "class": "theprotocol.proxy.sinks_builtin:EmailDigestSink",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "from": {
+       "minLength": 3,
+       "type": "string"
+      },
+      "interval_s": {
+       "minimum": 1,
+       "type": "number"
+      },
+      "max_events": {
+       "minimum": 1,
+       "type": "integer"
+      },
+      "smtp": {
+       "additionalProperties": false,
+       "properties": {
+        "host": {
+         "type": "string"
+        },
+        "password": {
+         "type": "string",
+         "x-secret": true
+        },
+        "port": {
+         "type": "integer"
+        },
+        "ssl": {
+         "type": "boolean"
+        },
+        "starttls": {
+         "type": "boolean"
+        },
+        "username": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "host"
+       ],
+       "type": "object"
+      },
+      "subject": {
+       "type": "string"
+      },
+      "to": {
+       "items": {
+        "minLength": 3,
+        "type": "string"
+       },
+       "minItems": 1,
+       "type": "array"
+      }
+     },
+     "required": [
+      "smtp",
+      "from",
+      "to"
+     ],
+     "type": "object"
+    },
+    "description": "Spools each event and mails a digest of them every interval (SMTP)",
+    "internal": false,
+    "kind": "sink",
+    "name": "email_digest"
+   },
+   {
+    "class": "theprotocol.proxy.evidence:EvidenceSink",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "dir": {
+       "minLength": 1,
+       "type": "string"
+      },
+      "mirror": {
+       "properties": {
+        "access_key": {
+         "type": "string",
+         "x-secret": true
+        },
+        "bucket": {
+         "type": "string"
+        },
+        "endpoint": {
+         "type": "string"
+        },
+        "host": {
+         "type": "string"
+        },
+        "known_hosts": {
+         "type": "string"
+        },
+        "password": {
+         "type": "string",
+         "x-secret": true
+        },
+        "path": {
+         "type": "string"
+        },
+        "port": {
+         "type": "integer"
+        },
+        "prefix": {
+         "type": "string"
+        },
+        "private_key": {
+         "type": "string",
+         "x-secret": true
+        },
+        "region": {
+         "type": "string"
+        },
+        "secret_key": {
+         "type": "string",
+         "x-secret": true
+        },
+        "type": {
+         "enum": [
+          "sftp",
+          "s3"
+         ]
+        },
+        "username": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "type"
+       ],
+       "type": "object"
+      },
+      "registry_card": {
+       "type": "boolean"
+      },
+      "signing_key": {
+       "type": "string",
+       "x-secret": true
+      }
+     },
+     "required": [
+      "dir",
+      "signing_key"
+     ],
+     "type": "object"
+    },
+    "description": "Each event as one hash-chained JSON line, in files and a signed manifest anyone can check offline",
+    "internal": false,
+    "kind": "sink",
+    "name": "evidence"
+   },
+   {
+    "class": "theprotocol.proxy.sinks.file_out:FileOutSink",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "columns": {
+       "description": "csv: the columns, in order (required).",
+       "items": {
+        "type": "string"
+       },
+       "minItems": 1,
+       "type": "array",
+       "uniqueItems": true
+      },
+      "file": {
+       "description": "A file name with {n}, e.g. data-{n:05d}.csv.",
+       "type": "string"
+      },
+      "format": {
+       "default": "csv",
+       "enum": [
+        "csv",
+        "jsonl"
+       ]
+      },
+      "path": {
+       "description": "The folder.",
+       "minLength": 1,
+       "type": "string"
+      },
+      "rows_per_file": {
+       "default": 100000,
+       "minimum": 1,
+       "type": "integer"
+      },
+      "sftp": {
+       "additionalProperties": false,
+       "properties": {
+        "host": {
+         "type": "string"
+        },
+        "key": {
+         "type": "string",
+         "x-secret": true
+        },
+        "known_hosts": {
+         "description": "The file that knows the server's host key; an unknown key is refused.",
+         "type": "string"
+        },
+        "password": {
+         "type": "string",
+         "x-secret": true
+        },
+        "path": {
+         "type": "string"
+        },
+        "port": {
+         "maximum": 65535,
+         "minimum": 1,
+         "type": "integer"
+        },
+        "user": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "host",
+        "user",
+        "path"
+       ],
+       "type": "object"
+      }
+     },
+     "required": [
+      "path"
+     ],
+     "type": "object"
+    },
+    "description": "Write each mapped record as a line of a CSV or JSONL file in a folder, with a manifest and an optional SFTP upload",
+    "internal": false,
+    "kind": "sink",
+    "name": "file_out"
+   },
+   {
+    "class": "theprotocol.proxy.sinks_builtin:JournalSink",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "account": {
+       "additionalProperties": false,
+       "properties": {
+        "currency": {
+         "pattern": "^[A-Z0-9]{2,10}$",
+         "type": "string"
+        },
+        "id": {
+         "minLength": 1,
+         "type": "string"
+        },
+        "name": {
+         "type": "string"
+        },
+        "servicer": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "id",
+        "currency"
+       ],
+       "type": "object"
+      },
+      "camt_version": {
+       "enum": [
+        "001.02",
+        "001.08"
+       ]
+      },
+      "dir": {
+       "minLength": 1,
+       "type": "string"
+      },
+      "format": {
+       "enum": [
+        "csv",
+        "camt053"
+       ]
+      },
+      "opening_balance": {
+       "type": [
+        "number",
+        "string"
+       ]
+      }
+     },
+     "required": [
+      "dir",
+      "account"
+     ],
+     "type": "object"
+    },
+    "description": "Accounting lines: a CSV journal per day, or an ISO 20022 camt.053 statement per day",
+    "internal": false,
+    "kind": "sink",
+    "name": "journal"
+   },
+   {
+    "class": "theprotocol.proxy.quantum.plugins:QuantumSubmitSink",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "backend": {
+       "type": "object"
+      },
+      "dir": {
+       "minLength": 1,
+       "type": "string"
+      },
+      "job_id_field": {
+       "default": "",
+       "type": "string"
+      },
+      "max_shots": {
+       "minimum": 1,
+       "type": "integer"
+      },
+      "meter_dir": {
+       "minLength": 1,
+       "type": "string"
+      },
+      "program_field": {
+       "default": "program",
+       "type": "string"
+      },
+      "seed": {
+       "type": "integer"
+      },
+      "shots_field": {
+       "default": "shots",
+       "type": "string"
+      }
+     },
+     "required": [
+      "dir",
+      "backend"
+     ],
+     "type": "object"
+    },
+    "description": "Submit an arriving quantum job to the backend and meter the shots as they run",
+    "internal": false,
+    "kind": "sink",
+    "name": "quantum_submit"
+   },
+   {
+    "class": "theprotocol.proxy.sinks.rest:RestSink",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "bearer": {
+       "type": "string",
+       "x-secret": true
+      },
+      "headers": {
+       "additionalProperties": {
+        "type": "string"
+       },
+       "type": "object"
+      },
+      "idempotency_header": {
+       "description": "The header that carries the record's key (default Idempotency-Key); empty sends none.",
+       "type": "string"
+      },
+      "method": {
+       "enum": [
+        "POST",
+        "PUT",
+        "PATCH"
+       ]
+      },
+      "reference_path": {
+       "description": "Where the id the other side made is in its JSON answer (default $.id).",
+       "type": "string"
+      },
+      "timeout_s": {
+       "exclusiveMinimum": 0,
+       "type": "number"
+      },
+      "url": {
+       "description": "The address; {field} placeholders are filled from the mapped fields, URL-encoded.",
+       "pattern": "^https?://[^/\\s]+",
+       "type": "string"
+      }
+     },
+     "required": [
+      "url"
+     ],
+     "type": "object"
+    },
+    "description": "Send each mapped record to a system's HTTP API: the fields are the body, the key the Idempotency-Key",
+    "internal": false,
+    "kind": "sink",
+    "name": "rest"
+   },
+   {
+    "class": "theprotocol.proxy.sinks.sql_upsert:SqlUpsertSink",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "columns": {
+       "description": "An allow-list: only these columns are written (default: every mapped field).",
+       "items": {
+        "type": "string"
+       },
+       "minItems": 1,
+       "type": "array",
+       "uniqueItems": true
+      },
+      "connect_args": {
+       "description": "More of the driver's connect arguments (TLS and the like).",
+       "type": "object"
+      },
+      "database": {
+       "type": "string"
+      },
+      "engine": {
+       "description": "postgresql, mysql, sqlserver or sqlite.",
+       "enum": [
+        "postgresql",
+        "mysql",
+        "sqlserver",
+        "sqlite"
+       ]
+      },
+      "host": {
+       "type": "string"
+      },
+      "key": {
+       "description": "The target's unique key columns: the row a record is.",
+       "items": {
+        "type": "string"
+       },
+       "minItems": 1,
+       "type": "array",
+       "uniqueItems": true
+      },
+      "on_conflict": {
+       "default": "update",
+       "enum": [
+        "update",
+        "skip"
+       ]
+      },
+      "password": {
+       "description": "The login's password: a reference (env:NAME or file:/path).",
+       "type": "string",
+       "x-secret": true
+      },
+      "path": {
+       "description": "sqlite: the database file, taken as written.",
+       "type": "string"
+      },
+      "port": {
+       "maximum": 65535,
+       "minimum": 1,
+       "type": "integer"
+      },
+      "preimage": {
+       "default": true,
+       "description": "Keep each key's first row, for restore_preimages.",
+       "type": "boolean"
+      },
+      "table": {
+       "description": "The target table, with its schema if it needs one (public.customers).",
+       "type": "string"
+      },
+      "timeout_seconds": {
+       "default": 30,
+       "exclusiveMinimum": 0,
+       "type": "number"
+      },
+      "user": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "engine",
+      "table",
+      "key"
+     ],
+     "type": "object"
+    },
+    "description": "Write each mapped record into a table by key (PostgreSQL, MySQL, SQL Server or SQLite), keeping the oldest pre-image of each key for the way back.",
+    "internal": false,
+    "kind": "sink",
+    "name": "sql_upsert"
+   },
+   {
+    "class": "theprotocol.proxy.sinks_builtin:WebhookSink",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "bearer": {
+       "type": "string",
+       "x-secret": true
+      },
+      "headers": {
+       "additionalProperties": {
+        "type": "string"
+       },
+       "type": "object"
+      },
+      "method": {
+       "enum": [
+        "POST",
+        "PUT"
+       ]
+      },
+      "secret": {
+       "type": "string",
+       "x-secret": true
+      },
+      "timeout_s": {
+       "exclusiveMinimum": 0,
+       "type": "number"
+      },
+      "url": {
+       "pattern": "^https?://",
+       "type": "string"
+      }
+     },
+     "required": [
+      "url"
+     ],
+     "type": "object"
+    },
+    "description": "POST each event to a system's API, the record's key as its Idempotency-Key",
+    "internal": false,
+    "kind": "sink",
+    "name": "webhook"
+   }
+  ],
+  "source": [
+   {
+    "class": "theprotocol.proxy.sources.filedrop:FileDropSource",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "format": {
+       "default": "csv",
+       "description": "How one file's rows are read: csv, json, jsonl or xml.",
+       "enum": [
+        "csv",
+        "json",
+        "jsonl",
+        "xml"
+       ]
+      },
+      "id_field": {
+       "default": "",
+       "description": "A row field holding the legacy system's own id. Empty: the id is the file's path and the row's position, which is stable but local to this drop.",
+       "type": "string"
+      },
+      "path": {
+       "description": "The directory the legacy system writes into.",
+       "type": "string"
+      },
+      "poll_seconds": {
+       "default": 0,
+       "description": "How often the folder is listed again. 0 (the default, and what the source always did): list it once, read every settled file, then finish (tp-proxy run --once ends). A positive number keeps listing it every that many seconds: a file dropped later is read too, a row appended to a read file is read from where it stopped.",
+       "minimum": 0,
+       "type": "number"
+      },
+      "require_marker": {
+       "default": "",
+       "description": "If set (e.g. '.done'), a file is read only when its marker file exists beside it, and settle_seconds is not consulted.",
+       "type": "string"
+      },
+      "settle_seconds": {
+       "default": 2,
+       "description": "A file is read only once unmodified for this long: a drop is not atomic, and a file read mid-write loses its tail irrecoverably.",
+       "type": "number"
+      },
+      "suffix": {
+       "default": "",
+       "description": "Only files ending in this are read (default: every file, the marker aside).",
+       "type": "string"
+      }
+     },
+     "required": [
+      "path"
+     ],
+     "type": "object"
+    },
+    "description": "Rows from the files a legacy system drops in a directory (CSV, JSON, JSONL, XML).",
+    "internal": false,
+    "kind": "source",
+    "name": "filedrop"
+   },
+   {
+    "class": "theprotocol.proxy.sources.logtail:LogTailSource",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "continuation": {
+       "default": "",
+       "description": "A regex matching a CONTINUATION line (an indented stack-trace frame). Such a line joins the entry above it instead of starting a record.",
+       "type": "string"
+      },
+      "from_start": {
+       "default": true,
+       "description": "With no cursor yet, read the file from its start (default) or skip what is already there and take only what arrives next.",
+       "type": "boolean"
+      },
+      "path": {
+       "description": "The log file to tail.",
+       "type": "string"
+      },
+      "pattern": {
+       "default": "",
+       "description": "A regex with named groups: a record's payload becomes those fields. Empty: the payload is {\"line\": ...}.",
+       "type": "string"
+      },
+      "skip_unmatched": {
+       "default": false,
+       "description": "With a pattern, drop lines it does not match instead of carrying them as {\"line\": ...}. Off by default: a dropped line is invisible.",
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "path"
+     ],
+     "type": "object"
+    },
+    "description": "Lines a legacy system appends to a log file, resumed by offset and file identity across rotation.",
+    "internal": false,
+    "kind": "source",
+    "name": "logtail"
+   },
+   {
+    "class": "theprotocol.proxy.migrate.sample:MigrateSampleSource",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "config": {
+       "description": "The replaced source's own config.",
+       "type": "object"
+      },
+      "file": {
+       "description": "The sample file.",
+       "type": "string"
+      },
+      "format": {
+       "description": "How it is read (default: jsonl for sqlpoll and webhook, else the replaced source's format, else csv).",
+       "enum": [
+        "csv",
+        "json",
+        "jsonl",
+        "xml"
+       ]
+      },
+      "limit": {
+       "description": "At most this many records.",
+       "minimum": 1,
+       "type": "integer"
+      },
+      "stands_in_for": {
+       "enum": [
+        "sqlpoll",
+        "filedrop",
+        "sftp",
+        "webhook"
+       ]
+      }
+     },
+     "required": [
+      "file",
+      "stands_in_for",
+      "config"
+     ],
+     "type": "object"
+    },
+    "description": "Used by tp-proxy migrate --sample only: a kit's sample file read once, as the source it stands in for would read the same rows (its record ids, payload and meta), then finished.",
+    "internal": true,
+    "kind": "source",
+    "name": "migrate_sample"
+   },
+   {
+    "class": "theprotocol.proxy.sources.mqtt:MqttSource",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "client_id": {
+       "description": "The name the broker keeps this source's session under: stable, and used by no other client.",
+       "minLength": 1,
+       "type": "string"
+      },
+      "finish_after_idle_s": {
+       "default": 0,
+       "description": "With a value, finish once subscribed and quiet this long (tp-proxy run --once); 0 listens until stopped.",
+       "minimum": 0,
+       "type": "number"
+      },
+      "format": {
+       "default": "json",
+       "description": "json (text when it is not JSON), text (base64 when it is not UTF-8) or bytes (base64).",
+       "enum": [
+        "json",
+        "text",
+        "bytes"
+       ]
+      },
+      "host": {
+       "description": "The broker's host name or address.",
+       "minLength": 1,
+       "type": "string"
+      },
+      "id_field": {
+       "description": "A field of a JSON payload ($.a.b, or a top-level key) holding the publisher's own id for the message; the record id is topic#id.",
+       "minLength": 1,
+       "type": "string"
+      },
+      "id_property": {
+       "description": "MQTT 5 only: a user property holding the publisher's own id (its first value, when the name is given more than once).",
+       "minLength": 1,
+       "type": "string"
+      },
+      "keepalive_s": {
+       "default": 60,
+       "maximum": 65535,
+       "minimum": 5,
+       "type": "integer"
+      },
+      "password": {
+       "type": "string",
+       "x-secret": true
+      },
+      "port": {
+       "description": "Default 8883 with tls, 1883 without.",
+       "maximum": 65535,
+       "minimum": 1,
+       "type": "integer"
+      },
+      "protocol": {
+       "default": "3.1.1",
+       "description": "3.1.1 or 5 (YAML's protocol: 5, a number, is taken as \"5\").",
+       "enum": [
+        "3.1.1",
+        "5",
+        5
+       ]
+      },
+      "qos": {
+       "default": 1,
+       "description": "The QoS a filter given as a string is subscribed with. 2 is refused: see the source's documentation (a QoS 2 message is handed over before it is on disk).",
+       "enum": [
+        0,
+        1
+       ]
+      },
+      "retained": {
+       "default": "skip",
+       "description": "What to do with the retained messages a broker sends at subscription.",
+       "enum": [
+        "skip",
+        "take"
+       ]
+      },
+      "session_expiry_s": {
+       "default": 4294967295,
+       "description": "MQTT 5: how long the broker keeps the session while the proxy is away (default: it does not end).",
+       "maximum": 4294967295,
+       "minimum": 1,
+       "type": "integer"
+      },
+      "tls": {
+       "additionalProperties": false,
+       "properties": {
+        "ca_file": {
+         "description": "The CA certificates the broker's certificate is checked against (default: the system's).",
+         "minLength": 1,
+         "type": "string"
+        },
+        "cert_file": {
+         "description": "The client certificate (PEM).",
+         "minLength": 1,
+         "type": "string"
+        },
+        "key_password": {
+         "description": "The private key's password, when it is encrypted.",
+         "type": "string",
+         "x-secret": true
+        },
+        "private_key": {
+         "description": "The client certificate's private key: a reference (file:/path or env:NAME holding the PEM).",
+         "type": "string",
+         "x-secret": true
+        }
+       },
+       "type": "object"
+      },
+      "topics": {
+       "description": "Topic filters (+ is one level, # the rest), each a string or {filter, qos}.",
+       "items": {
+        "anyOf": [
+         {
+          "minLength": 1,
+          "type": "string"
+         },
+         {
+          "additionalProperties": false,
+          "properties": {
+           "filter": {
+            "minLength": 1,
+            "type": "string"
+           },
+           "qos": {
+            "enum": [
+             0,
+             1
+            ]
+           }
+          },
+          "required": [
+           "filter"
+          ],
+          "type": "object"
+         }
+        ]
+       },
+       "minItems": 1,
+       "type": "array"
+      },
+      "username": {
+       "minLength": 1,
+       "type": "string"
+      }
+     },
+     "required": [
+      "host",
+      "client_id",
+      "topics"
+     ],
+     "type": "object"
+    },
+    "description": "Messages an MQTT broker delivers (MQTT 3.1.1 or 5, TLS with client certificates, QoS 0 and 1), acknowledged once in the outbox and resumed by the broker's persistent session",
+    "internal": false,
+    "kind": "source",
+    "name": "mqtt"
+   },
+   {
+    "class": "theprotocol.proxy.quantum.plugins:QuantumResultSource",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "backend": {
+       "type": "object"
+      },
+      "dir": {
+       "minLength": 1,
+       "type": "string"
+      },
+      "meter_dir": {
+       "minLength": 1,
+       "type": "string"
+      }
+     },
+     "required": [
+      "dir",
+      "backend"
+     ],
+     "type": "object"
+    },
+    "description": "Hand back each finished job once: its counts, its shots and its digests, never its circuit",
+    "internal": false,
+    "kind": "source",
+    "name": "quantum_results"
+   },
+   {
+    "class": "theprotocol.proxy.sources.sftp:SftpSource",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "after_read": {
+       "default": "move",
+       "description": "Once every row of a file is in the outbox: move it into move_to, mark it (rename it with mark_suffix), or leave it (a read-only account).",
+       "enum": [
+        "move",
+        "mark",
+        "leave"
+       ]
+      },
+      "delimiter": {
+       "default": ",",
+       "description": "CSV only: the field separator (many exports use ';').",
+       "maxLength": 1,
+       "minLength": 1,
+       "type": "string"
+      },
+      "encoding": {
+       "default": "utf-8-sig",
+       "description": "The files' text encoding (the default reads UTF-8, with or without a BOM).",
+       "type": "string"
+      },
+      "format": {
+       "default": "csv",
+       "description": "How one file's rows are read: csv, json, jsonl or xml. A CSV row with more fields than its header keeps the extra ones as a list under _extra.",
+       "enum": [
+        "csv",
+        "json",
+        "jsonl",
+        "xml"
+       ]
+      },
+      "host": {
+       "description": "The SFTP server.",
+       "minLength": 1,
+       "type": "string"
+      },
+      "id_field": {
+       "default": "",
+       "description": "A row field holding the legacy system's own id. Empty: the id is the file's name, its instance and the row's position.",
+       "type": "string"
+      },
+      "ignore_suffixes": {
+       "default": [
+        ".tmp",
+        ".part",
+        ".partial",
+        ".filepart"
+       ],
+       "description": "Names an upload in progress carries; such files are never read.",
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "known_hosts": {
+       "description": "The server's host key, as an OpenSSH known_hosts file: its absolute path (or ~/...), or a reference to its text (file:known_hosts is read from the spec's folder). A server missing from it, or presenting another key, is refused; a key a @revoked line names is never accepted.",
+       "minLength": 1,
+       "type": "string"
+      },
+      "mark_suffix": {
+       "default": ".read",
+       "description": "What mark appends to a read file's name.",
+       "minLength": 1,
+       "type": "string"
+      },
+      "max_bytes": {
+       "default": 67108864,
+       "description": "A larger file is not read, and the log says so.",
+       "minimum": 1,
+       "type": "integer"
+      },
+      "move_to": {
+       "default": "done",
+       "description": "Where read files go: a directory relative to path, or an absolute one; the folders it names are made when they do not exist.",
+       "minLength": 1,
+       "type": "string"
+      },
+      "passphrase": {
+       "description": "The login key's passphrase, a reference, when it has one.",
+       "type": "string",
+       "x-secret": true
+      },
+      "path": {
+       "description": "The directory on the server the legacy system writes its exports into.",
+       "minLength": 1,
+       "type": "string"
+      },
+      "poll_seconds": {
+       "default": 60,
+       "description": "How often the directory is listed. 0: list it once (tp-proxy run --once, or a schedule) and finish.",
+       "minimum": 0,
+       "type": "number"
+      },
+      "port": {
+       "default": 22,
+       "maximum": 65535,
+       "minimum": 1,
+       "type": "integer"
+      },
+      "private_key": {
+       "description": "The login key (OpenSSH or PEM; Ed25519, ECDSA or RSA), a reference (file:/path or env:NAME). Key-based login only.",
+       "type": "string",
+       "x-secret": true
+      },
+      "require_marker": {
+       "default": "",
+       "description": "If set (e.g. '.ok'), a file is read only once its marker file is beside it, and settle_seconds is not consulted.",
+       "type": "string"
+      },
+      "settle_seconds": {
+       "default": 5,
+       "description": "A file is read only once its size and time have stayed the same for this long: an upload is not atomic.",
+       "minimum": 0,
+       "type": "number"
+      },
+      "suffix": {
+       "default": "",
+       "description": "Only files ending in this are read (default: every file).",
+       "type": "string"
+      },
+      "timeout_seconds": {
+       "default": 30,
+       "exclusiveMinimum": 0,
+       "type": "number"
+      },
+      "username": {
+       "minLength": 1,
+       "type": "string"
+      }
+     },
+     "required": [
+      "host",
+      "username",
+      "private_key",
+      "known_hosts",
+      "path"
+     ],
+     "type": "object"
+    },
+    "description": "Rows from the export files a legacy system leaves on an SFTP server (CSV, JSON, JSONL, XML), each file moved or marked once all its rows are in the outbox; key-based login, the host key checked.",
+    "internal": false,
+    "kind": "source",
+    "name": "sftp"
+   },
+   {
+    "class": "theprotocol.proxy.sources.sqlpoll:SqlPollSource",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "batch_size": {
+       "default": 500,
+       "description": "How many rows one query reads.",
+       "maximum": 100000,
+       "minimum": 1,
+       "type": "integer"
+      },
+      "columns": {
+       "description": "The columns a record carries (default: all of them).",
+       "items": {
+        "type": "string"
+       },
+       "minItems": 1,
+       "type": "array",
+       "uniqueItems": true
+      },
+      "connect_args": {
+       "description": "More of the driver's connect arguments (TLS and the like). A value may be a reference, and one whose key names a password, a passphrase or a secret must be. The login itself goes in user and password.",
+       "type": "object"
+      },
+      "cursor": {
+       "description": "The column the rows are read in the order of (leave it out, and name a key, to read a table once in the order of its key: a migration). Its values must only grow as rows are written: the database's own sequence, or a time the writer sets as it writes (now()); a date a person types in is not a cursor (a row dated behind the place is never read). Index it with the key, in that order: each poll asks for the rows after a place in that order.",
+       "type": "string"
+      },
+      "cursor_type": {
+       "default": "id",
+       "description": "id: an integer that only grows (an identity, a sequence). timestamp: a time set as the row is written (a date or a time column), carried as the database's own text for it.",
+       "enum": [
+        "id",
+        "timestamp"
+       ]
+      },
+      "database": {
+       "description": "The database to read (all but sqlite).",
+       "type": "string"
+      },
+      "engine": {
+       "description": "postgresql, mysql or sqlserver; sqlite reads a database file.",
+       "enum": [
+        "postgresql",
+        "mysql",
+        "sqlserver",
+        "sqlite"
+       ]
+      },
+      "from_start": {
+       "default": true,
+       "description": "With no place kept yet: read the rows already there (default), or only the rows that arrive next.",
+       "type": "boolean"
+      },
+      "host": {
+       "description": "The database server (all but sqlite).",
+       "type": "string"
+      },
+      "key": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "items": {
+          "type": "string"
+         },
+         "minItems": 1,
+         "type": "array",
+         "uniqueItems": true
+        }
+       ],
+       "description": "The column (or columns) that tell apart rows with the same cursor value and name a record: unique as the database compares it (a case-insensitive column counts A and a as one). Default: the cursor itself (an id is unique). A timestamp cursor needs one."
+      },
+      "password": {
+       "description": "The login's password: a reference (env:NAME or file:/path).",
+       "type": "string",
+       "x-secret": true
+      },
+      "path": {
+       "description": "sqlite: the database file's name, taken as written (not a reference, not a file: URI), opened read only; a relative one is read from the proxy's working directory.",
+       "type": "string"
+      },
+      "poll_seconds": {
+       "default": 10,
+       "description": "How long to wait before reading again once every row is read. 0: read once and finish (for tp-proxy run --once).",
+       "minimum": 0,
+       "type": "number"
+      },
+      "port": {
+       "description": "Its port (default: 5432, 3306 or 1433).",
+       "maximum": 65535,
+       "minimum": 1,
+       "type": "integer"
+      },
+      "settle_seconds": {
+       "default": 5,
+       "description": "Each poll reads only up to the highest cursor value it saw this long before, so a transaction that took a lower id or an earlier time and commits later is still read. Longer than the legacy system's longest writing transaction. 0 reads at once and accepts that risk.",
+       "minimum": 0,
+       "type": "number"
+      },
+      "table": {
+       "description": "The table or view, with its schema if it needs one (sales.order_events).",
+       "type": "string"
+      },
+      "timeout_seconds": {
+       "default": 30,
+       "description": "How long connecting, and each query, may take.",
+       "exclusiveMinimum": 0,
+       "type": "number"
+      },
+      "user": {
+       "description": "A login that may only SELECT the table or view.",
+       "type": "string"
+      }
+     },
+     "required": [
+      "engine",
+      "table"
+     ],
+     "type": "object"
+    },
+    "description": "The rows of a table or view (PostgreSQL, MySQL, SQL Server or SQLite), read in the order of a cursor column and resumed where they stopped, read only.",
+    "internal": false,
+    "kind": "source",
+    "name": "sqlpoll"
+   },
+   {
+    "class": "theprotocol.proxy.sources_builtin:TheProtocolEventsSource",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "commit_timeout_s": {
+       "exclusiveMinimum": 0,
+       "type": "number"
+      },
+      "events": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "listen": {
+       "pattern": "^[^:]*:\\d+$",
+       "type": "string"
+      },
+      "max_bytes": {
+       "minimum": 1024,
+       "type": "integer"
+      },
+      "path": {
+       "pattern": "^/",
+       "type": "string"
+      },
+      "secret": {
+       "type": "string",
+       "x-secret": true
+      }
+     },
+     "required": [
+      "listen",
+      "path",
+      "secret"
+     ],
+     "type": "object"
+    },
+    "description": "The registry's webhooks: each signed delivery is one record of TheProtocol's events",
+    "internal": false,
+    "kind": "source",
+    "name": "theprotocol_events"
+   },
+   {
+    "class": "theprotocol.proxy.sources_builtin:WebhookSource",
+    "config_schema": {
+     "additionalProperties": false,
+     "properties": {
+      "commit_timeout_s": {
+       "exclusiveMinimum": 0,
+       "type": "number"
+      },
+      "id_field": {
+       "minLength": 1,
+       "type": "string"
+      },
+      "listen": {
+       "pattern": "^[^:]*:\\d+$",
+       "type": "string"
+      },
+      "max_bytes": {
+       "minimum": 1024,
+       "type": "integer"
+      },
+      "path": {
+       "pattern": "^/",
+       "type": "string"
+      },
+      "secret": {
+       "type": "string",
+       "x-secret": true
+      },
+      "signature_header": {
+       "minLength": 1,
+       "type": "string"
+      }
+     },
+     "required": [
+      "listen",
+      "path"
+     ],
+     "type": "object"
+    },
+    "description": "An HTTP receiver: each POSTed JSON object is a record, answered 202 once it is in the outbox",
+    "internal": false,
+    "kind": "source",
+    "name": "webhook"
+   }
+  ]
+ },
+ "schema": "theprotocol.proxy.catalog/v1",
+ "sdk_version": "0.10.0",
+ "value_nodes": {
+  "as": [
+   "text",
+   "int",
+   "decimal",
+   "float",
+   "bool",
+   "date",
+   "datetime",
+   "json"
+  ],
+  "case": [
+   "upper",
+   "lower",
+   "title"
+  ],
+  "keys": [
+   "as",
+   "case",
+   "concat",
+   "default",
+   "format",
+   "group",
+   "map",
+   "map_default",
+   "null_if",
+   "path",
+   "regex",
+   "required",
+   "round",
+   "sep",
+   "trim",
+   "tz"
+  ],
+  "node_needs": "path or concat",
+  "order": [
+   "null_if",
+   "trim",
+   "case",
+   "regex",
+   "map",
+   "as",
+   "round"
+  ]
+ }
+}

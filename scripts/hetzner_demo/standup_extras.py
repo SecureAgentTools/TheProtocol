@@ -243,7 +243,7 @@ def render_vhosts(name: str, ports: Dict[str, int], with_tls: bool,
             link.symlink_to(Path(NGINX_AVAIL) / fname)
     rc = subprocess.run(["nginx", "-t"], capture_output=True, text=True)
     assert rc.returncode == 0, f"nginx -t failed after rendering {name}'s vhosts: {rc.stderr[-400:]}"
-    subprocess.run(["systemctl", "reload", "nginx"], check=True)
+    subprocess.run(["nginx", "-s", "reload"], check=True)   # the binary, not the unit: the edge runs in a container (nginx is its shim)
     log(f"vhosts rendered for {name}: {written} (tls {'enabled' if with_tls else 'staged, acme enabled'})")
     return written
 
@@ -322,7 +322,7 @@ def apex_ws_routes(slug: str, es_port: int, vhosts=("theprotocol-apex", "api-the
     if added:
         rc = subprocess.run(["nginx", "-t"], capture_output=True, text=True)
         assert rc.returncode == 0, f"nginx -t failed after the ws routes: {rc.stderr[-300:]}"
-        subprocess.run(["systemctl", "reload", "nginx"], check=True)
+        subprocess.run(["nginx", "-s", "reload"], check=True)   # the binary, not the unit: the edge runs in a container (nginx is its shim)
     log(f"apex/api ws route /ws/events-{slug} → 127.0.0.1:{es_port}: {added} block(s) added")
     return added
 

@@ -1,9 +1,10 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { gamesState } from '@/services/games/gamesSwitch'   // V0666 the games switch
 import { replayLocationMissedBeforeReady } from './missedFirstNavigation'
-import { loadRegistryConfig } from '@/composables/useRegistryConfig'
+import { loadRegistryConfig, peekRegistryConfig } from '@/composables/useRegistryConfig'
 import { whenFrameManifest, currentFrameManifest } from '@/composables/useFrameManifest'
 import { pocketLockEngaged } from '@/composables/usePocketLock'
-import { homeRoute, bindDoorRouter } from '@/services/uiMode'
+import { homeRoute, bindDoorRouter, arrivesInDesk, savedUiMode } from '@/services/uiMode'
 import type { RouteRecordRaw, Router } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { cannotActReason } from '@/services/agentActable'
@@ -336,7 +337,8 @@ const routes: RouteRecordRaw[] = [
           // "pick a conversation" pane beside it.
           { path: '', name: 'pocket-ourchat', component: { render: () => null },
             meta: { requiresAuth: true, title: 'Pocket · OurChat' } },
-          { path: ':id', name: 'pocket-ourchat-thread', component: () => import('@/views/pocket/PocketOurStateThread.vue'), meta: { requiresAuth: true, title: 'Pocket · OurChat' } },
+          // V0663: a link arrives by the landing decision (services/uiMode.arrivesInDesk): a wide window opens the desk thread, the message (?m=) kept
+          { path: ':id', name: 'pocket-ourchat-thread', component: () => import('@/views/pocket/PocketOurStateThread.vue'), meta: { requiresAuth: true, title: 'Pocket · OurChat' }, beforeEnter: (to: any, from: any) => (arrivesInDesk(from.name == null, savedUiMode(), typeof window !== 'undefined' ? window.innerWidth : 1280) ? { name: 'desk-ourchat-thread', params: to.params, query: to.query, hash: to.hash, replace: true } : true) },
         ],
       },
       // §OURCHAT rename (2026-08-25) — the OLD path is a PERMANENT alias, not a
@@ -378,6 +380,13 @@ const routes: RouteRecordRaw[] = [
       // §OCOPTIN (2026-08-28) — PUBLIC transparency showcase: firms that opted
       // in serve their records-only work feed here. Same anonymous pattern as
       // the leaderboard. Marker: pf-firms.
+      // V0664: what an admin marked public, for anyone (GET /public/announcements; no sign-in)
+      {
+        path: 'announcements',
+        name: 'public-announcements',
+        component: () => import('@/views/PublicAnnouncements.vue'),
+        meta: { requiresAuth: false, allowAnonymous: true, title: 'Announcements' }
+      },
       {
         path: 'firms',
         name: 'public-firms',
@@ -683,11 +692,127 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, requiresRole: 'admin', requiresAdminFlag: 'platform', title: 'Phone Fabric' }
       },
       {
+        // V0663 (his suggestion 9): two agent cards side by side, as served (public, as the cards are)
+        path: 'cards/compare',
+        name: 'card-compare',
+        component: () => import('@/views/CardCompare.vue'),
+        meta: { requiresAuth: false, allowAnonymous: true, title: 'Compare agent cards' }
+      },
+      {
+        // V0663 governed code: code changes proposed, checked, reviewed, voted on and merged (public, as the ballot is)
+        path: 'code-changes',
+        name: 'code-changes',
+        component: () => import('@/views/CodeChanges.vue'),
+        meta: { requiresAuth: false, allowAnonymous: true, title: 'Code changes' }
+      },
+      {
+        // V0664: proposing is a guided flow of its own; a change has a page of its own (a V0663 link, ?id=, opens it)
+        path: 'code-changes/new',
+        name: 'code-changes-new',
+        component: () => import('@/views/CodeChangeNew.vue'),
+        meta: { requiresAuth: false, allowAnonymous: true, title: 'Propose a code change' }
+      },
+      {
+        // V0665 the contributor track: the Track tab beside the changes (before ':id', which would take "track" for a change's id)
+        path: 'code-changes/track',
+        name: 'code-changes-track',
+        component: () => import('@/views/ContributorTrack.vue'),
+        meta: { requiresAuth: false, allowAnonymous: true, title: 'Contributor track' }
+      },
+      {
+        path: 'code-changes/:id',
+        name: 'code-change',
+        component: () => import('@/views/CodeChangeView.vue'),
+        meta: { requiresAuth: false, allowAnonymous: true, title: 'Code change' }
+      },
+      {
+        // V0666 D2: an organization's code distributions (its release lines), a queue of their own; off on this registry, the page says so in one sentence
+        path: 'contributions',
+        name: 'contributions',
+        component: () => import('@/views/Contributions.vue'),
+        meta: { requiresAuth: true, title: 'Contributions' }
+      },
+      {
+        // V0667 D5: proposing a content change into an organization's line (the fast lane); before ':id'-like routes would take "content" for a name
+        path: 'contributions/content/new',
+        name: 'content-changes-new',
+        component: () => import('@/views/ContentChangeNew.vue'),
+        meta: { requiresAuth: true, title: 'Propose a content change' }
+      },
+      {
         // THE GUILD (2026-07-07) — agent work exchange board + admin oversight.
         path: 'guild',
         name: 'guild',
         component: () => import('@/views/GuildBoard.vue'),
         meta: { requiresAuth: false, allowAnonymous: true, title: 'The Guild' }
+      },
+      {
+        // V0664 C3 — TheProtocol Proxy: the overview, the catalog and the recipes (public, no request)
+        path: 'proxy',
+        name: 'proxy',
+        component: () => import('@/views/ProxyView.vue'),
+        meta: { requiresAuth: false, allowAnonymous: true, title: 'TheProtocol Proxy' }
+      },
+      {
+        // V0664 C3 — the proxy spec builder (public; nothing is saved on the server and nothing leaves the browser)
+        path: 'proxy/new',
+        name: 'proxy-new',
+        component: () => import('@/views/ProxyBuilderView.vue'),
+        meta: { requiresAuth: false, allowAnonymous: true, title: 'Build a proxy spec' }
+      },
+      {
+        // V0664 C3 — My proxies: the developer's agents whose proxy reports its status (C2's owner reads)
+        path: 'proxy/mine',
+        name: 'proxy-mine',
+        component: () => import('@/views/ProxyMineView.vue'),
+        meta: { requiresAuth: true, title: 'My proxies' }
+      },
+      {
+        // V0663 — agent workflows: steps as roles over Guild orders, a ruleset per step, one receipt chain.
+        path: 'workflows',
+        name: 'workflows',
+        component: () => import('@/views/WorkflowsView.vue'),
+        meta: { requiresAuth: true, title: 'Workflows' }
+      },
+      {
+        // V0664 M5 — Migrate a system: public, shown where the registry says the template library is on (workflow_templates_enabled)
+        path: 'migrate',
+        name: 'migrate',
+        component: () => import('@/views/MigrateView.vue'),
+        meta: { requiresAuth: false, allowAnonymous: true, title: 'Migrate a system', requiresRegistryFlag: 'workflow_templates_enabled', registryFlagRedirect: '/' }
+      },
+      {
+        // V0664 C4 — read a migration report or certificate in the browser (public; this page makes no request)
+        path: 'migrate/report',
+        name: 'migrate-report',
+        component: () => import('@/views/MigrateReportView.vue'),
+        meta: { requiresAuth: false, allowAnonymous: true, title: 'Read a migration report' }
+      },
+      {
+        // V0664 C4 — the migration builder (public; saving a draft asks an agent)
+        path: 'migrate/new',
+        name: 'migrate-new',
+        component: () => import('@/views/MigrateBuilderView.vue'),
+        meta: { requiresAuth: false, allowAnonymous: true, title: 'Build a migration', requiresRegistryFlag: 'workflow_templates_enabled', registryFlagRedirect: '/' }
+      },
+      {
+        // V0664 C4 — My templates and My migrations (the acting agent's own; they read what the registry answers and say so when it has no such route)
+        path: 'migrate/mine',
+        name: 'migrate-mine',
+        component: () => import('@/views/MigrateMineView.vue'),
+        meta: { requiresAuth: false, allowAnonymous: true, title: 'My templates', requiresRegistryFlag: 'workflow_templates_enabled', registryFlagRedirect: '/' }
+      },
+      {
+        path: 'migrate/runs',
+        name: 'migrate-runs',
+        component: () => import('@/views/MigrateRunsView.vue'),
+        meta: { requiresAuth: false, allowAnonymous: true, title: 'My migrations', requiresRegistryFlag: 'workflow_templates_enabled', registryFlagRedirect: '/' }
+      },
+      {
+        path: 'migrate/:id',
+        name: 'migrate-template',
+        component: () => import('@/views/MigrateTemplateView.vue'),
+        meta: { requiresAuth: false, allowAnonymous: true, title: 'Migration template', requiresRegistryFlag: 'workflow_templates_enabled', registryFlagRedirect: '/' }
       },
       {
         path: 'forge',
@@ -845,6 +970,14 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/FrameManagement.vue'),
         // §pass66 — mainframe-only. Cross-frame bridge config is mainframe-tier.
         meta: { requiresAuth: true, requiresRole: 'admin', requiresAdminFlag: 'federation', requiresMainframe: true, title: 'Frame Management', viewAmbientTone: 'sovereign'  }
+      },
+      {
+        // V0665 art: the contributor track's review gallery. NOT in any menu: an admin who knows the address. No admin flag: it is
+        // art for his review, it reads nothing and changes nothing.
+        path: 'admin/flare-art',
+        name: 'admin-flare-art',
+        component: () => import('@/views/AdminFlareArtGallery.vue'),
+        meta: { requiresAuth: true, requiresRole: 'admin', title: 'Contributor track art', viewAmbientTone: 'admin' }
       },
       {
         path: 'admin/ironhand',
@@ -1057,6 +1190,14 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true, requiresRole: 'admin', requiresAdminFlag: 'support', title: 'Broadcasts', viewAmbientTone: 'admin'  }
       },
       {
+        // V0666 D2 (the design's section 5: one admin view where every change arrives): every release line's changes across all organizations,
+        // gated admin_platform as its routes are (routers/code_distributions.py)
+        path: 'admin/contributions',
+        name: 'admin-contributions',
+        component: () => import('@/views/AdminContributionsInbox.vue'),
+        meta: { requiresAuth: true, requiresRole: 'admin', requiresAdminFlag: 'platform', title: 'Contributions inbox', viewAmbientTone: 'admin' }
+      },
+      {
         // §ADMINDESK (2026-08-29) — the operator's OurChat-style chat desk.
         // Two lanes only (support threads + customer-granted reviews); every
         // transcript open writes an audit row. Gated admin_support, matching
@@ -1065,6 +1206,13 @@ const routes: RouteRecordRaw[] = [
         name: 'admin-chatdesk',
         component: () => import('@/views/AdminChatDesk.vue'),
         meta: { requiresAuth: true, requiresRole: 'admin', requiresAdminFlag: 'support', title: 'Chat Desk', viewAmbientTone: 'admin'  }
+      },
+      {
+        // V0663 (gwo_01681f32a8cfe7390b773532): per peer, what waits in the chat federation outbox (read-only)
+        path: 'admin/chat-delivery',
+        name: 'admin-chat-delivery',
+        component: () => import('@/views/ChatDeliveryAdmin.vue'),
+        meta: { requiresAuth: true, requiresRole: 'admin', requiresAdminFlag: 'federation', title: 'Chat Delivery', viewAmbientTone: 'admin' }
       },
       {
         // Build #12 (2026-05-07): Settlements Watchtower — cross-registry
@@ -1154,7 +1302,8 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/GamesHub.vue'),
         meta: {
           requiresAuth: true,
-          title: 'Game Arena'
+          title: 'Game Arena',
+          closedWhenRegistryFlagFalse: 'games_enabled'   // V0666 the games switch
         }
       },
       {
@@ -1163,7 +1312,8 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/ArenaView.vue'),
         meta: {
           requiresAuth: true,
-          title: 'Robo Wars Arena'
+          title: 'Robo Wars Arena',
+          closedWhenRegistryFlagFalse: 'games_enabled'
         }
       },
       {
@@ -1172,20 +1322,28 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/TowerDefenseView.vue'),
         meta: {
           requiresAuth: true,
-          title: 'Tower Defense'
+          title: 'Tower Defense',
+          closedWhenRegistryFlagFalse: 'games_enabled'
         }
       },
       {
         path: 'snake-arena',
         name: 'snake-arena',
         component: () => import('@/views/SnakeArenaView.vue'),
-        meta: { requiresAuth: true, title: 'Snake Arena' }
+        meta: { requiresAuth: true, title: 'Snake Arena', closedWhenRegistryFlagFalse: 'games_enabled' }
       },
       {
         path: 'trading',
         name: 'trading',
         component: () => import('@/views/TradingView.vue'),
-        meta: { requiresAuth: true, title: 'Market Mayhem' }
+        meta: { requiresAuth: true, title: 'Market Mayhem', closedWhenRegistryFlagFalse: 'games_enabled' }
+      },
+      {
+        // V0666 the games switch: where a game view is closed (games_enabled false), the one plain page it lands on
+        path: 'games-off',
+        name: 'games-off',
+        component: () => import('@/views/GamesOff.vue'),
+        meta: { requiresAuth: false, allowAnonymous: true, title: 'Games' }
       },
       {
         path: 'protocol-theatre',
@@ -1425,6 +1583,17 @@ router.beforeEach(async (to, from, next) => {
       // NotFound; it lands where the person's console starts instead.
       return next({ path: (to.meta.registryFlagRedirect as string) || homeRoute(), replace: true })
     }
+  }
+  // V0666 the games switch: ON by default, so an older registry that does not say keeps the games; an explicit false
+  // closes them on their one plain page. A config that could not be read is UNKNOWN, not on: one fresh read, and if that
+  // does not answer either, no game view mounts and nothing is fetched (the page says so and offers Try again)
+  if (to.meta.closedWhenRegistryFlagFalse === 'games_enabled') {
+    const seen = peekRegistryConfig().readOk
+    let cfg: Record<string, any> = await loadRegistryConfig()
+    if (!seen.value) cfg = await loadRegistryConfig(true)
+    const games = gamesState(cfg, seen.value)
+    if (games === 'off') return next({ name: 'games-off', replace: true })
+    if (games === 'unknown') return next({ name: 'games-off', replace: true, query: { unknown: '1', to: to.fullPath } })
   }
   // §MEMBERSHIP phase C: a page that opens where ANY of several settings of this registry holds its value (the registry
   // board: governance by membership, or a commons). The same cached config and the same safe direction as above: an

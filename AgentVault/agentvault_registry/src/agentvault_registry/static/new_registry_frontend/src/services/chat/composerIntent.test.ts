@@ -291,3 +291,48 @@ describe('§OURSTATE-7 C — argument completion', () => {
     expect(argCompletions('/card x', {})).not.toBeNull()
   })
 })
+
+/** V0662 (OurChat lane): /order opens the Guild order door; parsing never posts. BASE (7435f0d5a): /order is an unknown command. */
+describe('/order', () => {
+  it('reads a bounty, a currency and the title', () => {
+    expect(parseComposer('/order 20 ECU Review the PR', { actingCurrency: 'BVT' }) as any)
+      .toMatchObject({ kind: 'order', amount: 20, currency: 'ECU', title: 'Review the PR', refusal: null })
+  })
+  it('a currency is a token written in capitals: a title\'s first word is never one', () => {
+    expect(parseComposer('/order 20 Review the PR', { actingCurrency: 'ECU' }) as any)
+      .toMatchObject({ kind: 'order', amount: 20, currency: 'ECU', title: 'Review the PR' })
+    expect(parseComposer('/order 20 ecu Review', { actingCurrency: 'ECU' }) as any).toMatchObject({ currency: 'ECU', title: 'ecu Review' })
+  })
+  it('takes the acting currency when none is named, and the German comma', () => {
+    expect(parseComposer('/order 12,5 Translate the page', { actingCurrency: 'ECU' }) as any)
+      .toMatchObject({ kind: 'order', amount: 12.5, currency: 'ECU', title: 'Translate the page', refusal: null })
+  })
+  it('refuses by name: no bounty, and an unknown currency', () => {
+    expect(parseComposer('/order Review the PR', { actingCurrency: 'ECU' }) as any).toMatchObject({ kind: 'order', refusal: 'amount-missing' })
+    expect(parseComposer('/order', {}) as any).toMatchObject({ kind: 'order', refusal: 'amount-missing' })
+    expect(parseComposer('/order 20 Review the PR', {}) as any).toMatchObject({ kind: 'order', refusal: 'currency-unresolved' })
+  })
+  it('is a command that touches money, needs a wallet and is in the table and the help', () => {
+    expect(composerTouchesMoney(parseComposer('/order 5 ECU x') as any)).toBe(true)
+    const c = SLASH_COMMANDS.find((x) => x.cmd === '/order')!
+    expect(c.group).toBe('wallet')
+    expect(c.glossKey).toBe('ourstate.help.order')
+    expect(completions('/ord', { wallet: true }).map((x: any) => x.cmd)).toContain('/order')
+    expect(completions('/ord', { wallet: false }).map((x: any) => x.cmd)).not.toContain('/order')
+  })
+})
+
+/** V0666 D3 (order gwo_542285271416c653ca39af3f): /change opens the proposal of a code change to an organization's release
+ *  line; parsing never posts. Red before D3: /change is an unknown command. */
+describe('/change', () => {
+  it('takes the rest as the title, and an empty title too', () => {
+    expect(parseComposer('/change A seating chart on the class page', {}) as any).toEqual({ kind: 'change', title: 'A seating chart on the class page' })
+    expect(parseComposer('/change', {}) as any).toEqual({ kind: 'change', title: '' })
+  })
+  it('is in the room commands, with its gloss', () => {
+    const c = SLASH_COMMANDS.find((x) => x.cmd === '/change')
+    expect(c).toMatchObject({ usage: '/change <title>', group: 'room', glossKey: 'ourstate.help.change' })
+    expect(c!.glossFallback).toMatch(/release line/)
+  })
+})
+

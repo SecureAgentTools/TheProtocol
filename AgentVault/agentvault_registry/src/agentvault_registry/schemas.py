@@ -169,6 +169,8 @@ class DeveloperRead(BaseModel):
     # upgrades on higher-tier subsequent purchases.
     flare_tier: Optional[str] = Field(default=None, description="'sentinel' | 'architect' | 'founder' | 'shadow_chancellor' | 'operator' | 'commander'")
     flare_granted_at: Optional[datetime.datetime] = None
+    # V0665 the contributor track: the title worn under the name (an earned key from core/registry_identity.FLARE_TITLES), NULL = none
+    flare_title: Optional[str] = None
     # PB-1 hardening (2026-05-09): unique flare identifier + buyer customization.
     flare_id: Optional[str] = None
     flare_display_name: Optional[str] = None

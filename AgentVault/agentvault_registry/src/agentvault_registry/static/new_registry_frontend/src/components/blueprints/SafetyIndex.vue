@@ -1,6 +1,6 @@
 <template>
   <div class="six">
-    <div class="six-scroll">
+    <div class="six-scroll" tabindex="0" role="region" :aria-label="t('blueprintsView.safety.label', 'The Safety Index')">
       <table class="six-table">
         <thead>
           <tr>
@@ -67,6 +67,8 @@ function scrollTo(id: string) {
 
 <style scoped>
 .six-scroll { overflow-x: auto; border: 1px solid rgba(var(--flow-rgb, 0, 210, 210), 0.14); border-radius: 12px; background: rgba(0, 0, 0, 0.2); }
+/* V0662 item 12: a scroll container takes the keyboard (axe scrollable-region-focusable); show where the focus is */
+.six-scroll:focus-visible { outline: 2px solid rgba(var(--flow-rgb, 0, 210, 210), 0.85); outline-offset: 2px;  }
 .six-table { border-collapse: collapse; width: 100%; min-width: 760px; }
 .six-corner { font-family: var(--bp-mono); font-size: 0.56rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--bp-faint); text-align: left; padding: 0.6rem 0.8rem; position: sticky; left: 0; background: #0a0f17; z-index: 1; }
 .six-rail { font-family: var(--bp-mono); font-size: 0.58rem; font-weight: 700; color: var(--bp-faint); padding: 0.6rem 0.25rem; cursor: help; transition: color 0.2s ease; }

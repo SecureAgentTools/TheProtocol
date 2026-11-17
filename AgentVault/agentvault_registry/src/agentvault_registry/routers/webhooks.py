@@ -37,7 +37,9 @@ router = APIRouter(prefix="/api/v1/webhooks", tags=["Webhooks"])
 class WebhookCreate(BaseModel):
     url: str = Field(..., max_length=500, description="Endpoint URL for webhook delivery")
     events: List[str] = Field(..., min_length=1, description="Event types to subscribe to")
-    description: Optional[str] = Field(None, max_length=500, description="Optional description")
+    # D6-767 (V0663): there is no `description` here. A webhook has no column for one; the field was accepted, validated and
+    # dropped, so a caller believed it stored a label it never could read back. A body that still sends one is not refused
+    # (unknown keys are ignored); nothing is kept.
 
     @field_validator("url")
     @classmethod
@@ -51,7 +53,6 @@ class WebhookUpdate(BaseModel):
     url: Optional[str] = Field(None, max_length=500)
     events: Optional[List[str]] = None
     is_active: Optional[bool] = None
-    description: Optional[str] = Field(None, max_length=500)
 
     @field_validator("url")
     @classmethod

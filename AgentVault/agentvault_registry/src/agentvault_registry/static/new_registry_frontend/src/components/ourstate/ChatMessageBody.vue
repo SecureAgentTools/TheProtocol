@@ -10,7 +10,8 @@
     <span v-if="r.tag" class="cm-chip" :class="`cm-chip-${r.tag.toLowerCase()}`" :data-chip="r.tag"
           data-testid="cm-chip">{{ r.tag }}</span>
     <!-- eslint-disable-next-line vue/no-v-html -- sanitized: markdown-it html:false, then DOMPurify (messageText.ts) -->
-    <div class="cm-md" data-testid="cm-md" v-html="r.html" />
+    <!-- V0662: one listener for every code block's copy button (the sanitized HTML carries no handler) -->
+    <div class="cm-md" data-testid="cm-md" v-html="r.html" @click="onBodyClick" />
     <button v-if="r.foldable" type="button" class="cm-more" data-testid="cm-more" @click="open = !open">
       {{ open ? t('ourstate.thread.showLess', 'show less') : t('ourstate.thread.showMore', 'show more') }}</button>
   </div>
@@ -20,6 +21,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { renderMessage } from '@/services/chat/messageText'
+import { handleCopyClick } from '@/services/chat/codeCopy'
 
 /* Stable inputs only (session-lead's review, the sessions' room seq 378): the message's own mentions array, the
    viewer's key and a names array the thread holds in a computed. Labels built by the thread on every render were new
@@ -49,7 +51,11 @@ const labels = computed(() => {
                ...(props.myNames || []).filter((x) => typeof x === 'string' && x.length > 0)],
   }
 })
-const r = computed(() => renderMessage(props.body, labels.value))
+// V0662: a code block gets a copy button, labelled in the viewer's language, and onBodyClick is what it does
+const r = computed(() => renderMessage(props.body, { ...labels.value, copyLabel: t('ourstate.thread.copy', 'Copy') }))
+function onBodyClick(e: MouseEvent) {
+  void handleCopyClick(e, t('ourstate.thread.copied', 'Copied'), t('ourstate.thread.copyFailed', 'Copy failed'))
+}
 const folded = computed(() => r.value.foldable && !open.value)
 </script>
 
@@ -89,6 +95,39 @@ const folded = computed(() => r.value.foldable && !open.value)
 .cm-md :deep(.cm-me) { padding: 0 3px; border-radius: 3px; background: rgba(79, 216, 196, .2); font-weight: 600; }
 /* ids and hashes: small, grey, whole on hover; #8b96a5 holds 4.5:1 on the dark bubble at this size */
 .cm-md :deep(.cm-id) { font-family: var(--font-mono, 'IBM Plex Mono', monospace); font-size: .78em; color: #8b96a5; }
+/* V0662: tables (scroll sideways inside the bubble rather than widening it), drawn task boxes, collapsible sections, and a
+   code block with its language and copy button. Hairlines, no stock icons. */
+.cm-md :deep(table) { display: block; max-width: 100%; overflow-x: auto; margin: .4em 0; border-collapse: collapse; font-size: .92em; }
+.cm-md :deep(th), .cm-md :deep(td) { padding: 3px 9px; border: 1px solid rgba(128, 128, 128, .3); text-align: left; vertical-align: top; }
+.cm-md :deep(th) { font-weight: 600; background: rgba(128, 128, 128, .12); }
+.cm-md :deep(.cm-task-item) { list-style: none; margin-left: -1.15em; }
+.cm-md :deep(.cm-task) {
+  position: relative; display: inline-block; width: .95em; height: .95em; margin-right: .45em; vertical-align: -.12em;
+  border: 1px solid currentColor; border-radius: 3px; opacity: .8;
+}
+.cm-md :deep(.cm-task-done) { background: var(--primary-color, #4fd8c4); border-color: var(--primary-color, #4fd8c4); opacity: 1; }
+.cm-md :deep(.cm-task-done)::after {
+  content: ''; position: absolute; left: 27%; top: 5%; width: 26%; height: 54%; border: solid #06211d; border-width: 0 1.5px 1.5px 0;
+  transform: rotate(42deg);
+}
+.cm-md :deep(.cm-sr) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.cm-md :deep(details.cm-details) { margin: .35em 0; padding: 1px 0 1px 10px; border-left: 2px solid rgba(128, 128, 128, .45); }
+.cm-md :deep(details.cm-details > summary) { cursor: pointer; font-weight: 500; }
+.cm-md :deep(.cm-code) { position: relative; margin: .4em 0; }
+.cm-md :deep(.cm-code pre) { margin: 0; padding-top: 18px; }
+.cm-md :deep(.cm-code-lang) {
+  position: absolute; left: 10px; top: 4px; font-family: var(--font-mono, 'IBM Plex Mono', monospace); font-size: .66rem;
+  letter-spacing: .08em; text-transform: uppercase; opacity: .55;
+}
+.cm-md :deep(.cm-copy) {
+  position: absolute; top: 3px; right: 4px; padding: 1px 8px; border: 1px solid rgba(128, 128, 128, .35); border-radius: 4px;
+  background: none; color: inherit; font-family: var(--font-mono, 'IBM Plex Mono', monospace); font-size: .66rem; letter-spacing: .06em;
+  text-transform: uppercase; opacity: 0; cursor: pointer;
+}
+.cm-md :deep(.cm-code:hover .cm-copy), .cm-md :deep(.cm-copy:focus-visible), .cm-md :deep(.cm-copy[data-state]) { opacity: .9; }
+.cm-md :deep(.cm-copy[data-state="copied"]) { color: var(--primary-color, #4fd8c4); border-color: currentColor; }
+.cm-md :deep(.cm-copy[data-state="failed"]) { color: #ff6b6b; border-color: currentColor; }
+@media (hover: none) { .cm-md :deep(.cm-copy) { opacity: .75; } }
 .cm-folded .cm-md {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; line-clamp: 6; overflow: hidden;
 }

@@ -316,8 +316,18 @@ async def _room_refusal(db: AsyncSession, room: str, agent) -> Optional[str]:
 
 
 # ── post ─────────────────────────────────────────────────────────────────────
+def new_order_id() -> str:
+    return "gwo_" + secrets.token_hex(12)
+
+
 @router.post("/api/v1/guild/orders", summary="Post a task with an escrowed bounty")
 async def post_order(body: OrderPostIn, agent: models.Agent = Depends(get_current_agent), db: AsyncSession = Depends(get_db)):
+    return await _post_order(body, agent, db)
+
+
+async def _post_order(body: OrderPostIn, agent: models.Agent, db: AsyncSession, *, order_id: Optional[str] = None):
+    """The post. `order_id` is for the SERVER's own callers only (never a request field): agent workflows (V0663, security read W1)
+    link a step to the id this order will get BEFORE the order exists, so there is no moment the order is open and unlinked."""
     _require_enabled()
     # Jurisdiction Profiles (SPEC 2026-07-31): operator-declared feature restriction.
     # Deny-only, pre-escrow, before any money moves. Byte-inert while JURISDICTION_MODE=off.
@@ -340,7 +350,7 @@ async def post_order(body: OrderPostIn, agent: models.Agent = Depends(get_curren
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"room_id: {why}")
     currency = body.currency or os.getenv("FRAME_CURRENCY", "AVT")
     bounty = Decimal(str(body.bounty))
-    oid = "gwo_" + secrets.token_hex(12)
+    oid = order_id or new_order_id()
     # 1) ESCROW the bounty (poster → treasury). Fee-free, Δ-neutral. Abort the post on failure.
     try:
         await guild_escrow.escrow_deposit(agent.did, bounty, oid)
@@ -537,7 +547,14 @@ async def order_detail(oid: str, db: AsyncSession = Depends(get_db),
     out_bids = [dict(b) for b in bids]
     for b in out_bids:  # V0650 (f): derived at read time, never stored on the bid
         b["not_intended_worker"] = _not_intended_worker(o, b.get("bidder_did"))
-    return {"order": o, "bids": out_bids, "events": [dict(e) for e in events]}
+    out_events = [dict(e) for e in events]
+    # V0662 console polish item 3: the page names its parties. One read for every DID this answer carries (the cards'
+    # names, as the dispute pages read them; null where no card names one), so the console asks nothing per DID.
+    from agentvault_registry.services.dispute_parties import names_for
+    party_dids = [o.get(k) for k in ("poster_did", "worker_did", "payee_did", "intended_worker_did")]
+    party_dids += [b.get("bidder_did") for b in out_bids] + [e.get("actor_did") for e in out_events]
+    names = await names_for(db, [d for d in party_dids if isinstance(d, str) and d.startswith("did:")])
+    return {"order": o, "bids": out_bids, "events": out_events, "names": names}
 
 
 # ── FIRMS: org-treasury resolution (reuse AGORA, no parallel account) ─────────
@@ -709,6 +726,12 @@ async def place_bid(oid: str, body: BidIn, agent: models.Agent = Depends(get_cur
     rep = await _agent_reputation(db, agent.did)
     if o["min_reputation"] is not None and (rep or 0) < float(o["min_reputation"]):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Below the task's minimum reputation")
+    # V0663: an order that is a workflow step carries its ruleset; deny-only, before any collateral locks (no-op otherwise).
+    from agentvault_registry.services import workflows as _wf
+    await _wf.gate(db, oid, agent.did, float(body.price), stage="bid")
+    # V0664: no self-dealing (room seq 3638): an agent of the poster's own developer, or an organization it owns, does not bid.
+    from agentvault_registry.services import guild_self_dealing as _sd
+    await _sd.gate(db, o, worker_did=agent.did, org_id=body.on_behalf_of_org_id, stage="bid")
     # FIRM bid: validate membership + org treasury (the payee). Member agent delivers; firm gets paid.
     if body.on_behalf_of_org_id:
         await _validate_firm_bid(db, agent.did, body.on_behalf_of_org_id)
@@ -797,10 +820,14 @@ async def award(oid: str, body: AwardIn, agent: models.Agent = Depends(get_curre
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Only the poster can award")
     if o["status"] != "open":
         raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Order is {o['status']}")
-    bid = (await db.execute(text("SELECT id, bidder_did, status, on_behalf_of_org_id, home_registry_url, payee_did_hint, eta_seconds FROM guild_bids WHERE id=:b AND order_id=:o"),
+    bid = (await db.execute(text("SELECT id, bidder_did, status, on_behalf_of_org_id, home_registry_url, payee_did_hint, eta_seconds, price FROM guild_bids WHERE id=:b AND order_id=:o"),
                             {"b": body.bid_id, "o": oid})).mappings().first()
     if not bid or bid["status"] != "open":
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Bid not found or not open")
+    # V0663: the ruleset is read again at award (a step's other workers may have changed since the bid); no-op for other orders.
+    from agentvault_registry.services import workflows as _wf
+    _bid_price = bid.get("price")   # the real row always carries it; a price rule reads None as unknown
+    await _wf.gate(db, oid, bid["bidder_did"], float(_bid_price) if _bid_price is not None else None, stage="award")
     # FIRM award: worker_did = the member agent (the actor who submits); payee = the org treasury.
     # Individual award: payee stays NULL → settle pays the worker.
     payee_did = None; payee_org = bid["on_behalf_of_org_id"]
@@ -821,18 +848,25 @@ async def award(oid: str, body: AwardIn, agent: models.Agent = Depends(get_curre
                                     detail="Remote firm payee resolves to a LOCAL agent — award refused")
         else:
             payee_did = await _validate_firm_bid(db, bid["bidder_did"], payee_org)  # re-check at award time
+    # V0664: no self-dealing, read again at award (the worker, the payee agent and the organization the award would pay).
+    from agentvault_registry.services import guild_self_dealing as _sd
+    await _sd.gate(db, o, worker_did=bid["bidder_did"], payee_did=payee_did, org_id=payee_org, stage="award")
     # Guard open→awarded (2026-07-23): only one actor awards (kills a concurrent double-award and,
     # with the reaper's claim-first expiry, the award↔reaper race that would otherwise double-spend).
     # V0658 (e), polish 17: the work is due at the later of the order's deadline and the award + the winning bid's
     # ETA (the posting deadline alone made a bid due before its own estimate); a bid with no ETA keeps the deadline.
     # GREATEST skips a NULL, so an order with no deadline gets award + ETA, and one with neither keeps none.
+    # One bind per column type: :w for worker_did (varchar(120)), :w_org for agents.did (varchar). asyncpg prepares the statement,
+    # and one parameter compared with both made Postgres deduce two types for it and refuse every award (V0666's console proof).
     claimed = await db.execute(text(
         "UPDATE guild_work_orders SET status='awarded', worker_did=:w, payee_did=:pd, payee_org_id=:po, "
         "worker_home_registry=:hr, awarded_bid_id=:b, awarded_at=now(), "
+        "worker_org_at_award=(SELECT organization_id FROM agents WHERE did=:w_org), "
+        "poster_org_at_award=(SELECT organization_id FROM agents WHERE did=guild_work_orders.poster_did), "
         "deadline=CASE WHEN CAST(:eta AS INTEGER) IS NULL THEN deadline "
         "ELSE GREATEST(deadline, now() + make_interval(secs => CAST(:eta AS INTEGER))) END "
         "WHERE id=:o AND status='open' RETURNING deadline"
-    ), {"w": bid["bidder_did"], "pd": payee_did, "po": payee_org, "hr": bid["home_registry_url"],
+    ), {"w": bid["bidder_did"], "w_org": bid["bidder_did"], "pd": payee_did, "po": payee_org, "hr": bid["home_registry_url"],
         "b": bid["id"], "o": oid, "eta": bid.get("eta_seconds")})
     if getattr(claimed, "rowcount", 0) == 0:
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Order is no longer open")
@@ -1165,6 +1199,92 @@ async def _auto_settle_eval_bounty_xreg(db: AsyncSession, o: dict, oid: str, *, 
 
 # ── verify → settle ──────────────────────────────────────────────────────────
 
+
+# V0663 governed code, slice 2 (gwo_dd68911fe7e83b64bc611258; lines agreed with session-watch, room seq 3519): a
+# code-change order settles when the merge of its voted commit is recorded, and returns its bounty when the change
+# failed its ballot, was vetoed or withdrawn (services/code_changes). Only the Guild's own legs move money, each
+# transition claimed first, so a retry or a racing poster verify moves nothing twice. Δ=0 by those legs.
+async def settle_submitted_order(db: AsyncSession, oid: str, *, actor: str, via: str, stars: int = 5) -> dict:
+    """Settle a SUBMITTED local order without the poster's verify, as `_auto_settle_eval_bounty` does (an objective
+    verdict stands for the acceptance). 409 when the order is not submitted or its worker is cross-registry (that
+    payout stages through the poster's JWT: the poster's verify pays it)."""
+    o = await _load(db, oid)
+    if o["status"] != "submitted":
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Order is {o['status']}, not submitted")
+    if o.get("worker_home_registry"):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            detail="a cross-registry worker is paid through the poster's verify (its payout stages "
+                                   "through the poster's own transfer)")
+    # V0663 fixes (F7, gwo_3b9568ce2782ea55437bcdbc; session-watch, room seq 3575): as verify, CLAIM submitted→settling
+    # FIRST, its settling event in the SAME commit, BEFORE any money: a racing poster verify or a second settle sees
+    # 'settling' → 409 and moves nothing; a stop after the claim leaves an order the reaper dates by that event and
+    # re-drives (its legs are idempotent). Then the payout, then settling→settled.
+    claimed = await db.execute(text(
+        "UPDATE guild_work_orders SET status='settling' WHERE id=:o AND status='submitted'"), {"o": oid})
+    if getattr(claimed, "rowcount", 0) == 0:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Order is no longer submitted (already settling/settled)")
+    seq = await _next_seq(db, oid)
+    await _audit(db, oid, seq, "settling", actor, {"auto": via})
+    await db.commit()
+    seq += 1
+    bounty = Decimal(str(o["bounty"]))
+    fee = (bounty * Decimal(_order_fee_bps(o)) / Decimal(10000)).quantize(Decimal("0.0000000001"))
+    payout = bounty - fee
+    payee = o.get("payee_did") or o["worker_did"]
+    await _payout_with_royalty(db, payee, payout, oid)
+    await db.execute(text(
+        "UPDATE guild_work_orders SET status='settled', fee_charged=:f, settled_at=now() "
+        "WHERE id=:o AND status='settling'"), {"f": fee, "o": oid})
+    await _tr_touch(db, o.get("worker_did"))
+    await _resolve_worker_stake(db, oid, o["worker_did"], o["worker_did"], "release")
+    await guild_reputation.fold_work_reputation(db, o["poster_did"], payee, stars, float(bounty))
+    await _audit(db, oid, seq, "verified", actor, {"stars": stars, "auto": via})
+    await _audit(db, oid, seq + 1, "settled", actor, {"payout": str(payout), "fee": str(fee), "payee": payee, "auto": via})
+    await db.commit()
+    o2 = await _load(db, oid)
+    credential = await guild_reputation.issue_work_credential(o2, stars=stars)
+    _emit("GuildOrderSettled", oid, {"worker": o["worker_did"], "payee": payee, "payout": str(payout),
+                                     "fee": str(fee), "stars": stars, "auto": via},
+          idempotency_key=f"guild-settled-{oid}")
+    await guild_contract_mirror.sync_from_order(db, oid)  # P3a mirror
+    _guild_webhook("guild.verified", [o["worker_did"], payee], {
+        "order_id": oid, "title": o.get("title"), "worker_did": o["worker_did"], "currency": o.get("currency"),
+        "via": "local", "accepted": True, "status": "settled", "payout": str(payout), "fee": str(fee),
+        "stars": stars, "payee": payee, "auto": via})
+    return {"ok": True, "order_id": oid, "status": "settled", "payout": float(payout), "fee": float(fee),
+            "payee": payee, "stars": stars, "credential": credential}
+
+
+async def return_order_bounty(db: AsyncSession, oid: str, *, actor: str, via: str, reason: str) -> dict:
+    """Return the escrowed bounty of an unsettled order to its poster (open, awarded or submitted), as cancel does: the
+    claim first, then the escrow refund and every held stake back, the worker's too. 409 when nothing is held."""
+    o = await _load(db, oid)
+    if o["status"] not in ("open", "awarded", "submitted"):
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Order is {o['status']}: no bounty held to return")
+    claimed = await db.execute(text(
+        "UPDATE guild_work_orders SET status='cancelled', settled_at=now() WHERE id=:o AND status=:s"),
+        {"o": oid, "s": o["status"]})
+    if getattr(claimed, "rowcount", 0) == 0:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Order changed concurrently; nothing returned")
+    await _audit(db, oid, await _next_seq(db, oid), "cancelled", actor,
+                 {"refund": str(o["bounty"]), "reason": reason[:500], "via": via, "from": o["status"]})
+    await db.commit()  # claim durable BEFORE money → a racer cannot return it twice
+    await guild_escrow.escrow_payout(db, o["poster_did"], Decimal(str(o["bounty"])), oid, "refund")
+    await _refund_all_stakes(db, oid)
+    await db.commit()
+    _emit("GuildOrderCancelled", oid, {"refund": str(o["bounty"]), "reason": reason[:200], "via": via})
+    try:
+        told = (await db.execute(text(
+            "SELECT DISTINCT bidder_did FROM guild_bids WHERE order_id=:o AND (home_registry_url IS NULL OR home_registry_url = '')"
+        ), {"o": oid})).scalars().all()
+    except Exception:  # noqa: BLE001
+        told = []
+    _notify_owners("guild.order_cancelled", [d for d in told if d != o["poster_did"]],
+                   title="Guild: an order you bid on was cancelled",
+                   message=f"“{(o.get('title') or oid)[:80]}”: {reason[:200]} Any stake you put up was returned.")
+    await guild_contract_mirror.sync_from_order(db, oid)  # P3a mirror
+    return {"ok": True, "order_id": oid, "status": "cancelled", "refund": float(o["bounty"]), "from": o["status"]}
+
 def _xf_answer(xr) -> tuple[bool, str]:
     """(paid, error) of a stage-through-the-poster transfer's answer (POST /api/v1/teg/cross-registry-transfer).
     §DOCSFIX D6-456's class, at the guild's two sites: the endpoint answers a transfer the TEGs did not complete with HTTP
@@ -1216,6 +1336,9 @@ async def verify(oid: str, body: VerifyIn, request: Request, agent: models.Agent
     # nothing is read). Before the claim, so a refusal leaves the order submitted; the reject branch above is untouched.
     from agentvault_registry.services import quantum_acceptance as _qacc
     await _qacc.settlement_gate(db, "guild_work_order", oid)
+    # V0663 governed code: a code-change order settles only once its merge is recorded
+    from agentvault_registry.services import code_changes as _ccg
+    await _ccg.settlement_gate(db, oid)
     # SETTLE: the PAYEE gets bounty - fee. Payee = the org treasury (firm) if set, else the worker.
     # A member delivered the work (worker_did); the firm gets paid (payee_did). Fee retained in treasury. Δ=0.
     # CLAIM submitted→settling FIRST (guarded+committed): only ONE actor settles, so a concurrent or
@@ -1759,6 +1882,11 @@ async def place_bid_federated(oid: str, body: FederatedBidIn, db: AsyncSession =
     await _firm_bounty_gate(db, o, None)
     if Decimal(str(body.price)) > Decimal(str(o["bounty"])):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Bid price exceeds the bounty")
+    # V0663 (security read W2): an order that is a workflow step carries its ruleset for a cross-registry bidder too; deny-only,
+    # before any collateral is accepted (no-op on any other order). A foreign agent this registry holds no row for reads as
+    # unknown, so a rule on reputation, owner or organization refuses it here, up front, not only at the award.
+    from agentvault_registry.services import workflows as _wf
+    await _wf.gate(db, oid, body.bidder_did, float(body.price), stage="bid")
     # v2 (0119): staked orders accept remote bids when the HOME asserts it locked the collateral
     # (escrowed on the home treasury before relay — same trust as the mTLS-vouched identity).
     stake_needed = Decimal(str(o["stake_required"])) if o.get("stake_required") else Decimal(0)

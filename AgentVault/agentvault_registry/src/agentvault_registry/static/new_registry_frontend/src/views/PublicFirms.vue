@@ -33,7 +33,7 @@
           </div>
 
           <div v-else-if="!firms.length" class="pfw-empty" data-testid="pf-empty">
-            {{ t('publicFirms.empty', 'No organization has opted into public transparency yet. The switch lives in every org\'s settings.') }}
+            <EmptyReason kind="none-yet" :reason="t('publicFirms.empty', 'No organization has opted into public transparency yet. The switch lives in every org\'s settings.')" />
           </div>
 
           <template v-else>
@@ -49,8 +49,23 @@
               <div v-if="loadingFeed" class="pfw-skel-row"><div v-for="n in 4" :key="n" class="pfw-skel"></div></div>
               <template v-else-if="feed">
                 <div class="pfw-feed-head">
+                  <!-- V0662 (organizations item 2): the firm's hosted logo; the placeholder when there is none or it does not load -->
+                  <span class="pfw-logo" data-testid="pf-logo" aria-hidden="true">
+                    <img v-if="logoOf(feed.org_id)" :src="logoOf(feed.org_id) || undefined" alt="" loading="lazy" referrerpolicy="no-referrer"
+                         @error="brokenLogo[feed.org_id] = true" />
+                    <span v-else class="pfw-logo-mark">◈</span>
+                  </span>
                   <h3 class="pfw-feed-name">{{ feed.name }}</h3>
                   <span class="pfw-feed-mode"><Icon name="mdi:earth" /> {{ t('publicFirms.recordsOnly', 'records only') }}</span>
+                </div>
+                <!-- V0662 (organizations item 2): the firm's own record, its agents' own work beside it (never in it), and
+                     what counts. A record that could not be read says nothing (unknown is not zero). -->
+                <div v-if="record && record.org_id === feed.org_id" class="pfw-record" data-testid="pf-firm-record">
+                  <p class="pfw-record-line">{{ ownLine(record) }}</p>
+                  <p v-if="agentsOf(record)" class="pfw-record-line pfw-record-member" data-testid="pf-member-work">
+                    {{ agentsLine(record) }}
+                  </p>
+                  <p class="pfw-record-note" data-testid="pf-counting">{{ t('publicFirms.counting', 'A firm\'s own record counts the work it delivered or commissioned as the firm. Work its agents do as themselves is theirs, shown apart.') }}</p>
                 </div>
                 <p v-if="feed.topic" class="pfw-feed-topic">{{ feed.topic }}</p>
                 <ul class="pfw-records">
@@ -89,21 +104,26 @@
 
 <script setup lang="ts">
 import { appLocale } from '@/services/appLocale'
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import Icon from '@/components/Icon.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
+import EmptyReason from '@/components/common/EmptyReason.vue'
 import ViewAmbient from '@/components/common/ViewAmbient.vue'
 import apiClient from '@/services/api/client'
 import OrgDirectory from '@/components/organizations/OrgDirectory.vue'
+import { safeLogo } from '@/services/orgMark'
+import { agentsWork, agentsWorkIsNone, AGENTS_NONE_WHY } from '@/services/firmCounts'
 import { useRoute } from 'vue-router'
 
-const { t } = useI18n()
+const { t, tp } = useI18n()
 // V0657 (b): #/firms?org=<slug> (an organization mark's link) marks that organization, and opens its records when public
 const route = useRoute()
 const highlight = computed(() => String(route.query.org || '') || null)
 
-type Firm = { org_id: string; name: string; slug: string; description?: string | null; topic?: string | null }
+type Firm = { org_id: string; name: string; slug: string; description?: string | null; topic?: string | null; logo?: string | null }
+/** GET /organizations/{id}/track-record, the fields this page reads (the counting rule is V0658 (v)'s, unchanged) */
+type FirmRecord = { org_id: string; verified_jobs?: number; commissioned?: { orders?: number } | null; member_work?: { jobs?: number; commissioned?: number } | null }
 type FeedRec = { seq: number; kind: string; at: string | null; body?: string; card?: any }
 type Feed = { org_id: string; name: string; slug: string; topic?: string | null; records: FeedRec[]; next_before_seq: number | null }
 
@@ -122,6 +142,43 @@ const loadingFeed = ref(false)
 // again. A failed refresh of the list keeps it, and a feed answer for a firm no longer picked is dropped.
 const listFailed = ref(false)
 const feedFailed = ref(false)
+
+// V0662 (organizations item 2): the logo this registry hosts (the list is its own, so its address is a path here, the
+// rule FirmsLane uses); an image that does not load keeps the placeholder mark
+const brokenLogo = reactive<Record<string, boolean>>({})
+function logoOf(orgId: string): string | null {
+  if (brokenLogo[orgId]) return null
+  const f = firms.value.find((x) => x.org_id === orgId)
+  return safeLogo({ logo: typeof f?.logo === 'string' ? f.logo : null, home: null })
+}
+// the picked firm's own record and its agents' own work, read beside the feed; a failed read leaves it out
+const record = ref<FirmRecord | null>(null)
+async function loadRecord(orgId: string) {
+  try {
+    const r = await apiClient.get(`/organizations/${orgId}/track-record`)
+    if (sel.value !== orgId) return
+    record.value = { ...(r.data || {}), org_id: orgId }
+  } catch {
+    if (sel.value === orgId) record.value = null
+  }
+}
+const count = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) ? n : 0)
+function ownLine(r: FirmRecord): string {
+  if (count(r.verified_jobs) === 0 && count(r.commissioned?.orders) === 0) {
+    return t('publicFirms.ownNone', 'As the firm: none yet. Work counts here when an order is posted through the organization\'s work-order door, or won with a bid made as the firm.')
+  }
+  return tp('publicFirms.ownRecord', 'As the firm: {d} jobs delivered, {c} commissioned',
+    { d: count(r.verified_jobs), c: count(r.commissioned?.orders) })
+}
+/** the agents' settled work as the registry states it (V0666: by the organization at the award); null when it does not
+ *  (an unlisted firm), never a false zero */
+function agentsOf(r: FirmRecord) { return agentsWork(r.member_work) }
+function agentsLine(r: FirmRecord): string {
+  const w = agentsOf(r)
+  if (!w) return ''
+  if (agentsWorkIsNone(w)) return `${t('publicFirms.agentsNone', 'By its agents: none yet.')} ${t('publicFirms.agentsWhy', AGENTS_NONE_WHY)}`
+  return tp('publicFirms.agentsWork', 'By its agents: {d} jobs delivered, {c} commissioned', { d: w.jobs, c: w.commissioned })
+}
 
 const RECEIPT_LABELS: Record<string, string> = {
   'treasury.fund': 'Treasury funded',
@@ -155,6 +212,8 @@ async function pick(orgId: string) {
   loadingFeed.value = true
   feedFailed.value = false
   if (feed.value?.org_id !== orgId) feed.value = null   // never another firm's records under this one
+  if (record.value?.org_id !== orgId) record.value = null
+  void loadRecord(orgId)
   try {
     const r = await apiClient.get(`/organizations/${orgId}/public-feed`)
     if (sel.value !== orgId) return
@@ -230,4 +289,15 @@ watch(highlight, (slug) => {
   border: 1px dashed var(--border-color, rgba(128,128,128,.35)); background: none; color: inherit; font-size: .8rem; }
 .pfw-skel-row { display: flex; flex-direction: column; gap: 8px; }
 .pfw-skel { height: 54px; border-radius: 10px; background: rgba(128,128,128,.08); }
+/* V0662 (organizations item 2): the firm's logo and its record */
+.pfw-logo { flex: 0 0 32px; width: 32px; height: 32px; border-radius: 8px; overflow: hidden; display: inline-flex;
+  align-items: center; justify-content: center; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.2); }
+.pfw-logo img { width: 100%; height: 100%; object-fit: cover; }
+.pfw-logo-mark { font-size: 0.85rem; color: rgba(148, 163, 184, 0.85); }
+.pfw-feed-head .pfw-feed-name { flex: 1 1 auto; min-width: 0; }
+.pfw-record { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(148, 163, 184, 0.05); }
+.pfw-record-line { margin: 0 0 4px; font-size: .84rem; }
+.pfw-record-member { opacity: .85; }
+.pfw-record-note { margin: 6px 0 0; font-size: .74rem; opacity: .65; max-width: 62ch; }
 </style>

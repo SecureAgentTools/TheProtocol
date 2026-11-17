@@ -18,6 +18,7 @@ convention is supported instead with `require_marker`.
 """
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import json
@@ -92,6 +93,12 @@ class FileDropSource(Source):
             "require_marker": {"type": "string", "default": "",
                                "description": "If set (e.g. '.done'), a file is read only when its marker file "
                                               "exists beside it, and settle_seconds is not consulted."},
+            "poll_seconds": {"type": "number", "minimum": 0, "default": 0,
+                             "description": "How often the folder is listed again. 0 (the default, and what the source "
+                                            "always did): list it once, read every settled file, then finish (tp-proxy "
+                                            "run --once ends). A positive number keeps listing it every that many "
+                                            "seconds: a file dropped later is read too, a row appended to a read file is "
+                                            "read from where it stopped."},
         },
     }
 
@@ -107,6 +114,10 @@ class FileDropSource(Source):
         self._id_field = str(config.get("id_field") or "")
         self._settle = float(config.get("settle_seconds", 2))
         self._marker = str(config.get("require_marker") or "")
+        poll = config.get("poll_seconds", 0)
+        if isinstance(poll, bool) or not isinstance(poll, (int, float)) or poll < 0:
+            raise PluginError(f"filedrop: poll_seconds {poll!r} is a number of at least 0 (0: one pass, then finish)")
+        self._poll = float(poll)
         self._done: Dict[str, int] = {}
 
     async def start(self) -> None:
@@ -146,6 +157,14 @@ class FileDropSource(Source):
         return f"{rel}#{index}"
 
     async def records(self) -> AsyncIterator[Record]:
+        while True:
+            async for rec in self._pass():
+                yield rec
+            if self._poll <= 0:
+                return                                  # one pass, then the source finishes (as sources/sftp.py does)
+            await asyncio.sleep(self._poll)
+
+    async def _pass(self) -> AsyncIterator[Record]:
         for rel, full in self._files():
             done = int(self._done.get(rel, 0))
             try:

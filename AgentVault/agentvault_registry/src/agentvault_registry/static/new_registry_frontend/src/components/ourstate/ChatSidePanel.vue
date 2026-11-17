@@ -30,6 +30,10 @@
       </div>
       <div v-else-if="s.key === 'board' && open.board" :id="`${uid}-board`" class="csp-body"><slot name="board" /></div>
       <div v-else-if="s.key === 'live' && open.live" :id="`${uid}-live`" class="csp-body"><slot name="live" /></div>
+      <!-- V0662: the session board, handed in for the room's operators only -->
+      <div v-else-if="s.key === 'agentstatus' && open.agentstatus" :id="`${uid}-agentstatus`" class="csp-body"><slot name="agentstatus" /></div>
+      <!-- V0663 (order 418): this room's mentions of you, newest first, each with a jump (the thread hands them in) -->
+      <div v-else-if="s.key === 'mentions' && open.mentions" :id="`${uid}-mentions`" class="csp-body"><slot name="mentions" /></div>
       <div v-else-if="s.key === 'present' && open.present" :id="`${uid}-present`" class="csp-body">
         <ReadFailedNotice v-if="presenceFailed" dense :retry="loadPresence" data-testid="csp-present-failed"
                           :text="t('ourstate.side.presenceFailed', 'Who is present could not be read just now.')" />
@@ -91,7 +95,8 @@ import { agoShort } from '@/services/cockpit/when'
 import { appLocale } from '@/services/appLocale'
 import { useI18n } from '@/composables/useI18n'
 import { saveSidePanelOpen, sidePanelOpen, type SideSection } from '@/services/chat/sidePanel'
-import { mentionLabel, ringOf, safeIcon, type Ring } from '@/services/chat/presenceRing'
+import { mentionLabel, ringOf, type Ring } from '@/services/chat/presenceRing'
+import { cardIconSrc } from '@/services/agentAvatar'   // V0662 item 14: card icons from the registry
 
 const props = withDefaults(defineProps<{
   orgId: string
@@ -108,7 +113,9 @@ const props = withDefaults(defineProps<{
   wakeBusy?: string | null
   /** V0657 (h): the board's first line, shown in its folded header */
   boardFirstLine?: string
-}>(), { approvalsCount: null, focusApprovals: false, wakeModes: null, canSetWake: false, wakeBusy: null, boardFirstLine: '' })
+  /** V0663 (order 418): how many mentions of the viewer wait unread in this room (the Mentions section's count) */
+  mentionsCount?: number
+}>(), { approvalsCount: null, focusApprovals: false, wakeModes: null, canSetWake: false, wakeBusy: null, boardFirstLine: '', mentionsCount: 0 })
 const emit = defineEmits<{
   (e: 'set-wake', key: string, mode: WakeMode): void
   /** V0655 (ay): open a direct message to this agent over the room */
@@ -157,7 +164,7 @@ function shortDid(did: string): string { return did.length > 18 ? `…${did.slic
 const brokenIcons = reactive<Record<string, boolean>>({})
 function ringFor(a: { did: string; status?: any }): Ring { return ringOf(a, wakeOf(a.did)) }
 function iconFor(a: { did: string; icon_url?: string | null }): string | null {
-  return brokenIcons[a.did] ? null : safeIcon(a.icon_url)
+  return brokenIcons[a.did] ? null : cardIconSrc(a.did, a.icon_url)
 }
 function initialOf(a: { did: string; name?: string | null }): string {
   const n = String(a.name || '').replace(/^[^\p{L}\p{N}]+/u, '')
@@ -187,6 +194,9 @@ function sections() {
   ]
   if (slots.board) out.push({ key: 'board', label: t('ourstate.side.board', 'Status board'), count: '' })
   if (slots.live) out.push({ key: 'live', label: t('ourstate.side.live', 'Live cards'), count: '' })
+  if (slots.agentstatus) out.push({ key: 'agentstatus', label: t('ourstate.thread.agentStatusTitle', 'Agent status'), count: '' })
+  if (slots.mentions) out.push({ key: 'mentions', label: t('ourstate.mentions.title', 'Mentions of you'),
+    count: props.mentionsCount ? String(props.mentionsCount) : '' })
   out.push({ key: 'present', label: t('ourstate.side.present', 'Present'),
     count: presence.value ? tp('ourstate.side.liveOf', '{n} of {total} live', { n: liveCount.value, total: presence.value.agents.length }) : '' })
   return out

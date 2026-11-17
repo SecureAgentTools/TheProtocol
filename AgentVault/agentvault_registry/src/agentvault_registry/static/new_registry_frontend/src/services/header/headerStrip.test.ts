@@ -2,8 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { LED_GLYPHS } from './ledFont'
 import {
   alertStripItems, alertsChip, broadcastStripItems, normalizeLedText, oneLine, orderBroadcasts, shortAge,
-  NO_COUNTS, C_AMBER, C_GREEN, C_RED, type ActiveAlert,
-} from './headerStrip'
+  NO_COUNTS, C_AMBER, C_GREEN, C_RED, type ActiveAlert, fitsStill } from './headerStrip'
 import type { BroadcastItem } from '@/stores/notifications'
 
 /**
@@ -33,6 +32,21 @@ describe('broadcasts on the strip', () => {
     expect(item.retry).toBe('broadcasts')
     expect(item.text).toMatch(/COULD NOT BE READ/)
     expect(item.color).toEqual(C_AMBER)
+  })
+
+  // V0662 console polish, item 1: a guest has no unread read (it needs a sign-in), so the strip said "LOADING" forever,
+  // or showed broadcasts cached in this browser from whoever was signed in last
+  it('a guest gets one line asking to sign in: never "loading", never a cached broadcast', () => {
+    const cached = [b(7, 'critical', '2026-10-06T08:00:00Z', 'Disk', 'Free space now')]
+    for (const read of [{ failed: false, loading: true }, { failed: true, loading: false }, { failed: false, loading: false }]) {
+      const items = broadcastStripItems(cached, read, t, false)
+      expect(items).toHaveLength(1)
+      expect(items[0]).toMatchObject({ kind: 'status', key: 'b:guest' })
+      expect(items[0].text).toMatch(/SIGN IN/)
+      expect(items[0].broadcastId).toBeUndefined()
+      expect(items[0].retry).toBeUndefined()
+    }
+    expect(broadcastStripItems(cached, { failed: false, loading: false }, t, true)[0].broadcastId).toBe(7)   // signed in
   })
 
   it('"No new broadcasts" only after a read said so', () => {
@@ -122,5 +136,14 @@ describe('short ages', () => {
     expect(shortAge('2026-10-01T12:00:00Z', now)).toBe('5d')
     expect(shortAge(null, now)).toBe('')
     expect(shortAge('not a date', now)).toBe('')
+  })
+})
+
+describe('fitsStill', () => {
+  it('holds a status line that fits the board and scrolls one that does not', () => {
+    expect(fitsStill(150, 1000, 5)).toBe(true)        // 154 columns * 5 px = 770 px
+    expect(fitsStill(200, 1000, 5)).toBe(false)       // 204 * 5 = 1020 px
+    expect(fitsStill(196, 1000, 5)).toBe(true)        // exactly 1000
+    expect(fitsStill(0, 1000, 5)).toBe(false)         // nothing to hold
   })
 })

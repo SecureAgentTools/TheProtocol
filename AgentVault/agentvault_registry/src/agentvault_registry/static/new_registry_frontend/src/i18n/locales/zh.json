@@ -4445,7 +4445,8 @@
         "smartSend": "Smart Send",
         "messenger": "聊天收件箱"
       },
-      "tagline": "代理通信的罗塞塔石碑"
+      "tagline": "代理通信的罗塞塔石碑",
+      "carries": "它包含代理和迁移工具：tp-proxy 通过一个规格文件连接保留的系统，或从旧系统迁出。"
     },
     "sdkBridges": {
       "acp": {

@@ -4,6 +4,7 @@ import { apiClient } from '@/services/api/client'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import { useSupportStream } from '@/composables/useSupportStream'
 import { useAuthStore } from '@/stores/auth'
+import { hasAdminFlag } from '@/composables/usePermissions'
 import { useI18n } from '@/composables/useI18n'
 import { messageOf } from '@/utils/httpError'
 import '@/components/settings/tp-settings.css'
@@ -136,6 +137,7 @@ const reviewErr = ref('')
 // flight, and not after one that failed
 const reviewGrantsRead = ref<'reading' | 'read' | 'unread'>('reading')
 async function loadReviewGrants(ticketId: number) {
+  if (!hasAdminFlag(authStore.user, 'support')) return   // V0662 admin guard (layer 3): a member's page never asks an admin route (CrowdSec counts each refusal)
   reviewGrants.value = []; reviewOpen.value = null; reviewMsgs.value = []; reviewErr.value = ''
   reviewGrantsRead.value = 'reading'
   try {
@@ -145,6 +147,7 @@ async function loadReviewGrants(ticketId: number) {
   } catch { reviewGrants.value = []; reviewGrantsRead.value = 'unread' }
 }
 async function openReviewTranscript(g: any) {
+  if (!hasAdminFlag(authStore.user, 'support')) return
   reviewOpen.value = g; reviewMsgs.value = []; reviewErr.value = ''
   try {
     const res = await apiClient.get(`/admin/support/review/${g.grant_id}/messages`)

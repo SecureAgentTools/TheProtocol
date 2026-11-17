@@ -25,6 +25,7 @@ import TopologyHoverLabel from '@/components/TopologyHoverLabel.vue'
 import { defineAsyncComponent } from 'vue'
 const UserAvatar = defineAsyncComponent(() => import('@/components/common/UserAvatar.vue'))
 import AgentDetailModal from '@/components/AgentDetailModal.vue'
+import { cardIconSrc } from '@/services/agentAvatar'   // V0662 item 14: card icons from the registry
 import SovereignRegistryCard from '@/components/SovereignRegistryCard.vue'
 // Rich registry hover card — same component AgentWorld uses, so registry
 // on-hover here shows avatar/flare + currency/hop/sovereign badges + fee rail
@@ -2578,7 +2579,7 @@ defineExpose({
                   <UserAvatar
                     v-if="hoveredAgent.did && hoverAgentProfiles[hoveredAgent.did]"
                     :user="hoverAgentProfiles[hoveredAgent.did]"
-                    :avatar-url="(hoverAgentProfiles[hoveredAgent.did] as any)?.card_data?.iconUrl || (hoverAgentProfiles[hoveredAgent.did] as any)?.card_data?.icon_url || null"
+                    :avatar-url="cardIconSrc(hoveredAgent.did, (hoverAgentProfiles[hoveredAgent.did] as any)?.card_data?.iconUrl || (hoverAgentProfiles[hoveredAgent.did] as any)?.card_data?.icon_url)"
                     :display-name="hoveredAgent.name"
                     size="md"
                     class="gm-tt-avatar"

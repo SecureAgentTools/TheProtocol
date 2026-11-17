@@ -150,7 +150,7 @@ onMounted(load)
         <h2 class="ae-h2">Suites</h2>
         <table v-if="suites.length" class="ae-table">
           <thead>
-            <tr><th>Key</th><th>Type</th><th>Tasks</th><th>Interval</th><th>Rep</th><th>Pays</th><th>Enabled</th><th></th></tr>
+            <tr><th>Key</th><th>Type</th><th>Tasks</th><th>Interval</th><th>Rep</th><th>Pays</th><th>Enabled</th><th><span class="sr-only">Actions</span></th></tr>
           </thead>
           <tbody>
             <tr v-for="s in suites" :key="s.id">
@@ -256,7 +256,7 @@ onMounted(load)
 .ae-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
 .ae-table th { text-align: left; padding: 0.4rem 0.5rem; color: rgba(var(--nc-primary-rgb), 0.5); font-weight: 600; border-bottom: 1px solid rgba(var(--nc-primary-rgb), 0.12); text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.08em; }
 .ae-table td { padding: 0.5rem; border-bottom: 1px solid rgba(var(--nc-primary-rgb), 0.06); vertical-align: top; }
-.ae-muted { color: rgba(var(--nc-primary-rgb), 0.5); font-size: 0.72rem; }
+.ae-muted { color: rgba(var(--nc-primary-rgb), 0.75); font-size: 0.72rem; }   /* 6:1 on the row (0.5 was 3.3:1) */
 .ae-mono { font-family: ui-monospace, monospace; font-size: 0.72rem; }
 .ae-actions { display: flex; gap: 0.35rem; flex-wrap: wrap; }
 .ae-form { display: flex; flex-direction: column; gap: 0.6rem; }

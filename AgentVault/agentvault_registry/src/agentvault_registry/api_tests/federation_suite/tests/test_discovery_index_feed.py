@@ -543,6 +543,7 @@ async def test_ranked_page_public_and_partitions(rig: FederationTestRig) -> Asse
     agent modal are being reworked, so this asserts the DATA.
     """
     state: Dict[str, Any] = {}
+    first_read: Dict[str, Any] = {}
     PAGE, PAGES = 4, 3
     WHOLE = PAGE * PAGES
     PATH = "/api/v1/agent-cards/discover"
@@ -579,8 +580,12 @@ async def test_ranked_page_public_and_partitions(rig: FederationTestRig) -> Asse
         # shows one attempt's moved total beside another attempt's reason (the V0613 round's row did).
         for _stale in ("why", "total_moved_to", "facet_checks", "facet_checks_reread", "anon_status_reread"):
             state.pop(_stale, None)
-        # (a) a visitor with NO Authorization header gets the page
-        code, whole = await asyncio.to_thread(_anon, f"{PATH}?limit={WHOLE}&sort=newest")
+        # (a) a visitor with NO Authorization header gets the page (the first attempt takes the read made before the
+        # polling loop, so the leg reads no more than it did; a later attempt reads afresh)
+        if "answer" in first_read:
+            code, whole = first_read.pop("answer")
+        else:
+            code, whole = await asyncio.to_thread(_anon, f"{PATH}?limit={WHOLE}&sort=newest")
         state["anon_status"] = code
         if code != 200 or not isinstance(whole, dict):
             return False
@@ -634,6 +639,12 @@ async def test_ranked_page_public_and_partitions(rig: FederationTestRig) -> Asse
                 whole = again
                 state["facet_checks"] = checks2
         # (b) offset pages partition the same rows (SETS, never counts)
+        # V0663 recut (gwo_9c2f8be8a69c8fb97fc5c517): only the pages that fall inside the population read above are
+        # walked. A fresh pair ranks a handful of cards, and a page past the last row used to answer total 0, so three
+        # pages of four over 4 cards read totals [4, 0, 0] and waited for a population that would never settle.
+        pages = _pages_inside(state["total"])
+        if pages < 2:
+            raise PreconditionUnmet(_too_few(state["total"]))
         # ⚠ AN OFFSET WALK OVER A COLLECTION THAT GAINS ROWS IS NOT MEASURABLE,
         # and `sort=newest` is the worst case: a new agent inserts at position 0
         # and shifts every page by one, producing a duplicate at each boundary —
@@ -648,7 +659,7 @@ async def test_ranked_page_public_and_partitions(rig: FederationTestRig) -> Asse
         # one total, or this pass is not measurable (assert_within tries again inside its budget).
         reads = await asyncio.gather(
             asyncio.to_thread(_anon, f"{PATH}?limit={WHOLE}&sort=newest"),
-            *(asyncio.to_thread(_anon, f"{PATH}?limit={PAGE}&offset={i * PAGE}&sort=newest") for i in range(PAGES)))
+            *(asyncio.to_thread(_anon, f"{PATH}?limit={PAGE}&offset={i * PAGE}&sort=newest") for i in range(pages)))
         for i, (c, b) in enumerate(reads):
             if c != 200 or not isinstance(b, dict):
                 state["failed_page"] = (i - 1, c)   # -1 is the larger call, 0.. the pages
@@ -663,11 +674,12 @@ async def test_ranked_page_public_and_partitions(rig: FederationTestRig) -> Asse
                 f"collection gaining rows produces boundary duplicates that are "
                 f"indistinguishable from a non-total ORDER BY, so this pass "
                 f"cannot measure the partition. Not a defect — re-run.")
-        want = [str(r.get("id")) for r in reads[0][1].get("items") or []]
-        state["whole_returned"] = len(want)
-        if len(want) < WHOLE:
+        want = [str(r.get("id")) for r in reads[0][1].get("items") or []][:pages * PAGE]
+        state["whole_returned"], state["pages_walked"] = len(want), pages
+        if len(want) < min(int(totals[0] or 0), pages * PAGE):
             raise PreconditionUnmet(
-                f"the ranked page returned {len(want)} of {WHOLE} — too few to page")
+                f"the ranked page returned {len(want)} of the {min(int(totals[0] or 0), pages * PAGE)} rows its "
+                f"total promises inside the walked pages: too few to page")
         walked: List[str] = [str(r.get("id")) for _, b in reads[1:] for r in b.get("items") or []]
         state["walked"], state["distinct"] = len(walked), len(set(walked))
         state["duplicates"] = sorted({x for x in walked if walked.count(x) > 1})[:6]
@@ -682,6 +694,24 @@ async def test_ranked_page_public_and_partitions(rig: FederationTestRig) -> Asse
             state["undeclared_skip_is_ignored"] = first == second
 
         return len(walked) == len(set(walked)) and set(walked) == set(want)
+
+    def _pages_inside(total: Any) -> int:
+        """How many of the walk's pages start inside the population (a page at offset i*PAGE needs i*PAGE < total)."""
+        n = int(total or 0)
+        return min(PAGES, (n + PAGE - 1) // PAGE)
+
+    def _too_few(total: Any) -> str:
+        return (f"the ranked population holds {total} card(s): fewer than two pages of {PAGE} fit, so this frame cannot "
+                f"show an offset walk partitioning one larger call (not a defect: a fresh frame ranks few cards)")
+
+    # V0663 recut: read the population once before the polling loop; when fewer than two pages fit, the row is NOT
+    # MEASURED at once instead of polling a population that will not grow inside the budget
+    code0, first = await asyncio.to_thread(_anon, f"{PATH}?limit={WHOLE}&sort=newest")
+    if code0 == 200 and isinstance(first, dict) and isinstance(first.get("total"), int) \
+            and _pages_inside(first["total"]) < 2:
+        state["anon_status"], state["total"] = code0, first["total"]
+        raise PreconditionUnmet(_too_few(first["total"]))
+    first_read["answer"] = (code0, first)
 
     return await rig.assert_within(
         budget_sec=60.0, predicate=predicate,

@@ -52,6 +52,8 @@ from ..models import Agent, Developer, FlareShopPurchase
 from ..security import get_current_developer_unified
 from ..services import flare_grants
 from ..core.registry_identity import (
+    EARNED_CORNERS,
+    EARNED_ENCIRCLEMENTS,
     FLARE_CORNER_VARIANTS,
     FLARE_ENCIRCLEMENT_OVERLAYS,
     FLARE_ENCIRCLEMENT_VARIANTS,
@@ -140,7 +142,7 @@ def _tier_copy(tier: str, currency: str) -> dict:
         "rank": flare_grants.FLARE_RANK.get(tier, 0),
         "unlocks_corner_flares": corners,
         "unlocks_encirclements": encircle,
-        "encirclement_variant_count": len(FLARE_ENCIRCLEMENT_VARIANTS) if encircle else 0,
+        "encirclement_variant_count": len(FLARE_ENCIRCLEMENT_VARIANTS - EARNED_ENCIRCLEMENTS) if encircle else 0,
         "overlay_count": len(FLARE_ENCIRCLEMENT_OVERLAYS) if encircle else 0,
         "currency": currency,
     }
@@ -194,9 +196,10 @@ async def flare_shop_catalog(
             }
             for tier in flare_grants.PURCHASABLE_FLARE_TIERS
         ],
-        "encirclement_variants": sorted(FLARE_ENCIRCLEMENT_VARIANTS),
+        # V0665: an earned item is never for sale: the shop lists the bought catalog only (EARNED_ONLY, core/registry_identity)
+        "encirclement_variants": sorted(FLARE_ENCIRCLEMENT_VARIANTS - EARNED_ENCIRCLEMENTS),
         "encirclement_overlays": sorted(FLARE_ENCIRCLEMENT_OVERLAYS),
-        "corner_variants": sorted(FLARE_CORNER_VARIANTS),
+        "corner_variants": sorted(FLARE_CORNER_VARIANTS - EARNED_CORNERS),
         "encirclement_unlock_tier": flare_grants.ENCIRCLEMENT_UNLOCK_TIER,
         # The line that cannot move (post 37's thesis, and a product rule):
         # cosmetics are for sale, earned marks are not.

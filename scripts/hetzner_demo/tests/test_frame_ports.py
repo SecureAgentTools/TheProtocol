@@ -68,3 +68,40 @@ def test_host_listeners_are_parsed(monkeypatch):
            "LISTEN 0 4096 *:30663 *:*\n")
     monkeypatch.setattr(fp.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, out, ""))
     assert fp.host_listeners() == {8350, 8443, 30663}
+
+
+# §PAIRPORTS (2026-11-16, V0666's pair proof): three pairs failed on "failed to bind host port 127.0.0.1:8552" while nothing
+# LISTENED there: edge-nginx held 8552 as the SOURCE port of an established connection (this host's ephemeral range is
+# 1024-65535). A port the kernel holds in ANY state is taken, not only a listener.
+SS_ALL = (
+    "LISTEN     0 4096  127.0.0.1:8350      0.0.0.0:*\n"
+    "ESTAB      0 0     127.0.0.1:8552      127.0.0.1:8461\n"
+    "ESTAB      0 0     127.0.0.1:8461      127.0.0.1:8552\n"
+    "TIME-WAIT  0 0     127.0.0.1:8510      127.0.0.1:8250\n"
+    "ESTAB      0 0     [::1]:8612          [::1]:8461\n"
+)
+
+
+def _ss(cmd):
+    """`ss -Hltn` lists listeners only; `ss -Hatn` lists every state: the fake answers each as ss does."""
+    if "-Hltn" in cmd:
+        return "".join(l + "\n" for l in SS_ALL.splitlines() if l.startswith("LISTEN"))
+    return SS_ALL
+
+
+def test_a_port_held_in_any_state_is_taken(monkeypatch):
+    monkeypatch.setattr(fp.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, _ss(cmd), ""))
+    held = fp.host_local_ports()
+    assert {8350, 8552, 8461, 8510, 8612} <= held
+    assert 8250 not in held   # a REMOTE port is someone else's
+
+
+def test_taken_ports_counts_a_borrowed_source_port(monkeypatch, tmp_path):
+    def fake_run(cmd, **kw):
+        if cmd[:1] == ["ss"]:
+            return subprocess.CompletedProcess(cmd, 0, _ss(cmd), "")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+    monkeypatch.setattr(fp.subprocess, "run", fake_run)
+    taken = fp.taken_ports(str(tmp_path))
+    assert 8552 in taken                       # the auditor port of the 8500 block, borrowed: not free
+    assert fp.allocate(taken)["registry"] != 8500

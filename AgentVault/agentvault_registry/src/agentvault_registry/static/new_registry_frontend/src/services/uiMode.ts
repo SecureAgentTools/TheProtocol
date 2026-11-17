@@ -27,6 +27,16 @@ export function resolveHomeRoute(saved: string | null, viewportWidth: number): '
   return viewportWidth < PHONE_MAX_WIDTH ? '/pocket/home' : '/mission-control'
 }
 
+/**
+ * V0663 (the browser pass, seq 3591): a link to a pocket thread (/pocket/ourchat/<id>, the stable external form that push
+ * notifications, handle QRs and a copied message link all use) ARRIVES by the landing decision, like a mailed link or a
+ * notification: a wide window with no Pocket choice opens the desk thread, a phone or a saved Pocket choice stays in Pocket.
+ * Only a page's FIRST arrival changes shell: a press inside the app stays in the shell it is in (V0658 (v)).
+ */
+export function arrivesInDesk(firstArrival: boolean, saved: string | null, viewportWidth: number): boolean {
+  return firstArrival && resolveHomeRoute(saved, viewportWidth) !== '/pocket/home'
+}
+
 /** The browser binding used by the router and the login view. */
 export function homeRoute(): '/pocket/home' | '/mission-control' {
   let saved: string | null = null

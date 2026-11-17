@@ -118,7 +118,7 @@ async def run_write_hygiene(rpc: Callable, parse: Callable, bag: Any, outcomes: 
          None if org_id else "NOT MEASURED: the run has no organization of its own to create a team in"),
         ("theprotocol_createApiKey", lambda v: {"key_name": v}, clean_keys, None),
         ("theprotocol_createWebhook",
-         lambda v: {"url": f"https://{mark}.invalid/hook", "events": ["agent.created"], "description": v}, clean_hooks, None),
+         lambda v: {"url": f"https://{mark}.invalid/hook", "events": ["agent.created"]}, clean_hooks, None),
     ]
     for tool, args_for, clean, unmet in cases:
         t0 = time.time()

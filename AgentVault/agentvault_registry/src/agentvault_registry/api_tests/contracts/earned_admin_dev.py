@@ -10,7 +10,8 @@ from typing import Any, Dict, List
 from agentvault_registry.api_tests.contracts import (
     earned_ad_agents, earned_ad_chat_approvals, earned_ad_chat_tools, earned_ad_developers, earned_ad_devtools,
     earned_ad_ephemeral,
-    earned_ad_federation, earned_ad_platform, earned_ad_retired, earned_ad_support_played,
+    earned_ad_federation, earned_ad_platform, earned_ad_retired, earned_ad_support_played, earned_refusal_slice1,
+    earned_template_library,
 )
 
 LIFECYCLES: List[Dict[str, Any]] = [
@@ -24,4 +25,6 @@ LIFECYCLES: List[Dict[str, Any]] = [
     *earned_ad_chat_tools.LIFECYCLES,  # V0652 (w) (aa) (ac): the ten new chat tools in a room of the run's own (pairs only)
     *earned_ad_support_played.LIFECYCLES,  # V0652 (ai): a support ticket played through, every notice counted (pairs)
     *earned_ad_retired.LIFECYCLES,     # V0651 (p): the retired token bridge's six routes answer 410
+    *earned_refusal_slice1.LIFECYCLES,  # V0662 Wave 1 (gwo_fe22d7e8): refusal-only slice 1's success legs
+    *earned_template_library.LIFECYCLES,  # V0666 Tests package B (gwo_c8a03e81): the six template tools' success legs (pairs)
 ]

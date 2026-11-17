@@ -207,6 +207,9 @@
         <span class="osc-media-name">{{ media.name }}</span>
         <span class="osc-media-size">{{ media.human }}</span>
       </div>
+      <!-- V0664: a picture is shown as a picture (its own authenticated read); a stranger's request shows nothing on sight -->
+      <ChatPicture v-if="!media.defanged && isPictureMime(media.mime)" :attachment-id="media.attachmentId" :name="media.name"
+                   :mime="media.mime" :bytes="media.bytes" />
       <template v-if="!opened">
         <!-- eslint-disable-next-line vue/no-v-html -- sanitized: renderMarkdown (markdown-it html:false, then DOMPurify) -->
         <div v-if="media.preview && media.previewKind === 'markdown'" class="osc-media-preview osc-media-md"
@@ -491,6 +494,11 @@
       <div v-if="choiceDecided.note" class="osc-memo">{{ choiceDecided.note }}</div>
     </template>
 
+    <!-- V0666 D3: a code distribution's change, live in its organization's room (the reader's acts live in CodeChangeLive) -->
+    <CodeChangeLive v-else-if="ccLive" :view="ccLive" :rev="rev" />
+    <!-- V0667 D5b: an organization's content change, live in its room (the reader's acts live in ContentChangeLive) -->
+    <ContentChangeLive v-else-if="ctLive" :view="ctLive" :rev="rev" />
+
     <template v-else>
       <div class="osc-head osc-unknown" data-testid="osc-unknown">
         <Icon name="mdi:help-circle" />
@@ -519,7 +527,11 @@ import { cardView, type ChatCard } from '@/services/chat/cards'
 import { guildStages, stepTotals } from '@/services/chat/liveCards'
 import { OPEN_MAX_CHARS, openedFile, previewHtml, type OpenedFile } from '@/services/chat/filePreview'
 import { useI18n } from '@/composables/useI18n'
+import ChatPicture from '@/components/ourstate/ChatPicture.vue'
+import { isPictureMime } from '@/services/chat/attachmentGroups'
 import QuantumCard from '@/components/quantum/QuantumCard.vue'
+import CodeChangeLive from '@/components/ourstate/CodeChangeLive.vue'
+import ContentChangeLive from '@/components/ourstate/ContentChangeLive.vue'
 import { useQuantumWorkloads } from '@/composables/useQuantumWorkloads'
 import { loadRegistryConfig } from '@/composables/useRegistryConfig'
 import { chatCardNamesQuantum } from '@/services/quantum/quantumCard'
@@ -620,6 +632,8 @@ function fmtWhen(iso: string): string {
 /* V0652 (aa): cards that live */
 const progress = computed(() => (view.value.type === 'progress' ? view.value : null))
 const guildLive = computed(() => (view.value.type === 'guild.order.live' ? view.value : null))
+const ccLive = computed(() => (view.value.type === 'code.change.live' ? view.value : null))
+const ctLive = computed(() => (view.value.type === 'content.change.live' ? view.value : null))
 const progressTotals = computed(() => (progress.value ? stepTotals(progress.value.steps) : null))
 const PROGRESS_ICON: Record<string, string> = { running: 'mdi:timer-sand', passed: 'mdi:check-circle',
   failed: 'mdi:close-circle', cancelled: 'mdi:cancel' }

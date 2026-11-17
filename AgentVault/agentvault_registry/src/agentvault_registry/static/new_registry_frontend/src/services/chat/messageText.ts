@@ -16,6 +16,7 @@
  */
 import MarkdownIt, { type MarkdownIt as MarkdownItInstance } from 'markdown-it'
 import DOMPurify from 'dompurify'
+import container from 'markdown-it-container'
 
 export const STATUS_TAGS = ['DONE', 'FAIL', 'REQ', 'INFO', 'ORDER', 'ACK', 'BID'] as const
 export type StatusTag = typeof STATUS_TAGS[number]
@@ -37,6 +38,9 @@ export interface RenderOptions {
   meLabels?: string[]
   /** Every mention the server resolved for this message (labels without "@"), so a name that names nobody stays text. */
   mentionLabels?: string[]
+  /** V0662: the label of a code block's copy button. Absent, a code block is the bare `<pre><code>` it always was; present,
+   *  it is wrapped with a language label and a button, so only a caller that wires the click (codeCopy.ts) asks for one. */
+  copyLabel?: string
 }
 
 function escapeRe(s: string): string { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
@@ -45,7 +49,7 @@ function escapeRe(s: string): string { return s.replace(/[.*+?^${}()|[\]\\]/g, '
  *  message shows a file as a file card, never an inline remote image). */
 function makeMd(): MarkdownItInstance {
   const md = new MarkdownIt({ html: false, linkify: true, breaks: true, typographer: false })
-  md.disable(['image', 'table', 'lheading'])
+  md.disable(['image', 'lheading'])
   const defaultLink = md.renderer.rules.link_open
     || ((tokens: any, idx: number, options: any, _env: any, self: any) => self.renderToken(tokens, idx, options))
   md.renderer.rules.link_open = (tokens: any, idx: number, options: any, env: any, self: any) => {
@@ -58,6 +62,56 @@ function makeMd(): MarkdownItInstance {
   md.renderer.rules.text = (tokens: any, idx: number, options: any, env: any, self: any) => {
     const raw: string = tokens[idx].content
     return decorate(raw, env as RenderOptions, (s) => defaultText([{ ...tokens[idx], content: s }] as any, 0, options, env, self))
+  }
+  // V0662: a `- [ ] to do` and `- [x] done` list item gets a drawn box (a span: no input element is ever allowed through
+  // the sanitizer) and its list item a class that takes the bullet off. Pushed last, so it runs after text_join has made
+  // "[x] done" one text token again.
+  md.core.ruler.push('cm_task_lists', (state: any) => {
+    const toks = state.tokens
+    for (let i = 2; i < toks.length; i++) {
+      if (toks[i].type !== 'inline' || toks[i - 1].type !== 'paragraph_open' || toks[i - 2].type !== 'list_item_open') continue
+      const first = toks[i].children?.[0]
+      if (!first || first.type !== 'text') continue
+      const m = /^\[([ xX])\](?:\s+|$)/.exec(first.content)
+      if (!m) continue
+      const done = m[1] !== ' '
+      first.content = first.content.slice(m[0].length)
+      const mark = new state.Token('html_inline', '', 0)
+      mark.content = `<span class="cm-task ${done ? 'cm-task-done' : 'cm-task-open'}"><span class="cm-sr">${done ? 'done' : 'to do'}</span></span> `
+      toks[i].children.unshift(mark)
+      toks[i - 2].attrJoin('class', 'cm-task-item')
+    }
+    return true
+  })
+
+  // V0662: `::: details Why` ... `:::` is a collapsible section, closed until opened. The summary is the rest of the
+  // opening line, escaped; the container emits only what this function returns, so it writes no attribute of its own.
+  md.use(container as any, 'details', {
+    validate: (params: string) => /^details(\s|$)/.test(params.trim()),
+    render: (tokens: any[], idx: number) => {
+      if (tokens[idx].nesting !== 1) return '</details>\n'
+      const summary = String(tokens[idx].info || '').trim().replace(/^details\s*/, '') || 'Details'
+      return `<details class="cm-details"><summary>${md.utils.escapeHtml(summary)}</summary>\n`
+    },
+  })
+
+  // V0662: a code block a caller asked a copy button for (copyLabel) is wrapped: the language, if the fence names one
+  // (cut to the characters a language name has), the button, then the block. Without the label it is the default block.
+  const defaultFence = md.renderer.rules.fence!
+  const defaultCodeBlock = md.renderer.rules.code_block!
+  const wrapCode = (code: string, lang: string, label: string): string =>
+    `<div class="cm-code">${lang ? `<span class="cm-code-lang">${md.utils.escapeHtml(lang)}</span>` : ''}`
+    + `<button type="button" class="cm-copy">${md.utils.escapeHtml(label)}</button>`
+    + `<pre><code${lang ? ` class="language-${md.utils.escapeHtml(lang)}"` : ''}>${md.utils.escapeHtml(code)}</code></pre></div>\n`
+  md.renderer.rules.fence = (tokens: any, idx: number, options: any, env: any, self: any) => {
+    const label = (env as RenderOptions)?.copyLabel
+    if (!label) return defaultFence(tokens, idx, options, env, self)
+    const lang = String(tokens[idx].info || '').trim().split(/\s+/)[0].toLowerCase().replace(/[^a-z0-9+#._-]/g, '').slice(0, 20)
+    return wrapCode(tokens[idx].content, lang, label)
+  }
+  md.renderer.rules.code_block = (tokens: any, idx: number, options: any, env: any, self: any) => {
+    const label = (env as RenderOptions)?.copyLabel
+    return label ? wrapCode(tokens[idx].content, '', label) : defaultCodeBlock(tokens, idx, options, env, self)
   }
   return md
 }
@@ -99,11 +153,17 @@ function decorate(raw: string, env: RenderOptions, esc: (s: string) => string): 
 
 let _md: MarkdownItInstance | null = null
 
-const ALLOWED_TAGS = ['p', 'br', 'strong', 'em', 'del', 's', 'code', 'pre', 'ul', 'ol', 'li', 'a', 'blockquote', 'hr',
-  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span']
-const ALLOWED_ATTR = ['href', 'title', 'class', 'target', 'rel', 'start']
-/** Attributes whose values are not URIs: the link rule writes them, the URI rule must not judge them. */
-export const URI_SAFE_ATTR = ['target', 'rel']
+// V0662 added table, thead, tbody, tr, th, td, details, summary, and the div and button of an opted-in code block. A message
+// author cannot type any of them: the parser runs with html:false, so raw markup is text, and these are written only by
+// this file's own rules. If raw HTML is ever switched on for messages, every tag added here becomes reachable: revisit this list.
+export const ALLOWED_TAGS = ['p', 'br', 'strong', 'em', 'del', 's', 'code', 'pre', 'ul', 'ol', 'li', 'a', 'blockquote', 'hr',
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'span', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'details', 'summary', 'div', 'button']
+// `type` is for the button (type="button": it submits nothing). `style` stays out: a table's alignment row would write it.
+export const ALLOWED_ATTR = ['href', 'title', 'class', 'target', 'rel', 'start', 'type']
+/** Attributes whose values are not URIs: the link rule and the code block's button write them, the URI rule must not judge
+ *  them. (`type` is the button's "button": judged as an address it fails, DOMPurify drops it in a browser, and a button
+ *  without a type is a submit button. The unit tests cannot see this: under happy-dom DOMPurify keeps every attribute.) */
+export const URI_SAFE_ATTR = ['target', 'rel', 'type']
 
 /** A message body as safe HTML: markdown on the docs viewer's terms, then sanitized on a short allowlist. */
 export function renderMarkdown(body: string, opts: RenderOptions = {}): string {

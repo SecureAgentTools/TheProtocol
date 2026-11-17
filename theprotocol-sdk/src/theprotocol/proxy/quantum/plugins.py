@@ -117,7 +117,7 @@ class QuantumSubmitSink(Sink, _Backed):
 
 class QuantumResultSource(Source, _Backed):
     name = "quantum_results"
-    description = "Yield each finished job once: its counts, its shots and its digests, never its circuit"
+    description = "Hand back each finished job once: its counts, its shots and its digests, never its circuit"
     config_schema = {
         "type": "object",
         "required": ["dir", "backend"],

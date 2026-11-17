@@ -13,6 +13,7 @@
 // announcement is his, later.
 // ─────────────────────────────────────────────────────────────────────────────
 import { computed, onMounted, ref } from 'vue'
+import { registryImageSrc } from '@/services/registryImage'   // V0663: outside images from the registry
 import Discovery from '@/views/Discovery.vue'
 import { useI18n } from '@/composables/useI18n'
 import { useRegistryConfig } from '@/composables/useRegistryConfig'
@@ -51,7 +52,7 @@ const isSovereign = ref(false)
 // else the bundled mark of the FRAME's theme (the body class is the viewer's palette, which a person may change).
 const mark = computed(() => {
   const me: any = (config.value as any)?.self
-  if (me?.icon_url) return String(me.icon_url)
+  if (me?.icon_url && registryImageSrc(String(me.icon_url))) return registryImageSrc(String(me.icon_url))!   // V0663: from this registry
   const theme = me?.theme || (isSovereign.value ? 'sovereign' : 'neural')
   return theme === 'sovereign' ? markSovereign : markNeural
 })

@@ -49,11 +49,19 @@ _PATTERNS: List[Tuple[str, "re.Pattern[str]", str]] = [
         "(the standing sandbox finishes its cycles), so the row is NOT MEASURED here, never a pass",
     ),
     (
+        # V0666 the games switch: where either frame's registry-config says games_enabled false, the arena rows ask no game
+        # tool (the switch refuses it by name). Before switched_off, whose pattern would also match
+        "games_off",
+        re.compile(r"^(precondition unmet: )?games_off: ", re.I),
+        "the games are off on the target (GAMES_ENABLED=false, its registry-config says so, production's posture since "
+        "V0666): no game tool answers there, so the arena row is NOT MEASURED, never a pass",
+    ),
+    (
         # §MCPTEST30 (V0550): the target switched the row's subject off and says so in its registry-config
         "switched_off",
         re.compile(r"^switched_off: ", re.I),
         "the target switched the row's subject off (its registry-config says so: staking, rewards, AGORA "
-        "distributions): nothing can be produced there to measure, so the row is NOT MEASURED, never a pass",
+        "distributions, the games): nothing can be produced there to measure, so the row is NOT MEASURED, never a pass",
     ),
     (
         # §MCPTEST30 (V0550): governance weighs membership on the target and the suite's developer is not a member
@@ -339,6 +347,8 @@ BASELINE_SKIPS: Dict[str, int] = {
     # events_tokens_staked_is_evented (staking off); the governance event row and the two policy-cycle rows (not a
     # member, or one member's vote short of the quorum; the two policy rows share one cycle, so they skip together)
     "switched_off": 1,
+    # V0666: the three arena_subsystem rows, on a pair or a frame with production's games-off posture
+    "games_off": 3,
     "not_a_member": 3,
     "member_quorum_unreachable": 2,
     "canary_unprovisioned": 8,

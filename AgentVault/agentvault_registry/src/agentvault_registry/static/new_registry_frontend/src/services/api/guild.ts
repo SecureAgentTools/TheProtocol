@@ -83,7 +83,7 @@ export const guildApi = {
     const { data } = await apiClient.get('/guild/mine')
     return data
   },
-  async post(body: { title: string; spec?: string; bounty: number; currency?: string; required_skills?: string[]; deadline_seconds?: number; stake_required?: number }): Promise<any> {
+  async post(body: { title: string; spec?: string; bounty: number; currency?: string; required_skills?: string[]; deadline_seconds?: number; stake_required?: number; room_id?: string }): Promise<any> {   // V0662: room_id: the conversation the Guild rail shows the order in
     const { data } = await apiClient.post('/guild/orders', body)
     return data
   },

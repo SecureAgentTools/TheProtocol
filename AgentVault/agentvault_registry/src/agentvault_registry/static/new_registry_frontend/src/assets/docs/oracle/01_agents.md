@@ -290,6 +290,37 @@ sequenceDiagram
     Peer-->>Caller: local and mirrored cards,<br/>including the updated one
 ```
 
+### Outside images are served by the registry
+
+A card may name an icon (`iconUrl`), a developer an avatar, a flare a logo and a peer registry its own logo: each an address on some other host. **A reader's browser never contacts that host**: the registry fetches the image once and serves it from its own origin, and the console draws every one of them only from there. A card's icon is `GET /api/v1/agent-cards/{did}/icon`, public as the card is; the other three are `GET /api/v1/public/images?src=<address>`.
+
+- **What is served.** A raster (PNG, JPEG, GIF, WebP or ICO, told by its bytes, not its name) is re-encoded as a PNG of at most 256 pixels a side, and an image whose header declares too many pixels is refused before it is decoded. An SVG is rebuilt from an allowlist of drawing elements: no DTD, no script, no handler, no outside reference, no style that loads anything.
+- **How it is fetched.** Once per address, through the registry's outbound guard (a name that resolves to a private address is refused at the connection, at most two redirects and each one checked, a body over the limit refused while it streams), and cached for a day; a failure is remembered for 15 minutes (`CARD_ICON_CACHE_SEC`, `CARD_ICON_FAIL_CACHE_SEC`, `CARD_ICON_MAX_BYTES`). Without Redis nothing is fetched.
+- **What comes back.** `200` with `nosniff`, a sandboxing content policy and an `ETag` (`304` when it matches); `307` to the card's own `/static` path for a card whose icon this registry already hosts; `404` with the reason otherwise, for example `this registry holds no active card with that DID that names an icon (no icon)`.
+
+```bash
+curl -s -D- "$API/api/v1/agent-cards/$AGENT_DID/icon"
+```
+
+**`/public/images` serves an address only when a record of this registry names it**: a developer's `avatar_url` or `flare_logo_url`, an active card's flare logo, an active peer's logo, or this registry's own. Only absolute `http(s)` and `data:image` addresses of up to 2,048 characters are looked up at all; an address no record names answers `404` and **nothing is fetched**, so the route cannot be used to make the registry fetch something it was not told about. A named image goes through the same guarded fetch, rebuild, cache and answer as a card icon.
+
+```bash
+curl -s -D- "$API/api/v1/public/images?src=https%3A%2F%2Fexample.org%2Fa.png"
+```
+
+An address no record names answers `404 {"detail": "not an image any record here names (a peer's logo, a developer's avatar or a flare logo)"}`; a path that is not an absolute address answers the same, and a call with no `src` answers `404` with `no src: name the image's address`. When a developer's `avatar_url` names `https://example.org/avatar.png`, the route does fetch it through the guard and says what came back: `404 {"detail": "the image is not served here (http_404)"}` when that host answered 404.
+
+In the console an outside address is sent through the route, a path on the console's own origin is used as it is, and anything else draws nothing; the one place an address shows as typed is the preview in Settings, where the owner sets it.
+
+### Comparing two cards
+
+**Compare two agent cards** (`#/cards/compare?a=<DID>&b=<DID>`, public as the cards are) puts two cards side by side with every difference marked. It is read-only, and a link beside the card's A2A link in an agent's detail (**Compare with another card**) opens it with that card as A. Two copies of each card can be compared:
+
+- **As exported** (the default): what `GET /api/v1/agents/{did}/card-export` serves, the agent's own slice of the card.
+- **As stored here**: this registry's whole copy, `card_data` from `GET /api/v1/agents/by-did/{did}` with the registry's fields.
+
+The page shows a summary (`3 changed, 1 only in A, 2 only in B, 40 the same`), then the differing paths with both values (**Differences only** is on by default), then the two cards printed as JSON with the differing lines marked. The comparison goes path by path: a subtree that exists on one side only is one path, a value that changed type is one changed path, and paths come in A's order, then B's. A card this registry does not hold says so and names its home when the federated index knows it. Picking cards changes the address, and an address opened later reloads the comparison.
+
 ## Finding an Agent
 
 There are two discovery endpoints, and picking the wrong one is the usual cause of "the search does not find my agent". Both are public.
@@ -320,6 +351,10 @@ A price lives in one of **two** legal places: the legacy `card_data.pricing` blo
 ::: tip A capability field and a capability are different things
 `card_data.capabilities` is a **feature-flag object** (streaming, push notifications, extensions). The words that say what an agent can do live in `skills[]`. They are not interchangeable, and `skills[]` is not reliably an array: many cards carry a JSON `null` there.
 :::
+
+### An empty list says why
+
+A list that is empty for a reason says the reason on the line under it, in words about what is actually the case. Discovery's empty search names the filters that were on: *Nothing matches the search "translate" and certified only. Each one narrows the list; clearing them shows every agent.* With no filter on it says that none is, and that this registry lists no agents that match the default view yet. The Firms page with no organization opted in says so and where the switch lives, and the bridge ledger says whether it is still connecting (*the first events arrive once it is up*), connected and quiet (*no event has moved since this page opened*), or, filtered to your agents, that none of them has moved anything since the page opened.
 
 ## SPIFFE IDs: Service Workload Identity
 

@@ -20,7 +20,7 @@ vi.mock('@/stores/notifications', async () => {
 })
 vi.mock('@/stores/auth', async () => {
   const { reactive } = await import('vue')
-  h.auth = reactive({ isAdmin: false, user: null as Record<string, unknown> | null })
+  h.auth = reactive({ isAdmin: false, isAuthenticated: true, user: null as Record<string, unknown> | null })
   return { useAuthStore: () => h.auth }
 })
 vi.mock('@/stores/registryInfo', () => ({ useRegistryInfoStore: () => ({ registryName: 'EU', load: () => Promise.resolve() }) }))
@@ -46,6 +46,7 @@ describe('the LED ticker', () => {
     try { localStorage.removeItem('theprotocol:ledTickerMode') } catch { /* ignore */ }
     h.n.items = []; h.n.unreadFailed = false; h.n.lastReadAt = 0
     h.auth.isAdmin = false
+    h.auth.isAuthenticated = true
     h.auth.user = null
     Object.assign(h.alerts, { state: 'loading', alerts: [], reason: null,
                               counts: { firing: 0, pending: 0, page: 0, critical: 0, warning: 0, info: 0 } })
@@ -73,6 +74,21 @@ describe('the LED ticker', () => {
     await w.find('[data-testid="led-board"]').trigger('keydown', { key: 'Enter' })
     expect(h.fetchUnread).toHaveBeenCalled()                   // a press on the failure retries the read
     w.unmount()
+  })
+
+  // V0662 console polish, item 1: the unread read needs a sign-in, so a guest's ticker said LOADING forever
+  it('a guest is asked to sign in: no "loading", no broadcast cached from another session, no unread read', async () => {
+    h.auth.isAuthenticated = false
+    h.n.items = [broadcast(2, 'critical', 'Disk', 'Free space now')]          // left in this browser by a previous session
+    const w = mount(LedMatrixTicker)
+    try {                                                    // a failed assertion must not leave it mounted for the next test
+      await flushPromises()
+      expect(text(w)).toMatch(/SIGN IN/)
+      expect(text(w)).not.toMatch(/LOADING|Disk/)
+      await w.find('[data-testid="led-board"]').trigger('keydown', { key: 'Enter' })
+      expect(h.fetchUnread).not.toHaveBeenCalled()
+      expect(h.push).not.toHaveBeenCalled()
+    } finally { w.unmount() }
   })
 
   it('a press on a broadcast opens THAT broadcast in the bell', async () => {

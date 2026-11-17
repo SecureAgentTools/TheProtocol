@@ -15,6 +15,8 @@ const { t } = useI18n()
 
 // §FEFRAME W4: off the entry chunk, and mounted only for a signed-in person (a visitor never downloads it)
 const FlareCelebrationModal = defineAsyncComponent(() => import('@/components/common/FlareCelebrationModal.vue'))
+// V0665 the contributor track: a newly earned item is celebrated once (self-gated, one read of the track per session)
+const UnlockCelebration = defineAsyncComponent(() => import('@/components/contributor/UnlockCelebration.vue'))
 const authStore = useAuthStore()
 
 // Refs
@@ -81,6 +83,7 @@ onMounted(() => {
            so it can fire on any page after the cumulative-€500 threshold
            is crossed. Self-gated: silent when conditions don't apply. -->
       <FlareCelebrationModal v-if="authStore.isAuthenticated" />
+      <UnlockCelebration v-if="authStore.isAuthenticated" />
 
       <!-- §LEGALKIT: renewed acceptance after a material change of the Terms (§ 10.2); self-gated, dismissable -->
       <LegalReconsentModal />

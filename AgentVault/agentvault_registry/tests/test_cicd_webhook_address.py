@@ -29,7 +29,7 @@ from agentvault_registry.services import agent_cicd_service as svc_mod
 DID = "did:theprotocol:sandbox-a.theprotocol.cloud:00000000-0000-4000-8000-000000000042"
 PUBLIC = "93.184.216.34"   # a public address the export allows in a shipped file (its G13)
 PAYLOAD = {"deployment_id": "dep-1", "agent_did": DID, "pipeline_name": "build", "pipeline_config": {"stages": []},
-           "version": "1.0.0", "environment": "production", "callback_url": "https://api.example/cb"}
+           "version": "1.0.0", "environment": "production", "callback_url": "https://api.example.org/cb"}
 SIGNED = {"X-AgentVault-Signature": "sha256=" + "0" * 64}
 
 
@@ -129,8 +129,8 @@ INTERNAL = [
     ("http://10.0.0.5/hook", {}),
     ("http://169.254.169.254/latest/meta-data", {}),
     ("http://[::ffff:127.0.0.1]/hook", {}),
-    ("https://teg.internal.example/hook", {"teg.internal.example": [["172.16.0.7"]]}),
-    ("https://half.example/hook", {"half.example": [[PUBLIC, "192.168.1.9"]]}),
+    ("https://teg.internal.example.org/hook", {"teg.internal.example.org": [["172.16.0.7"]]}),
+    ("https://half.example.org/hook", {"half.example.org": [[PUBLIC, "192.168.1.9"]]}),
 ]
 
 
@@ -145,8 +145,8 @@ def test_create_refuses_an_internal_webhook_url_and_stores_nothing(dns, url, ans
 
 
 def test_create_takes_a_public_url_and_one_that_resolves_to_nothing_yet(dns):
-    dns.answers["ci.example"] = [[PUBLIC]]
-    for url in ("https://ci.example/hook", "https://suite-ci.invalid/hook"):   # the console suite's address shape
+    dns.answers["ci.example.org"] = [[PUBLIC]]
+    for url in ("https://ci.example.org/hook", "https://suite-ci.example.org/hook"):   # the console suite's address shape
         db = _PipeDb()
         out = _create(db, url)
         assert [w[0] for w in db.writes] == ["INSERT"] and db.writes[0][1]["webhook_url"] == url
@@ -154,7 +154,7 @@ def test_create_takes_a_public_url_and_one_that_resolves_to_nothing_yet(dns):
 
 
 def test_update_refuses_a_new_internal_address_and_writes_nothing(dns):
-    db = _PipeDb(current_url="https://ci.example/hook")
+    db = _PipeDb(current_url="https://ci.example.org/hook")
     with pytest.raises(HTTPException) as e:
         _update(db, pipeline_name="build", webhook_url="http://10.1.2.3/x")
     assert e.value.status_code == 400 and db.writes == []
@@ -209,14 +209,14 @@ def _outcome(sessions):
 
 
 def test_a_deployment_reaches_the_checked_address_named_for_the_pipelines_host(dns, wire, sessions):
-    dns.answers["ci.example"] = [[PUBLIC], ["127.0.0.1"]]   # public when checked, internal when asked again
-    _send("https://ci.example/deploy")
+    dns.answers["ci.example.org"] = [[PUBLIC], ["127.0.0.1"]]   # public when checked, internal when asked again
+    _send("https://ci.example.org/deploy")
     (sent,) = wire.seen
     assert sent["reached"] == PUBLIC, f"the send reached {sent['reached']}, an address nobody checked"
-    assert (sent["host"], sent["sni"]) == ("ci.example", "ci.example")
+    assert (sent["host"], sent["sni"]) == ("ci.example.org", "ci.example.org")
     assert json.loads(sent["body"]) == PAYLOAD and sent["type"] == "application/json"
     assert sent["signature"] == SIGNED["X-AgentVault-Signature"], "the signed request is unchanged"
-    assert dns.asked == ["ci.example"] and _outcome(sessions) == ("running", None)
+    assert dns.asked == ["ci.example.org"] and _outcome(sessions) == ("running", None)
 
 
 def test_a_stored_internal_url_fails_the_deployment_at_once_and_nothing_is_sent(dns, wire, sessions):
@@ -229,18 +229,18 @@ def test_a_stored_internal_url_fails_the_deployment_at_once_and_nothing_is_sent(
 
 
 def test_a_name_that_turns_internal_after_the_save_is_refused_at_the_send(dns, wire, sessions):
-    dns.answers["flip.example"] = [[PUBLIC], ["10.0.0.9"]]
+    dns.answers["flip.example.org"] = [[PUBLIC], ["10.0.0.9"]]
     db = _PipeDb()
-    _create(db, "https://flip.example/hook")                 # checked when saved: public then
-    _send("https://flip.example/hook")                       # internal by the time it is sent
+    _create(db, "https://flip.example.org/hook")                 # checked when saved: public then
+    _send("https://flip.example.org/hook")                       # internal by the time it is sent
     assert [w[0] for w in db.writes] == ["INSERT"] and wire.seen == []
     assert _outcome(sessions)[0] == "failed"
 
 
 def test_control_a_public_endpoints_own_4xx_is_recorded_as_before(dns, wire, sessions):
-    dns.answers["ci.example"] = [[PUBLIC]]
+    dns.answers["ci.example.org"] = [[PUBLIC]]
     wire.answer[PUBLIC] = (404, "no such pipeline")
-    _send("https://ci.example/deploy")
+    _send("https://ci.example.org/deploy")
     assert len(wire.seen) == 1
     assert _outcome(sessions) == ("failed", "Webhook delivery exhausted: 4xx (no retry): 404 no such pipeline")
 
@@ -321,15 +321,15 @@ def test_a_bundle_restore_stores_no_refused_address_and_says_why(dns, monkeypatc
     async def no_clash(db, did):
         return False
 
-    dns.answers["ci.example"] = [[PUBLIC]]
+    dns.answers["ci.example.org"] = [[PUBLIC]]
     pipelines = [{"pipeline_name": "inside", "webhook_url": "http://10.0.0.5/hook"},
-                 {"pipeline_name": "outside", "webhook_url": "https://ci.example/hook"}]
+                 {"pipeline_name": "outside", "webhook_url": "https://ci.example.org/hook"}]
     payload = {"did": DID, "name": "Restored", "agent_card": {}, "pipelines": pipelines}
     monkeypatch.setattr(S.fmt, "unpack_bundle", lambda data: ({"exporter": {}}, [payload], None, []))
     monkeypatch.setattr(onboarding, "did_is_taken", no_clash)
     db = _RestoreDb()
     out = asyncio.run(S.restore_bundle(db=db, installer_dev_id=8, uploaded_bytes=b"tpb", conflict_resolution="rename"))
-    assert {p["pname"]: p["wurl"] for p in db.pipelines} == {"inside": None, "outside": "https://ci.example/hook"}
+    assert {p["pname"]: p["wurl"] for p in db.pipelines} == {"inside": None, "outside": "https://ci.example.org/hook"}
     (said,) = [w for w in out["warnings"] if "webhook URL refused" in w]
     assert said.startswith("Pipeline 'inside': webhook URL refused: ") and said.endswith(
         "; the pipeline restored without it"), said

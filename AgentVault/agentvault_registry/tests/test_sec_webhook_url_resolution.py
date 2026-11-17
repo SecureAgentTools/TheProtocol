@@ -30,14 +30,14 @@ from agentvault_registry.services.webhook_service import WebhookService
 
 EVENT = WebhookService.SUPPORTED_EVENTS[0]
 DNS = {
-    "hooks.public.example": ["93.184.216.34"],
-    "internal.example": ["10.1.2.3"],
-    "loopback.example": ["127.0.0.1"],
-    "mixed.example": ["93.184.216.34", "192.168.7.7"],
-    "mapped.example": ["::ffff:127.0.0.1"],
-    "metadata-alias.example": ["169.254.169.254"],
+    "hooks.public.example.org": ["93.184.216.34"],
+    "internal.example.org": ["10.1.2.3"],
+    "loopback.example.org": ["127.0.0.1"],
+    "mixed.example.org": ["93.184.216.34", "192.168.7.7"],
+    "mapped.example.org": ["::ffff:127.0.0.1"],
+    "metadata-alias.example.org": ["169.254.169.254"],
 }
-INTERNAL_NAMES = ["internal.example", "loopback.example", "mixed.example", "mapped.example", "metadata-alias.example"]
+INTERNAL_NAMES = ["internal.example.org", "loopback.example.org", "mixed.example.org", "mapped.example.org", "metadata-alias.example.org"]
 
 
 @pytest.fixture(autouse=True)
@@ -60,7 +60,7 @@ def resolver(monkeypatch):
     return asked
 
 
-def _hook(url="https://hooks.public.example/h"):
+def _hook(url="https://hooks.public.example.org/h"):
     return types.SimpleNamespace(id="wh-1", developer_id=7, url=url, events=[EVENT], secret="s" * 32,
                                  is_active=True, failure_count=0, created_at=dt.datetime.now(dt.timezone.utc),
                                  updated_at=None, last_triggered_at=None, description=None)
@@ -117,7 +117,7 @@ def _client(db):
 # ── the older pair: /api/v1/developers/webhooks ──────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("url", [f"https://{n}/hook" for n in INTERNAL_NAMES]
-                         + ["http://127.0.0.1:8000/x", "http://[::1]/x", "http://10.0.0.8/x", "ftp://hooks.public.example/x"])
+                         + ["http://127.0.0.1:8000/x", "http://[::1]/x", "http://10.0.0.8/x", "ftp://hooks.public.example.org/x"])
 def test_older_create_refuses_an_internal_or_unsafe_url(url):
     db = _Db()
     r = _client(db).post("/api/v1/developers/webhooks", json={"url": url, "events": [EVENT]})
@@ -125,7 +125,7 @@ def test_older_create_refuses_an_internal_or_unsafe_url(url):
     assert db.added == [], url
 
 
-@pytest.mark.parametrize("url", ["https://hooks.public.example/hook", "https://later.invalid/hook"])
+@pytest.mark.parametrize("url", ["https://hooks.public.example.org/hook", "https://later.example.org/hook"])
 def test_older_create_accepts_a_public_or_not_yet_resolving_url(url):
     db = _Db()
     r = _client(db).post("/api/v1/developers/webhooks", json={"url": url, "events": [EVENT]})
@@ -135,9 +135,9 @@ def test_older_create_accepts_a_public_or_not_yet_resolving_url(url):
 
 def test_older_update_refuses_an_internal_url():
     hook = _hook()
-    r = _client(_Db(existing=hook)).put("/api/v1/developers/webhooks/wh-1", json={"url": "https://internal.example/h"})
+    r = _client(_Db(existing=hook)).put("/api/v1/developers/webhooks/wh-1", json={"url": "https://internal.example.org/h"})
     assert r.status_code == 400, (r.status_code, r.text)
-    assert hook.url == "https://hooks.public.example/h"
+    assert hook.url == "https://hooks.public.example.org/h"
 
 
 # ── the canonical pair: /api/v1/webhooks ─────────────────────────────────────────────────────────────────────────
@@ -152,34 +152,43 @@ def test_canonical_create_refuses_a_name_that_resolves_internal(name):
 
 def test_canonical_create_accepts_a_public_name(resolver):
     db = _Db()
-    r = _client(db).post("/api/v1/webhooks", json={"url": "https://hooks.public.example/hook", "events": [EVENT]})
+    r = _client(db).post("/api/v1/webhooks", json={"url": "https://hooks.public.example.org/hook", "events": [EVENT]})
     assert r.status_code == 201, (r.status_code, r.text)
-    assert "hooks.public.example" in resolver  # the control: the name WAS resolved
+    assert "hooks.public.example.org" in resolver  # the control: the name WAS resolved
 
 
 def test_canonical_update_refuses_a_name_that_resolves_internal():
     hook = _hook()
-    r = _client(_Db(existing=hook)).put("/api/v1/webhooks/wh-1", json={"url": "https://loopback.example/h"})
+    r = _client(_Db(existing=hook)).put("/api/v1/webhooks/wh-1", json={"url": "https://loopback.example.org/h"})
     assert r.status_code == 422, (r.status_code, r.text)
-    assert hook.url == "https://hooks.public.example/h"
+    assert hook.url == "https://hooks.public.example.org/h"
 
 
 # ── delivery: the stored URL is resolved again at the moment of sending ──────────────────────────────────────────
 
-class _Client:
-    def __init__(self):
-        self.sent, self.kw = [], []
+# V0662 (item 16): a webhook send goes through the outbound guard, which needs a real client's connection layer
+from tests._doubles import RecordingWebhookClient  # noqa: E402
 
-    async def post(self, url, **kw):
-        self.sent.append(url)
-        self.kw.append(kw)
-        return types.SimpleNamespace(status_code=200, text="")
+
+class _Client(RecordingWebhookClient):
+    """Records the address each send reached (`sent`) and what it carried (`kw`: headers, content)."""
+
+    def record(self, entry):
+        self.received.append(entry)
+        self.sent.append(entry["url"])
+        self.kw.append({"headers": entry["headers"], "content": entry["content"], "extensions": entry["extensions"]})
+
+    def __new__(cls):
+        client = super().__new__(cls)
+        client.holder.sent, client.holder.kw = [], []
+        client.sent, client.kw = client.holder.sent, client.holder.kw
+        return client
 
 
 async def test_a_delivery_never_sends_to_a_name_that_resolves_internal():
     svc = WebhookService()
     svc.client = _Client()
-    hook = _hook("https://internal.example/h")  # stored before the check, or re-pointed after it
+    hook = _hook("https://internal.example.org/h")  # stored before the check, or re-pointed after it
     delivery = await svc.deliver_webhook(hook, EVENT, {"k": 1}, None, _Db())
     assert svc.client.sent == []
     assert "refused" in (delivery.error_message or ""), delivery.error_message
@@ -207,6 +216,6 @@ async def test_control_a_delivery_to_a_public_name_is_sent():
     svc.client = _Client()
     delivery = await svc.deliver_webhook(_hook(), EVENT, {"k": 1}, None, _Db())
     assert svc.client.sent == ["https://93.184.216.34/h"]
-    assert svc.client.kw[0]["headers"]["Host"] == "hooks.public.example"
-    assert svc.client.kw[0]["extensions"] == {"sni_hostname": "hooks.public.example"}
+    assert svc.client.kw[0]["headers"]["Host"] == "hooks.public.example.org"
+    assert svc.client.kw[0]["extensions"]["sni_hostname"] == "hooks.public.example.org"   # (httpx adds its timeout beside it)
     assert delivery.response_status == 200

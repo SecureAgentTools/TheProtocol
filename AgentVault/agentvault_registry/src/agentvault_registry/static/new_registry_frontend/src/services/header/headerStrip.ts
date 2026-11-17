@@ -86,9 +86,13 @@ export function broadcastColor(type: string): Rgb {
   return C_CYAN
 }
 
-/** What the strip says in broadcasts mode. */
+/** What the strip says in broadcasts mode. `signedIn` false (a guest): the broadcasts read needs a sign-in and none is
+ *  public, so the strip asks for one, and never shows a broadcast cached in this browser from another session. */
 export function broadcastStripItems(items: readonly BroadcastItem[], read: { failed: boolean, loading: boolean },
-                                    t: Translate): StripItem[] {
+                                    t: Translate, signedIn = true): StripItem[] {
+  if (!signedIn) {
+    return [{ key: 'b:guest', kind: 'status', color: C_DIM, text: t('ledTicker.signInForBroadcasts', 'SIGN IN TO SEE BROADCASTS') }]
+  }
   if (!items.length) {
     if (read.failed) {
       return [{ key: 'b:failed', kind: 'status', retry: 'broadcasts', color: C_AMBER,
@@ -226,4 +230,11 @@ export function shortAge(iso: string | null | undefined, now: number = Date.now(
   const hrs = Math.floor(mins / 60)
   if (hrs < 48) return `${hrs}h`
   return `${Math.floor(hrs / 24)}d`
+}
+
+/** A status line that fits the board is held still and readable; it scrolls only when it does not fit. Without this a guest's
+ *  "SIGN IN TO SEE BROADCASTS" crossed the board forever and any look at it caught half a word ("SIGN I"). `contentCols` is the text's width
+ *  in dot columns, `canvasW` and `dotPitch` in pixels; the margin keeps a column of air at each end. */
+export function fitsStill(contentCols: number, canvasW: number, dotPitch: number, marginCols = 4): boolean {
+  return contentCols > 0 && (contentCols + marginCols) * dotPitch <= canvasW
 }

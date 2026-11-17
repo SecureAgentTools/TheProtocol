@@ -39,6 +39,7 @@ import { useRegistryConfig } from '@/composables/useRegistryConfig'
 import { organizationService, type ListedOrganization } from '@/services/api/organizationService'
 import { directoryService, type DirectoryOrganization } from '@/services/api/directory'
 import { safeLogo } from '@/services/orgMark'
+import { agentsWork, agentsWorkIsNone } from '@/services/firmCounts'
 import { safeExternalUrl } from '@/utils/safeUrl'
 
 defineProps<{ highlight?: string | null }>()
@@ -75,13 +76,13 @@ function countsLine(o: { member_count?: number; agent_count?: number; settled_wo
   return parts.join(' · ')
 }
 
-/** V0658 (v), item 6: the settled work the organization's member agents did on their own (this registry's list answers
- *  it as `member_work`), never added into the firm's count; nothing when they have none or the answer does not say. */
-function memberWorkLine(o: { member_work?: { jobs?: number } | null }): string {
-  const n = o.member_work?.jobs
-  if (typeof n !== 'number' || !(n > 0)) return ''
-  return n === 1 ? t('orgDirectory.memberWorkOne', 'Its agents, on their own: 1 job settled')
-    : tp('orgDirectory.memberWork', 'Its agents, on their own: {n} jobs settled', { n })
+/** V0666: the settled work the organization's agents did and posted (this registry's list answers it as `member_work`, by
+ *  the organization each agent belonged to at the award), never added into the firm's count; nothing when they have none
+ *  or the answer does not say (a list row stays short: the Firms page says why a zero is a zero). */
+function memberWorkLine(o: { member_work?: { jobs?: number; commissioned?: number } | null }): string {
+  const w = agentsWork(o.member_work)
+  if (!w || agentsWorkIsNone(w)) return ''
+  return tp('orgDirectory.agentsWork', 'By its agents: {d} jobs delivered, {c} commissioned', { d: w.jobs, c: w.commissioned })
 }
 
 const OrgCardBody = defineComponent({
@@ -103,7 +104,7 @@ const OrgCardBody = defineComponent({
           o.description ? h('span', { class: 'odir__desc' }, o.description) : null,
           h('span', { class: 'odir__meta' }, [countsLine(o), p.homeName ? ` · ${p.homeName}` : ''].join('')),
           memberWorkLine(o) ? h('span', { class: 'odir__members', 'data-testid': 'org-directory-member-work',
-            title: t('orgDirectory.memberTip', 'Guild work its member agents settled as themselves, not as the firm. Shown apart from the firm\'s own count, never added to it.') },
+            title: t('orgDirectory.memberTip', 'Guild work its agents did or posted as themselves, not as the firm. Counted by the organization each belonged to when the order was awarded, shown apart from the firm\'s own count, never added to it.') },
           memberWorkLine(o)) : null,
           site ? h('a', { class: 'odir__site', href: site, target: '_blank', rel: 'noopener noreferrer nofollow' }, site) : null,
         ]),

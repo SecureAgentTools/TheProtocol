@@ -87,7 +87,7 @@
     <!-- Cast -->
     <div v-if="bp.cast.length" class="bps-block">
       <span class="bps-label">{{ t('blueprintsView.section.cast', 'The cast') }}</span>
-      <div class="bps-tablewrap">
+      <div class="bps-tablewrap" tabindex="0" role="region" :aria-label="t('blueprintsView.section.cast', 'The cast')">
         <table class="bps-table">
           <thead>
             <tr>
@@ -110,7 +110,7 @@
     <!-- Primitives -->
     <div class="bps-block">
       <span class="bps-label">{{ t('blueprintsView.section.primitives', 'What the protocol supplies') }}</span>
-      <div class="bps-tablewrap">
+      <div class="bps-tablewrap" tabindex="0" role="region" :aria-label="t('blueprintsView.section.primitives', 'What the protocol supplies')">
         <table class="bps-table">
           <thead>
             <tr>
@@ -172,7 +172,14 @@
         <span class="bps-proxy-links">
           <a v-if="recipeUrl" :href="safeExternalUrl(recipeUrl)" target="_blank" rel="noopener" data-testid="bp-proxy-recipe">{{ t('blueprintsView.legacy.proxyRecipeLink', 'The recipe') }}</a>
           <a :href="safeExternalUrl(PROXY_DOCS_URL)" target="_blank" rel="noopener" data-testid="bp-proxy-docs">{{ t('blueprintsView.legacy.proxyDocsLink', 'How the proxy works') }}</a>
+          <!-- V0664 C3: the proxy console, its connectors, its recipes and a spec builder -->
+          <RouterLink :to="{ name: 'proxy' }" data-testid="bp-proxy-console">{{ t('blueprintsView.legacy.proxyConsoleLink', 'Build a spec in the console') }}</RouterLink>
         </span>
+        <!-- V0664 M5: where the registry runs the template library, one more sentence and the way in -->
+        <template v-if="workflowTemplatesEnabled">
+          {{ t('blueprintsView.legacy.migrateLine', 'Replacing this system rather than bridging it?') }}
+          <RouterLink :to="{ name: 'migrate' }" data-testid="bp-migrate-link">{{ t('blueprintsView.legacy.migrateLink', 'Migration templates') }}</RouterLink>
+        </template>
       </p>
     </div>
 
@@ -197,7 +204,7 @@
     <!-- Wiring diagram (mermaid, lazy) -->
     <details v-if="bp.mermaid" class="bps-wiring" @toggle="onWiringToggle">
       <summary>{{ t('blueprintsView.section.wiring', 'Wiring diagram (technical)') }}</summary>
-      <div class="bps-wiring-body">
+      <div class="bps-wiring-body" tabindex="0" role="region" :aria-label="t('blueprintsView.section.wiring', 'Wiring diagram (technical)')">
         <pre :class="`bp-mermaid bp-mermaid-${bp.id}`">{{ bp.mermaid }}</pre>
       </div>
     </details>
@@ -208,6 +215,7 @@
 import { safeExternalUrl } from '@/utils/safeUrl'
 import { computed, ref } from 'vue'
 import { useI18n } from '@/composables/useI18n'
+import { useRegistryConfig } from '@/composables/useRegistryConfig'
 import FlowLoom from './FlowLoom.vue'
 import { RAIL_BY_ID } from '@/data/blueprints/rails'
 import type { Blueprint } from '@/data/blueprints/types'
@@ -215,6 +223,7 @@ import { PROXY_DOCS_URL, proxyRecipeUrl } from '@/data/blueprints/proxy'
 
 const props = defineProps<{ bp: Blueprint }>()
 const { t } = useI18n()
+const { workflowTemplatesEnabled } = useRegistryConfig()
 
 const sectionEl = ref<HTMLElement | null>(null)
 const loomRef = ref<InstanceType<typeof FlowLoom> | null>(null)
@@ -326,6 +335,8 @@ export default { name: 'BlueprintSection' }
 }
 
 .bps-tablewrap { overflow-x: auto; }
+/* V0662 item 12: a scroll container takes the keyboard (axe scrollable-region-focusable); show where the focus is */
+.bps-tablewrap:focus-visible, .bps-wiring-body:focus-visible { outline: 2px solid rgba(var(--flow-rgb, 0, 210, 210), 0.85); outline-offset: 2px; border-radius: 6px; }
 .bps-table { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
 .bps-table th { text-align: left; font-family: var(--bp-mono); font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--bp-faint); padding: 0.45rem 0.8rem 0.45rem 0; border-bottom: 1px solid rgba(var(--flow-rgb), 0.18); }
 .bps-table td { padding: 0.55rem 0.8rem 0.55rem 0; border-bottom: 1px solid rgba(var(--flow-rgb), 0.07); color: var(--bp-dim); vertical-align: top; line-height: 1.5; }

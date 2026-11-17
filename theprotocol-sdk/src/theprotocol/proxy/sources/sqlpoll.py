@@ -87,6 +87,7 @@ from ..spec import is_ref
 
 ENGINES = ("postgresql", "mysql", "sqlserver", "sqlite")
 CURSOR_TYPES = ("id", "timestamp")
+KEY_ORDER = "key"        # the internal type of a source with no cursor: the key alone orders the rows (V0664, Migrate a system)
 
 # A name the source writes into SQL: letters, digits, underscore, dollar, space and hyphen, starting with a letter or
 # an underscore. No quote character of any of the engines can be in it, so quoting it is safe in every one of them.
@@ -413,7 +414,7 @@ class SqlPollSource(Source):
                    "cursor column and resumed where they stopped, read only.")
     config_schema: Mapping[str, Any] = {
         "type": "object",
-        "required": ["engine", "table", "cursor"],
+        "required": ["engine", "table"],
         "additionalProperties": False,
         "properties": {
             "engine": {"enum": list(ENGINES),
@@ -438,7 +439,8 @@ class SqlPollSource(Source):
             "columns": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": True,
                         "description": "The columns a record carries (default: all of them)."},
             "cursor": {"type": "string",
-                       "description": "The column the rows are read in the order of. Its values must only grow as "
+                       "description": "The column the rows are read in the order of (leave it out, and name a key, to read "
+                                      "a table once in the order of its key: a migration). Its values must only grow as "
                                       "rows are written: the database's own sequence, or a time the writer sets as it "
                                       "writes (now()); a date a person types in is not a cursor (a row dated behind "
                                       "the place is never read). Index it with the key, in that order: each poll asks "
@@ -482,15 +484,25 @@ class SqlPollSource(Source):
         if not isinstance(table, str) or not 1 <= len(table.split(".")) <= 3:
             raise PluginError(f"sqlpoll: table {table!r} is a name, or schema.name (database.schema.name)")
         parts = [_name(p, "the table name part") for p in table.split(".")]
-        cursor = _name(cfg.get("cursor"), "cursor")
-        self._type = str(cfg.get("cursor_type") or "id")
-        if self._type not in CURSOR_TYPES:
-            raise PluginError(f"sqlpoll: cursor_type {self._type!r} is not one of {', '.join(CURSOR_TYPES)}")
         raw_key = cfg.get("key")
         keys = [raw_key] if isinstance(raw_key, str) else list(raw_key or [])
         keys = [_name(k, "key") for k in keys]
         if len(set(keys)) != len(keys):
             raise PluginError(f"sqlpoll: key {raw_key!r} names a column twice")
+        if cfg.get("cursor") in (None, ""):
+            # no cursor: the key alone orders the rows (a migration reads a table once, in key order, and finishes with
+            # poll_seconds: 0). The first key column plays the cursor and the rest break its ties, as they would beside one.
+            if not keys:
+                raise PluginError("sqlpoll: name a cursor (the column the rows are read in the order of), or a key to "
+                                  "read them in the order of the key alone")
+            if cfg.get("cursor_type") not in (None, ""):
+                raise PluginError("sqlpoll: cursor_type is for a cursor; with no cursor the key alone orders the rows")
+            cursor, self._type = keys[0], KEY_ORDER
+        else:
+            cursor = _name(cfg.get("cursor"), "cursor")
+            self._type = str(cfg.get("cursor_type") or "id")
+            if self._type not in CURSOR_TYPES:
+                raise PluginError(f"sqlpoll: cursor_type {self._type!r} is not one of {', '.join(CURSOR_TYPES)}")
         if not keys:
             if self._type == "timestamp":
                 raise PluginError("sqlpoll: a timestamp cursor needs a key: rows written at the same time are told "
@@ -641,6 +653,8 @@ class SqlPollSource(Source):
             if isinstance(v, (bytes, bytearray)):
                 v = bytes(v).decode("utf-8")
             return v if isinstance(v, str) else str(v)
+        if self._type == KEY_ORDER:
+            return self._key_value(v, self._cursor)
         if isinstance(v, int) and not isinstance(v, bool):
             return v
         if isinstance(v, decimal.Decimal) and v.is_finite() and v == v.to_integral_value():
@@ -832,6 +846,9 @@ class SqlPollSource(Source):
         text = str(point or "").strip()
         if not text:
             raise PluginError("sqlpoll: a replay point is 'start' or a value of the cursor column")
+        if self._type == KEY_ORDER and text.lower() != "start":
+            raise PluginError("sqlpoll: a source that reads in key order replays from 'start' only (it has no cursor "
+                              "column to name a point in)")
         zone = False
         if text.lower() == "start":
             self._committed, self._other, self._fresh = None, None, False

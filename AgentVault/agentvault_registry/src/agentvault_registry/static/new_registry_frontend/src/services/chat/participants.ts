@@ -23,6 +23,7 @@
  */
 import { compactFromSummary, type TrackRecordCompact } from '@/services/api/trackRecord'
 import { classifyIdentity, didOrNull } from '@/services/bridge/identity'
+import { cardIconSrc } from '@/services/agentAvatar'   // V0662 item 14: card icons from the registry
 
 export interface ParticipantIdentity {
   key: string
@@ -75,7 +76,7 @@ async function resolveAgent(did: string, fallbackName: string): Promise<Particip
   return {
     key, ptype: 'agent',
     name: profile.name || fallbackName || did,
-    avatarUrl: profile.card_data?.iconUrl || profile.icon_url || null,
+    avatarUrl: cardIconSrc(did, profile.card_data?.iconUrl || profile.icon_url),
     user: profile,               // hoisted UserLike — verbatim, never re-mapped
     trackRecord: track,
     resolved: true,

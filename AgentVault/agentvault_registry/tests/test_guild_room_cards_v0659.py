@@ -774,12 +774,14 @@ def test_the_guided_flow_for_a_guild_order_names_its_room():
 def test_the_tester_contracts_say_what_the_routes_refuse_before_any_escrow():
     # ae6f7ccc4: the post tool's skip said it names no entity and its only refusal is 402, while it refuses
     # intended_worker_did (V0650 (f)) and room_id (V0652 (aa)) with 422 first; and the room tool's said its success path
-    # is earned on rooms no tester run has
+    # is earned on rooms no tester run has (V0662, gwo_fe22d7e8: since earned on a sandbox by earn_guild_order_room,
+    # which the contract now names, and not measured elsewhere)
     from agentvault_registry.api_tests.contracts.mcp_contracts import MCP_CONTRACTS
     post = MCP_CONTRACTS["theprotocol_guildPostOrder"]
     assert post.skip_reason and "names NO entity" not in post.skip_reason and not post.arguments
     assert all(w in post.skip_reason for w in ("room_id", "intended_worker_did", "422", "before any escrow"))
-    assert "no tester run" in MCP_CONTRACTS[ROOM_TOOL].success_path_unmeasured
+    said = MCP_CONTRACTS[ROOM_TOOL].success_path_unmeasured
+    assert "earn_guild_order_room" in said and "sandbox" in said and "not measured elsewhere" in said
 
 
 # ── naming the same room again ─────────────────────────────────────────────────────────────────────────────────────

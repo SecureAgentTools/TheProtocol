@@ -7,6 +7,7 @@ import { useUIStore } from '@/stores/ui'
 import { authService } from '@/services/auth'
 import { errorHandler } from '@/utils/errorHandler'
 import { useLogger } from '@/composables/useLogger'
+import { adminFlagsFor, mayCall, noteRefusal } from './adminGuard'
 
 const log = useLogger('apiClient')
 
@@ -266,6 +267,23 @@ apiClient.interceptors.request.use(
       }
     }
     
+    // V0662, the admin guard (services/api/adminGuard.ts): a call to THIS registry whose route needs an admin flag the
+    // session does not hold is not sent (CrowdSec counts each refusal: a member's page asking admin routes on every
+    // load ends in a ban). A session whose profile has not loaded is not judged (an admin page keeps its first reads);
+    // a visitor holds no flag. The refusal is quiet (the response interceptor passes it to the caller as a 403).
+    if (sent !== 'foreign' && !/^[a-z][a-z0-9+.-]*:\/\//i.test(requestConfig.url || '')) {
+      const flags = adminFlagsFor(requestConfig.method, requestConfig.url || '')
+      const signedIn = !!(authStore.token || authService.getAccessToken())
+      if (flags && flags.length && (!signedIn || authStore.user) && !mayCall(authStore.user, flags)) {
+        noteRefusal(requestConfig.method, requestConfig.url || '', flags)
+        const detail = `Not sent: this needs ${flags.map((f) => `admin_${f}`).join(' and ')}, which this session does not hold.`
+        const err = new axios.AxiosError(detail, 'ERR_ADMIN_REFUSED_LOCALLY', requestConfig as any, undefined,
+          { status: 403, statusText: 'Forbidden', data: { detail }, headers: {}, config: requestConfig as any } as any)
+        ;(err as any).adminRefusedLocally = true
+        throw err
+      }
+    }
+
     if (token) {
       requestConfig.headers.Authorization = `Bearer ${token}`
     }
@@ -335,6 +353,8 @@ apiClient.interceptors.response.use(
     return response
   },
   async (error: AxiosError) => {
+    // V0662: the admin guard's own refusal never left the console: no toast, no session check, no retry
+    if ((error as any)?.adminRefusedLocally) return Promise.reject(error)
     const authStore = useAuthStore()
     const uiStore = useUIStore()
 

@@ -5,8 +5,8 @@
  * itself, never guessed from the window, because the console's sidebar and the conversation list take their own share.
  * Each section's fold is kept per person on this device.
  */
-export type SideSection = 'approvals' | 'board' | 'live' | 'present'
-export const SIDE_SECTIONS: readonly SideSection[] = ['approvals', 'board', 'live', 'present']
+export type SideSection = 'approvals' | 'board' | 'live' | 'present' | 'agentstatus' | 'mentions'
+export const SIDE_SECTIONS: readonly SideSection[] = ['approvals', 'board', 'live', 'present', 'agentstatus', 'mentions']   // V0662: agentstatus: agent status in a room, the session board (operators)
 
 /** V0651's message column: the panel never makes the column narrower than it was. */
 export const COLUMN_KEEP_PX = 760

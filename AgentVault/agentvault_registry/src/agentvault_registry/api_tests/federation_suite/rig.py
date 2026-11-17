@@ -551,7 +551,7 @@ async def bond_config(rig, label: str) -> Dict[str, Any]:
 # read: a later run asks again (a recreate can flip a switch), and an unreadable config is asked again next time instead
 # of switching nothing for the rest of the run.
 _SWITCH_KEYS = ("staking_enabled", "staking_rewards_enabled", "agora_distributions_enabled", "governance_weight_mode",
-                "governance_presence_mode")
+                "governance_presence_mode", "games_enabled")
 
 
 async def target_switches(rig, label: str) -> Dict[str, Any]:
@@ -589,6 +589,11 @@ def staking_off(switches: Dict[str, Any]) -> bool:
 
 def rewards_off(switches: Dict[str, Any]) -> bool:
     return switches.get("staking_rewards_enabled") is False
+
+
+def games_off(switches: Dict[str, Any]) -> bool:
+    """V0666 the games switch: the registry says games_enabled false (GAMES_ENABLED=false). Absent (an older registry) is on."""
+    return switches.get("games_enabled") is False
 
 
 async def ensure_bonded(rig, label: str, did: str) -> Optional[str]:
@@ -1117,9 +1122,33 @@ class FederationTestRig:
 
     def __init__(self):
         self._clients: Dict[str, MCPClient] = {}
+        self._principals: Dict[str, str] = {}      # a principal's label -> the registry label it lives on
+
+    def add_principal(self, base_label: str, tag: str, email: str, password: str) -> str:
+        """V0662 (gwo_757f07e0): a developer a test made for itself, spoken as on `base_label`'s registry through
+        that label's own (public) MCP path. Returns its label, `<base_label>~<tag>`; `rig.mcp(label)` signs in as
+        that developer and never as the frame's admin (a refused sign-in is the principal's own refusal)."""
+        if base_label not in SANDBOX_REGISTRIES or base_label.endswith("-admin"):
+            raise KeyError(f"a principal lives on a registry's public path, not {base_label!r}")
+        label = f"{base_label}~{tag}"
+        if label in self._principals:
+            raise KeyError(f"principal {label!r} already exists")
+        spec = SANDBOX_REGISTRIES[base_label]
+        self._clients[label] = MCPClient(RegistrySpec(
+            label=label, container=spec.container, host_port=spec.host_port, rpc_path=spec.rpc_path,
+            admin_email=email, admin_password=password, frame=spec.frame, role=spec.role,
+            password_env=f"the password {label} was made with"))
+        self._principals[label] = base_label
+        return label
+
+    def base_of(self, label: str) -> str:
+        """The registry label a label lives on: itself, or a principal's registry."""
+        return self._principals.get(label, label)
 
     def mcp(self, label: str) -> MCPClient:
         """Lazily instantiate + cache an MCP client for the given registry label."""
+        if label in self._principals:
+            return self._clients[label]
         if label not in SANDBOX_REGISTRIES:
             raise KeyError(
                 f"Unknown registry label {label!r}. "

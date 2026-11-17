@@ -41,8 +41,10 @@
          picked aesthetic (sauron|goth|obsidian|void) lights up universally.
          An explicit `variant` prop overrides the user's stored choice (used
          by the FlareManager picker for live previews of all 4 options). -->
+    <!-- V0665 the contributor track: an EARNED ring (never bought, no flare tier needed) is drawn by its own component; the old encirclements are untouched -->
+    <EarnedRing v-if="earnedRing" :ring-key="earnedRing" :size="px" :avatar-url="effectiveAvatarUrl" :initials="resolvedInitials" class="ua-earned" data-testid="ua-earned-ring" />
     <FlareEncirclement
-      v-if="encirclementTier"
+      v-else-if="encirclementTier"
       :tier="encirclementTier"
       :variant="effectiveVariant"
       :overlay="effectiveOverlay"
@@ -74,7 +76,7 @@
          its comment below. Surfaces that pass nothing and whose row carries no
          track record stay pixel-identical. -->
     <EarnedMarkCollar
-      v-if="effectiveTrackRecord && !encirclementTier"
+      v-if="effectiveTrackRecord && !encirclementTier && !earnedRing"
       :tr="effectiveTrackRecord"
       :size="size"
       class="fc-earned-collar ua-collar"
@@ -84,8 +86,9 @@
          §20 (2026-05-13): cornerVariant prop forwards the admin corner badge
          override (rocket / crown / vault / gavel / atom / network). NULL on
          non-admins → renders default tier icon. -->
+    <EarnedBadge v-if="earnedBadge" :badge-key="earnedBadge" :size="cornerBadgeSize === 'sm' ? 22 : 16" class="ua-corner" data-testid="ua-earned-badge" />
     <FlareBadge
-      v-if="cornerTier"
+      v-else-if="cornerTier"
       :tier="cornerTier"
       :granted-at="grantedAt || null"
       :display-name="(user as any)?.flare_display_name || null"
@@ -104,9 +107,13 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { registryImageSrc } from '@/services/registryImage'   // V0663: outside images from the registry
 import FlareEncirclement from '@/components/common/FlareEncirclement.vue'
 import FlareBadge from '@/components/common/FlareBadge.vue'
 import EarnedMarkCollar from '@/components/common/EarnedMarkCollar.vue'
+import EarnedBadge from '@/components/contributor/EarnedBadge.vue'
+import EarnedRing from '@/components/contributor/EarnedRing.vue'
+import { BADGE_KEYS, RING_KEYS } from '@/services/contributorTrack'
 import type { TrackRecordCompact } from '@/services/api/trackRecord'
 
 /** Subset of fields from Developer/User that drive the dual-slot rendering.
@@ -163,6 +170,9 @@ const props = withDefaults(defineProps<{
    *  variant that replaces the face (the black hole, the full-cover and signature compositions) keeps its ring and
    *  the rank but not the center. For pickers, where an agent is chosen by its own logo. Default false. */
   faceFirst?: boolean
+  /** V0663: draw `avatarUrl` as given. Only the owner's own profile preview sets it (an address typed and not yet
+   *  saved, which no record of the registry names yet); every other avatar is drawn from the registry. */
+  direct?: boolean
 }>(), {
   user: null,
   avatarUrl: null,
@@ -306,6 +316,18 @@ const cornerTier = computed<string | null>(() => {
   return null
 })
 
+// V0665 the contributor track: a worn EARNED ring or badge (the registry only lets a person wear one they earned). The override prop (a preview) counts too.
+const PX: Record<string, number> = { xs: 22, sm: 26, md: 36, lg: 48, xl: 96 }
+const px = computed(() => PX[props.size as string] ?? 36)
+const earnedRing = computed<string | null>(() => {
+  const v = props.variantOverride || (props.user as any)?.flare_encirclement_variant
+  return typeof v === 'string' && RING_KEYS.includes(v) ? v : null
+})
+const earnedBadge = computed<string | null>(() => {
+  const v = (props.user as any)?.flare_corner_variant
+  return typeof v === 'string' && BADGE_KEYS.includes(v) ? v : null
+})
+
 // Corner badge ring size auto-scales with avatar size for visual balance.
 const cornerBadgeSize = computed<'xs' | 'sm'>(() => {
   return props.size === 'xl' || props.size === 'lg' ? 'sm' : 'xs'
@@ -348,7 +370,7 @@ const resolvedTitle = computed<string>(() => {
 // shouldn't sticky-suppress the new image).
 const imgBroken = ref(false)
 const effectiveAvatarUrl = computed(() =>
-  imgBroken.value ? null : (props.avatarUrl || null)
+  imgBroken.value ? null : (props.direct ? (props.avatarUrl || null) : registryImageSrc(props.avatarUrl))
 )
 function onAvatarError() { imgBroken.value = true }
 watch(() => props.avatarUrl, () => { imgBroken.value = false })

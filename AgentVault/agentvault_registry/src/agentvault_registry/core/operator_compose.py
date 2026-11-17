@@ -37,6 +37,62 @@ def port_line(bind: str, host_port: int, container_port: int) -> str:
     return f'"{bind}:{host_port}:{container_port}"' if bind else f'"{host_port}:{container_port}"'
 
 
+# V0667 (order gwo_4d55fcc1535962f55866740c, session-volume): the registry and the TEG keep 5 x 50 MB of logs, WRITTEN in the operator's compose. The bundle wrote no `logging:` at all, so they kept
+# whatever the HOST's docker daemon defaults to (50m x 5 on this box today): true while nobody edits /etc/docker/daemon.json and invisible to a reader of the compose. V0666's console proof lost a
+# traceback to a 10m x 3 rotation; the stack's frame template and operator template write 50m x 5 and contract rule R44 pins them; this is the provisioner's half, whatever template it is given.
+LOG_KEEP_SERVICES = ("registry", "teg-layer")
+LOG_KEEP_BLOCK = ['    logging:', '      driver: json-file', '      options:', '        max-size: "50m"', '        max-file: "5"']
+_LOG_KEEP_MIN_BYTES, _LOG_KEEP_MIN_FILES = 50 * 1024 * 1024, 5
+
+
+def _log_bytes(v: str) -> Optional[int]:
+    m = re.fullmatch(r"(\d+)([kKmMgG]?)", (v or "").strip())
+    return int(m.group(1)) * {"": 1, "k": 1024, "m": 1024 ** 2, "g": 1024 ** 3}[m.group(2).lower()] if m else None
+
+
+def ensure_log_keep(compose: str) -> Tuple[str, List[str]]:
+    """The compose with the written 50m x 5 `logging:` block on the registry and the teg-layer and on no other service. A block already keeping at least that is left as written, a smaller one is
+    replaced (never doubled), a service the template lacks is a note (never an exception: the caller reads the notes). Idempotent: a second run returns the text unchanged and no notes."""
+    notes: List[str] = []
+    for svc in LOG_KEEP_SERVICES:
+        lines = compose.split("\n")
+        head = next((i for i, ln in enumerate(lines) if re.match(rf"^  {re.escape(svc)}:\s*$", ln)), None)
+        if head is None:
+            notes.append(f"could not write the 50m x 5 log keep: {svc} not found in the template")
+            continue
+        end = len(lines)
+        for t in range(head + 1, len(lines)):
+            if re.match(r"^  [^\s#][^:\s]*:\s*$", lines[t]) or re.match(r"^[^\s#]", lines[t]):
+                end = t
+                break
+        span = None
+        for a in range(head + 1, end):
+            if re.match(r"^    logging:", lines[a]):
+                b = a + 1
+                while b < end and lines[b].strip() and lines[b].startswith("      "):
+                    b += 1
+                span = (a, b)
+                break
+        if span is not None:
+            body = "\n".join(lines[span[0]:span[1]])
+            s, f = re.search(r"max-size:\s*[\"']?([^\"'\s]+)", body), re.search(r"max-file:\s*[\"']?(\d+)", body)
+            if s and f and (_log_bytes(s.group(1)) or 0) >= _LOG_KEEP_MIN_BYTES and int(f.group(1)) >= _LOG_KEEP_MIN_FILES:
+                continue
+            lines[span[0]:span[1]] = LOG_KEEP_BLOCK
+            notes.append(f"{svc}: logging {s.group(1) if s else '?'} x {f.group(1) if f else '?'} replaced by 50m x 5")
+        else:
+            at = head + 1
+            for key in ("restart", "container_name"):
+                hit = next((a for a in range(head + 1, end) if re.match(rf"^    {key}:", lines[a])), None)
+                if hit is not None:
+                    at = hit + 1
+                    break
+            lines[at:at] = LOG_KEEP_BLOCK
+            notes.append(f"{svc}: logging written (50m x 5)")
+        compose = "\n".join(lines)
+    return compose, notes
+
+
 def adapt_operator_compose(
     compose: str,
     *,
@@ -201,6 +257,8 @@ def adapt_operator_compose(
     else:
         notes.append("legacy registry command not found — template may already be updated")
 
+    compose, _keep_notes = ensure_log_keep(compose)      # V0667: 5 x 50 MB of logs for the registry and the TEG, written
+    notes.extend(_keep_notes)
     return compose, notes
 
 def adapt_federation_conf(nginx: str, *, safe: str, domain: str) -> Tuple[str, List[str]]:

@@ -6,10 +6,13 @@
  * against the VIEWER's origin and answers 404 there; resolved against the peer's own public address it is the peer's
  * icon. An absolute address, or a relative one with no host to resolve it against (our own registry), passes through.
  */
+import { registryImageSrc } from './registryImage'
+
 export function resolvePeerAsset(url: string | null | undefined, peerPublicUrl: string | null | undefined): string | undefined {
   if (!url) return undefined
-  if (/^https?:\/\//i.test(url)) return url
+  // V0663: the peer's asset is drawn from THIS registry (registryImageSrc), which fetched it once through its guard
+  if (/^https?:\/\//i.test(url)) return registryImageSrc(url) ?? undefined
   const host = (peerPublicUrl || '').trim()
-  if (url.startsWith('/') && /^https?:\/\//i.test(host)) return host.replace(/\/+$/, '') + url
+  if (url.startsWith('/') && /^https?:\/\//i.test(host)) return registryImageSrc(host.replace(/\/+$/, '') + url) ?? undefined
   return url
 }

@@ -1,0 +1,40 @@
+# vmalert rules of the OPA layer C verifier (V0666, gwo_bec4b18190831482a6463d46; design section 4: a breach pages `critical`).
+# The verifier exposes /metrics (verifier/__main__.py); Prometheus scrapes it as the job `opa-verifier`, and these rules are loaded
+# by vmalert beside monitoring/prometheus_alerts.yml (a card puts them on the stack's compose: nothing here is live by itself).
+# Rules judged: iron_pairing, jurisdiction_coherent, fiat_buy_only, merge_needs_the_record, deletion_on_schedule.
+groups:
+  - name: opa-verifier
+    interval: 60s
+    rules:
+      - alert: OpaVerifierViolation
+        expr: opa_verifier_violations > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "OPA verifier: {{ $labels.rule }} is violated ({{ $value }} subject(s))"
+          description: "The independent verifier judged {{ $value }} subject(s) in violation of {{ $labels.rule }} (iron_pairing, jurisdiction_coherent, fiat_buy_only, merge_needs_the_record or deletion_on_schedule). It detects and blocks nothing: the finding, with the input the rule saw, is in the verifier's findings file."
+      - alert: OpaVerifierStale
+        expr: time() - opa_verifier_last_run_unixtime > 3 * 300 + 120
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "OPA verifier has not run for more than 17 minutes"
+          description: "A verifier that is not running judges nothing, which reads as silence. Its last run started {{ $value }} seconds ago."
+      - alert: OpaVerifierRuleError
+        expr: opa_verifier_rule_errors > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "OPA verifier: {{ $labels.rule }} fails to evaluate"
+          description: "{{ $labels.rule }} could not be read or evaluated on {{ $value }} subject(s) for 15 minutes: it judged those subjects neither fine nor in violation."
+      - alert: OpaVerifierUnmeasured
+        expr: opa_verifier_unmeasured > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "OPA verifier: a fact of {{ $labels.rule }} cannot be read"
+          description: "{{ $labels.rule }} could not read a fact on {{ $value }} node(s) for an hour (a database, a container's environment or a route list did not answer). That is not a pass."

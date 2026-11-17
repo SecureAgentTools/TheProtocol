@@ -89,12 +89,27 @@ async def _seed(maker, *, listed=True, show=True):
         await s.flush()
         card = AgentCard(id=uuid.uuid4(), developer_id=dev.id, agent_did=did, name="session-code",
                          description="the implementation lane", is_active=True,
-                         card_data={"name": "session-code", "description": "the implementation lane",
-                                    "url": "https://home.example/a2a", "version": "1.0", "did": did,
-                                    "capabilities": {}, "skills": [], "provider": {"name": "Acme Labs"}})
+                         card_data=_exportable_card(did))
         s.add(card)
         await s.commit()
         return types_ns(dev=dev.id, org=org.id, slug=org.slug, did=did, card=str(card.id))
+
+
+def _exportable_card(did):
+    """A card the home may EXPORT. The feed withholds a card a fail-closed peer would refuse (routers/federation_sync
+    export_skip_reason, the V0657 [FEDEXPORT] gate: it must validate as `agentvault.AgentCard`), and the old fixture (no
+    protocolVersion, no humanReadableId, no authSchemes ...) was withheld, so both mirror tests failed with "coroutine
+    raised StopIteration" on `next(...)` finding no exported card: the control then proved nothing about privacy. The
+    fixture is checked against the same model HERE, so a schema that moves again fails in the fixture, naming the field,
+    and never as a missing card."""
+    from agentvault import AgentCard
+    card = {"protocolVersion": "0.3.0", "humanReadableId": "home/session-code", "agentVersion": "1.0.0", "name": "session-code",
+            "description": "the implementation lane", "url": "https://home.example/a2a",
+            "provider": {"name": "Acme Labs", "url": "https://home.example"}, "capabilities": {},
+            "authSchemes": [{"scheme": "none"}], "defaultInputModes": ["text/plain"], "defaultOutputModes": ["text/plain"],
+            "skills": [{"id": "implement", "name": "Implement", "description": "writes code", "tags": ["code"]}], "did": did}
+    AgentCard.model_validate(card)
+    return card
 
 
 def types_ns(**kw):

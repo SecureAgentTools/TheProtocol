@@ -19,8 +19,8 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, Security
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Response, status, Query, Request, Security
+from pydantic import AliasChoices, BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, text
 
@@ -110,6 +110,8 @@ class BroadcastCreate(BaseModel):
     # only, listed only in their bell, and audited under DIRECT_NOTICE_EVENT so no peer frame copies it.
     target_developer_id: Optional[int] = Field(default=None, ge=1)
     idempotency_key: Optional[str] = Field(default=None, max_length=120)
+    # V0664: readable by visitors without a sign-in (GET /public/announcements). Off by default; only for a broadcast to everyone.
+    public: bool = False
     # §bc3 T3.7 — admin can opt to NOT receive their own broadcast (most common
     # case: they composed it themselves and don't need the toast on their own
     # screen). Server passes exclude_user to ws_manager.broadcast(). Default
@@ -138,8 +140,32 @@ class BroadcastOut(BaseModel):
     idempotency_key: Optional[str] = None
     target_org_id: Optional[str] = None
     target_developer_id: Optional[int] = None
+    # V0664: the admin mark behind GET /public/announcements (the column is is_public)
+    public: bool = Field(default=False, validation_alias=AliasChoices("public", "is_public"))
 
     model_config = {"from_attributes": True}
+
+
+class PublicAnnouncementOut(BaseModel):
+    """What a visitor reads of a public announcement, and nothing else: no author, recipient counts, mail flag, schedule,
+    idempotency key, organization or developer id."""
+    id: int
+    title: str
+    body: str
+    broadcast_type: str
+    created_at: datetime
+    cta_url: Optional[str] = None
+    cta_label: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+def public_refusal(*, public: bool, target_org_id, target_developer_id) -> Optional[str]:
+    """Why a broadcast may not be marked public, or None. A visitor reads what is addressed to everyone: an organization's
+    broadcast or one developer's notice is member-only text, whatever else is true of it."""
+    if public and (target_org_id or target_developer_id is not None):
+        return "a public announcement is addressed to everyone: an organization's broadcast or one developer's notice cannot be public"
+    return None
 
 
 # A developer-targeted notice is audited under its own event type. Every AdminBroadcastSent is materialized by
@@ -328,7 +354,8 @@ async def create_broadcast(
     Creates an admin broadcast, pushes it via WebSocket to all online users,
     persists it for offline users, and optionally sends email.
     """
-    refusal = direct_notice_refusal(payload)
+    refusal = direct_notice_refusal(payload) or public_refusal(
+        public=payload.public, target_org_id=payload.target_org_id, target_developer_id=payload.target_developer_id)
     if refusal:
         raise HTTPException(status_code=422, detail=refusal)
     if payload.target_developer_id is not None:
@@ -351,6 +378,7 @@ async def create_broadcast(
         target_developer_id=payload.target_developer_id,
         idempotency_key=payload.idempotency_key,
         source_frame=SOURCE_FRAME,
+        is_public=payload.public,
     )
     db.add(broadcast)
     await db.flush()  # get the id before WS send
@@ -509,6 +537,8 @@ class BroadcastUpdate(BaseModel):
         default=None,
         pattern="^(info|warning|maintenance|critical)$",
     )
+    # V0664: mark or unmark the announcement public (a broadcast to everyone only)
+    public: Optional[bool] = None
 
 
 class BroadcastStats(BaseModel):
@@ -586,6 +616,12 @@ async def update_broadcast(
         broadcast.body = payload.body
     if payload.broadcast_type is not None:
         broadcast.broadcast_type = payload.broadcast_type
+    if payload.public is not None:
+        refusal = public_refusal(public=payload.public, target_org_id=broadcast.target_org_id,
+                                 target_developer_id=broadcast.target_developer_id)
+        if refusal:
+            raise HTTPException(status_code=422, detail=refusal)
+        broadcast.is_public = payload.public
     await db.commit()
     await db.refresh(broadcast)
     logger.info(f"Broadcast #{broadcast_id} edited by admin={current_admin.id}")
@@ -615,6 +651,7 @@ async def update_broadcast(
                 "title_changed": payload.title is not None,
                 "body_changed": payload.body is not None,
                 "type_changed": payload.broadcast_type is not None,
+                "public_changed": payload.public is not None,
                 **event_frame_fields(broadcast),
                 # D6-211: a peer's copy of a broadcast to everyone follows the edit (copy_content's rule)
                 **edit_content(broadcast),
@@ -1320,6 +1357,44 @@ async def list_community_announcements(
     )
     result = await db.execute(query)
     return result.scalars().all()
+
+
+@router.get(
+    "/public/announcements",
+    response_model=List[PublicAnnouncementOut],
+    summary="Announcements an admin marked public (no sign-in)",
+)
+async def list_public_announcements(
+    response: Response,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    The announcements an admin marked public, newest first, for visitors who have no account: active, already sent, and
+    addressed to everyone. Only the fields a visitor needs (`PublicAnnouncementOut`). A broadcast to an organization or one
+    developer is left out here as well, whatever its mark says, so a row that reached `is_public` by another path leaks
+    nothing member-only.
+
+    \f
+    V0664 (order gwo_1b3e2cc74c1afec6c6cedc3d). Default off: nothing is public until an admin marks it (`public` on create or
+    on the edit, migration 0227). The mark is local; a peer's copy of a broadcast never carries it.
+    """
+    query = (
+        select(models.AdminBroadcast)
+        .where(
+            models.AdminBroadcast.is_public == True,  # noqa: E712
+            models.AdminBroadcast.is_active == True,  # noqa: E712
+            models.AdminBroadcast.target_org_id.is_(None),
+            models.AdminBroadcast.target_developer_id.is_(None),
+            sent_clause(),
+        )
+        .order_by(models.AdminBroadcast.created_at.desc(), models.AdminBroadcast.id.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    response.headers["Cache-Control"] = "public, max-age=60"
+    return (await db.execute(query)).scalars().all()
 
 
 # ---------------------------------------------------------------------------

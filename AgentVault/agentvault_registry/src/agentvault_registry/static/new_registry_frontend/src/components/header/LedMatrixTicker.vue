@@ -29,6 +29,7 @@ import { useUIStore } from '@/stores/ui'
 import { LED_GLYPHS } from '@/services/header/ledFont'
 import {
   C_CYAN, alertStripItems, broadcastStripItems, normalizeLedText, type Rgb, type StripItem,
+  fitsStill,
 } from '@/services/header/headerStrip'
 import { acquireActiveAlerts, activeAlerts, refreshActiveAlerts } from '@/services/header/activeAlerts'
 
@@ -53,6 +54,9 @@ function nodeLabel(): string {
 // ── State ──
 const canvas = ref<HTMLCanvasElement | null>(null)
 const container = ref<HTMLDivElement | null>(null)
+// V0662: the board ends where the badge begins (a flex row), so the canvas is the board's width, not the wrap's
+const board = ref<HTMLDivElement | null>(null)
+let boardObserver: ResizeObserver | null = null
 // §bc1 T1.9 — persist last-chosen mode across reloads.
 const LED_MODE_KEY = 'theprotocol:ledTickerMode'
 function loadPersistedMode(): 'broadcasts' | 'alerts' {
@@ -76,7 +80,7 @@ const shownMode = computed<'broadcasts' | 'alerts'>(() => (mode.value === 'alert
 const items = computed<StripItem[]>(() => (shownMode.value === 'alerts'
   ? alertStripItems(activeAlerts.state, activeAlerts.alerts, tt)
   // "no new broadcasts" only after a read said so: the list hydrated from localStorage is the last answer, not this one
-  : broadcastStripItems(notif.items, { failed: notif.unreadFailed, loading: !notif.lastReadAt }, tt)))
+  : broadcastStripItems(notif.items, { failed: notif.unreadFailed, loading: !notif.lastReadAt }, tt, !!authStore.isAuthenticated)))
 
 const severeFiring = computed(() => activeAlerts.counts.page + activeAlerts.counts.critical)
 const badgeCount = computed(() => (shownMode.value === 'alerts' ? activeAlerts.counts.firing : notif.items.length))
@@ -120,6 +124,8 @@ interface Segment { start: number; end: number; item: StripItem }
 // ── Render state ──
 let animFrame = 0
 let scrollX = 0
+// a status line that fits the board is held still (see fitsStill); a long one, or any broadcast pass, scrolls
+let holdStill = false
 let dotBuffer: DotCol[] = []
 let segments: Segment[] = []
 let builtFromStatusOnly = true
@@ -228,6 +234,18 @@ function buildBuffer() {
   for (let i = 0; i < padCols; i++) dotBuffer.push([])
   builtFromStatusOnly = list.every((i) => i.kind === 'status')
   pendingRebuild = false
+  // a status line that fits is not a marquee: it starts at the left edge and stays
+  holdStill = false
+  const contentCols = dotBuffer.length - 2 * padCols
+  if (builtFromStatusOnly && fitsStill(contentCols, canvasW, DOT_PITCH)) {
+    const lead = 2
+    const shift = lead - padCols
+    dotBuffer = [...Array.from({ length: lead }, () => [] as typeof dotBuffer[number]), ...dotBuffer.slice(padCols, padCols + contentCols),
+                 ...Array.from({ length: Math.ceil(canvasW / DOT_PITCH) + 2 }, () => [] as typeof dotBuffer[number])]
+    segments = segments.map((g) => ({ ...g, start: g.start + shift, end: g.end + shift }))
+    holdStill = true
+    scrollX = 0
+  }
 }
 
 /**
@@ -323,7 +341,7 @@ function draw() {
   }
 
   // Same pixels per SECOND in either mode; only the frame count changes. A paused board does not move.
-  if (!paused.value) scrollX += prefersLessMotion() ? SCROLL_SPEED * (SLOW_MS / 16.7) : SCROLL_SPEED
+  if (!paused.value && !holdStill) scrollX += prefersLessMotion() ? SCROLL_SPEED * (SLOW_MS / 16.7) : SCROLL_SPEED
   if (scrollX >= dotBuffer.length * DOT_PITCH) {
     scrollX = 0
     // §ALERTS: the data no longer refreshes per pass (that was the 404 on every loop); new content lands at the end
@@ -376,6 +394,7 @@ function openBell(broadcastId?: number) {
 
 /** What a press does: open the broadcast, open the alerts, or retry the read that failed. */
 function act(item: StripItem | null) {
+  if (item?.key === 'b:guest') return                         // a guest's line asks for a sign-in; the bell has nothing for them
   if (item?.retry === 'broadcasts') { void notif.fetchUnread(); return }
   if (item?.retry === 'alerts') { void refreshActiveAlerts(); return }
   if (item?.kind === 'broadcast' && item.broadcastId != null) { openBell(item.broadcastId); return }
@@ -389,7 +408,7 @@ function resizeCanvas() {
   const cvs = canvas.value
   const ctr = container.value
   if (!cvs || !ctr) return
-  cvs.width = ctr.clientWidth
+  cvs.width = (board.value?.clientWidth || ctr.clientWidth)
   cvs.height = ROWS * DOT_PITCH
   buildGrid()
   buildBuffer()
@@ -415,6 +434,11 @@ onMounted(() => {
   motionQuery.addEventListener?.('change', onMotionChange)
   document.addEventListener('visibilitychange', onVisibility)
   window.addEventListener('resize', resizeCanvas)
+  // the badge's words change its width (BROADCASTS 2, ALERTS 12) without a window resize: follow the board itself
+  if (typeof ResizeObserver !== 'undefined' && board.value) {
+    boardObserver = new ResizeObserver(() => resizeCanvas())
+    boardObserver.observe(board.value)
+  }
   scheduleFrame()
 })
 
@@ -424,6 +448,7 @@ onUnmounted(() => {
   motionQuery?.removeEventListener?.('change', onMotionChange)
   document.removeEventListener('visibilitychange', onVisibility)
   window.removeEventListener('resize', resizeCanvas)
+  boardObserver?.disconnect(); boardObserver = null
   if (releaseAlerts) { releaseAlerts(); releaseAlerts = null }
 })
 </script>
@@ -438,6 +463,7 @@ onUnmounted(() => {
     @pointerleave="paused = false"
   >
     <div
+      ref="board"
       class="led-board"
       role="button"
       tabindex="0"
@@ -471,6 +497,8 @@ onUnmounted(() => {
 <style scoped>
 .led-wrap {
   position: relative;
+  display: flex;
+  align-items: center;
   height: 33px;
   width: 100%;
   border-radius: 5px;
@@ -486,9 +514,12 @@ onUnmounted(() => {
 .led-wrap:focus-within {
   border-color: rgba(var(--nc-primary-rgb), 0.22);
 }
+/* V0662: the board is the space left of the badge (a flex row), so the scrolling text can never run under it */
 .led-board {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: stretch;
   cursor: pointer;
   outline: none;
 }
@@ -515,22 +546,17 @@ onUnmounted(() => {
   white-space: nowrap;
   border: 0;
 }
-/* §CHATPOLISH (2026-08-30) — this chip sat over the scrolling canvas on a 6%
-   tint, so the marquee ran THROUGH it: measured on four of five desktop
-   screenshots, "No new broadcas|BROADCASTS" overlapping into glyph soup. The
-   canvas keeps its full width (the scroll wraps on it); the chip now paints an
-   opaque plate over the panel background with a short fade on its leading edge,
-   so text passes BEHIND it and dissolves instead of colliding. */
+/* §CHATPOLISH (2026-08-30) had the chip paint an opaque plate over the full-width canvas so text passed behind it;
+   V0662 makes the chip a flex item beside the board instead, so the text ends at the board's own right edge (the
+   canvas mask fades it there) and nothing is ever drawn under the chip. */
 .led-badge {
-  position: absolute;
-  top: 3px;
-  right: 4px;
-  z-index: 1;
+  position: static;
+  flex: 0 0 auto;
+  margin: 0 4px 0 2px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
   background: #05050a;
-  box-shadow: -12px 0 12px -6px #05050a;
   font-size: 7.5px;
   font-weight: 800;
   letter-spacing: 0.12em;

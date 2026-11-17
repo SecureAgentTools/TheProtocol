@@ -1,7 +1,7 @@
 # TRUNK (the telecom blueprint): the mediation system rates each interconnect event and writes it to its settlement
 # table; every rated event is settled on TheProtocol as it happens, a payment to the partner carrier's agent under the
 # operator's Cockpit mandate (nothing is paid without one, and never above the action's max_amount or the mandate's
-# limits), and finance gets a CSV journal (or camt.053, for systems that read bank statements) of what SETTLED: each
+# limits), and finance gets a CSV journal (or camt.053, for systems that read account statements) of what SETTLED: each
 # line comes from TheProtocol's own payment.settled notice (the registry's webhook) and names its settlement, so a
 # payment refused or held back (over max_amount, outside the mandate) has no line. An event the mediation system
 # disputes (status DISPUTED) is neither paid nor booked.

@@ -32,7 +32,10 @@ def test_a_pinned_tools_real_success_is_kept_as_earned_and_nothing_else_of_a_lis
     pinned = {"theprotocol_runAllDiagnostics", "theprotocol_runDiagnosticsSubset",
               "theprotocol_triggerDiagnosticAction", "theprotocol_suspendAgent"}
     kept = kept_lifecycle_rows(rows, listed, set(), lambda n: n in pinned)
-    assert [n for n, _ in kept] == ["earned: runAllDiagnostics"]
+    # V0666 (session-lead seq 4442, "failed is failed"): the pinned tool's FAILED row (suspendAgent) is kept too, and
+    # reads FAIL; the named skip and the refusal still are not (test_mcp_failed_lifecycle_row_is_kept_v0666.py)
+    assert [n for n, _ in kept] == ["earned: runAllDiagnostics", "earned: suspendAgent"]
+    assert dict(kept)["earned: suspendAgent"]["healthy"] is False
 
 
 def test_a_row_named_for_no_tool_is_kept_once_and_an_unknown_name_never():

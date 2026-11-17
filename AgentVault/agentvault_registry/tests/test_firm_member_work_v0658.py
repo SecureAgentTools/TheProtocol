@@ -91,7 +91,8 @@ MEMBER_NEEDLE = "FROM guild_travel_credentials"
 
 
 def _member_rows(*rows):
-    return _Result([{"org_id": o, "jobs": j} for o, j in rows])
+    """(org, jobs) or (org, jobs, commissioned): the statement's rows."""
+    return _Result([{"org_id": r[0], "jobs": r[1], "commissioned": (r[2] if len(r) > 2 else 0)} for r in rows])
 
 
 # ── the statement ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -99,7 +100,7 @@ def test_the_statement_counts_only_the_member_agents_own_settled_work():
     from agentvault_registry.services import track_record as tr
     db = _Db((MEMBER_NEEDLE, _member_rows((ORG, 68))))
     out = _run(tr.member_agents_work(db, [ORG, ORG2, ORG, None, ""]))
-    assert out == {ORG: {"jobs": 68}}, "one entry per organization that has any; none is invented; the jobs alone"
+    assert out == {ORG: {"jobs": 68, "commissioned": 0}}, "one entry per organization that has any; none is invented; the two counts alone"
     assert len(db.calls) == 1, "one statement for the whole page"
     sql, params = db.calls[0]
     assert sorted(params["ids"]) == sorted([ORG, ORG2]), "each organization asked once, empty ids dropped"
@@ -117,7 +118,7 @@ def test_the_statement_counts_only_the_member_agents_own_settled_work():
 
 def _members_cte(sql: str) -> str:
     low = sql.lower()
-    return low[low.index("with members as"):low.index("own_work as")]
+    return low[low.index("with members as"):low.index("by_award as")]
 
 
 def _travel_branch(sql: str) -> str:
@@ -187,9 +188,9 @@ def test_the_firms_strip_carries_the_agents_own_work_apart_from_the_firms_count(
     out = _run(r.discover_firms(limit=12, db=db))
     first, second = out["firms"]
     assert (first["verified_jobs"], first["commissioned"]) == (0, 0), "the firm's own count is the firm's own"
-    assert first["member_work"] == {"jobs": 68}
+    assert first["member_work"] == {"jobs": 68, "commissioned": 0}
     assert (second["verified_jobs"], second["commissioned"]) == (4, 1)
-    assert second["member_work"] == {"jobs": 0}, "an answered read with nothing is an honest zero"
+    assert second["member_work"] == {"jobs": 0, "commissioned": 0}, "an answered read with nothing is an honest zero"
     member_calls = [c for c in db.calls if MEMBER_NEEDLE in c[0]]
     assert len(member_calls) == 1 and sorted(member_calls[0][1]["ids"]) == sorted([ORG, ORG2])
 
@@ -202,7 +203,7 @@ def test_an_unlisted_firm_in_the_strip_carries_no_line_and_is_not_asked_for():
              (MEMBER_NEEDLE, _member_rows((ORG, 68), (ORG3, 3))))
     out = _run(r.discover_firms(limit=12, db=db))
     listed, unlisted = out["firms"]
-    assert listed["listed"] is True and listed["member_work"] == {"jobs": 68}
+    assert listed["listed"] is True and listed["member_work"] == {"jobs": 68, "commissioned": 0}
     assert unlisted["listed"] is False and unlisted["verified_jobs"] == 2
     assert "member_work" not in unlisted, "an unlisted firm's members are not stated in public"
     member_calls = [c for c in db.calls if MEMBER_NEEDLE in c[0]]
@@ -239,8 +240,8 @@ def test_the_listed_organizations_carry_the_agents_own_work_beside_the_firms(mon
              (MEMBER_NEEDLE, _member_rows((ORG, 52))))
     out = _run(r.list_listed_organizations(limit=200, offset=0, db=db))
     sessions, reach = out["organizations"]
-    assert sessions["settled_work"] == 0 and sessions["member_work"] == {"jobs": 52}
-    assert reach["settled_work"] == 5 and reach["member_work"] == {"jobs": 0}
+    assert sessions["settled_work"] == 0 and sessions["member_work"] == {"jobs": 52, "commissioned": 0}
+    assert reach["settled_work"] == 5 and reach["member_work"] == {"jobs": 0, "commissioned": 0}
     member_sql = [c[0] for c in db.calls if MEMBER_NEEDLE in c[0]]
     assert len(member_sql) == 1
     assert "((o.settings->'public_listing')::text = 'true')" in member_sql[0], \
@@ -282,7 +283,7 @@ def test_the_track_record_carries_the_agents_own_work_and_keeps_the_firms(monkey
     db = _Db((ORG_ROW_NEEDLE, _org_row()), (MEMBER_NEEDLE, _member_rows((ORG, 52))))
     out = _run(r.get_org_track_record(ORG, db=db))
     assert out["verified_jobs"] == 0, "the firm's own record is unchanged"
-    assert out["member_work"] == {"jobs": 52}
+    assert out["member_work"] == {"jobs": 52, "commissioned": 0}
     assert (out["name"], out["slug"], out["is_active"]) == ("Sessions", "sessions", True)
 
 
@@ -294,7 +295,7 @@ def test_a_listed_organization_whose_agents_have_none_reads_an_honest_zero(monke
         return {"verified_jobs": 1}
     monkeypatch.setattr(tr, "org_track_record", firm_record)
     out = _run(r.get_org_track_record(ORG, db=_Db((ORG_ROW_NEEDLE, _org_row()), (MEMBER_NEEDLE, _member_rows()))))
-    assert out["member_work"] == {"jobs": 0}
+    assert out["member_work"] == {"jobs": 0, "commissioned": 0}
 
 
 @pytest.mark.parametrize("listed,active", [(False, True), (True, False)])
@@ -340,3 +341,49 @@ def test_every_read_asks_the_one_helper(name):
     src = inspect.getsource(getattr(r, name))
     assert "member_agents_work(" in src
     assert "guild_travel_credentials" not in src, "the statement lives in services/track_record.py only"
+
+
+# ── V0666: by the organization at the award, both sides ─────────────────────────────────────────────────────
+def _by_award(sql: str) -> str:
+    low = sql.lower()
+    return low[low.index("by_award as"):low.index("by_agents as")]
+
+
+def test_the_counts_follow_the_organization_written_at_the_award_on_both_sides():
+    """The order gwo_5dee4f33eba094f0c185ac9b: an agent that left keeps its past work in the organization it belonged to when the
+    order was awarded, one that joined later brings none, and the posting agents' settled orders are counted beside the delivered
+    ones. The organization is read from the order (written by the award), never from the agent's present row."""
+    from agentvault_registry.services import track_record as tr
+    db = _Db((MEMBER_NEEDLE, _member_rows((ORG, 9, 4))))
+    out = _run(tr.member_agents_work(db, [ORG]))
+    assert out == {ORG: {"jobs": 9, "commissioned": 4}}
+    sql = db.calls[0][0]
+    side = _by_award(sql)
+    assert "w.worker_org_at_award in" in side and "w.poster_org_at_award in" in side
+    assert side.count("w.status = 'settled'") == 2, "settled work only, on both sides"
+    assert "w.payee_org_id is null" in side, "delivered work paid to a firm is that firm's, not the agent's own"
+    low = sql.lower()
+    assert "'jobs' as side" in low and "'commissioned' as side" in low
+
+
+def test_the_firms_own_treasury_is_never_its_agents_commissioned():
+    """The treasury posts as the firm (the work-order door): its settled orders are the firm's `commissioned`, counted by
+    discover_firms; counting them again here would put one order in both lines."""
+    from agentvault_registry.services import track_record as tr
+    db = _Db((MEMBER_NEEDLE, _member_rows()))
+    _run(tr.member_agents_work(db, [ORG]))
+    assert "x.did is distinct from o.treasury_agent_did" in db.calls[0][0].lower()
+
+
+def test_the_affiliation_rules_hold_for_an_agent_still_in_the_organization():
+    """An agent that is still in the organization counts only while it is active and shows it; one that left carries only a
+    number (its work), never a name. The listing rule is the one the members read under."""
+    from agentvault_registry.services import track_record as tr
+    from agentvault_registry.services.org_policy import sql_listed_public
+    db = _Db((MEMBER_NEEDLE, _member_rows()))
+    _run(tr.member_agents_work(db, [ORG]))
+    low = db.calls[0][0].lower()
+    agents_cte = low[low.index("by_agents as"):low.index("travel as")]
+    assert "a.status = 'active'" in agents_cte
+    assert "not (a.organization_id = x.org_id and a.show_org = false)" in agents_cte
+    assert "o.is_active = true" in agents_cte and sql_listed_public("o").lower() in agents_cte

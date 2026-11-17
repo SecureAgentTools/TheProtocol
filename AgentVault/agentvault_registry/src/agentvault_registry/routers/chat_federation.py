@@ -61,6 +61,24 @@ async def deliver(
     delivered and stops retrying, which is why the receive must never 500 on a
     message it already has.
     """
+    if "event" in envelope and "message" not in envelope:
+        # V0663: an edit, a take-back, a reaction, a pin or a room's archive or close the HOST made (services/chat_fed_events)
+        from ..services import chat_fed_events as fev
+        try:
+            res = await fev.receive_event(db, envelope, peer)
+        except Exception as e:  # noqa: BLE001
+            http = _translate(e)
+            if http:
+                raise http
+            logger.exception("[CHATFED] event receive failed")
+            raise HTTPException(status_code=500, detail="event could not be applied")
+        if not res.get("duplicate"):
+            try:
+                await fev.announce(db, res["conversation_id"], {**(envelope.get("event") or {}), "action": res.get("action")},
+                                   message_id=res.get("message_id"))
+            except Exception:  # noqa: BLE001 — a missed live push costs a reader a refresh, never the change
+                logger.warning("[CHATFED] the live push of an event failed", exc_info=True)
+        return {k: v for k, v in res.items() if k != "fan"}
     try:
         out = await fed.receive_delivery(db, envelope, peer)
     except Exception as e:  # noqa: BLE001
@@ -92,6 +110,45 @@ async def deliver(
         for did in out.get("pending_agents") or []:
             cs.spawn(cs.notify_request_received(
                 out["conversation_id"], "dm", did, payload, str(out.get("sender_display") or "")))
+    return out
+
+
+class RelayEvent(BaseModel):
+    """V0663: a resident's member asks this registry (the thread's host) for a change: an edit, a take-back, a reaction or a pin."""
+    conversation_ref: str = Field(..., max_length=64, description="The HOST's conversation id")
+    actor_key: str = Field(..., max_length=320, description="handle@https://their.registry")
+    actor_display: str = Field("", max_length=200)
+    type: str = Field(..., pattern="^(edit|delete|reaction|pin)$")
+    message_seq: int = Field(..., ge=1)
+    body: Optional[str] = Field(None, max_length=8192)
+    word: Optional[str] = Field(None, max_length=16)
+    on: Optional[bool] = None
+
+
+@router.post("/relay-event")
+async def relay_event(
+    req: RelayEvent,
+    peer: str = Depends(require_peer_registry_identity),
+    db: AsyncSession = Depends(get_db),
+):
+    """A resident's member changed a message in a thread WE host. The same rules as a local thread (sender only and the window
+    for an edit, a room's operators for a pin, the closed reaction words); applied here, queued for every registry that has a member
+    (the asker's included) and answered with this registry's own result. Peer registries only (mTLS)."""
+    if not fed.federation_enabled():
+        raise HTTPException(status_code=501, detail="cross-registry chat is not enabled on this registry")
+    from ..services import chat_fed_events as fev
+    try:
+        out = await fev.host_apply_relayed(db, req.model_dump(exclude_none=True), peer)
+    except cs.ChatError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
+    fan = out.pop("_fan", None)
+    if fan is not None:
+        try:
+            msg = fan.get("message") or {}
+            await fev.announce(db, fan["conv"].id, fan["event"], message_id=msg.get("id") or out.get("message_id"),
+                               actor_display=fan.get("display") or "")
+        except Exception:  # noqa: BLE001
+            logger.warning("[CHATFED] the live push of a relayed change failed", exc_info=True)
     return out
 
 
@@ -205,12 +262,19 @@ async def relay_send(
         raise HTTPException(status_code=e.status_code, detail=e.detail)
     # §TWOAGENT G1 step 2: caps per thread and per peer, and a tighter one for an AGENT sender, because two agents
     # that answer automatically would otherwise relay into each other forever (the loop guard's rate half).
-    if (not await fed.fed_rate_ok("relay_thread", req.conversation_ref)
-            or not await fed.fed_rate_ok("relay_peer", sender_base)
-            or (sender_handle.lower().startswith("did:")
-                and not await fed.fed_rate_ok("relay_agent_thread", req.conversation_ref))):
-        raise HTTPException(status_code=429, detail="this thread's cross-registry message rate is capped; slow down "
-                                                    "(an agent answering automatically is capped tighter)")
+    spent = []
+    if not await fed.fed_rate_ok("relay_thread", req.conversation_ref):
+        spent.append(("relay_thread", req.conversation_ref))
+    if not await fed.fed_rate_ok("relay_peer", sender_base):
+        spent.append(("relay_peer", sender_base))
+    if sender_handle.lower().startswith("did:") and not await fed.fed_rate_ok("relay_agent_thread", req.conversation_ref):
+        spent.append(("relay_agent_thread", req.conversation_ref))
+    if spent:
+        # V0664: the wait the sender is told is the longest of the caps that were spent (less would only be refused again)
+        wait = max([await fed.fed_rate_wait(k, p) for k, p in spent])
+        raise HTTPException(status_code=429, headers={"Retry-After": str(int(wait))},
+                            detail="this thread's cross-registry message rate is capped; slow down "
+                                   "(an agent answering automatically is capped tighter)")
     # §TWOAGENT (2026-09-23): only the sender's own home may relay for it. Any active peer could relay as another
     # peer's participant, because the caller was checked against nothing.
     if not await fed.caller_is(db, peer, sender_base):

@@ -258,6 +258,28 @@ export function percent(p: unknown): string | null {
   return `${Number(v.toPrecision(3))}%`
 }
 
+// ── availability (V0662 console polish, item 6) ───────────────────────────────
+
+export type AvailabilityDays = 'everyday' | 'weekdays' | 'weekend' | 'monday' | 'tuesday' | 'wednesday' | 'thursday'
+  | 'friday' | 'saturday' | 'sunday'
+export interface AvailabilityWindow { days: AvailabilityDays; start: string; end: string; overnight: boolean }
+const DAYS = new Set(['everyday', 'weekdays', 'weekend', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])
+const HHMM = /^([01][0-9]|2[0-3]):[0-5][0-9]$/
+
+/** A backend's availability windows as the card states them (schema quantum_workload v1.0: days, start_utc,
+ *  end_utc). A window that ends before it starts runs into the next day; one this cannot read is left out. */
+export function availabilityWindows(backend: unknown): AvailabilityWindow[] {
+  const a = isObj(backend) && isObj(backend.availability) ? backend.availability : null
+  const ws = a && Array.isArray(a.windows) ? a.windows : []
+  const out: AvailabilityWindow[] = []
+  for (const w of ws) {
+    if (!isObj(w) || !DAYS.has(String(w.days)) || !HHMM.test(String(w.start_utc)) || !HHMM.test(String(w.end_utc))) continue
+    const start = String(w.start_utc), end = String(w.end_utc)
+    out.push({ days: w.days as AvailabilityDays, start, end, overnight: end < start })
+  }
+  return out
+}
+
 export interface Age { n: number; unit: 's' | 'm' | 'h' | 'd' }
 /** An age in whole units (the card shows "read 3 h ago"); null when unknown or in the future. */
 export function ageOf(seconds: unknown): Age | null {

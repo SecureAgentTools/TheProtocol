@@ -2,8 +2,8 @@
  "version": 2,
  "source": "agentvault_registry/core/auth_tiers.py (the FastAPI dependency tree, registration order)",
  "counts": {
-  "a": 162,
-  "e": 97,
+  "a": 187,
+  "e": 116,
   "d": 8
  },
  "routes": [
@@ -11,6 +11,51 @@
    "GET",
    "/api/v1/agent-cards/",
    "e"
+  ],
+  [
+   "POST",
+   "/api/v1/code-changes",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/code-changes/{cid}/ballot",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/code-changes/{cid}/withdraw",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/code-changes/{cid}/code-distribution-vote",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/code-changes/{cid}/upstream",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/code-passport/changes",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/code-passport/changes/{cid}/reviews",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/content-changes",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/content-changes/{cid}/vote",
+   "a"
   ],
   [
    "GET",
@@ -584,6 +629,71 @@
   ],
   [
    "GET",
+   "/api/v1/workflow-templates/mine",
+   "e"
+  ],
+  [
+   "GET",
+   "/api/v1/workflow-templates/{tid}",
+   "e"
+  ],
+  [
+   "GET",
+   "/api/v1/workflow-templates/{tid}/versions/{n}",
+   "e"
+  ],
+  [
+   "GET",
+   "/api/v1/workflow-templates/{tid}/versions/{n}/kit",
+   "e"
+  ],
+  [
+   "POST",
+   "/api/v1/workflow-templates",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/workflow-templates/{tid}/versions",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/workflow-templates/{tid}/versions/{n}/publish",
+   "a"
+  ],
+  [
+   "PATCH",
+   "/api/v1/workflow-templates/{tid}",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/workflow-templates/{tid}/fork",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/workflow-templates/{tid}/purchase",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/workflow-templates/{tid}/instantiate",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/workflow-templates/{tid}/certified",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/agents/me/proxy-status",
+   "a"
+  ],
+  [
+   "GET",
    "/api/v1/liability/mandates/{mid}/for-agent",
    "a"
   ],
@@ -1019,6 +1129,41 @@
   ],
   [
    "POST",
+   "/api/v1/workflows",
+   "a"
+  ],
+  [
+   "GET",
+   "/api/v1/workflows",
+   "a"
+  ],
+  [
+   "GET",
+   "/api/v1/workflows/{wid}",
+   "a"
+  ],
+  [
+   "GET",
+   "/api/v1/workflows/{wid}/chain",
+   "a"
+  ],
+  [
+   "GET",
+   "/api/v1/workflows/{wid}/steps/{step_key}/candidates",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/workflows/{wid}/advance",
+   "a"
+  ],
+  [
+   "POST",
+   "/api/v1/workflows/{wid}/cancel",
+   "a"
+  ],
+  [
+   "POST",
    "/api/v1/chat/conversations",
    "e"
   ],
@@ -1045,6 +1190,51 @@
   [
    "PUT",
    "/api/v1/chat/conversations/{conversation_id}/messages/{message_id}/card",
+   "e"
+  ],
+  [
+   "PUT",
+   "/api/v1/chat/conversations/{conversation_id}/messages/{message_id}",
+   "e"
+  ],
+  [
+   "DELETE",
+   "/api/v1/chat/conversations/{conversation_id}/messages/{message_id}",
+   "e"
+  ],
+  [
+   "PUT",
+   "/api/v1/chat/conversations/{conversation_id}/messages/{message_id}/reactions/{word}",
+   "e"
+  ],
+  [
+   "DELETE",
+   "/api/v1/chat/conversations/{conversation_id}/messages/{message_id}/reactions/{word}",
+   "e"
+  ],
+  [
+   "GET",
+   "/api/v1/chat/conversations/{conversation_id}/search",
+   "e"
+  ],
+  [
+   "GET",
+   "/api/v1/chat/conversations/{conversation_id}/pins",
+   "e"
+  ],
+  [
+   "PUT",
+   "/api/v1/chat/conversations/{conversation_id}/messages/{message_id}/pin",
+   "e"
+  ],
+  [
+   "DELETE",
+   "/api/v1/chat/conversations/{conversation_id}/messages/{message_id}/pin",
+   "e"
+  ],
+  [
+   "GET",
+   "/api/v1/chat/conversations/{conversation_id}/messages/{message_id}/history",
    "e"
   ],
   [
@@ -1144,6 +1334,11 @@
   ],
   [
    "GET",
+   "/api/v1/chat/mentions",
+   "e"
+  ],
+  [
+   "GET",
    "/api/v1/chat/org-rooms",
    "e"
   ],
@@ -1179,12 +1374,37 @@
   ],
   [
    "POST",
+   "/api/v1/chat/rooms/{conversation_id}/close",
+   "e"
+  ],
+  [
+   "POST",
    "/api/v1/chat/conversations/{conversation_id}/room",
    "e"
   ],
   [
    "GET",
    "/api/v1/chat/conversations/{conversation_id}/members",
+   "e"
+  ],
+  [
+   "POST",
+   "/api/v1/chat/conversations/{conversation_id}/guests",
+   "e"
+  ],
+  [
+   "DELETE",
+   "/api/v1/chat/conversations/{conversation_id}/guests/{member_key}",
+   "e"
+  ],
+  [
+   "PUT",
+   "/api/v1/chat/conversations/{conversation_id}/agent-status",
+   "e"
+  ],
+  [
+   "GET",
+   "/api/v1/chat/conversations/{conversation_id}/agent-status",
    "e"
   ],
   [

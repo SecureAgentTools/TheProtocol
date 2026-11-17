@@ -7,8 +7,10 @@ import { mount, flushPromises } from '@vue/test-utils'
  * peer." (for this registry itself, "No federation events on aggregate registry:self."). It says the read failed now
  * (Try again); an answered empty window still says none.
  */
-const h = vi.hoisted(() => ({ get: vi.fn() }))
+const h = vi.hoisted(() => ({ get: vi.fn(), user: null as any }))
 vi.mock('@/services/api/client', () => ({ apiClient: { get: h.get, post: vi.fn() } }))
+// V0662: a peer's event log is an admin_federation read (the drawer asks it for a session holding the flag only)
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: h.user }) }))
 
 import PeerDetailDrawer from './PeerDetailDrawer.vue'
 
@@ -23,7 +25,7 @@ async function openEvents(w: ReturnType<typeof mount>) {
 }
 
 describe('the peer drawer says what its events read answered', () => {
-  beforeEach(() => { h.get.mockReset() })
+  beforeEach(() => { h.get.mockReset(); h.user = { id: 1, admin_federation: true } })
 
   for (const [who, peer, none] of [['a peer', PEER, 'No events for this peer.'], ['this registry', LOCAL, 'No federation events on aggregate registry:self.']] as const) {
     it(`${who}: a failed read says it failed, not "${none}"`, async () => {
@@ -44,6 +46,17 @@ describe('the peer drawer says what its events read answered', () => {
     await openEvents(w)
     expect(w.text()).toContain('No events for this peer.')
     expect(w.find('[data-read-failed]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('V0662: a member\'s drawer does not ask a peer\'s event log, and says it is an admin read', async () => {
+    h.user = { id: 7, is_admin: false }
+    const w = mount(PeerDetailDrawer, opts(PEER))
+    await flushPromises()
+    await openEvents(w)
+    expect(h.get.mock.calls.filter((c: any[]) => String(c[0]).includes('/admin/federation/topology/peers/'))).toEqual([])
+    expect(w.find('[data-testid="pdd-events-admin"]').exists()).toBe(true)
+    expect(w.text()).not.toContain('No events for this peer.')
     w.unmount()
   })
 })

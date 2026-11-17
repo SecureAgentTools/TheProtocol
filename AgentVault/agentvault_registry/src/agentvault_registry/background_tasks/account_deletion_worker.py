@@ -89,6 +89,9 @@ class AccountDeletionWorker:
                     report = await anonymize_developer(
                         db, dev, actor_email_for_audit="account_deletion_worker"
                     )
+                    # V0667: the repository account closes with the deletion, in its transaction (services/repo_accounts)
+                    from agentvault_registry.services.repo_accounts import enqueue_in
+                    await enqueue_in(db, dev.id, "close", "developer_deleted (self, after the cooling-off)")
                     await db.commit()
                     anonymized_count += 1
                     drain_failures += int(report.get("teg_drain_failures") or 0)

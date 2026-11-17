@@ -16,6 +16,16 @@ from __future__ import annotations
 from typing import Dict, Optional
 
 BY_DESIGN_REFUSAL: Dict[str, str] = {
+    'theprotocol_createWorkflowTemplate':
+        "creating a template: a template stays in the library for good (no route removes one) and a priced one needs a seller whose reputation bond stays locked, so a run makes, publishes, sells, forks and instantiates one only on a target torn down after the run, the nightly and proof pairs (MCP_TESTER_EPHEMERAL_TARGET, earned_template_library, V0666)",
+    'theprotocol_publishWorkflowTemplateVersion':
+        "publishing a version: a template stays in the library for good (no route removes one) and a priced one needs a seller whose reputation bond stays locked, so a run makes, publishes, sells, forks and instantiates one only on a target torn down after the run, the nightly and proof pairs (MCP_TESTER_EPHEMERAL_TARGET, earned_template_library, V0666)",
+    'theprotocol_purchaseWorkflowTemplate':
+        "buying a template: a template stays in the library for good (no route removes one) and a priced one needs a seller whose reputation bond stays locked, so a run makes, publishes, sells, forks and instantiates one only on a target torn down after the run, the nightly and proof pairs (MCP_TESTER_EPHEMERAL_TARGET, earned_template_library, V0666)",
+    'theprotocol_forkWorkflowTemplate':
+        "forking a template: a template stays in the library for good (no route removes one) and a priced one needs a seller whose reputation bond stays locked, so a run makes, publishes, sells, forks and instantiates one only on a target torn down after the run, the nightly and proof pairs (MCP_TESTER_EPHEMERAL_TARGET, earned_template_library, V0666)",
+    'theprotocol_instantiateWorkflowTemplate':
+        "starting a workflow from a template: a template stays in the library for good (no route removes one) and a priced one needs a seller whose reputation bond stays locked, so a run makes, publishes, sells, forks and instantiates one only on a target torn down after the run, the nightly and proof pairs (MCP_TESTER_EPHEMERAL_TARGET, earned_template_library, V0666)",
     'theprotocol_approveFrameInvitation':
         'approving a frame invitation federates a real frame with this one, which no tester run does',
     'theprotocol_finalizeRetryFrameInvitation':
@@ -74,7 +84,8 @@ BY_DESIGN_REFUSAL: Dict[str, str] = {
         "open season",
     'theprotocol_adminCommonsWriteOffAward':
         "a write-off settles only an award whose payment failed or never answered, which a healthy target never gives "
-        "a run; its refusal is measured on the open season and, on the pairs, on the award that was never sent",
+        "a run; on the pairs one is made (an award of 0 on the run's own struck submission, V0662) and written off; "
+        "elsewhere its refusal is measured on the open season",
     'theprotocol_uploadRegistryCardIcon':
         "the icon is the registry's own, on its signed registry card, so a run replaces it and puts it back only on "
         "the nightly and proof pairs, last (earned_ad_pair_last, Phase 8)",
@@ -103,8 +114,8 @@ BY_DESIGN_REFUSAL: Dict[str, str] = {
     'theprotocol_updateEnforcementPolicy':
         "a policy write records an amendment to the registry's enforcement policy, for every agent",
     'theprotocol_acknowledgeAgentFlag':
-        'a flag exists only where a card-drift or collusion check raised one against an agent, which no tester run '
-        'makes',
+        'a flag exists only where a card-drift or collusion check raised one against an agent; a run raises one by hand '
+        "on its own agent only where the target states 'sandbox' (V0662, earned_refusal_slice1)",
     'theprotocol_triggerDiagnosticAction':
         "a diagnostic action acts on a real component (restart, resync); the command centre's read on the frame itself "
         'is measured (earned: rows) where it answers',
@@ -116,17 +127,22 @@ BY_DESIGN_REFUSAL: Dict[str, str] = {
         "its own, on the nightly and proof pairs (earned_ad_ephemeral)",
     'theprotocol_federationCliAudit':
         "the remote CLI's audit events need a federation licence header, which no MCP caller carries",
-    'theprotocol_adminGrafanaQuery': 'no Grafana credentials on a sandbox registry (GRAFANA_ADMIN_PASS unset)',
+    'theprotocol_adminGrafanaQuery':
+        "no Grafana credentials on a sandbox registry (GRAFANA_ADMIN_PASS unset), and no way to a Grafana: a frame's "
+        "listens on a unix socket only its edge mounts (a V0664 kit item wires it to the registry)",
     'theprotocol_deleteOauthFederationTrust':
-        'no trusted OAuth registry on a sandbox registry (its trust list is empty)',
-    'theprotocol_oauthIntrospect': 'no trusted OAuth registry on a sandbox registry (the route answers 501)',
-    'theprotocol_oauthRevoke': 'no trusted OAuth registry on a sandbox registry (the route answers 501)',
-    'theprotocol_oauthTokenExchange': 'no trusted OAuth registry on a sandbox registry (the route answers 501)',
-    'theprotocol_simulationFundingPreview':
-        "the retired network's simulation tooling: the route runs a host script through the docker socket and cannot do"
-        ' its job on the new registries (the product half is his call)',
+        "no trusted OAuth registry on a sandbox registry; a run adds and deletes an entry of its own only where the "
+        "target states 'sandbox' (V0662, earned_refusal_slice1)",
+    'theprotocol_oauthIntrospect': "no trusted OAuth registry on a sandbox registry (501); measured on a trust entry of "
+                                   "the run's own where the target states 'sandbox' (V0662)",
+    'theprotocol_oauthRevoke': "no trusted OAuth registry on a sandbox registry (501); measured on a trust entry of the "
+                               "run's own where the target states 'sandbox' (V0662)",
+    'theprotocol_oauthTokenExchange': "a subject token must be signed by a trusted peer's federation key, which a registry "
+                                      "signs with only when it answers an exchange itself: no registry of this network "
+                                      "can give a run the first one (V0662)",
     'theprotocol_forceEmailVerify':
-        "a sandbox registry verifies an account when it registers, so no run's account waits for a verify",
+        "a sandbox registry verifies an account when it registers; a run sets its own throwaway unverified only where "
+        "the target states 'sandbox' (V0662, earned_ad_developers)",
     'theprotocol_operatorPortalSelfLogs':
         "an operator's own tool: on a frame the route refuses; the operator runs earn it",
     'theprotocol_getOperatorMyBundle':

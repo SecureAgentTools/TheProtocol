@@ -882,8 +882,8 @@ async def take_parked_licence_key(
         raise HTTPException(
             status_code=404,
             detail=(f"no licence key is parked for {invitation_id}: it was handed out already, the callback carried none, or "
-                    f"more than {_LICENCE_PARK_TTL_S} s passed. Ask the approver's admin for a finalize-retry, which rotates the "
-                    "licence and delivers a new key."),
+                    f"more than {_LICENCE_PARK_TTL_S} s passed. The key cannot be shown again, and a finalize-retry cannot replace "
+                    "it once the callback has landed (it applies only before): send a new invitation, and its approval issues a new key."),
         )
     if isinstance(key, bytes):
         key = key.decode()
@@ -1673,10 +1673,14 @@ async def finalize_retry_frame_invitation(
     if inv is None:
         raise HTTPException(status_code=404, detail="Invitation not found.")
     if inv.status != "approved" or inv.completed_at is not None:
+        # D6-343 (V0663): say what to do. A completed invitation's callback landed, so the key it carried was parked for the
+        # joining frame's admin (once, for a while); a key lost or not collected in time cannot be replaced by a retry.
+        _next = (" The callback already landed, so a retry cannot replace a licence key that was lost or not collected in time: "
+                 "the joining frame sends a new invitation, and its approval issues a new key.") if inv.completed_at is not None else ""
         raise HTTPException(
             status_code=409,
             detail=f"finalize-retry only applies to status='approved' with completed_at=null "
-                   f"(current: status='{inv.status}', completed_at={inv.completed_at}).",
+                   f"(current: status='{inv.status}', completed_at={inv.completed_at}).{_next}",
         )
 
     bundle_body, err = await _read_local_bundle()

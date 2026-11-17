@@ -30,9 +30,9 @@ const bindIfThere = (router: unknown) => { if (typeof doors.bindDoorRouter === '
 const LOGO = '/api/v1/organizations/org-1/logo?v=abcdef123456'
 const SESSIONS = { org_id: 'org-1', slug: 'sessions', name: 'TheProtocol Sessions', verified_jobs: 0, commissioned: 0,
   stars_n: 0, logo: LOGO, transparency: true, engage_available: false, engage_reason: 'no intake agent',
-  member_work: { jobs: 52 } }
+  member_work: { jobs: 52, commissioned: 4 } }
 const REACH = { org_id: 'org-2', slug: 'reach', name: 'Reach Limited', verified_jobs: 3, commissioned: 1, stars_n: 0,
-  logo: null, engage_available: false, engage_reason: 'no intake agent', member_work: { jobs: 0 } }
+  logo: null, engage_available: false, engage_reason: 'no intake agent', member_work: { jobs: 0, commissioned: 0 } }
 const ELSEWHERE = { org_id: 'org-3', slug: 'elsewhere', name: 'Elsewhere', verified_jobs: 0, commissioned: 0, stars_n: 0,
   logo: 'https://tracker.example/pixel.png', engage_available: false, engage_reason: 'no intake agent' }
 
@@ -75,20 +75,21 @@ describe("Discovery's Firms strip", () => {
     expect(own.text(), "the agents' jobs are never added into the firm's").not.toContain('52')
     const members = sessions.find('[data-testid="fl-members"]')
     expect(members.exists()).toBe(true)
-    expect(members.text()).toContain('Its agents, on their own')
-    expect(members.text()).toMatch(/52\s*jobs settled/)
+    expect(members.text()).toContain('By its agents')
+    expect(members.text()).toMatch(/52\s*jobs delivered/)
+    expect(members.text()).toMatch(/4\s*commissioned/)
     expect(members.attributes('title')).toMatch(/never added/i)
 
     const reach = w.find('[data-testid="fl-firm-reach"]')
     expect(reach.find('[data-testid="fl-proof"]').text()).toMatch(/3\s*jobs delivered/)
-    expect(reach.find('[data-testid="fl-members"]').text(), 'an answered zero is shown as a zero').toMatch(/0\s*jobs settled/)
+    expect(reach.find('[data-testid="fl-members"]').text(), 'an answered zero is shown as none, with the sentence of why').toMatch(/none yet.*counts here once an order its agents were awarded, or posted, settles/)
     expect(w.find('[data-testid="fl-firm-elsewhere"] [data-testid="fl-members"]').exists(),
       'no member_work in the answer: no line, never a false zero').toBe(false)
   })
 
   it('one job reads as one job', async () => {
-    const w = await lane([{ ...REACH, member_work: { jobs: 1 } }])
-    expect(w.find('[data-testid="fl-members"]').text()).toMatch(/1\s*job settled/)
+    const w = await lane([{ ...REACH, member_work: { jobs: 1, commissioned: 0 } }])
+    expect(w.find('[data-testid="fl-members"]').text()).toMatch(/1\s*jobs delivered/)
   })
 
   it('pressed in the desktop console, the bounty door opens the Guild board, Pocket saved and a narrow window notwithstanding', async () => {

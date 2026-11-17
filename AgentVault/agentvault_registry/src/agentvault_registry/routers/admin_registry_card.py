@@ -264,6 +264,10 @@ async def put_registry_card_admin(
     full_etag = full_card.get("lifecycle", {}).get("card_etag", "")
     row.card_etag = full_etag
     await db.commit()
+    # V0664 (gwo_5374cd3a0eed96d787c4f813): the Directory hears of the new epoch now, in a task of its own (best
+    # effort: the write never waits for it, a failure never reaches the caller)
+    from ..background_tasks import directory_push
+    directory_push.nudge()
 
     # Emit ETag-only event (Commander decision 2026-05-21 — spec §0 row 3).
     try:

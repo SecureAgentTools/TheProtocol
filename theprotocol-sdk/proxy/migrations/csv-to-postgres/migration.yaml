@@ -1,0 +1,30 @@
+schema: theprotocol.migration/v1
+name: csv-to-postgres
+title: Order exports (CSV files) to PostgreSQL
+summary: A folder of CSV order exports to public.orders, upserted by the order number; amounts rounded to 2, local Berlin times to UTC
+from: {kind: file, what: 'a folder (or an SFTP folder) the old system exports orders into, one CSV file per export'}
+to: {kind: sql, engines: [postgresql], what: public.orders}
+parameters:
+  EXPORT_DIR: {description: the folder the old system's CSV exports are in, default: export}
+  SOURCE_TZ: {description: the zone the old system wrote its times in, default: Europe/Berlin}
+  TARGET_ENGINE: {description: 'postgresql; sqlite writes a local file instead, to rehearse', default: postgresql, enum: [postgresql, sqlite]}
+  TARGET_HOST: {description: the new database server, default: localhost}
+  TARGET_PORT: {description: its port, default: '5432'}
+  TARGET_DATABASE: {description: the new database, default: app}
+  TARGET_USER: {description: a login limited to the target table, default: tp_migrate}
+  TARGET_PASSWORD: {description: 'its password, as a reference such as env:TARGET_DB_PASSWORD', secret: true}
+  TARGET_PATH: {description: 'TARGET_ENGINE sqlite only: the rehearsal file', default: target.db}
+  TARGET_TABLE: {description: the new table, default: public.orders}
+load:
+  mappings: [orders]
+  batch_rows: 1000
+reconcile:
+  - mapping: orders
+    source: {key: [order_no], fields: [ordered_at, amount, customer_id]}
+    target: {key: [order_no], fields: [ordered_at, amount, customer_id]}
+    pairs: {ordered_at: ordered_at, amount: amount, customer_id: customer_id}
+sample:
+  exports: {file: sample/orders.csv, format: csv}
+cutover:
+  checklist: [Stop the old system's exports (or let the last one land), Load again (only new rows move), Reconcile again, Point the readers at the new table]
+rollback: auto

@@ -4445,7 +4445,8 @@
         "smartSend": "Smart Send",
         "messenger": "Caixa de conversas"
       },
-      "tagline": "A Pedra de Roseta para a Comunicação entre Agentes"
+      "tagline": "A Pedra de Roseta para a Comunicação entre Agentes",
+      "carries": "Inclui o proxy e a ferramenta de migração: o tp-proxy conecta um sistema que permanece, ou migra para fora de um, a partir de um único arquivo de especificação."
     },
     "sdkBridges": {
       "acp": {

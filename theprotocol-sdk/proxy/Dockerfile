@@ -3,6 +3,8 @@
 # Built from theprotocol-sdk/ (the build context), for both platforms:
 #   docker buildx build --platform linux/amd64,linux/arm64 -f proxy/Dockerfile -t theprotocol-proxy:dev .
 # An evidence export mirrored to SFTP or S3 needs its client in the image: --build-arg EXTRAS=proxy,proxy-sftp,proxy-s3
+# `tp-proxy migrate` is in every image; a migration needs the drivers of the systems it reads and writes:
+#   --build-arg EXTRAS=proxy,proxy-sql,proxy-sftp   (PostgreSQL, MySQL, SQL Server, SFTP; see compose.migrate.yaml)
 ARG EXTRAS=proxy
 FROM python:3.12-slim AS build
 ARG EXTRAS

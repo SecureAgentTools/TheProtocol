@@ -12,6 +12,13 @@ pins by its text is also the one Postgres runs and the numbers are the right one
   => A's agents on their own: a1 2 + 4 travel, a2 1 = 7 jobs; A's own count (as the firm): 1; B: 0 (listed, none);
      C: no line at all (its members are not stated in public).
 
+V0666 (the order gwo_5dee4f33eba094f0c185ac9b): the counts follow the organization each agent belonged to WHEN THE ORDER WAS
+AWARDED (guild_work_orders.worker_org_at_award, poster_org_at_award), and carry the poster side:
+  a5 belonged to A at the award and has left: its 2 settled jobs stay A's. a6 joined A after its 4 were awarded: not A's.
+  Posted: a1 3 settled (an open one is not counted), a4 hides its organization (2, not counted), a5 1 (left, counted), a6 1
+  (joined after, not counted), the firm's own treasury 1 (the firm's `commissioned`, never its agents').
+  => A's agents: 9 jobs delivered, 4 commissioned; A as the firm: 1 delivered, 1 commissioned.
+
 The review of 4914af776: before it, the remote firm credentials, the hidden agent and the unlisted organization were all
 counted. RED on 4914af776: A read 7 + 2 + 8 = 17 jobs, C carried a line, and the answer carried `agents`.
 
@@ -81,7 +88,7 @@ async def _seed(maker):
         s.add(dev)
         await s.flush()
         a = Organization(id=str(uuid.uuid4()), name="TheProtocol Sessions", slug=f"sessions-{uuid.uuid4().hex[:6]}",
-                         owner_id=dev.id, is_active=True,
+                         owner_id=dev.id, is_active=True, treasury_agent_did=TREASURY_A,
                          settings={"public_transparency_opt_in": True, "public_listing": True})
         b = Organization(id=str(uuid.uuid4()), name="Reach Limited", slug=f"reach-{uuid.uuid4().hex[:6]}",
                          owner_id=dev.id, is_active=True,
@@ -101,12 +108,17 @@ async def _seed(maker):
         a4 = agent(a.id, show_org=False)
         c1 = agent(c.id)
         stranger = agent(None)
+        a5 = agent(None)          # V0666: belonged to A when its orders were awarded, has left since
+        a6 = agent(a.id)          # V0666: joined A after its orders were awarded
         await s.flush()
+        org_of = {a1: a.id, a2: a.id, a3: a.id, a4: a.id, c1: c.id, a5: a.id}   # at award; a6 and the stranger: none
 
-        def order(worker, status="settled", payee_org=None):
-            s.add(GuildWorkOrder(id=f"gwo_{uuid.uuid4().hex[:20]}", poster_did="did:theprotocol:eu.test:poster",
+        def order(worker, status="settled", payee_org=None, poster=None, poster_org=None, worker_org="same"):
+            s.add(GuildWorkOrder(id=f"gwo_{uuid.uuid4().hex[:20]}", poster_did=poster or "did:theprotocol:eu.test:poster",
                                  title="t", bounty=1, currency="ECU", status=status, worker_did=worker,
-                                 payee_org_id=payee_org, settled_at=now if status == "settled" else None))
+                                 payee_org_id=payee_org, settled_at=now if status == "settled" else None,
+                                 worker_org_at_award=org_of.get(worker) if worker_org == "same" else worker_org,
+                                 poster_org_at_award=poster_org))
         order(a1), order(a1), order(a1, payee_org=a.id), order(a1, payee_org=b.id), order(a1, status="open")
         order(a2)
         for _ in range(5):
@@ -117,6 +129,19 @@ async def _seed(maker):
             order(c1)
         for _ in range(3):
             order(stranger)
+        for _ in range(2):
+            order(a5)             # left since: still A's by the award
+        for _ in range(4):
+            order(a6)             # joined after: nobody's by the award
+        # the other side: orders the organization's agents POSTED (the worker is outside every organization)
+        for _ in range(3):
+            order(stranger, poster=a1, poster_org=a.id)
+        order(stranger, poster=a1, poster_org=a.id, status="open")     # not settled: not counted
+        for _ in range(2):
+            order(stranger, poster=a4, poster_org=a.id)                # hiding its organization: not counted
+        order(stranger, poster=a5, poster_org=a.id)                    # left since: counted
+        order(stranger, poster=a6)                                     # joined after: not counted
+        order(stranger, poster=TREASURY_A)                             # the firm's own treasury: the firm's, not its agents'
         await s.flush()
 
         def travel(worker, bundle, verified=True):
@@ -146,7 +171,7 @@ async def test_the_agents_own_work_is_counted_and_never_the_firms(maker):
     a, b, c = await _seed(maker)
     async with maker() as s:
         out = await tr.member_agents_work(s, [a, b, c])
-    assert out == {a: {"jobs": 7}}, out
+    assert out == {a: {"jobs": 9, "commissioned": 4}}, out
 
 
 async def test_the_firms_strip_answers_both_counts_apart(maker):
@@ -156,8 +181,9 @@ async def test_the_firms_strip_answers_both_counts_apart(maker):
         out = await r.discover_firms(limit=12, db=s)
     by = {f["org_id"]: f for f in out["firms"]}
     assert by[a]["listed"] is True and by[a]["verified_jobs"] == 1, "the firm's own count: the one job AS the firm"
-    assert by[a]["member_work"] == {"jobs": 7}
-    assert by[b]["verified_jobs"] == 1 and by[b]["member_work"] == {"jobs": 0}, "listed, its agents have none"
+    assert by[a]["commissioned"] == 1, "the firm's own treasury posted one: the firm's count, never its agents'"
+    assert by[a]["member_work"] == {"jobs": 9, "commissioned": 4}
+    assert by[b]["verified_jobs"] == 1 and by[b]["member_work"] == {"jobs": 0, "commissioned": 0}, "listed, its agents have none"
     assert by[c]["listed"] is False and "member_work" not in by[c], "an unlisted firm's members are not stated"
 
 
@@ -171,8 +197,8 @@ async def test_the_listed_organizations_answer_both_counts_apart(maker, monkeypa
         out = await r.list_listed_organizations(limit=200, offset=0, db=s)
     by = {o["id"]: o for o in out["organizations"]}
     assert set(by) == {a, b}, "only the listed organizations are named"
-    assert by[a]["settled_work"] == 1 and by[a]["member_work"] == {"jobs": 7}
-    assert by[b]["settled_work"] == 1 and by[b]["member_work"] == {"jobs": 0}
+    assert by[a]["settled_work"] == 1 and by[a]["member_work"] == {"jobs": 9, "commissioned": 4}
+    assert by[b]["settled_work"] == 1 and by[b]["member_work"] == {"jobs": 0, "commissioned": 0}
 
 
 async def test_the_track_record_carries_the_line_for_a_listed_organization_only(maker):
@@ -181,5 +207,5 @@ async def test_the_track_record_carries_the_line_for_a_listed_organization_only(
     async with maker() as s:
         rec_a = await r.get_org_track_record(a, db=s)
         rec_c = await r.get_org_track_record(c, db=s)
-    assert rec_a["verified_jobs"] == 1 and rec_a["member_work"] == {"jobs": 7}
+    assert rec_a["verified_jobs"] == 1 and rec_a["member_work"] == {"jobs": 9, "commissioned": 4}
     assert rec_c["verified_jobs"] == 0 and "member_work" not in rec_c

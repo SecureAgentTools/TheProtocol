@@ -58,7 +58,8 @@ def test_red_a_category_summary_leaves_not_measured_rows_out_of_its_rate():
 
 # ── reads run ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("path", ["/admin/simulation/fund-status", "/chat/blocks", "/agent/revoked-identities",
+# V0664: /admin/simulation/fund-status left this list with its route (tests/test_simulation_fund_removed_v0664.py)
+@pytest.mark.parametrize("path", ["/chat/blocks", "/agent/revoked-identities",
                                   "/admin/federation/frame-invitations", "/governance/federation/proposals",
                                   "/bridge/status/{bridge_tx_id}", "/oauth/federation/status"])
 def test_red_a_read_is_never_withheld(path):
@@ -66,7 +67,7 @@ def test_red_a_read_is_never_withheld(path):
 
 
 def test_control_the_same_routes_as_writes_are_still_withheld():
-    assert B._classify_destructive("POST", "/admin/simulation/fund")
+    assert B._classify_destructive("POST", "/admin/simulation/start")     # V0664: /fund is gone; the other mutators
     assert B._classify_destructive("POST", "/chat/blocks")
     assert B._classify_infra_gated("POST", "/admin/federation/frame-invitations/{invitation_id}/reject")
 

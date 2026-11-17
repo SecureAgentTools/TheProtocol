@@ -1435,7 +1435,7 @@ watch(() => store.lastActionResult, (val) => {
   white-space: nowrap;
 }
 .cm-tile-self        { background: var(--nc-primary-subtle); color: var(--nc-primary); }
-.cm-tile-unadmitted  { background: var(--nc-border); color: var(--nc-text-muted); }
+.cm-tile-unadmitted  { background: var(--nc-border); color: var(--nc-text-secondary); } /* V0663: the muted text was 4.31:1 on the border colour; the secondary text reads 5.05:1 */
 .cm-tile-federated   { background: var(--nc-success-subtle); color: var(--nc-success); }
 .cm-tile-quarantined { background: var(--nc-warning-subtle); color: var(--nc-warning); }
 .cm-tile-soft_quarantined { background: var(--nc-warning-subtle); color: var(--nc-chart-3); }

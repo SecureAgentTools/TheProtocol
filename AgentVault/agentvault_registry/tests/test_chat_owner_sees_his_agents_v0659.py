@@ -90,6 +90,14 @@ def card(ctype: str) -> dict:
                            "chosen": {"index": 0, "label": "morning"}},
         "guild.order.live": {"order_id": ORDER, "title": "Write the proxy's MQTT source", "status": "open",
                              "events": []},
+        # V0666 D3: a code distribution's change, live in its organization's room
+        "code.change.live": {"change_id": "cc_000000000000000000000003", "title": "A seating chart", "state": "proposed",
+                             "line": {"slug": "lyceum", "release_name": "V0666_lyceum"}, "checker": {"state": "none"},
+                             "reviews": {"count": 0}, "ballot": {"votes": 0}},
+        # V0667 D5b: an organization's content change, live in its room
+        "content.change.live": {"change_id": "ct_000000000000000000000004", "kind": "console_text", "title": "A tagline", "state": "balloting",
+                                "line": {"slug": "lyceum", "release_name": "V0666_lyceum"}, "checker": {"state": "ok", "rules": ["schema"]},
+                                "ballot": {"votes": 0}},
         "topup.offer": {"amount": "10", "currency": "ECU"},
     }[ctype]
     out = {"v": 1, "type": ctype, "data": data}
@@ -155,7 +163,7 @@ def env(monkeypatch):
 
     db = sqlite_db(models.Developer, models.Organization, models.OrganizationLogo, models.OrganizationMember,
                    models.Agent, models.AgentCard, models.Conversation, models.ConversationParticipant,
-                   models.ChatMessage, models.ChatBoardRevision, models.ChatBlock, models.ChatCardUpdate,
+                   models.ChatMessage, models.ChatBoardRevision, models.ChatBlock, models.ChatCardUpdate, models.ChatReaction,
                    models.DeveloperPref)
 
     async def _owners(db_, dids):                           # the same lookup over the agents rows, portably

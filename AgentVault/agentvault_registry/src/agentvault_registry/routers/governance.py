@@ -486,6 +486,17 @@ async def list_active_proposals(
         )
 
 
+async def _code_change_not_governed_here(db: AsyncSession, proposal_id: int):
+    """V0666 (services/code_authority): a proposal of type code_change is voted on and tallied where code is governed. None: not such a proposal, or this registry governs."""
+    from ..models import GovernanceProposal
+    from ..services import code_authority
+    row = await db.get(GovernanceProposal, proposal_id)
+    if row is None or getattr(row, "proposal_type", None) != "code_change" or code_authority.is_governing():
+        return None
+    await code_authority.warm_peer_link(db, code_authority.governing_name() or code_authority.DEFAULT_NAME)
+    return JSONResponse(status_code=403, content={"code": "code_change_not_governed_here", "detail": code_authority.sentence()})
+
+
 @router.post("/proposals/{proposal_id}/vote", response_model=VoteResponse)
 async def cast_vote(
     vote: VoteCreate,
@@ -506,6 +517,9 @@ async def cast_vote(
     P3/D2: Voting power is calculated from veToken formula (time-weighted quadratic).
     Each agent can only vote once per proposal.
     """
+    refused = await _code_change_not_governed_here(db, proposal_id)      # V0666: a code_change ballot is decided on the governing registry only
+    if refused is not None:
+        return refused
     from ..services import membership as _membership
     if _membership.member_mode():
         # §MEMBERSHIP (2026-10-02) — one vote per member developer, weighed by tenure, confirmed by its
@@ -592,6 +606,11 @@ async def cast_vote(
              "vote_in_favor": vote.vote_in_favor,
              "voting_power": str(vote_record.voting_power) if vote_record.voting_power is not None else "0"},
             source_label="governance.vote"))
+
+        # V0665: a ballot on a governed code change counts for the voter's contributor track the moment it is cast (contained: a failure
+        # there never reaches the vote)
+        from ..services import contributor_track
+        await contributor_track.track_ballot(db, proposal_id, current_agent.did)
 
         return VoteResponse(
             id=vote_record.id,
@@ -693,6 +712,9 @@ async def tally_proposal_votes(
     
     P3/D2: Now checks quorum_percent and pass_percent thresholds.
     """
+    refused = await _code_change_not_governed_here(db, proposal_id)      # V0666: a code_change ballot is tallied on the governing registry only
+    if refused is not None:
+        return refused
     # OWL28 Issue #3: Verify caller is the proposal creator
     proposal_check = await crud_governance.get_proposal_with_votes(db, proposal_id)
     if not proposal_check:
@@ -1035,9 +1057,11 @@ async def federation_propose(
     proposal = await crud_governance.get_proposal_with_votes(db, body.local_proposal_id)
     if not proposal:
         raise HTTPException(404, "Local proposal not found")
-    if getattr(proposal, "proposal_type", None) == "federation_ballot":
-        # §MEMBERSHIP D2: a members' vote that decides this registry's ballot is not itself a proposal to elevate
-        raise HTTPException(400, "A federation ballot vote decides this registry's ballot; it is not elevated")
+    if getattr(proposal, "proposal_type", None) in ("federation_ballot", "code_change"):
+        # §MEMBERSHIP D2: a members' vote that decides this registry's ballot is not itself a proposal to elevate;
+        # V0663 governed code (D7): a code change is one frame's ballot first
+        raise HTTPException(400, "This ballot decides something on this registry (its federation ballot, or a code "
+                                 "change); it is not elevated")
     if proposal.status != "PASSED":
         raise HTTPException(400, f"Local proposal must be PASSED (current: {proposal.status})")
 

@@ -90,6 +90,6 @@ def test_the_block_flow_keeps_both_control_sends():
                            ("control_w_to_n_reaches_ns_owner", "r2, ref2", "c2")):
         assert f"{var} = await _send(" in src, f"{leg}: the send's answer is kept"
         assert f"sent=_sent_view({var})" in src, f"{leg}: the send's answer is in the leg's evidence"
-        assert f"on_host=_on_host(rig, _A, n, host_conv, {body})" in src, f"{leg}: a miss reads the host's thread"
-    assert "        await _send(rig, _A, n, c1," not in src and "        await _send(rig, _B, w, c2," not in src, \
+        assert f"on_host=_on_host(rig, A, n, host_conv, {body})" in src, f"{leg}: a miss reads the host's thread"
+    assert "        await _send(rig, A, n, c1," not in src and "        await _send(rig, B, w, c2," not in src, \
         "no control send whose answer is thrown away"

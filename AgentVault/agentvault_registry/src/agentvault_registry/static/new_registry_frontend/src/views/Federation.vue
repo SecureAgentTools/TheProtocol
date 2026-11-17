@@ -1130,6 +1130,7 @@ async function loadTopology() {
 }
 
 async function runDriftScan() {
+  if (!canFederation.value) return   // V0662 admin guard (layer 3): a member's page never asks an admin route (CrowdSec counts each refusal)
   if (driftScanning.value) return
   driftScanning.value = true
   try {
@@ -1190,6 +1191,7 @@ function approveInvitation(inv: FrameInvitation) {
 }
 
 async function executeApproveInvitation() {
+  if (!canFederation.value) return
   const inv = pendingApproveInvitation.value
   if (!inv) return
   invitationActionBusy.value = true
@@ -1217,6 +1219,7 @@ async function executeApproveInvitation() {
 }
 
 async function rejectInvitation(inv: FrameInvitation) {
+  if (!canFederation.value) return
   if (invitationActionBusy.value) return
   const reason = rejectReason.value.trim()
   if (!reason) {
@@ -1241,6 +1244,7 @@ async function rejectInvitation(inv: FrameInvitation) {
 }
 
 async function revokeFrame() {
+  if (!canFederation.value) return
   if (!drawerPeer.value || revokingFrame.value) return
   const reason = revokeReason.value.trim()
   if (!reason) {
@@ -1285,7 +1289,7 @@ watch(drawerTab, async (tab) => {
 })
 
 async function fetchDrawerEvents() {
-  if (!drawerPeer.value) return
+  if (!drawerPeer.value || !canFederation.value) return   // a peer's event log is an admin_federation read
   drawerEventsLoading.value = true
   drawerEvents.value = []
   try {
@@ -1301,7 +1305,7 @@ async function fetchDrawerEvents() {
 }
 
 async function probeDrawerHealth() {
-  if (!drawerPeer.value) return
+  if (!drawerPeer.value || !canFederation.value) return
   drawerHealthProbing.value = true
   try {
     const res = await apiClient.post(`/admin/federation/topology/peers/${drawerPeer.value.id}/probe`, {})
@@ -2595,6 +2599,8 @@ function drawerTabLabel(key: string): string {
             <!-- Events -->
             <section v-if="drawerTab === 'events'" class="fed-tab-pane">
               <div v-if="drawerEventsLoading" class="fed-center"><div class="fed-spinner"></div></div>
+              <p v-else-if="!canFederation" class="fed-empty fed-empty--inline" data-testid="fed-drawer-events-admin">
+                {{ t('federationView.drawer.eventsAdminOnly', 'A peer\'s event log is read by a federation admin.') }}</p>
               <div v-else-if="drawerEvents.length === 0" class="fed-empty fed-empty--inline">
                 <Icon name="mdi:history" :size="20" />
                 <p>{{ t('federationView.drawer.noEvents') }}</p>

@@ -126,3 +126,36 @@ async def test_two_finishes_at_once_on_postgres_do_each_step_once(maker, monkeyp
     scores, offenses, actions, corrections, _ = await _state(maker, poster, worker, dispute_id)
     assert scores == {worker: 14, poster: 10}, scores
     assert offenses == 0 and actions == ["reversed"] and corrections == [("applied", "IN_FAVOR_OF_DEFENDANT")]
+
+
+async def test_the_loser_of_a_real_race_is_refused_not_crashed(maker, monkeypatch):
+    """Both corrections read the dispute and plan BEFORE either claims it (held at plan until both have planned), so the claim
+    itself decides: one claims, the other's claim matches no row. The loser rolls back and must answer CorrectionInFlight (the
+    route's 409). Its rollback expires the dispute it read, so reading the dispute's id from that object afterwards is a lazy
+    load, which on an async session raises MissingGreenlet. Without the hold the two can run one after the other and the
+    loser is refused earlier, by plan (the first race test on this file can pass that way)."""
+    from agentvault_registry.services import dispute_correction as dc
+    dispute_id, poster, worker = await _dispute_one(maker)
+    real, planned, both = dc.plan, [], asyncio.Event()
+
+    async def held(db, d, new):
+        p = await real(db, d, new)
+        planned.append(1)
+        if len(planned) == 2:
+            both.set()
+        await asyncio.wait_for(both.wait(), 15)
+        return p
+    monkeypatch.setattr(dc, "plan", held)
+
+    async def one(note):
+        async with maker() as s:
+            return await dc.apply(s, dispute_id, "IN_FAVOR_OF_DEFENDANT", note=note, corrected_by=6)
+    results = await asyncio.gather(one(NOTE), one(NOTE + " (the retry)"), return_exceptions=True)
+    assert len(planned) == 2, "both planned before either claimed"
+    refused = [r for r in results if isinstance(r, dc.CorrectionInFlight)]
+    done = [r for r in results if isinstance(r, dict)]
+    assert len(refused) == 1 and len(done) == 1, results
+    assert f"dispute {dispute_id}" in str(refused[0]).lower()          # either refusal names it: still applying, or changed
+    scores, offenses, actions, corrections, ruling = await _state(maker, poster, worker, dispute_id)
+    assert scores == {worker: 2 + 10 + 2, poster: 12 - 2}, scores
+    assert corrections == [("applied", "IN_FAVOR_OF_DEFENDANT")] and ruling == "IN_FAVOR_OF_DEFENDANT"

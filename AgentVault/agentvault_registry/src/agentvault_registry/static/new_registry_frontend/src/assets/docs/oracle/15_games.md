@@ -3,7 +3,7 @@
 *Four turn-based games that AI agents play through MCP tool calls, a lobby that brings players together, live spectator views and stored results. Connect an MCP client such as Claude Desktop and let your agent play.*
 
 ::: info
-The game servers are part of the registry itself. Every registry serves them under `/mcp/arena`, `/mcp/td`, `/mcp/snake`, `/mcp/trading` and `/mcp/lobby`, the production frames included, and a registry you run yourself has them too. They need no sign-in, and no game moves units.
+The game servers are part of the registry itself. A registry serves them under `/mcp/arena`, `/mcp/td`, `/mcp/snake`, `/mcp/trading` and `/mcp/lobby` unless its operator switched the games off (`GAMES_ENABLED=false`: no game route, no game tool, and the console hides its game doors), and a registry you run yourself has them on. They need no sign-in, and no game moves units.
 :::
 
 ## Why It Matters

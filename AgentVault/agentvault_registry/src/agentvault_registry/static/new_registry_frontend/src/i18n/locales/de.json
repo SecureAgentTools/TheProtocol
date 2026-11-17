@@ -3337,7 +3337,8 @@
       "tagline": "Der Stein von Rosetta für die Kommunikation zwischen Agenten",
       "newIn070": "Neu in v0.7.5: Agenten-DIDs, die ihren Frame nennen (did:theprotocol:<frame>:<id>), werden auf den did:wba-Namen abgebildet, den eine Registry erkennt; die DID eines SVID wird mit ihren Doppelpunkten gelesen, und die Trust Domain kann aus THEPROTOCOL_TRUST_DOMAIN kommen. 0.7.4: Der mTLS-Client legt sein SVID auch mit httpx 0.28 vor, auf Python 3.11 bis 3.14. Seit v0.7.0: MessengerClient, ein Poll/Ack-Posteingang, damit ein Agent hinter NAT keine öffentliche URL braucht; er sendet nie Geld und stellt nie eine Quittung aus. 0.6.2 brachte IronhandClient, eine mTLS-Identität für Agenten auf deiner eigenen Infrastruktur. Live auf PyPI.",
       "a2aNoteTitle": "Agenten behalten ihre eigenen Schlüssel und ihre eigenen Bedingungen.",
-      "a2aNoteBody": "Ein Agent ist hier ein gewöhnlicher A2A-Agent: Seine Karte legt fest, wie sich Aufrufende authentifizieren und was er verlangt. Zahlungen, die er außerhalb von TheProtocol annimmt, laufen zwischen seinem Betreiber und seinen Aufrufenden; TheProtocol ist daran nicht beteiligt. Innerhalb des Netzwerks kann er sich außerdem pro Aufruf in den Units der Registry bezahlen lassen, über die A2A-Zahlungserweiterung: autorisieren, prüfen, abrechnen, jede Zahlung im Ledger festgehalten."
+      "a2aNoteBody": "Ein Agent ist hier ein gewöhnlicher A2A-Agent: Seine Karte legt fest, wie sich Aufrufende authentifizieren und was er verlangt. Zahlungen, die er außerhalb von TheProtocol annimmt, laufen zwischen seinem Betreiber und seinen Aufrufenden; TheProtocol ist daran nicht beteiligt. Innerhalb des Netzwerks kann er sich außerdem pro Aufruf in den Units der Registry bezahlen lassen, über die A2A-Zahlungserweiterung: autorisieren, prüfen, abrechnen, jede Zahlung im Ledger festgehalten.",
+      "carries": "Es enthält den Proxy und das Migrationswerkzeug: tp-proxy bindet ein System an, das bleibt, oder löst eines ab, aus einer einzigen Spec-Datei."
     },
     "sdkBridges": {
       "acp": {
@@ -11115,6 +11116,16 @@
       "stable": "stabil",
       "hotfix": "Hotfix",
       "security": "Sicherheit"
+    },
+    "dist": {
+      "title": "Ihr Distributionskanal",
+      "what": "Die Linie einer Organisation auf unserem Release erscheint in einem eigenen Kanal: Nur die Registries, die ihr signierter Index nennt, können sie lesen und ihre Images laden.",
+      "error": "Der Distributionskanal konnte nicht gelesen werden.",
+      "none": "Keine Distribution auf {g} nennt diese Registry.",
+      "line": "Linie",
+      "release": "Release",
+      "published": "Veröffentlicht",
+      "image": "Image"
     }
   },
   "theatre": {

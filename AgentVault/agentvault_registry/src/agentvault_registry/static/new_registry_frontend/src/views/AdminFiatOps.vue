@@ -1904,7 +1904,7 @@ function truncMid(s: string, head = 12, tail = 8): string {
 
 .afo-pill-status-pending { background: rgba(245, 158, 11, 0.15); color: rgb(245, 158, 11); }
 .afo-pill-status-completed { background: rgba(16, 185, 129, 0.15); color: rgb(16, 185, 129); }
-.afo-pill-status-failed { background: rgba(239, 68, 68, 0.15); color: rgb(239, 68, 68); }
+.afo-pill-status-failed { background: rgba(239, 68, 68, 0.15); color: color-mix(in srgb, rgb(239, 68, 68) 80%, #fff); }   /* 5.1:1 on the pill (4.05:1 before) */
 .afo-pill-status-refunded { background: rgba(168, 85, 247, 0.15); color: rgb(168, 85, 247); }
 
 .afo-pill-anon { background: rgba(56, 189, 248, 0.15); color: rgb(56, 189, 248); }

@@ -2,8 +2,8 @@
   <!-- §OURSTATE-1 — one thread. The composer is a command line (fill, never
        fire); every economic act is a typed card over an EXISTING rail; every
        name renders the WHOLE identity (the mandate). -->
-  <div ref="rootEl" class="ost" :class="{ 'ost--desk': surface === 'desk', 'ost--narrow': narrowPane(paneWidth) }"
-       data-testid="ost-root">
+  <div ref="rootEl" class="ost" :class="{ 'ost--desk': surface === 'desk', 'ost--narrow': narrowPane(paneWidth), 'ost--kb': kbLift > 0 }"
+       :style="kbLift > 0 ? { '--ost-kb': `${kbLift}px` } : undefined" :data-kb-lift="kbLift" data-testid="ost-root">
     <header class="ost-head">
       <!-- V0653 (al): beside the list (two panes) the arrow folds and opens the list and never leaves the thread; on a
            phone it leaves the thread for the list, as before -->
@@ -42,6 +42,10 @@
       <span v-else class="ost-who-loading">{{ err ? t('ourstate.thread.unavailable', 'Unavailable') : '…' }}</span>
       <!-- V0652 (ag): live, catching up or offline, by shape (a filled, half or hollow mark) and a word -->
       <span class="ost-live" :data-state="liveCatch.state.value" data-testid="ost-live"><i aria-hidden="true"></i>{{ liveWord }}</span>
+      <!-- V0662: search this thread (text lines; a result jumps to its line) -->
+      <button v-if="convId && myState !== 'pending'" type="button" class="ost-menu-btn ost-search-btn" :class="{ open: searchOpen }"
+              data-testid="ost-search-toggle" :aria-expanded="searchOpen ? 'true' : 'false'" @click="toggleSearch">
+        {{ t('ourstate.thread.search', 'Search') }}</button>
       <!-- V0652 (ak): the settings button says what it is, on every surface (he could not find the bare dots) -->
       <button ref="menuBtn" type="button" class="ost-menu-btn ost-settings-btn" :class="{ open: menuOpen }" data-testid="ost-menu"
               :aria-label="t('ourstate.settings.button', 'Settings and actions for this conversation')"
@@ -49,6 +53,47 @@
               aria-haspopup="menu" :aria-expanded="menuOpen ? 'true' : 'false'"
               @click="menuOpen = !menuOpen"><Icon name="mdi:dots-horizontal" /><span class="ost-settings-word">{{ t('ourstate.settings.word', 'Settings') }}</span></button>
     </header>
+    <!-- V0662: the search panel: a field, the lines found (the words marked), a press jumps to a line -->
+    <section v-if="searchOpen" class="ost-search" data-testid="ost-search">
+      <div class="ost-search-row">
+        <input ref="searchInputEl" v-model="searchText" type="search" class="ost-search-field" data-testid="ost-search-input"
+               :placeholder="t('ourstate.thread.searchPlaceholder', 'Search this conversation…')"
+               :aria-label="t('ourstate.thread.searchInput', 'Search this conversation')" @keydown.esc.prevent="closeSearch">
+        <button type="button" class="ost-edit-btn2" data-testid="ost-search-close" @click="closeSearch">{{ t('ourstate.thread.searchClose', 'Close search') }}</button>
+      </div>
+      <div v-if="searchText.trim() && !searchQ" class="ost-search-note" data-testid="ost-search-short">{{ t('ourstate.thread.searchShort', 'Type at least two characters.') }}</div>
+      <div v-else-if="searchBusy && !searchHits.length" class="ost-search-note">…</div>
+      <div v-else-if="searchFailed" class="ost-search-note" role="alert" data-testid="ost-search-failed">{{ t('ourstate.thread.searchFailed', 'The search could not be read just now.') }}</div>
+      <div v-else-if="searchQ && searchDone && !searchHits.length" class="ost-search-note" data-testid="ost-search-none">{{ t('ourstate.thread.searchNone', 'Nothing found.') }}</div>
+      <ul v-if="searchHits.length" class="ost-search-list">
+        <li v-for="h in searchHits" :key="h.id">
+          <button type="button" class="ost-search-hit" :data-testid="`ost-search-hit-${h.seq}`" @click="jumpTo(h)">
+            <span class="ost-search-meta">{{ h.sender_name || '' }} · <time :datetime="h.created_at">{{ timeLabel(String(h.created_at || ''), Date.now(), appLocale()) }}</time></span>
+            <span class="ost-search-snip"><template v-for="(p, k) in snippetParts(h.body, searchQ)" :key="k"><mark v-if="p.hit">{{ p.text }}</mark><template v-else>{{ p.text }}</template></template></span>
+          </button>
+        </li>
+      </ul>
+      <button v-if="searchMore" type="button" class="ost-edit-btn2" data-testid="ost-search-more" :disabled="searchBusy" @click="runSearch(true)">{{ t('ourstate.thread.searchMore', 'More results') }}</button>
+      <div v-if="jumping" class="ost-search-note">{{ t('ourstate.thread.searchToOlder', 'Reading older messages…') }}</div>
+    </section>
+    <!-- V0662: the thread's pins: a strip under the header (the newest pin, the count), opened to the list; a press jumps to the line -->
+    <section v-if="pins.length" class="ost-pins" data-testid="ost-pins">
+      <button type="button" class="ost-pins-head" :aria-expanded="pinsOpen ? 'true' : 'false'" data-testid="ost-pins-toggle" @click="pinsOpen = !pinsOpen">
+        <span class="ost-pins-title">{{ tp('ourstate.thread.pinnedCount', '{n} pinned', { n: pins.length }) }}</span>
+        <span v-if="!pinsOpen" class="ost-pins-latest">{{ pinSummary(pins[0].message) }}</span>
+        <span class="ost-pins-toggle">{{ pinsOpen ? t('ourstate.thread.pinnedHide', 'Hide pinned') : t('ourstate.thread.pinnedShow', 'Show pinned') }}</span>
+      </button>
+      <ul v-if="pinsOpen" class="ost-pins-list">
+        <li v-for="p in pins" :key="p.message.id" class="ost-pin-row">
+          <button type="button" class="ost-pin-jump" :data-testid="`ost-pin-jump-${p.message.seq}`" @click="jumpTo(p.message)">
+            <span class="ost-search-meta">{{ p.message.sender_name || '' }}</span>
+            <span class="ost-search-snip">{{ pinSummary(p.message, 140) }}</span>
+          </button>
+          <button v-if="canPin" type="button" class="ost-edit-btn2" :data-testid="`ost-pin-off-${p.message.seq}`" @click="togglePin(p.message)">{{ t('ourstate.thread.unpin', 'Unpin') }}</button>
+        </li>
+      </ul>
+      <div v-if="pinError" class="ost-edit-err" role="alert">{{ pinError }}</div>
+    </section>
 
     <!-- §OURSTATE-6 — the honest hosting line, and the timer if one is set.
          The E2EE spike's conclusion in one row: we do not claim the operator
@@ -211,7 +256,7 @@
          V0653 (al), his seq 686 ("the pinned version was way more clear to spot"): pinned at every width again, the
          side panel beside or not, and compact: one card with "n more", the one-line strip on a phone-width pane. -->
     <!-- V0659 (f): a cross-frame room's address, rule, members and (for its operators on its host) their menu -->
-    <RoomPanel v-if="kind === 'room'" :conversation-id="convId" :token="token" />
+    <RoomPanel v-if="kind === 'room'" :conversation-id="convId" :token="token" @closed="router.push(base)" />
     <OurChatApprovals v-if="kind === 'org'" ref="approvalsPanel" compact :narrow="narrowPane(paneWidth)"
                       :conversation-id="convId" :token="token" :focus-id="focusApprovalId"
                       @count="approvalsCount = $event" @late="onApprovalsLate" />
@@ -220,7 +265,9 @@
                :board="room.board || null" :token="token" :conversation-id="convId" :org-id="String(room.org_id || '')"
                :viewer-key="myKey || 'me'" @update="onBoardUpdate" />
 
-    <div ref="scrollEl" class="ost-scroll" data-testid="ost-messages">
+    <div v-if="linkMissing" class="ost-search-note ost-link-missing" role="status" data-testid="ost-link-missing" @click="linkMissing = false">
+      {{ t('ourstate.thread.linkMissing', 'That message is no longer in this conversation.') }}</div>
+    <div ref="scrollEl" class="ost-scroll" data-testid="ost-messages" @scroll.passive="onViewScroll" @load.capture="onPictureLoad">
       <ReadFailedNotice v-if="olderFailed" dense :retry="loadOlder"
                         :text="t('ourstate.thread.olderFailed', 'Older messages could not be read just now.')"
                         data-testid="ost-older-unread" />
@@ -258,9 +305,12 @@
         </div>
         <!-- V0659 (o): `mine` puts a line on your side of the thread (your own, or your own agent's); `my-agent` draws your
              agent's in a lighter bubble or frame than yours, so it never reads as your own hand -->
-        <div class="ost-msg" :class="{ mine: onMySide(m), 'my-agent': isOwnAgentLine(m), sys: m.kind === 'system',
-                                       'for-me': forMe(m), ask: isAsk(m), 'in-thread': inThread.has(m.id) }"
+        <div class="ost-msg" :data-seq="m.seq" :class="{ mine: onMySide(m), 'my-agent': isOwnAgentLine(m), sys: m.kind === 'system', 'search-found': foundSeq === m.seq,
+                                       'for-me': forMe(m), 'mentioned-you': mentionedYou(m), ask: isAsk(m), 'in-thread': inThread.has(m.id) }"
              :data-testid="`ost-msg-${m.seq}`">
+          <!-- V0663 (order 418): the line that names you, marked (by name only: an @all line keeps the room's tint) -->
+          <span v-if="mentionedYou(m)" class="ost-at-tag" :data-testid="`ost-at-tag-${m.seq}`">
+            <Icon name="mdi:bell" aria-hidden="true" /> {{ t('ourstate.mentions.tag', 'Mentions you') }}</span>
           <div v-if="m.deleted" class="ost-tombstone">{{ t('ourstate.thread.deleted', 'message deleted') }}</div>
           <div v-else-if="m.kind === 'system' && m.body === 'ping'" class="ost-ping-row" data-testid="ost-ping-row">
             <Icon name="mdi:bell" /> {{ tp('ourstate.thread.pinged', '{who} pinged', { who: m.sender_name || '' }) }}</div>
@@ -295,14 +345,41 @@
                         :rev="Number(m.card_rev) || 0" :updated-at="m.card_updated_at || null"
                         @history="openCardHistory(m)" />
           <div v-else-if="isMeAction(m)" class="ost-me-row">{{ m.sender_name }} {{ m.body.slice(4) }}</div>
+          <!-- V0662: the line being edited: its text in a field, Save and Cancel; the registry's refusal is said in a sentence -->
+          <div v-else-if="editing && editing.id === m.id" class="ost-editbox" :data-testid="`ost-editbox-${m.seq}`">
+            <textarea v-model="editing.text" class="ost-edit-field" rows="3" :aria-label="t('ourstate.thread.editLabel', 'Edit your message')"
+                      :data-testid="`ost-edit-field-${m.seq}`" @keydown.esc.prevent="cancelEdit" />
+            <div class="ost-edit-row">
+              <span class="ost-edit-count" :class="{ over: editOver }">{{ tp('ourstate.thread.count', '{used} of {max} bytes', { used: editBytes, max: BODY_MAX_BYTES }) }}</span>
+              <button type="button" class="ost-edit-btn2" :data-testid="`ost-edit-cancel-${m.seq}`" @click="cancelEdit">{{ t('ourstate.thread.editCancel', 'Cancel') }}</button>
+              <button type="button" class="ost-edit-btn2 primary" :disabled="editing.busy || editOver || !editing.text.trim()"
+                      :data-testid="`ost-edit-save-${m.seq}`" @click="saveEdit">{{ t('ourstate.thread.editSave', 'Save') }}</button>
+            </div>
+            <div v-if="editing.error" class="ost-edit-err" role="alert" :data-testid="`ost-edit-err-${m.seq}`">{{ editing.error }}</div>
+          </div>
           <!-- V0652 (x): markdown, chips, mentions, ids small and grey, a long message folded (ChatMessageBody) -->
-          <ChatMessageBody v-else class="ost-bubble ost-md" :body="String(m.body || '')" :mentions="m.mentions"
-                           :my-key="myKey" :my-names="myNames" />
+          <template v-else>
+            <!-- V0664: the pictures that came with this message, in it (a picture as a picture, any other file as its card) -->
+            <div v-if="picturesOf(m.id).length" class="ost-pics" :data-testid="`ost-pics-${m.seq}`">
+              <template v-for="c in picturesOf(m.id)" :key="c.id">
+                <ChatPicture v-if="isPictureMime(c.card?.data?.mime)" :attachment-id="String(c.card.data.attachment_id)" :name="String(c.card.data.name || '')"
+                             :mime="String(c.card.data.mime)" :bytes="Number(c.card.data.bytes) || 0" :auto="myState !== 'pending'" />
+                <OurStateCard v-else :card="c.card" :defang="myState === 'pending'" :mine="onMySide(c)" />
+              </template>
+            </div>
+            <ChatMessageBody class="ost-bubble ost-md" :body="String(m.body || '')" :mentions="m.mentions"
+                             :my-key="myKey" :my-names="myNames" />
+          </template>
           <!-- V0652 (x): a time on every message: the local time today, the date before it, the full time on hover/tap -->
           <time v-if="m.created_at && m.kind !== 'system'" class="ost-time" :datetime="m.created_at"
                 :title="timeTitle(m.created_at, appLocale())" :data-testid="`ost-time-${m.seq}`"
                 @click="toggleFullTime(m.id)">{{ fullTimeId === m.id ? timeTitle(m.created_at, appLocale())
                   : timeLabel(m.created_at, Date.now(), appLocale()) }}</time>
+          <!-- V0662: an edited line says so; pressing it reads the earlier texts (kept for the record) -->
+          <button v-if="m.edited_at && !m.deleted && m.kind !== 'system'" type="button" class="ost-edited" :data-testid="`ost-edited-${m.seq}`"
+                  :title="t('ourstate.thread.editedTitle', 'Edited. Press to see the earlier text.')"
+                  :aria-expanded="historyFor && historyFor.id === m.id ? 'true' : 'false'" @click="toggleHistory(m)">
+            {{ t('ourstate.thread.editedMark', 'edited') }}</button>
           <!-- V0653 (al), his seq 665 (a 6:37 among 9 pm): a thread drawn at its latest reply says when that reply came -->
           <span v-if="m.created_at && m.kind !== 'system' && lastReplyAt(m, bars[m.id])" class="ost-time ost-time-last"
                 :data-testid="`ost-time-last-${m.seq}`"><span class="sr-only">, </span>{{ tp('ourstate.thread.lastReplyAt',
@@ -322,6 +399,56 @@
           <button v-if="canReplyTo(m)" type="button" class="ost-reply-btn" :data-testid="`ost-reply-${m.seq}`"
                   :aria-label="t('ourstate.thread.replyTo', 'Reply to this message')" @click="startReply(m)">
             {{ t('ourstate.thread.reply', 'Reply') }}</button>
+          <!-- V0662: Quote copies a few lines into what you are writing as a markdown quote (Reply folds under the line; this carries it) -->
+          <button v-if="canReplyTo(m) && m.kind === 'text' && !isMeAction(m)" type="button" class="ost-reply-btn ost-quote-btn" :data-testid="`ost-quote-${m.seq}`"
+                  @click="quoteInto(m)">{{ t('ourstate.thread.quote', 'Quote') }}</button>
+          <!-- V0662: a link to this message: the thread's own address and the message id (the words stay in the thread) -->
+          <button v-if="m.id && !m.deleted && m.kind !== 'system'" type="button" class="ost-reply-btn ost-link-btn" :data-testid="`ost-link-${m.seq}`"
+                  @click="copyMessageLink(m)">{{ linkState && linkState.id === String(m.id)
+                    ? (linkState.ok ? t('ourstate.thread.linkCopied', 'Link copied') : t('ourstate.thread.linkFailed', 'The link could not be copied'))
+                    : t('ourstate.thread.copyLink', 'Copy link') }}</button>
+          <!-- V0662: React opens the closed list of words; the chips (and the list) sit under the line -->
+          <button v-if="canReactTo(m)" type="button" class="ost-reply-btn ost-react-open" :aria-expanded="reactMenuFor === m.id ? 'true' : 'false'"
+                  :data-testid="`ost-react-add-${m.seq}`" @click="reactMenuFor = reactMenuFor === m.id ? null : m.id">
+            {{ t('ourstate.thread.react', 'React') }}</button>
+          <!-- V0662: Pin / Unpin where the registry lets you (a member of a direct thread, a room's operators) -->
+          <button v-if="canOfferPin(m, canPin)" type="button" class="ost-reply-btn ost-pin-btn" :data-testid="`ost-pin-${m.seq}`"
+                  @click="togglePin(m)">{{ pinnedSet.has(String(m.id)) ? t('ourstate.thread.unpin', 'Unpin') : t('ourstate.thread.pin', 'Pin') }}</button>
+          <!-- V0662: your own text line, inside the registry's window: change it or take it back (the original is kept) -->
+          <template v-if="changeable(m) && !(editing && editing.id === m.id)">
+            <button type="button" class="ost-reply-btn ost-change-btn" :data-testid="`ost-edit-${m.seq}`" @click="startEdit(m)">
+              {{ t('ourstate.thread.edit', 'Edit') }}</button>
+            <button type="button" class="ost-reply-btn ost-change-btn" :data-testid="`ost-delete-${m.seq}`" @click="askDelete(m)">
+              {{ t('ourstate.thread.delete', 'Delete') }}</button>
+          </template>
+          <div v-if="deleteAsk && deleteAsk.id === m.id" class="ost-delask" role="alertdialog" :data-testid="`ost-delask-${m.seq}`">
+            <span>{{ t('ourstate.thread.deleteAsk', 'Take this message back? Its text stays on the record.') }}</span>
+            <button type="button" class="ost-edit-btn2" :data-testid="`ost-delete-keep-${m.seq}`" @click="deleteAsk = null">{{ t('ourstate.thread.deleteKeep', 'Keep it') }}</button>
+            <button type="button" class="ost-edit-btn2 primary" :disabled="deleteAsk.busy" :data-testid="`ost-delete-yes-${m.seq}`" @click="confirmDelete">{{ t('ourstate.thread.deleteConfirm', 'Take it back') }}</button>
+            <div v-if="deleteAsk.error" class="ost-edit-err" role="alert">{{ deleteAsk.error }}</div>
+          </div>
+          <!-- V0662: reactions: one word of a closed list with its count, yours marked; pressing puts yours on or takes it off -->
+          <div v-if="reactionChips(m).length || reactMenuFor === m.id || (reactError && reactError.id === m.id)" class="ost-reacts" :data-testid="`ost-reacts-${m.seq}`">
+            <button v-for="c in reactionChips(m)" :key="c.key" type="button" class="ost-react" :class="{ mine: c.mine }"
+                    :aria-pressed="c.mine ? 'true' : 'false'" :disabled="!canReactTo(m)" :data-testid="`ost-react-${m.seq}-${c.key}`"
+                    :title="c.mine ? tp('ourstate.thread.reactOn', '{word}: {n}. Press to take yours off.', { word: reactLabel(c.key), n: c.count })
+                      : tp('ourstate.thread.reactOff', '{word}: {n}. Press to add yours.', { word: reactLabel(c.key), n: c.count })"
+                    @click="toggleReaction(m, c.key)">{{ reactLabel(c.key) }} {{ c.count }}</button>
+            <span v-if="reactMenuFor === m.id" class="ost-react-menu" role="group" :aria-label="t('ourstate.thread.reactMenu', 'Choose a reaction')">
+              <button v-for="w in REACTION_WORDS" :key="w" type="button" class="ost-react" :data-testid="`ost-react-pick-${m.seq}-${w}`"
+                      @click="toggleReaction(m, w)">{{ reactLabel(w) }}</button>
+            </span>
+            <span v-if="reactError && reactError.id === m.id" class="ost-edit-err" role="alert">{{ reactError.text }}</span>
+          </div>
+          <div v-if="historyFor && historyFor.id === m.id" class="ost-history" :data-testid="`ost-history-${m.seq}`">
+            <div class="ost-history-h">{{ t('ourstate.thread.historyTitle', 'Earlier text') }}</div>
+            <div v-if="historyFor.loading" class="ost-history-note">{{ t('ourstate.thread.historyLoading', 'Reading the earlier text…') }}</div>
+            <div v-else-if="historyFor.failed" class="ost-history-note" role="alert">{{ t('ourstate.thread.historyFailed', 'The earlier text could not be read just now.') }}</div>
+            <div v-for="c in historyFor.rows" :key="c.rev" class="ost-history-row">
+              <time :datetime="c.at">{{ timeLabel(String(c.at || ''), Date.now(), appLocale()) }}</time>
+              <span class="ost-history-text">{{ c.body_before }}</span>
+            </div>
+          </div>
         </div>
         <!-- V0652 (ac): a thread's bar under its root: how many it holds, what is new, what is for you, the latest -->
         <button v-if="bars[m.id]" type="button" class="ost-thread-bar" :class="{ open: bars[m.id].expanded, mine: onMySide(m) }"
@@ -343,8 +470,33 @@
       </template>
       <ChatAssistAsk v-for="a in asksUnanchored" :key="a.ref" :ask="a"
                      @retry="retryAsk" @edit="editAsk" @dismiss="dismissAsk" />
+      <!-- V0664: your own lines the cross-frame relay is still carrying: held by its limit, or sent and waiting for the host's copy.
+           Only you see them; the others see the line when it arrives. -->
+      <div v-for="p in pendingLines" :key="p.clientRef" class="ost-msg mine ost-pending" :data-testid="`ost-pending-${p.clientRef}`" :data-state="p.state">
+        <div class="ost-pending-body">
+          <p class="ost-pending-text">{{ p.body }}</p>
+          <p class="ost-pending-state" role="status">
+            <template v-if="p.state === 'waiting'">{{ tp('ourstate.relay.waiting', 'Waiting: the relay to {frame} is busy, sends in about {n} s', { frame: relayFrame, n: p.secondsLeft }) }}</template>
+            <template v-else-if="p.state === 'sent'">{{ tp('ourstate.relay.sent', 'Sent to {frame}, waiting for it to arrive', { frame: relayFrame }) }}</template>
+            <template v-else>{{ t('ourstate.relay.failed', 'Not sent.') }} <span v-if="p.error" class="ost-pending-why">{{ p.error }}</span>
+              <button type="button" class="ost-pending-again" :data-testid="`ost-pending-again-${p.clientRef}`" @click="relayHold.again(p.clientRef)">{{ t('ourstate.relay.again', 'Send again') }}</button></template>
+          </p>
+        </div>
+      </div>
       <div v-if="serviceBusy || serviceInflight" class="ost-calling" data-testid="ost-calling">
         <Icon name="mdi:refresh" class="pk-ptr-spin" /> {{ t('ourstate.thread.calling', 'Calling — one call at a time in this thread.') }}</div>
+      <!-- V0663 (order 418): a mention of you outside the view: the pill says how many and takes you to the oldest -->
+      <!-- V0665 (his report, seq 4218): one row holds both pills (a phone fits them side by side) -->
+      <div v-if="mentionPill.count > 0 || newBelow.count > 0" class="ost-pills" data-testid="ost-pills">
+        <button v-if="newBelow.count > 0" type="button" class="ost-newbelow-pill" data-testid="ost-newbelow-pill"
+                :aria-label="newBelow.count === 1 ? tp('ourstate.newBelow.ariaOne', '{n} new message below, go to it', { n: newBelow.count })
+                                         : tp('ourstate.newBelow.ariaMany', '{n} new messages below, go to the first', { n: newBelow.count })"
+                @click="jumpToNewBelow">
+          <Icon name="arrow-down" aria-hidden="true" /> {{ tp('ourstate.newBelow.pill', '{n} new', { n: newBelow.count }) }}</button>
+        <button v-if="mentionPill.count > 0" type="button" class="ost-mention-pill" data-testid="ost-mention-pill"
+                :aria-label="pillText(t('ourstate.mentions.pill', 'Mentioned you'), mentionPill.count)" @click="jumpToOldestMention">
+          <Icon name="mdi:bell" aria-hidden="true" /> {{ pillText(t('ourstate.mentions.pill', 'Mentioned you'), mentionPill.count) }}</button>
+      </div>
     </div>
 
     <!-- §TWOAGENT G1 (V0437): an owner's first open of its agent's cross-registry thread is a VISIBLE join -->
@@ -366,7 +518,7 @@
 
     <!-- Composer -->
     <footer v-if="!err && (!room || roomComposer.canPost)" class="ost-composer" data-tour="ourchat-composer">
-      <div class="ost-input-wrap">
+      <div class="ost-input-wrap" :class="{ dropping }" @dragover="onDragOver" @dragleave="onDragLeave" @drop="onDrop">
         <!-- V0652 (ac): the message this one answers (it folds under it) -->
         <div v-if="replyTo" class="ost-replying" data-testid="ost-replying">
           <span class="ost-replying-tx">{{ tp('ourstate.thread.replyingTo', 'Replying to {who}: {what}', { who: replyTo.who, what: replyTo.what }) }}</span>
@@ -376,6 +528,13 @@
         <div v-if="hint" class="ost-hint" data-testid="ost-hint">{{ hint }}
           <button v-if="hintSendAsText" class="ost-hint-send" @click="sendPlainAnyway">{{ t('ourstate.thread.sendAsText', 'send as text') }}</button>
           <button v-if="hintNeedsAgent" type="button" class="ost-hint-send" data-testid="ost-hint-create" @click="uiStore.openQuickAgentModal()">{{ t('ourstate.thread.createAgent', 'create your wallet agent') }}</button>
+        </div>
+        <!-- V0666 D3: /change in an organization with several release lines: the person picks the line -->
+        <div v-if="changePick" class="ost-change-pick" data-testid="ost-change-pick">
+          <span class="ost-change-pick-q">{{ t('contributions.chat.pick', 'Which release line is the change for?') }}</span>
+          <button v-for="l in changePick.lines" :key="l.slug" type="button" class="ost-hint-send" :data-testid="`ost-change-pick-${l.slug}`"
+                  @click="openChange(changePick.to(l.slug))">{{ l.title || l.slug }} <code v-if="l.release_name">{{ l.release_name }}</code></button>
+          <button type="button" class="ost-hint-send" data-testid="ost-change-pick-cancel" @click="changePick = null">{{ t('contributions.form.cancel', 'Cancel') }}</button>
         </div>
         <div v-if="completionsList.length" class="ost-complete" data-testid="ost-complete">
           <button v-for="c in completionsList" :key="c.cmd" class="ost-complete-row" @click="input = c.cmd + ' '">
@@ -401,7 +560,7 @@
                   @click="argHint.cmd === '/card'
                             ? shareAgentCard(a.did, a.name)
                             : (input = `/find ${a.name}`)">
-            <UserAvatar :user="a" :avatar-url="a.card_data?.iconUrl || null" :display-name="a.name"
+            <UserAvatar :user="a" :avatar-url="agentAvatarUrl(a)" :display-name="a.name"
                         :track-record="a.track_record || null" size="sm" />
             <span class="ost-suggest-body">
               <span class="ost-suggest-name">{{ a.name }}</span>
@@ -411,10 +570,66 @@
                   class="ost-suggest-go" />
           </button>
         </div>
-        <textarea ref="inputEl" v-model="input" class="ost-input" rows="1" data-testid="ost-input"
+        <!-- V0662: files pasted or dropped wait here until Send; the cross takes one back -->
+        <div v-if="staged.length" class="ost-staged" data-testid="ost-staged">
+          <span v-for="f in staged" :key="f.id" class="ost-chip" :data-testid="`ost-staged-${f.id}`" :data-kind="f.kind">
+            <img v-if="f.kind === 'image' && thumbOf(f)" class="ost-chip-thumb" :src="thumbOf(f)" alt="" data-testid="ost-chip-thumb" />
+            <Icon v-else name="mdi:file-document" />
+            <span class="ost-chip-name" :title="f.name">{{ f.name }}</span>
+            <span class="ost-chip-size">{{ humanSize(f.bytes) }}</span>
+            <button type="button" class="ost-chip-x" :data-testid="`ost-unstage-${f.id}`"
+                    :aria-label="tp('ourstate.thread.unstage', 'Remove {name}', { name: f.name })"
+                    @click="unstage(f.id)"><Icon name="mdi:close" /></button>
+          </span>
+        </div>
+        <!-- V0662: the handle (drag it, or use the arrow keys; Enter or Escape gives the size back), the tools, the full-height editor -->
+        <div class="ost-grip" data-testid="ost-grip-row">
+          <button type="button" class="ost-grip-btn" data-testid="ost-tools-toggle" :aria-pressed="toolsOpen ? 'true' : 'false'"
+                  :aria-label="t('ourstate.thread.toolsToggle', 'Formatting')" :title="t('ourstate.thread.toolsToggle', 'Formatting')"
+                  @click="toggleTools"><Icon name="mdi:pencil-outline" /></button>
+          <div class="ost-grip-bar" data-testid="ost-grip" role="separator" aria-orientation="horizontal" tabindex="0"
+               :aria-label="t('ourstate.thread.gripLabel', 'Resize the message box')" :aria-valuenow="heightPx"
+               @pointerdown="gripDown" @pointermove="gripMove" @pointerup="gripUp" @pointercancel="gripUp"
+               @dblclick="resetSize" @keydown="gripKey"><span class="ost-grip-line" /></div>
+          <button type="button" class="ost-grip-btn" data-testid="ost-expand" :aria-pressed="sizeMode === 'full' ? 'true' : 'false'"
+                  :aria-label="sizeMode === 'full' ? t('ourstate.thread.expandOff', 'Smaller message box') : t('ourstate.thread.expandOn', 'Full-height message box')"
+                  @click="toggleFull"><Icon :name="sizeMode === 'full' ? 'mdi:arrow-collapse' : 'mdi:arrow-expand'" /></button>
+        </div>
+        <div v-if="toolsOpen" class="ost-tools" data-testid="ost-tools" role="toolbar" :aria-label="t('ourstate.thread.toolsToggle', 'Formatting')">
+          <button type="button" class="ost-tool ost-tool-b" data-testid="ost-fmt-bold" :title="t('ourstate.thread.fmtBold', 'Bold (Ctrl+B)')" :aria-label="t('ourstate.thread.fmtBold', 'Bold (Ctrl+B)')" @click="format('bold')">B</button>
+          <button type="button" class="ost-tool ost-tool-i" data-testid="ost-fmt-italic" :title="t('ourstate.thread.fmtItalic', 'Italic (Ctrl+I)')" :aria-label="t('ourstate.thread.fmtItalic', 'Italic (Ctrl+I)')" @click="format('italic')">I</button>
+          <button type="button" class="ost-tool" data-testid="ost-fmt-code" :title="t('ourstate.thread.fmtCode', 'Code')" :aria-label="t('ourstate.thread.fmtCode', 'Code')" @click="format('code')"><Icon name="mdi:code" /></button>
+          <button type="button" class="ost-tool" data-testid="ost-fmt-quote" :title="t('ourstate.thread.fmtQuote', 'Quote')" :aria-label="t('ourstate.thread.fmtQuote', 'Quote')" @click="format('quote')">&gt;</button>
+          <button type="button" class="ost-tool" data-testid="ost-fmt-list" :title="t('ourstate.thread.fmtList', 'List')" :aria-label="t('ourstate.thread.fmtList', 'List')" @click="format('list')"><Icon name="mdi:format-list-bulleted" /></button>
+          <button type="button" class="ost-tool" data-testid="ost-fmt-link" :title="t('ourstate.thread.fmtLink', 'Link (Ctrl+K)')" :aria-label="t('ourstate.thread.fmtLink', 'Link (Ctrl+K)')" @click="format('link')"><Icon name="mdi:link-variant" /></button>
+          <span class="ost-tools-gap" />
+          <button type="button" class="ost-tab" data-testid="ost-write" :class="{ on: !previewing }" :aria-pressed="previewing ? 'false' : 'true'" @click="setPreview(false)">{{ t('ourstate.thread.write', 'Write') }}</button>
+          <button type="button" class="ost-tab" data-testid="ost-preview-tab" :class="{ on: previewing }" :aria-pressed="previewing ? 'true' : 'false'" @click="setPreview(true)">{{ t('ourstate.thread.preview', 'Preview') }}</button>
+        </div>
+        <textarea v-show="!previewing" ref="inputEl" v-model="input" class="ost-input" rows="1" data-testid="ost-input"
                   :placeholder="composerPlaceholder"
+                  @keydown="onFormatKey" @paste="onPaste"
                   @keydown.enter.exact.prevent="send" />
+        <div v-if="previewing" class="ost-preview" data-testid="ost-preview" :style="{ height: `${heightPx}px` }">
+          <!-- the preview IS a message body: the component that draws a posted message, so it cannot differ from what posts -->
+          <ChatMessageBody v-if="input.trim()" class="ost-bubble ost-md ost-preview-body" :body="input.trim()" :my-key="myKey" :my-names="myNames" />
+          <p v-else class="ost-preview-empty">{{ t('ourstate.thread.previewEmpty', 'Nothing to preview yet.') }}</p>
+        </div>
+        <!-- V0662: bytes, not characters: the registry's cap is 4096 UTF-8 bytes -->
+        <div v-if="counterOn" class="ost-count" :class="{ over: documentMode }" data-testid="ost-count"
+             :data-over="documentMode ? '1' : '0'" aria-live="polite">
+          {{ documentMode
+            ? tp('ourstate.thread.countOver', '{used} of {max} bytes: Send posts this as a document', { used: composerLen.bytes, max: BODY_MAX_BYTES })
+            : tp('ourstate.thread.count', '{used} of {max} bytes', { used: composerLen.bytes, max: BODY_MAX_BYTES }) }}
+        </div>
       </div>
+      <!-- V0662: the paperclip opens the file chooser (a plain room or direct thread only); the files are staged like a paste -->
+      <template v-if="plainRoom">
+        <input ref="fileInput" type="file" multiple class="ost-file" data-testid="ost-file" :accept="ACCEPT" tabindex="-1"
+               aria-hidden="true" @change="onPicked" />
+        <button type="button" class="ost-attach" data-testid="ost-attach" :aria-label="t('ourstate.thread.attach', 'Attach a file')"
+                :title="t('ourstate.thread.attach', 'Attach a file')" @click="fileInput?.click()"><Icon name="mdi:paperclip" /></button>
+      </template>
       <!-- The speaker chip: who says the next message, beside the button that sends it (V0652 (aj): it is always
            shown, and it says "you" unless an agent was chosen for this thread). Tap = choose who speaks here. -->
       <!-- V0654 (ap): amber, with the assistant's mark, while the assistant writes for this identity here -->
@@ -426,8 +641,9 @@
         <span class="ost-speaker-as">{{ t('ourstate.thread.speakerAs', 'as') }}</span>
         <span class="ost-speaker-name">{{ speakerLabel }}</span>
       </button>
-      <button class="ost-send" data-testid="ost-send" :disabled="sendDisabled"
-              :aria-label="assistOn ? tp('ourstate.assist.sendAs', 'Ask your assistant to write as {who}', { who: assistWhoName })
+      <button class="ost-send" data-testid="ost-send" :disabled="sendDisabled" :data-mode="documentMode ? 'document' : 'text'"
+              :title="documentMode ? t('ourstate.thread.sendAsDocument', 'Send as document') : undefined"
+              :aria-label="documentMode ? t('ourstate.thread.sendAsDocument', 'Send as document') : assistOn ? tp('ourstate.assist.sendAs', 'Ask your assistant to write as {who}', { who: assistWhoName })
                 : tp('ourstate.thread.sendAs', 'Send as {who}', { who: speakerLabel })"
               @click="send"><Icon name="mdi:send" /></button>
     </footer>
@@ -435,7 +651,7 @@
     <ChatSidePanel v-if="sideOn" :org-id="String(room?.org_id || '')" :viewer-key="myKey || 'me'"
                    :approvals-count="approvalsCount" :focus-approvals="!!focusApprovalId"
                    :wake-modes="room?.wake_modes || null" :can-set-wake="!!room?.can_set_wake" :wake-busy="wakeBusy"
-                   :board-first-line="boardFirstLine(room?.board?.text)"
+                   :board-first-line="boardFirstLine(room?.board?.text)" :mentions-count="unreadMentionList.length"
                    @set-wake="(key, m) => setWake(key, m)" @message="(a) => (dmTarget = a)" @mention="insertMention">
       <!-- V0653 (al): WAITING ON YOU keeps its count; the requests themselves are pinned above the history, and this
            section opens their whole list there -->
@@ -452,6 +668,15 @@
       <template #board>
         <ChatBoard :board="room?.board || null" :token="token" :conversation-id="convId" :org-id="String(room?.org_id || '')"
                    :viewer-key="myKey || 'me'" capped @update="onBoardUpdate" />
+      </template>
+      <!-- V0663 (order 418): this room's mentions of you, newest first, each with a jump -->
+      <template #mentions>
+        <ChatMentionsList :rows="allMentions" :read-floor="readFloor" :seen="seenMentions" :failed="mentionsFailed" :my-key="myKey" :my-names="myNames"
+                          :busy="markingMentions" :mark-failed="markMentionsFailed" @jump="jumpTo" @mark-all-read="markAllMentionsRead" />
+      </template>
+      <!-- V0662: the session board: its own section, for the room's operators only (the registry says who reads it; a refusal hides it) -->
+      <template v-if="room?.my_is_operator" #agentstatus>
+        <ChatAgentStatus :token="token" :conversation-id="convId" />
       </template>
     </ChatSidePanel>
     </div><!-- .ost-body -->
@@ -491,6 +716,37 @@
           <button class="ost-btn ost-accept" data-testid="ost-call-go"
                   :disabled="serviceBusy || callShort || (callConfirm.quote ? !callConfirm.quote.can_buy : false)"
                   @click="runServiceCall">{{ t('ourstate.thread.callNow', 'Call') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- V0662: /order, the Guild order door. Posting locks the bounty from the agent you send as, so the button says how much and
+         nothing is sent until it is pressed; the Guild rail shows the order as one card in this conversation. -->
+    <div v-if="orderOpen" class="ost-sheet-veil" @click.self="orderOpen = false">
+      <div class="ost-sheet" role="dialog" :aria-label="t('ourstate.thread.orderTitle', 'Post a Guild order')" data-testid="ost-order-sheet">
+        <h3>{{ t('ourstate.thread.orderTitle', 'Post a Guild order') }}</h3>
+        <input v-model="orderForm.title" class="ost-sheet-input" maxlength="200" :placeholder="t('ourstate.thread.orderTitlePh', 'A short title')"
+               data-testid="ost-order-title" />
+        <div class="ost-propose-row">
+          <input v-model="orderForm.bounty" type="text" inputmode="decimal" class="ost-sheet-input ost-propose-num"
+                 :aria-label="t('ourstate.thread.orderBounty', 'Bounty')" data-testid="ost-order-bounty" />
+          <input v-model="orderForm.currency" class="ost-sheet-input ost-order-ccy" maxlength="12" aria-label="Currency" data-testid="ost-order-ccy" />
+        </div>
+        <textarea v-model="orderForm.spec" class="ost-sheet-input" rows="3" maxlength="8000"
+                  :placeholder="t('ourstate.thread.orderSpecPh', 'The task, what done looks like, anything the worker must know (optional)')"
+                  :aria-label="t('ourstate.thread.orderSpec', 'What is to be done')" data-testid="ost-order-spec"></textarea>
+        <label class="ost-order-row">{{ t('ourstate.thread.orderDeadline', 'Deadline') }}
+          <select v-model.number="orderForm.deadlineDays" class="ost-sheet-input" data-testid="ost-order-days">
+            <option v-for="d in DEADLINE_DAYS" :key="d" :value="d">{{ d === 1 ? t('ourstate.thread.orderDay', '1 day') : tp('ourstate.thread.orderDays', '{n} days', { n: d }) }}</option>
+          </select></label>
+        <label class="ost-order-row"><input v-model="orderForm.showInRoom" type="checkbox" data-testid="ost-order-room" />
+          {{ t('ourstate.thread.orderShowHere', 'Show the order in this conversation') }}</label>
+        <p class="ost-sheet-price" data-testid="ost-order-lock">{{ tp('ourstate.thread.orderLock', 'Posting locks {amount} {ccy} from the agent you send as, in the Guild\'s escrow until the order ends. Nothing moves until you press the button.', { amount: orderForm.bounty, ccy: orderForm.currency.toUpperCase() }) }}</p>
+        <div v-if="orderErr" class="ost-edit-err" role="alert" data-testid="ost-order-err">{{ orderErr }}</div>
+        <div class="ost-sheet-btns">
+          <button class="ost-btn" data-testid="ost-order-cancel" @click="orderOpen = false">{{ t('common.cancel', 'Cancel') }}</button>
+          <button class="ost-btn ost-accept" :disabled="orderBusy" data-testid="ost-order-post" @click="submitOrder">
+            {{ tp('ourstate.thread.orderPost', 'Post and lock {amount} {ccy}', { amount: orderForm.bounty, ccy: orderForm.currency.toUpperCase() }) }}</button>
         </div>
       </div>
     </div>
@@ -718,8 +974,12 @@
           <span class="ost-member-name">{{ mb.name || mb.agent_did || ('dev ' + mb.developer_id) }}
             <span v-if="mb.org_role" class="ost-role">{{ mb.org_role }}</span>
             <Icon v-if="!mb.can_post" name="mdi:volume-off" class="ost-mutedico" />
+            <!-- V0662: a seat in this room only, held with no membership in the organization -->
+            <span v-if="mb.guest" class="ost-role ost-guest-chip" :data-testid="`ost-guest-${mb.developer_id || mb.agent_did}`">{{ t('ourstate.thread.guestChip', 'guest') }}</span>
           </span>
           <span class="ost-member-ops">
+            <button v-if="mb.guest && canSeatGuests(room)" class="ost-chipbtn danger" :data-testid="`ost-guest-remove-${mb.developer_id || mb.agent_did}`"
+                    @click="removeGuestSeat(mb)">{{ t('ourstate.thread.guestRemove', 'Remove guest') }}</button>
             <button v-for="op in memberOffers(mb)" :key="op.key" class="ost-chipbtn"
                     :class="{ danger: op.destructive }" :data-testid="`ost-op-${op.key}`"
                     @click="onMemberOp(op, mb)">{{ t('ourstate.rooms.op.' + op.key, op.label) }}</button>
@@ -730,6 +990,16 @@
                           :busy="wakeBusy === mb.key" @set="(m) => setMemberWake(mb, m)" />
           <span v-else-if="mb.wake_mode && mb.wake_mode !== 'listen'" class="ost-wake-chip"
                 :data-testid="`ost-wake-${mb.developer_id || mb.agent_did}`">{{ wakeWord(mb.wake_mode) }}</span>
+        </div>
+        <!-- V0662: the room's owner or an admin adds a guest: one named principal, a seat in this room only -->
+        <div v-if="canSeatGuests(room)" data-testid="ost-guest-add">
+          <p class="ost-audit-note">{{ t('ourstate.thread.guestAddHelp', 'A guest reads and posts in this room only; they gain nothing else of the organization.') }}</p>
+          <div class="ost-propose-row">
+            <input v-model="guestInput" class="ost-sheet-input" :placeholder="t('ourstate.thread.guestInput', 'An agent DID (did:theprotocol:…) or a developer id')"
+                   :aria-label="t('ourstate.thread.guestAdd', 'Add a guest')" data-testid="ost-guest-input" @keydown.enter.prevent="addGuestSeat" />
+            <button class="ost-btn ost-accept" :disabled="guestBusy" data-testid="ost-guest-add-btn" @click="addGuestSeat">{{ t('ourstate.thread.guestAdd', 'Add a guest') }}</button>
+          </div>
+          <div v-if="guestErr" class="ost-edit-err" role="alert" data-testid="ost-guest-err">{{ guestErr }}</div>
         </div>
         <button class="ost-btn" @click="membersOpen = false">{{ t('common.close', 'Close') }}</button>
       </div>
@@ -936,6 +1206,7 @@ import Icon from '@/components/Icon.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import OurStateIdentity from '@/components/ourstate/OurStateIdentity.vue'
 import UserAvatar from '@/components/common/UserAvatar.vue'
+import { agentAvatarUrl } from '@/services/agentAvatar'   // V0662 item 14: card icons from the registry
 import AgentSwitchList from '@/components/pocket/AgentSwitchList.vue'
 import OurStateCard from '@/components/ourstate/OurStateCard.vue'
 import ChatMessageBody from '@/components/ourstate/ChatMessageBody.vue'
@@ -950,12 +1221,33 @@ import ChatSidePanel from '@/components/ourstate/ChatSidePanel.vue'
 import ChatDmWindow from '@/components/ourstate/ChatDmWindow.vue'
 import ChatCardHistory from '@/components/ourstate/ChatCardHistory.vue'
 import ChatBoard from '@/components/ourstate/ChatBoard.vue'
+import ChatAgentStatus from '@/components/ourstate/ChatAgentStatus.vue'
+import ChatMentionsList from '@/components/ourstate/ChatMentionsList.vue'
+import { useNotificationStore } from '@/stores/notifications'
+import { inView, mentionsOfYou, namesYou, pillState, pillText, unreadMentions } from '@/services/chat/mentions'
+import { NEAR_BOTTOM_PX, NO_NEW_BELOW, atBottom, distanceFromBottom, holdDistance, nearBottomOf, noteArrival, type NewBelow } from '@/services/chat/placeHold'
 import RoomPanel from '@/components/ourstate/RoomPanel.vue'
 import { foldThreads, lastReplyAt, type ThreadBar } from '@/services/chat/threads'
 import { applyCardUpdate, applyCardUpdates, type CardUpdate } from '@/services/chat/liveCards'
 import { boardFirstLine, chatSurfaceFor, narrowPane, showSidePanel } from '@/services/chat/sidePanel'
 import { muteInEffect } from '@/services/chat/notifyLevel'
 import { isAsk, namesViewer, timeLabel, timeTitle } from '@/services/chat/messageText'
+import { BODY_MAX_BYTES, documentFor, lengthState, postedLine, utf8Bytes } from '@/services/chat/longMessage'
+import { applyMessageChange, canChange, changesFromUpdates } from '@/services/chat/messageEdit'
+import { REACTION_WORDS, applyReactionEvent, cleanReactions, nextAction } from '@/services/chat/reactions'
+import { loadedReaches, searchQuery, snippetParts } from '@/services/chat/search'
+import { canOfferPin, pinSummary, pinnedIds } from '@/services/chat/pins'
+import { messageFromQuery, messageLink } from '@/services/chat/messageLink'
+import { DEADLINE_DAYS, orderBody, type OrderRefusal } from '@/services/chat/orderPost'
+import { guildApi } from '@/services/api/guild'
+import { copyText } from '@/services/chat/codeCopy'
+import { quoteBlock, withQuote } from '@/services/chat/quote'
+import { canSeatGuests, guestTarget } from '@/services/chat/guestSeat'
+import { MIN_PX, composerSize, dragHeight, nudgeHeight, parseStoredHeight, type SizeMode } from '@/services/chat/composerSize'
+import { applyFormat, shortcutFormat, type FormatKind } from '@/services/chat/composerFormat'
+import { ACCEPT, MAX_FILE_BYTES, MAX_STAGED, classify, filesOf, humanSize, type FileKind, type Refusal } from '@/services/chat/attachments'
+import { cardPayload, composerLift, foldPictures, isPictureMime, planSend } from '@/services/chat/attachmentGroups'
+import ChatPicture from '@/components/ourstate/ChatPicture.vue'
 import { fromOwnAgent, markedOwnAgents } from '@/services/chat/myAgent'
 import { appLocale } from '@/services/appLocale'
 import OurChatApprovals from '@/views/pocket/OurChatApprovals.vue'
@@ -990,16 +1282,40 @@ import { useChatStream } from '@/composables/useChatStream'
 import { useThreadCatchUp } from '@/composables/useThreadCatchUp'
 import { mergeBySeq, firstUnreadIndex } from '@/services/chat/catchUp'
 import { ANCHOR_MS, keepAnchored, type Anchor } from '@/services/chat/unreadAnchor'
+import { useRelayHold } from '@/composables/useRelayHold'
 import { useFocusTrap } from '@/composables/useFocusTrap'
 import { devicePushApi } from '@/services/api/devicePush'
 import apiClient from '@/services/api/client'
 import { useI18n } from '@/composables/useI18n'
+import { useRegistryConfig } from '@/composables/useRegistryConfig'
+import { listOrgLines } from '@/services/api/codeDistributions'
+import { changeDoor, type ChangeDoor } from '@/services/chat/changeDoor'
 
 const { t, tp } = useI18n()
 const route = useRoute()
 const router = useRouter()
+// V0666 D3: /change in an organization's room (services/chat/changeDoor)
+const { codeDistributionsEnabled } = useRegistryConfig() as any
+const changePick = ref<Extract<ChangeDoor, { kind: 'pick' }> | null>(null)
+function openChange(to: { name: string; query: Record<string, string> }) { changePick.value = null; input.value = ''; void router.push(to) }
+async function changeIntent(title: string) {
+  changePick.value = null
+  const tr = (k: string, f: string, p?: Record<string, unknown>) => (p ? tp(k, f, p as any) : t(k, f))
+  const orgId = String(room.value?.org_id || '')
+  const enabled = codeDistributionsEnabled?.value === true
+  let lines: Array<{ slug: string; title?: string; release_name?: string; state?: string }> = []
+  if (enabled && orgId) {
+    try { lines = (await listOrgLines(orgId)).map((l) => ({ slug: String(l.slug), title: l.title, release_name: l.release_name, state: l.state })) } catch { hint.value = t('contributions.chat.linesUnread', 'This organization\'s release lines could not be read; try again.'); return }
+  }
+  const door = changeDoor({ enabled, orgId, convId: convId.value, title, lines }, tr)
+  if (door.kind === 'refuse') { hint.value = door.sentence; hintIsChange.value = true; return }
+  if (door.kind === 'go') { openChange(door.to); return }
+  input.value = ''
+  changePick.value = door
+}
 const { base } = useOurChatBase()
 const auth = useAuthStore()
+const notifications = useNotificationStore()
 const { credAgents, ensureAgentFor, noAgentReason, sealedLocked } = usePocketAgent()
 // §PHONESTART — a hint shown while the vault holds no agent gets a create door beside it.
 const uiStore = useUIStore()
@@ -1042,6 +1358,7 @@ const approvalsPanel = ref<{ refresh: () => Promise<void>; openList: () => void 
 // window) to decide whether an organization room's side panel shows beside the column; Pocket keeps its own layout
 const rootEl = ref<HTMLElement | null>(null)
 const paneWidth = ref(0)
+const paneHeight = ref(0)       // V0662: the composer grows to a share of THIS
 const surface = computed(() => chatSurfaceFor(base.value))
 const sideOn = computed(() => showSidePanel(paneWidth.value, kind.value, room.value?.org_id, surface.value))
 const approvalsCount = ref<number | null>(null)
@@ -1058,7 +1375,7 @@ function onArrow() {
   else listFold.toggle()
 }
 let paneRo: ResizeObserver | null = null
-function measurePane() { paneWidth.value = rootEl.value?.clientWidth || 0 }
+function measurePane() { paneWidth.value = rootEl.value?.clientWidth || 0; paneHeight.value = rootEl.value?.clientHeight || 0 }
 const inputEl = ref<HTMLTextAreaElement | null>(null)
 
 const isAgentThread = computed(() => kind.value === 'agent_service')
@@ -1112,6 +1429,7 @@ async function load() {
       messages.value.length >= (r.page_bound || 40)
     err.value = ''
     readFloor.value = Number(r.my_last_read_seq || 0)
+    void loadMentions()
     const unreadAt = firstUnreadIndex(messages.value as any, Number(r.my_last_read_seq || 0), (m: any) => isMine(m))
     unreadFromSeq.value = unreadAt >= 0 ? Number(messages.value[unreadAt].seq) : null
     unreadCount.value = unreadAt >= 0 ? messages.value.length - unreadAt : 0
@@ -1162,6 +1480,225 @@ function applyUpdate(u: CardUpdate | null | undefined) {
   // V0654 (aq), item 18: a request card that changed (withdrawn) leaves the pinned list: it reads the list again
   if (r.changed && touchesApprovals({ kind: 'card', card: (u as any)?.card })) void approvalsPanel.value?.refresh()
 }
+/* V0662 (OurChat lane): change or take back your own text line inside the registry's window (the registry decides, the
+   rules are services/chat/messageEdit.ts; a refusal is shown as the sentence it came with). The original is kept: the
+   "edited" mark reads it. */
+function applyChange(c: any) {
+  const r = applyMessageChange(messages.value as any, c)
+  if (r.changed) messages.value = r.messages as any
+  if (r.changed && c?.deleted && historyFor.value?.id === c.id) historyFor.value = null
+}
+const editing = ref<{ id: string; text: string; busy: boolean; error: string } | null>(null)
+const deleteAsk = ref<{ id: string; busy: boolean; error: string } | null>(null)
+const historyFor = ref<{ id: string; loading: boolean; failed: boolean; rows: any[] } | null>(null)
+/* V0662: pinned messages. The registry keeps them; the thread reads the list on open, when its socket says they changed and
+   after its own press, and draws a strip under the header. Pin / Unpin is offered where the registry says can_pin. */
+const pins = ref<any[]>([])
+const canPin = ref(false)
+const pinsOpen = ref(false)
+const pinError = ref('')
+const pinnedSet = computed(() => pinnedIds(pins.value as any))
+async function loadPins() {
+  const id = convId.value
+  if (!id || !token.value) return
+  try {
+    const r = await chatApi.listPins(token.value, id)
+    if (id !== convId.value) return
+    pins.value = Array.isArray(r?.pins) ? r.pins : []
+    canPin.value = !!r?.can_pin
+  } catch { /* a strip that cannot be read is no strip: the thread itself is unaffected */ }
+}
+async function togglePin(m: any) {
+  const id = String(m?.id || '')
+  if (!id) return
+  pinError.value = ''
+  try {
+    if (pinnedSet.value.has(id)) await chatApi.unpinMessage(speakingToken.value, convId.value, id)
+    else await chatApi.pinMessage(speakingToken.value, convId.value, id)
+    await loadPins()
+  } catch (err: any) {
+    pinError.value = tp('ourstate.thread.pinFailed', 'The pin was not saved: {why}', { why: err?.detail || err?.message || String(err) })
+  }
+}
+watch(convId, () => { pins.value = []; canPin.value = false; pinsOpen.value = false; pinError.value = ''; void loadPins() })
+/* V0662: search in this thread. The registry searches (text lines, newest first); a press jumps to the line: scrolled to
+   when it is loaded, else older pages are read until it is (bounded). A new query replaces the results; a stale answer
+   is dropped. */
+const searchOpen = ref(false)
+const searchText = ref('')
+const searchHits = ref<any[]>([])
+const searchMore = ref<number | null>(null)
+const searchBusy = ref(false)
+const searchFailed = ref(false)
+const searchDone = ref(false)
+const jumping = ref(false)
+const foundSeq = ref<number | null>(null)
+const searchInputEl = ref<HTMLInputElement | null>(null)
+const searchQ = computed(() => searchQuery(searchText.value))
+let searchSeq = 0
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+function toggleSearch() { if (searchOpen.value) closeSearch(); else { searchOpen.value = true; void nextTick(() => searchInputEl.value?.focus()) } }
+function closeSearch() {
+  searchOpen.value = false
+  searchText.value = ''; searchHits.value = []; searchMore.value = null; searchFailed.value = false; searchDone.value = false
+  searchSeq++
+  if (searchTimer) { clearTimeout(searchTimer); searchTimer = null }
+}
+async function runSearch(more = false) {
+  const q = searchQ.value
+  const mine = ++searchSeq
+  if (!q) { searchHits.value = []; searchMore.value = null; searchDone.value = false; searchFailed.value = false; return }
+  searchBusy.value = true; searchFailed.value = false
+  try {
+    const r = await chatApi.searchMessages(token.value, convId.value, q, more ? (searchMore.value || undefined) : undefined)
+    if (mine !== searchSeq) return                       // a newer query is the one on screen
+    const got = Array.isArray(r?.results) ? r.results : []
+    searchHits.value = more ? [...searchHits.value, ...got] : got
+    searchMore.value = r?.more ? Number(r.next_before_seq) || null : null
+    searchDone.value = true
+  } catch {
+    if (mine === searchSeq) { searchFailed.value = true; searchDone.value = true }
+  } finally { if (mine === searchSeq) searchBusy.value = false }
+}
+watch(searchText, () => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchDone.value = false
+  searchTimer = setTimeout(() => { searchTimer = null; void runSearch(false) }, 300)
+})
+watch(convId, () => { if (searchOpen.value) closeSearch() })
+async function jumpTo(hit: any) {
+  const seq = Number(hit?.seq)
+  if (!Number.isFinite(seq)) return
+  jumping.value = true
+  try {
+    for (let i = 0; i < 25 && !loadedReaches(messages.value as any, seq) && hasOlder.value; i++) await loadOlder()
+  } finally { jumping.value = false }
+  await nextTick()
+  showFound(seq)
+}
+function showFound(seq: number): boolean {
+  const el = scrollEl.value?.querySelector?.(`[data-seq="${seq}"]`) as HTMLElement | null
+  if (!el) return false
+  el.scrollIntoView?.({ block: 'center' })
+  foundSeq.value = seq
+  setTimeout(() => { if (foundSeq.value === seq) foundSeq.value = null }, 2500)
+  return true
+}
+/* V0662: a link to one message. Copy builds it from the thread's address and the id; opening one (`?m=`) reads older pages
+   until the line is loaded (bounded), scrolls to it and marks it, then drops the parameter so a reload does not jump again. */
+const linkState = ref<{ id: string; ok: boolean } | null>(null)
+async function copyMessageLink(m: any) {
+  const url = messageLink({ origin: window.location.origin, pathname: window.location.pathname, conversationId: convId.value, messageId: String(m.id) })
+  const ok = await copyText(url)
+  linkState.value = { id: String(m.id), ok }
+  setTimeout(() => { if (linkState.value?.id === String(m.id)) linkState.value = null }, 1500)
+}
+const linkMissing = ref(false)
+let openedAt = ''
+async function openAtLinkedMessage() {
+  const id = messageFromQuery(route.query.m)
+  if (!id || openedAt === `${convId.value}:${id}` || !messages.value.length) return
+  openedAt = `${convId.value}:${id}`
+  jumping.value = true
+  try {
+    for (let i = 0; i < 25 && !(messages.value as any[]).some((x) => x.id === id) && hasOlder.value; i++) await loadOlder()
+  } finally { jumping.value = false }
+  await nextTick()
+  const m: any = (messages.value as any[]).find((x) => x.id === id)
+  if (!m || !showFound(Number(m.seq))) linkMissing.value = true
+  router.replace({ query: { ...route.query, m: undefined } }).catch(() => {})
+}
+watch([() => route.query.m, () => messages.value.length], () => { void openAtLinkedMessage() })
+/* V0662: reactions. The word list is the registry's (services/chat/reactions.ts); a press puts yours on or takes it off,
+   shown at once and put back with the registry's sentence if it refuses; the socket's counts and the page's are the truth. */
+const reactMenuFor = ref<string | null>(null)
+const reactError = ref<{ id: string; text: string } | null>(null)
+const reactLabels: Record<string, [string, string]> = {
+  ack: ['ourstate.thread.reactAck', 'Got it'], agree: ['ourstate.thread.reactAgree', 'Agree'], thanks: ['ourstate.thread.reactThanks', 'Thanks'],
+  done: ['ourstate.thread.reactDone', 'Done'], question: ['ourstate.thread.reactQuestion', 'Question'], look: ['ourstate.thread.reactLook', 'Looking'],
+}
+function reactLabel(word: string): string { const l = reactLabels[word]; return l ? t(l[0], l[1]) : word }
+function reactionChips(m: any) { return cleanReactions(m?.reactions) }
+function canReactTo(m: any): boolean { return canReplyTo(m) }
+function applyReaction(ev: any) {
+  if (!ev) return
+  const byMe = !!ev.by && onMySide({ sender_ptype: ev.by.ptype, sender_id: ev.by.id })
+  const r = applyReactionEvent(messages.value as any, ev, byMe)
+  if (r.changed) messages.value = r.messages as any
+}
+async function toggleReaction(m: any, word: string) {
+  const id = String(m.id)
+  reactMenuFor.value = null
+  reactError.value = null
+  const act = nextAction(reactionChips(m), word)
+  try {
+    const r = act === 'add'
+      ? await chatApi.addReaction(speakingToken.value, convId.value, id, word)
+      : await chatApi.removeReaction(speakingToken.value, convId.value, id, word)
+    // the registry's own answer for this reader (counts and which are theirs) replaces what this message held
+    const i = (messages.value as any[]).findIndex((x) => x.id === id)
+    if (i >= 0 && Array.isArray(r?.reactions)) {
+      const next = (messages.value as any[]).slice()
+      next[i] = { ...next[i], reactions: cleanReactions(r.reactions) }
+      messages.value = next as any
+    }
+  } catch (err: any) {
+    reactError.value = { id, text: tp('ourstate.thread.reactFailed', 'The reaction was not saved: {why}', { why: err?.detail || err?.message || String(err) }) }
+  }
+}
+const editBytes = computed(() => utf8Bytes(editing.value?.text || ''))
+const editOver = computed(() => editBytes.value > BODY_MAX_BYTES)
+function changeable(m: any): boolean {
+  return canChange(m, isMine(m), nowTick.value) && myState.value !== 'pending'
+}
+function startEdit(m: any) {
+  deleteAsk.value = null
+  editing.value = { id: String(m.id), text: String(m.body || ''), busy: false, error: '' }
+}
+function cancelEdit() { editing.value = null }
+async function saveEdit() {
+  const e = editing.value
+  if (!e || e.busy || editOver.value || !e.text.trim()) return
+  e.busy = true; e.error = ''
+  try {
+    const r = await chatApi.editMessage(speakingToken.value, convId.value, e.id, e.text)
+    if (r?.message) applyChange(r.message)
+    if (editing.value === e) editing.value = null
+  } catch (err: any) {
+    e.error = err?.detail || err?.message || String(err)
+    e.busy = false
+  }
+}
+function askDelete(m: any) {
+  editing.value = null
+  deleteAsk.value = { id: String(m.id), busy: false, error: '' }
+}
+async function confirmDelete() {
+  const d = deleteAsk.value
+  if (!d || d.busy) return
+  d.busy = true; d.error = ''
+  try {
+    await chatApi.deleteMessage(speakingToken.value, convId.value, d.id)
+    applyChange({ id: d.id, deleted: true })
+    if (deleteAsk.value === d) deleteAsk.value = null
+  } catch (err: any) {
+    d.error = err?.detail || err?.message || String(err)
+    d.busy = false
+  }
+}
+async function toggleHistory(m: any) {
+  const id = String(m.id)
+  if (historyFor.value?.id === id) { historyFor.value = null; return }
+  historyFor.value = { id, loading: true, failed: false, rows: [] }
+  let rows: any[] = []
+  let failed = false
+  try {
+    const r = await chatApi.messageHistory(token.value, convId.value, id)
+    rows = (r?.changes || []).filter((c: any) => c.kind === 'edit')
+  } catch { failed = true }
+  // the reactive proxy, read again: the object assigned above is not what the template watches; and only if it is still open
+  if (historyFor.value?.id === id) historyFor.value = { id, loading: false, failed, rows }
+}
 const cardHistoryFor = ref<{ id: string; title: string } | null>(null)
 function openCardHistory(m: any) {
   cardHistoryFor.value = { id: String(m?.id || ''), title: String(m?.card?.data?.title || '') }
@@ -1171,12 +1708,16 @@ const chatStream: any = useChatStream({
   onMessage: (env) => { if (env.conversation_id === convId.value) ingest(env.message) },
   onPing: (env) => { if (env.conversation_id === convId.value) ingest(env.message) },
   onCardUpdate: (env) => { if (env.conversation_id === convId.value) applyUpdate(env.message as any) },
+  onMessageEdited: (env) => { if (env.conversation_id === convId.value) applyChange(env.message) },
+  onMessageDeleted: (env) => { if (env.conversation_id === convId.value) applyChange({ ...(env.message || {}), deleted: true }) },
+  onReaction: (env) => { if (env.conversation_id === convId.value) applyReaction(env.message) },
+  onPinsChanged: (env) => { if (env.conversation_id === convId.value) void loadPins() },
   onBoardUpdate: (env) => {
     if (env.conversation_id !== convId.value || !room.value) return
     const cur = room.value.board || {}
     if (Number(env.board?.rev || 0) > Number(cur.rev || 0)) onBoardUpdate(env.board)
   },
-  onResync: () => { void load(); void approvalsPanel.value?.refresh() },
+  onResync: () => { void load(); void loadPins(); void approvalsPanel.value?.refresh() },
 })
 
 /* V0652 (ag): the thread never goes stale silently. The tab coming back, the window's focus and the socket coming back
@@ -1185,10 +1726,7 @@ const chatStream: any = useChatStream({
    live, catching up, offline. His report (seq 297): a message stored and readable reached his open thread only after
    a reload. */
 let syncCursor: string | null = null
-function nearBottom(): boolean {
-  const el = scrollEl.value
-  return !el || el.scrollHeight - el.scrollTop - el.clientHeight < 80
-}
+function nearBottom(): boolean { return nearBottomOf(scrollEl.value) }
 async function catchUpThread() {
   const id = convId.value
   if (!id || !token.value) return
@@ -1201,6 +1739,14 @@ async function catchUpThread() {
     return
   }
   const atEnd = nearBottom()
+  // V0665: lines of someone else that this read brought in below a reader who is further up count for the pill
+  if (!atEnd) {
+    const known = new Set((messages.value as any[]).map((x) => x.id))
+    for (const x of r.messages as any[]) {
+      if (!x?.id || known.has(x.id) || Number(x.seq) <= lastSeq.value || isMine(x)) continue
+      newBelow.value = noteArrival(newBelow.value, { seq: Number(x.seq), wasNearBottom: false, mine: false }).below
+    }
+  }
   messages.value = merged.messages
   lastSeq.value = Math.max(lastSeq.value, Number(r.last_seq || 0))
   // V0652 (y): any approval card in what came back, not only the newest message (a decided card under later messages)
@@ -1222,6 +1768,8 @@ async function longPollOnce() {
     const a = applyCardUpdates(messages.value as any, ups)
     if (a.changed) messages.value = a.messages as any
   }
+  // V0662: the lines edited or taken back since the cursor ride the same lane
+  for (const c of changesFromUpdates(r?.updates, id)) applyChange(c)
 }
 // V0652 (y): the panel answered a late press (decided on another device): this screen missed the decision, likely its
 // card too; catch the thread up so the request card reads the decision (best effort, the panel already said it)
@@ -1256,14 +1804,50 @@ function holdAnchor() {
 
 function ingest(m: any) {
   if (!m || messages.value.some(x => x.id === m.id)) return
+  const wasNear = nearBottom()     // V0665: where the reader was BEFORE the line arrived, as catchUpThread asks it
   if (touchesApprovals(m)) void approvalsPanel.value?.refresh()
   messages.value = [...messages.value, m].sort((a, b) => a.seq - b.seq)
   lastSeq.value = Math.max(lastSeq.value, Number(m.seq || 0))
   void chatApi.markRead(token.value, convId.value, lastSeq.value).catch(() => {})
-  if (!anchor?.active()) void nextTick().then(scrollBottom)   // V0654: below a held NEW line it waits
+  // V0665 (his report, seq 4218): a line of someone else takes the reader down only from near the bottom; reading further up the
+  // place holds and the pill counts it. The reader's own line always takes them down.
+  const arrival = noteArrival(newBelow.value, { seq: Number(m.seq), wasNearBottom: wasNear, mine: isMine(m) })
+  newBelow.value = arrival.below
+  if (arrival.place === 'scroll' && !anchor?.active()) void nextTick().then(scrollBottom)   // V0654: below a held NEW line it waits
 }
 
-function scrollBottom() { const el = scrollEl.value; if (el) el.scrollTop = el.scrollHeight }
+/* V0665: the "new below" pill: lines that came in while the reader was away from the bottom. It goes when the reader gets to
+   the bottom (by hand, by a send or by the pill itself). */
+const newBelow = ref<NewBelow>(NO_NEW_BELOW)
+function scrollBottom() { const el = scrollEl.value; if (el) el.scrollTop = el.scrollHeight; newBelow.value = NO_NEW_BELOW }
+const reducedMotion = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+  && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+/** the pill: to the FIRST new line (not past it), 8 px under the top as the NEW line keeps it; no smooth scroll under reduced motion */
+function jumpToNewBelow() {
+  const seq = newBelow.value.firstSeq
+  newBelow.value = NO_NEW_BELOW
+  const sc = scrollEl.value
+  if (!sc) return
+  const el = seq == null ? null : sc.querySelector(`[data-seq="${seq}"]`) as HTMLElement | null
+  if (!el) { scrollBottom(); return }
+  const top = sc.scrollTop + el.getBoundingClientRect().top - sc.getBoundingClientRect().top - 8
+  if (!reducedMotion() && typeof (sc as any).scrollTo === 'function') sc.scrollTo({ top, behavior: 'smooth' })
+  else sc.scrollTop = top
+}
+/* V0665: a picture ABOVE the reader's view finishes loading and the thread grows: a browser that anchors scrolling keeps the place by
+   itself; one that does not (Safari on a phone) is put back at the same distance from the bottom. Only a reader away from the bottom. */
+let lastDist = 0
+function noteDistance() { const sc = scrollEl.value; if (sc) lastDist = distanceFromBottom(sc) }
+function onPictureLoad(ev: Event) {
+  const sc = scrollEl.value
+  const img = ev.target as HTMLElement | null
+  if (!sc || !img || img.tagName !== 'IMG' || anchor?.active()) { noteDistance(); return }
+  const box = img.getBoundingClientRect()
+  const top = holdDistance({ before: lastDist, box: sc, nearBottom: lastDist < NEAR_BOTTOM_PX,
+    aboveView: box.bottom <= sc.getBoundingClientRect().top, maxGrowth: box.height })
+  if (top != null) sc.scrollTop = top
+  noteDistance()
+}
 
 /* ── rendering helpers ── */
 const myDids = computed(() => new Set(credAgents.value.map(a => a.did?.toLowerCase()).filter(Boolean)))
@@ -1284,6 +1868,78 @@ const myNames = computed<string[]>(() => {
 function forMe(m: any): boolean {
   return !isMine(m) && m?.kind !== 'system' && (namesViewer(m, myKey.value) || isAsk(m))
 }
+/* V0663 (order 418): mentions you cannot miss. The registry stores whom a line names; the thread reads its mentions of you
+   (mentions=me, so one older than the page is known too), merges the lines it holds, and keeps three things from them: the
+   marked line, the Mentions list in the side panel, and the pill when an unread one sits outside the view. "Unread" is
+   above the read mark the thread opened with and not seen since; a line you saw in view stays seen. By name only: @all is
+   the room's business, not a mention of you. */
+const mentionRows = ref<any[]>([])
+const mentionsFailed = ref(false)
+const markingMentions = ref(false)
+const markMentionsFailed = ref(false)
+/** "Mark all read": this room's read mark moves to its newest message through the thread's own read route (one call), so the
+ *  list, the pill, the bell's Mentions group, the room's @ mark and every other device follow (the mark is the registry's). */
+async function markAllMentionsRead() {
+  const id = convId.value
+  const upTo = Number(lastSeq.value || 0)
+  if (markingMentions.value || !upTo) return
+  markingMentions.value = true
+  markMentionsFailed.value = false
+  try {
+    await chatApi.markRead(token.value, id, upTo)
+    if (id !== convId.value) return
+    readFloor.value = Math.max(Number(readFloor.value || 0), upTo)
+    void notifications.fetchMentions()          // the bell's group is read on its own: ask again
+  } catch {
+    if (id === convId.value) markMentionsFailed.value = true
+  } finally {
+    markingMentions.value = false
+  }
+}
+const seenMentions = ref(new Set<number>())
+const mentionedYou = (m: any) => !isMine(m) && namesYou(m, myKey.value)
+const allMentions = computed(() => mentionsOfYou([mentionRows.value, messages.value as any[]], myKey.value, (m) => isMine(m)))
+const unreadMentionList = computed(() => unreadMentions(allMentions.value, readFloor.value, seenMentions.value))
+const mentionPill = computed(() => pillState(unreadMentionList.value))
+async function loadMentions() {
+  const id = convId.value
+  try {
+    const r = await chatApi.getMentionsMe(token.value, id)
+    if (id !== convId.value) return
+    mentionRows.value = Array.isArray(r?.messages) ? r.messages : []
+    mentionsFailed.value = false
+  } catch {
+    if (id === convId.value) mentionsFailed.value = true     // said so in the list; the lines already read still count
+  }
+}
+/** every mention of you whose line is in view counts as seen; the pill then no longer asks about it */
+function markSeenMentions() {
+  const sc = scrollEl.value
+  if (!sc || !allMentions.value.length) return
+  const view = sc.getBoundingClientRect()
+  let changed = false
+  for (const m of allMentions.value) {
+    if (seenMentions.value.has(Number(m.seq))) continue
+    const el = sc.querySelector?.(`[data-seq="${m.seq}"]`) as HTMLElement | null
+    if (el && inView(el.getBoundingClientRect(), view)) { seenMentions.value.add(Number(m.seq)); changed = true }
+  }
+  if (changed) seenMentions.value = new Set(seenMentions.value)
+}
+let viewFrame = 0
+function onViewScroll() {
+  noteDistance()
+  if (newBelow.value.count > 0) newBelow.value = atBottom(newBelow.value, nearBottom())   // V0665: reached the end by hand
+  if (viewFrame) return
+  viewFrame = requestAnimationFrame(() => { viewFrame = 0; markSeenMentions() })
+}
+async function jumpToOldestMention() {
+  const seq = mentionPill.value.oldestSeq
+  if (seq == null) return
+  await jumpTo({ seq })
+  markSeenMentions()
+}
+watch(() => messages.value.length, () => { void nextTick().then(() => { markSeenMentions(); noteDistance() }) })
+watch(convId, () => { mentionRows.value = []; mentionsFailed.value = false; seenMentions.value = new Set(); newBelow.value = NO_NEW_BELOW })
 const forMeOnly = ref(false)
 const forMeCount = computed(() => messages.value.filter((m: any) => forMe(m)).length)
 /* V0652 (ac): threads. Replies fold under the message they answer and an order's messages into its thread, drawn where
@@ -1293,14 +1949,17 @@ const openThreads = ref(new Set<string>())
    held then, its newest seq kept, and a newer message for you opens it again (seq 425) */
 const closedThreads = ref(new Map<string, number>())
 const readFloor = ref(0)
+/* V0664 (his phone report): a run of one sender's pictures reads as part of the text that closes it, for every reader */
+const pictureFold = computed(() => foldPictures(messages.value as any))
+function picturesOf(id: string): any[] { return pictureFold.value.pictures.get(id) || [] }
 const folded = computed(() => (forMeOnly.value ? null
-  : foldThreads(messages.value as any, { expanded: openThreads.value, collapsed: closedThreads.value,
+  : foldThreads(pictureFold.value.list as any, { expanded: openThreads.value, collapsed: closedThreads.value,
                                          lastReadSeq: readFloor.value,
                                          isMine: (m: any) => isMine(m), forMe: (m: any) => forMe(m) })))
 const bars = computed<Record<string, ThreadBar>>(() => folded.value?.bars ?? {})
 const inThread = computed<Set<string>>(() => folded.value?.inThread ?? new Set())
-const shownMessages = computed<any[]>(() => (forMeOnly.value ? messages.value.filter((m: any) => forMe(m))
-  : (folded.value?.list as any[]) ?? messages.value))
+const shownMessages = computed<any[]>(() => (forMeOnly.value ? pictureFold.value.list.filter((m: any) => forMe(m))
+  : (folded.value?.list as any[]) ?? pictureFold.value.list))
 function toggleThread(b: ThreadBar) {
   const open = new Set(openThreads.value)
   const closed = new Map(closedThreads.value)
@@ -1336,6 +1995,13 @@ const unreadLineId = computed<string | null>(() => {
 const replyTo = ref<{ id: string; who: string; what: string } | null>(null)
 function canReplyTo(m: any): boolean {
   return !!m?.id && !m.deleted && m.kind !== 'system' && !(room.value && !roomComposer.value.canPost) && myState.value !== 'pending'
+}
+/* V0662: Quote: the line's words go into the composer as a markdown quote, after what is written; nothing is sent. */
+function quoteInto(m: any) {
+  const block = quoteBlock(speakerName(m), String(m.body || ''))
+  if (!block) return
+  input.value = withQuote(input.value, block)
+  void nextTick(() => { const el = inputEl.value; if (el) { el.focus(); el.setSelectionRange?.(el.value.length, el.value.length) } })
 }
 function startReply(m: any) {
   const what = m.kind === 'card' ? String(m.card?.data?.title || m.card?.type || '') : String(m.body || '')
@@ -1458,7 +2124,10 @@ function openDmThread(id: string) {
 }
 const hint = ref('')
 const hintSendAsText = ref(false)
-const hintNeedsAgent = computed(() => !!hint.value && !credAgents.value.length && !sealedLocked.value)
+// V0666 D3: a /change refusal is about where the command works, never about a missing agent
+const hintIsChange = ref(false)
+watch(hint, (v) => { if (!v) hintIsChange.value = false })
+const hintNeedsAgent = computed(() => !!hint.value && !hintIsChange.value && !credAgents.value.length && !sealedLocked.value)
 const sending = ref(false)
 const serviceBusy = ref(false)
 /** The composer context, built ONCE — the completion filter, the /help sheet
@@ -1478,7 +2147,7 @@ const composerCtx = computed(() => ({
 }))
 const completionsList = computed(() => completions(input.value, composerCtx.value))
 const sendDisabled = computed(() => sending.value || serviceBusy.value || serviceInflight.value ||
-  !input.value.trim() || myState.value === 'left')
+  (!input.value.trim() && !staged.value.length) || myState.value === 'left')
 
 /* ── §OURSTATE-7 B — /help as a grouped, colour-coded sheet ──
    It was `SLASH_COMMANDS.map(c => c.usage).join(' · ')` dropped into the
@@ -1804,14 +2473,15 @@ async function outboxReplay() {
   if (rest.length < q.length) void load()
 }
 
-async function postText(body: string) {
-  const payload: { kind: 'text'; body: string; client_ref: string; reply_to?: string } = { kind: 'text' as const, body, client_ref: uuid() }
+async function postText(body: string, clientRef?: string) {
+  const payload: { kind: 'text'; body: string; client_ref: string; reply_to?: string } = { kind: 'text' as const, body, client_ref: clientRef || uuid() }
   if (replyTo.value) payload.reply_to = replyTo.value.id      // V0652 (ac): the reply folds under the message it answers
   sending.value = true
   try {
     const r = await chatApi.postMessage(speakingToken.value, convId.value, payload)
     if (r?.my_state) myState.value = r.my_state
     ingest(r.message)
+    if (r?.relayed && isMirror.value) relayHold.track(payload)         // V0664: its line shows until the host's copy comes back
     replyTo.value = null
     // your own message never vanishes into a fold: the thread it joined opens
     const root = folded.value?.rootOf[String(r?.message?.id || '')]
@@ -1819,6 +2489,10 @@ async function postText(body: string) {
     input.value = ''
   } catch (e: any) {
     if (!e?.status) { outboxPush({ conversationId: convId.value, payload }); input.value = ''; hint.value = t('ourstate.thread.queued', 'Offline — queued, sends when you are back.') }
+    else if (e.status === 429 && isMirror.value) {
+      // V0664: the host's relay limit holds this line: it shows with its wait and goes again by itself (same client_ref)
+      relayHold.take(payload, e); input.value = ''; replyTo.value = null; hint.value = ''
+    }
     else hint.value = e?.detail || String(e)
   } finally { sending.value = false }
 }
@@ -1929,10 +2603,41 @@ function railLabel(senderId: any): string {
   if (id === 'org-ledger') return t('ourstate.thread.railTreasury', 'Treasury')
   if (id.includes('support')) return t('ourstate.thread.railSupport', 'Support')
   if (id === 'guild') return t('ourstate.thread.railGuild', 'Guild')    // V0652 (aa): the Guild's order card
+  if (id === 'code-changes') return t('ourstate.thread.railCodeChanges', 'Code changes')    // V0666 D3: a line's change card and its state lines
   return t('ourstate.thread.railSystem', 'System')
 }
 
 // ── §DEALTHREADS — the proposal composer + the engage confirm ────────────────
+/* V0662 (the batch's item 5): the /order door. */
+const orderOpen = ref(false)
+const orderBusy = ref(false)
+const orderErr = ref('')
+const orderForm = ref({ title: '', bounty: '', currency: '', spec: '', deadlineDays: 7, showInRoom: true })
+const orderRefusals: Record<OrderRefusal, [string, string]> = {
+  title: ['ourstate.thread.orderTitlePh', 'A short title'], bounty: ['ourstate.thread.orderBounty', 'Bounty'], currency: ['ourstate.thread.orderBounty', 'Bounty'],
+  spec: ['ourstate.thread.orderSpec', 'What is to be done'], deadline: ['ourstate.thread.orderDeadline', 'Deadline'],
+}
+function openOrder(p: { title: string; bounty: string; currency: string }) {
+  orderForm.value = { title: p.title, bounty: p.bounty, currency: p.currency, spec: '', deadlineDays: 7, showInRoom: true }
+  orderErr.value = ''
+  orderOpen.value = true
+}
+async function submitOrder() {
+  if (orderBusy.value) return
+  const r = orderBody(orderForm.value, convId.value)
+  if (!r.ok) { const k = orderRefusals[r.reason]; orderErr.value = `${t(k[0], k[1])}: ${r.reason}`; return }
+  const jwt = (auth as any).agentToken
+  if (!speakerDid.value || !jwt) { orderErr.value = t('ourstate.thread.orderNeedsAgent', 'An order is posted by one of your agents: pick it under Send as, then try again.'); return }
+  orderBusy.value = true; orderErr.value = ''
+  try {
+    // the API client routes an agent call to that agent's HOME registry and signs it as the acting agent (the one chosen above)
+    const out = await guildApi.post(r.body)
+    orderOpen.value = false
+    hint.value = tp('ourstate.thread.orderPosted', 'Order posted ({id}). Its card follows the order here.', { id: String(out?.order_id || '') })
+  } catch (e: any) {
+    orderErr.value = tp('ourstate.thread.orderFailed', 'The order was not posted: {why}', { why: e?.detail || e?.message || String(e) })
+  } finally { orderBusy.value = false }
+}
 const proposeOpen = ref(false)
 const proposeBusy = ref(false)
 const proposeForm = ref({ title: '', total: '', note: '', supersedes: '' })
@@ -2025,6 +2730,17 @@ async function sendAskBack() {
    A read FAILURE renders no line at all: silence is honest about not knowing,
    while a default sentence would be a claim we did not verify. */
 const hosting = ref<any>(null)
+// V0664: a thread another registry hosts sends through its host, whose limit can hold a line back (services/chat/relayHold.ts)
+const isMirror = computed(() => hosting.value?.here === false)
+const relayHold = useRelayHold({
+  send: async (p) => {
+    const r = await chatApi.postMessage(speakingToken.value, convId.value, p)
+    if (r?.message) ingest(r.message)
+    return r
+  },
+})
+const pendingLines = relayHold.lines
+const relayFrame = computed(() => String(hosting.value?.registry || '') || t('pocket.send.thisRegistry', 'this registry'))
 const retentionHours = ref<number | null>(null)
 
 const RETENTION_CHOICES = [
@@ -2356,6 +3072,37 @@ async function openMembers() {
     members.value = r.members || []
     membersCanSetWake.value = !!r.can_set_wake      // V0654 (aq)
   } catch (e: any) { hint.value = e?.detail || String(e); membersOpen.value = false }
+}
+/* V0662: guest seats in the member sheet (the registry judges who may; this offers the controls to the room's operators) */
+const guestInput = ref('')
+const guestBusy = ref(false)
+const guestErr = ref('')
+async function reloadMembers() {
+  const r = await chatApi.roomMembers(token.value, convId.value)
+  members.value = r.members || []
+  membersCanSetWake.value = !!r.can_set_wake
+}
+async function addGuestSeat() {
+  if (guestBusy.value) return
+  const target = guestTarget(guestInput.value)
+  if (!target) { guestErr.value = t('ourstate.thread.guestInputBad', 'Give an agent DID (did:theprotocol:…) or a developer id (digits).'); return }
+  guestBusy.value = true; guestErr.value = ''
+  try {
+    await chatApi.seatGuest(token.value, convId.value, target)
+    guestInput.value = ''
+    await reloadMembers()
+  } catch (e: any) {
+    guestErr.value = tp('ourstate.thread.guestFailed', 'The guest could not be added: {why}', { why: e?.detail || e?.message || String(e) })
+  } finally { guestBusy.value = false }
+}
+async function removeGuestSeat(mb: any) {
+  guestErr.value = ''
+  try {
+    await chatApi.removeGuest(token.value, convId.value, String(mb.key || ''))
+    await reloadMembers()
+  } catch (e: any) {
+    guestErr.value = tp('ourstate.thread.guestRemoveFailed', 'The guest could not be removed: {why}', { why: e?.detail || e?.message || String(e) })
+  }
 }
 function memberOffers(mb: any): RoomActionOffer[] {
   if (!roomCtx.value) return []
@@ -2819,9 +3566,240 @@ async function runServiceCall() {
 }
 
 /* the send button */
+/* ── V0662 — the byte counter and Send as document ──
+   The registry refuses a body over 4096 UTF-8 BYTES (chat_service.BODY_MAX_BYTES). The counter appears from 3,500 and
+   counts bytes, so German text and emoji cannot pass it unnoticed; past the cap Send posts the text as a markdown file
+   instead, the three steps chat_link takes above 1,500 characters: upload, the file's card, then one line that
+   summarises it. Only a plain room or direct thread does this: a service call, a support reply and an assistant ask
+   have their own, smaller limits and keep their own refusals. */
+const plainRoom = computed(() => !isSupportThread.value && !isAgentThread.value && !assistOn.value)
+const composerLen = computed(() => lengthState(input.value))
+const documentMode = computed(() => plainRoom.value && composerLen.value.over)
+const counterOn = computed(() => plainRoom.value && composerLen.value.showCounter)
+
+/* ── V0662 — the composer's size, its toolbar and the Write/Preview switch ──
+   composerSize.ts decides the height (it grows with the text to about 40% of the pane, or holds a height a hand dragged
+   it to, or is the full-height editor); composerFormat.ts makes the toolbar's edits (markdown, each one toggling); the
+   preview is the thread's own renderer, so what it shows is what posts. A dragged height and the toolbar's state are
+   remembered per device, never per room. */
+const COMPOSER_H_KEY = 'os_composer_h'
+const COMPOSER_TOOLS_KEY = 'os_composer_tools'
+function readStored(key: string): string | null { try { return localStorage.getItem(key) } catch { return null } }
+function writeStored(key: string, v: string | null) {
+  try { if (v == null) localStorage.removeItem(key); else localStorage.setItem(key, v) } catch { /* private mode */ }
+}
+const storedH = parseStoredHeight(readStored(COMPOSER_H_KEY))
+const manualPx = ref<number | null>(storedH)
+const sizeMode = ref<SizeMode>(storedH != null ? 'manual' : 'auto')
+const heightPx = ref(MIN_PX)
+const toolsOpen = ref((() => { const v = readStored(COMPOSER_TOOLS_KEY); return v === null ? surface.value === 'desk' : v === '1' })())
+const previewing = ref(false)
+
+function fitComposer() {
+  const el = inputEl.value
+  if (!el) return
+  el.style.height = 'auto'            // the text's own height, with nothing capping it
+  const r = composerSize({ contentPx: el.scrollHeight, panePx: paneHeight.value, mode: sizeMode.value, manualPx: manualPx.value })
+  el.style.height = `${r.heightPx}px`
+  el.style.overflowY = r.scrolls ? 'auto' : 'hidden'
+  heightPx.value = r.heightPx
+}
+watch(input, () => { void nextTick(fitComposer) })
+watch([sizeMode, manualPx, paneHeight, previewing], () => { void nextTick(fitComposer) })
+onMounted(() => { void nextTick(fitComposer) })
+
+let grip: { y0: number; h0: number } | null = null
+function gripDown(e: PointerEvent) {
+  grip = { y0: e.clientY, h0: inputEl.value?.offsetHeight || heightPx.value }
+  ;(e.currentTarget as Element | null)?.setPointerCapture?.(e.pointerId)
+  e.preventDefault()
+}
+function gripMove(e: PointerEvent) {
+  if (!grip) return
+  manualPx.value = dragHeight(grip.h0, grip.y0, e.clientY, paneHeight.value)
+  sizeMode.value = 'manual'
+}
+function gripUp() {
+  if (!grip) return
+  grip = null
+  if (manualPx.value != null) writeStored(COMPOSER_H_KEY, String(manualPx.value))
+}
+function gripKey(e: KeyboardEvent) {
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    e.preventDefault()
+    manualPx.value = nudgeHeight(heightPx.value, e.key === 'ArrowUp' ? 'up' : 'down', paneHeight.value)
+    sizeMode.value = 'manual'
+    writeStored(COMPOSER_H_KEY, String(manualPx.value))
+  } else if (e.key === 'Enter' || e.key === 'Escape') resetSize()
+}
+/** Back to growing with the text, and forget the dragged height. */
+function resetSize() { manualPx.value = null; sizeMode.value = 'auto'; writeStored(COMPOSER_H_KEY, null) }
+function toggleFull() {
+  sizeMode.value = sizeMode.value === 'full' ? (manualPx.value != null ? 'manual' : 'auto') : 'full'
+}
+function toggleTools() { toolsOpen.value = !toolsOpen.value; writeStored(COMPOSER_TOOLS_KEY, toolsOpen.value ? '1' : '0') }
+function setPreview(on: boolean) {
+  previewing.value = on
+  if (!on) void nextTick(() => inputEl.value?.focus())
+}
+function format(kind: FormatKind) {
+  const el = inputEl.value
+  if (!el) return
+  if (previewing.value) previewing.value = false          // formatting is writing
+  const r = applyFormat(input.value, el.selectionStart ?? 0, el.selectionEnd ?? 0, kind)
+  input.value = r.text
+  void nextTick(() => { el.focus(); el.setSelectionRange(r.selStart, r.selEnd) })
+}
+function onFormatKey(e: KeyboardEvent) {
+  const k = shortcutFormat(e)
+  if (k) { e.preventDefault(); format(k) }
+}
+
+/* ── V0662 — files pasted or dropped into the composer ──
+   A file is STAGED (a chip above the box, a cross to take it back) and goes out with Send, never on the paste: an image
+   pasted by accident must not post itself to a room. attachments.ts says what may be staged (the registry's own rules:
+   five MB, its types, SVG refused). Only a plain room or direct thread takes files; a service call, a support reply and an
+   assistant ask do not, so a paste there stays a paste. A staged file belongs to the room it was staged in. */
+interface Staged { id: string; file: File; name: string; bytes: number; kind: FileKind }
+const staged = ref<Staged[]>([])
+const dropping = ref(false)
+watch(convId, () => { for (const id of [...thumbs.keys()]) dropThumb(id); staged.value = []; dropping.value = false })
+
+function refusalText(reason: Refusal, name: string): string {
+  switch (reason) {
+    case 'empty': return tp('ourstate.thread.attachEmpty', '{name} is empty.', { name })
+    case 'too_big': return tp('ourstate.thread.attachTooBig', '{name} is over {max}.', { name, max: humanSize(MAX_FILE_BYTES) })
+    case 'too_many': return tp('ourstate.thread.attachTooMany', '{n} files at most, in one message.', { n: MAX_STAGED })
+    default: return tp('ourstate.thread.attachType', '{name}: images, PDF, text, Markdown, JSON and CSV only.', { name })
+  }
+}
+function stageFiles(files: File[]) {
+  const notes: string[] = []
+  for (const f of files) {
+    const v = classify({ name: f.name, type: f.type, size: f.size }, staged.value.length)
+    const name = f.name || 'file'
+    if (!v.ok) {
+      notes.push(refusalText(v.reason, name))
+      if (v.reason === 'too_many') break
+      continue
+    }
+    // the registry judges the type the file goes up as: a markdown file often has none, so it is given the one it is
+    staged.value.push({ id: uuid(), file: new File([f], name, { type: v.mime }), name, bytes: f.size, kind: v.kind })
+  }
+  hint.value = notes.join(' ')
+}
+/* V0664: a staged picture shows itself, not a file icon (a local blob of the file; given back when the file leaves the staging) */
+const thumbs = new Map<string, string>()
+function thumbOf(f: Staged): string {
+  if (f.kind !== 'image' || !isPictureMime(f.file.type)) return ''
+  let u = thumbs.get(f.id)
+  if (!u) { u = URL.createObjectURL(f.file); thumbs.set(f.id, u) }
+  return u
+}
+function dropThumb(id: string) { const u = thumbs.get(id); if (u) { URL.revokeObjectURL(u); thumbs.delete(id) } }
+function unstage(id: string) { dropThumb(id); staged.value = staged.value.filter((x) => x.id !== id) }
+/** The chooser behind the paperclip: the way to attach on a phone, where there is no paste and no drop. */
+const fileInput = ref<HTMLInputElement | null>(null)
+function onPicked(e: Event) {
+  const el = e.target as HTMLInputElement
+  const files = Array.from(el.files || [])
+  el.value = ''                      // choosing the same file again must raise a change again
+  if (files.length) stageFiles(files)
+}
+function onPaste(e: ClipboardEvent) {
+  if (!plainRoom.value) return
+  const files = filesOf(e.clipboardData as any)
+  if (!files.length) return                  // words are pasted as words
+  e.preventDefault()
+  stageFiles(files)
+}
+function onDragOver(e: DragEvent) {
+  if (!plainRoom.value) return
+  if (Array.from(e.dataTransfer?.types || []).includes('Files')) { e.preventDefault(); dropping.value = true }
+}
+function onDragLeave(e: DragEvent) {
+  const box = e.currentTarget as Element | null
+  if (!box || !(e.relatedTarget instanceof Node) || !box.contains(e.relatedTarget)) dropping.value = false
+}
+function onDrop(e: DragEvent) {
+  dropping.value = false
+  if (!plainRoom.value) return
+  const files = filesOf(e.dataTransfer as any)
+  if (!files.length) return
+  e.preventDefault()
+  stageFiles(files)
+}
+
+/** The staged files go out one by one (upload, then its card), then the text. A file that is in the room leaves the
+ *  staging, so a retry after a failure never sends it twice; the ones not yet sent, and the text, stay where they are. */
+async function sendWithFiles(raw: string) {
+  sending.value = true
+  let failed = false
+  const plan = planSend(uuid().replace(/-/g, '').slice(0, 8), [...staged.value], replyTo.value?.id || null)
+  try {
+    // a snapshot, so the loop ends whatever the staging does; each file leaves it by id once its card is in the room
+    for (const [i, next] of [...staged.value].entries()) {
+      const up = await chatApi.uploadAttachment(speakingToken.value, convId.value, next.file)
+      // V0664: the cards carry the reply and the batch of the text that follows, so they belong to it for every reader
+      const cr = await chatApi.postMessage(speakingToken.value, convId.value,
+        cardPayload(up.card, plan.cards[i].client_ref, replyTo.value?.id || null))
+      unstage(next.id)
+      if (cr?.my_state) myState.value = cr.my_state
+      ingest(cr.message)
+    }
+  } catch (e: any) {
+    failed = true
+    hint.value = !e?.status
+      ? t('ourstate.thread.attachOffline', 'Offline — a file needs the connection. The files stay here.')
+      : (e?.detail || String(e))
+  } finally { sending.value = false }
+  if (failed || !raw) return
+  if (documentMode.value) await sendAsDocument(raw)
+  else await postText(raw, plan.text.client_ref)
+}
+
+async function sendAsDocument(raw: string) {
+  const d = documentFor(raw, new Date())
+  sending.value = true
+  let cardPosted = false
+  try {
+    const up = await chatApi.uploadAttachment(speakingToken.value, convId.value, d.file)
+    const cr = await chatApi.postMessage(speakingToken.value, convId.value,
+      { kind: 'card', card: up.card, client_ref: uuid() })
+    cardPosted = true                       // from here the file IS in the room: a retry must not upload it twice
+    if (cr?.my_state) myState.value = cr.my_state
+    ingest(cr.message)
+    const line: { kind: 'text'; body: string; client_ref: string; reply_to?: string } = {
+      kind: 'text', client_ref: uuid(),
+      body: postedLine(d.summary, d.name, d.bytes),
+    }
+    if (replyTo.value) line.reply_to = replyTo.value.id
+    const r = await chatApi.postMessage(speakingToken.value, convId.value, line)
+    if (r?.my_state) myState.value = r.my_state
+    ingest(r.message)
+    replyTo.value = null
+    input.value = ''
+  } catch (e: any) {
+    if (cardPosted) {
+      // The whole text is in the room as a file: keeping it in the composer would invite a second upload.
+      input.value = ''
+      hint.value = tp('ourstate.thread.documentLineFailed', 'The file is in the room; its line did not post: {why}',
+        { why: e?.detail || String(e) })
+    } else if (!e?.status) {
+      // A file cannot wait in the offline queue (it holds text only), so the text stays where it is.
+      hint.value = t('ourstate.thread.documentOffline', 'Offline — a document needs the connection. Your text is kept.')
+    } else hint.value = e?.detail || String(e)
+  } finally { sending.value = false }
+}
+
 async function send() {
   hint.value = ''; hintSendAsText.value = false
   const raw = input.value.trim()
+  if (!raw && !staged.value.length) return
+  // staged files go with plain text, or alone; a slash command is a command and leaves them staged
+  if (staged.value.length && plainRoom.value && (!raw || parseComposer(raw, composerCtx.value).kind === 'text')) {
+    return sendWithFiles(raw)
+  }
   if (!raw) return
   const intent = parseComposer(raw, composerCtx.value)
   switch (intent.kind) {
@@ -2829,6 +3807,7 @@ async function send() {
       if (isSupportThread.value) return sendSupportReply(raw)
       if (isAgentThread.value) return stageServiceCall(raw)
       if (assistOn.value) return askAssistant(raw)
+      if (documentMode.value) return sendAsDocument(raw)
       return postText(raw)
     case 'me':
       return postText(`/me ${intent.action}`)
@@ -2839,6 +3818,17 @@ async function send() {
         amount: intent.amount != null ? String(intent.amount) : undefined, memo: intent.memo || undefined }
       sendEver.value = true; sendOpen.value = true
       input.value = ''
+      return
+    }
+    case 'change':
+      return changeIntent(intent.title)
+    case 'order': {
+      // V0662: a door, not an act: it fills a sheet; the person presses the button that says what locks
+      if (intent.refusal === 'amount-missing') { hint.value = t('ourstate.thread.orderAmountMissing', '/order needs a bounty: /order 20 ECU Review the PR'); return }
+      if (intent.refusal === 'currency-unresolved') { hint.value = t('ourstate.thread.orderCcyUnresolved', 'Currency unknown: the acting registry has not answered yet. Name one: /order 20 ECU Review the PR'); return }
+      if (!speakerDid.value || !(auth as any).agentToken) { hint.value = t('ourstate.thread.orderNeedsAgent', 'An order is posted by one of your agents: pick it under Send as, then try again.'); return }
+      input.value = ''
+      openOrder({ title: intent.title, bounty: String(intent.amount), currency: String(intent.currency) })
       return
     }
     case 'request': {
@@ -3248,9 +4238,21 @@ function closeTopSheet() {
   else if (menuOpen.value) closeMenu()
 }
 
+// V0664 (his seq 3744: "the suggestions of my keyboard are covering the bottom part of the chat, I can't see what I type"): Chrome on a
+// phone keeps the layout and shrinks only the visual viewport, so the composer, pinned to the layout's bottom, ended under the keyboard.
+// While one is up the thread is shortened by what lies below the visible area (composerLift), so the composer sits right above it.
+const kbLift = ref(0)
+function syncKeyboard() {
+  const vv = typeof window !== 'undefined' ? window.visualViewport : null
+  const el = rootEl.value
+  if (!vv || !el) { kbLift.value = 0; return }
+  kbLift.value = composerLift(window.innerHeight, vv.height, vv.offsetTop, el.getBoundingClientRect().bottom, kbLift.value)
+}
 onMounted(() => {
   void loadAssistAvailable()   // V0654 (ap)
   window.addEventListener('keydown', onKey)
+  window.visualViewport?.addEventListener('resize', syncKeyboard)
+  window.visualViewport?.addEventListener('scroll', syncKeyboard)
   wideMq?.addEventListener?.('change', onWide)
   measurePane()
   if (typeof ResizeObserver !== 'undefined' && rootEl.value) { paneRo = new ResizeObserver(measurePane); paneRo.observe(rootEl.value) }
@@ -3281,8 +4283,12 @@ onMounted(() => {
   void outboxReplay()
   void checkPushCard()
   void loadAway()
+  void loadPins()
 })
 onUnmounted(() => {
+  window.visualViewport?.removeEventListener('resize', syncKeyboard)
+  window.visualViewport?.removeEventListener('scroll', syncKeyboard)
+  relayHold.dispose()
   window.removeEventListener('keydown', onKey)
   window.removeEventListener('online', outboxReplay)
   roomHoldCancel()
@@ -3292,12 +4298,15 @@ onUnmounted(() => {
   endAnchor()
 })
 
+watch(messages, (m) => relayHold.settle(m as any))        // V0664: the host's copy of a line replaces its pending line
 watch(convId, () => { endAnchor(); messages.value = []; openThreads.value = new Set(); closedThreads.value = new Map(); replyTo.value = null; void load() })
 watch(convId, () => { dmTarget.value = null })   // V0655 (ay): the window belongs to the room it was opened over
 </script>
 
 <style scoped>
 .ost { display: flex; flex-direction: column; height: 100%; }
+/* V0664: a software keyboard is up: the thread ends above it (the shrink is measured in script, composerLift) */
+.ost--kb { height: calc(100% - var(--ost-kb, 0px)); }
 /* V0652 (ad): the column and, when it shows, the side panel beside it; with no panel the column is the whole width */
 .ost-body { flex: 1; min-height: 0; display: flex; }
 .ost-col { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
@@ -3332,7 +4341,18 @@ watch(convId, () => { dmTarget.value = null })   // V0655 (ay): the window belon
    public-transparency banner it sits under. Two different disclosures reading as
    one is the thing the visible-presence law exists to prevent. */
 .ost-assistant { border-left: 2px solid rgba(79, 216, 196, .55); padding-left: 10px; }
-.ost-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
+.ost-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 12px 8px; display: flex; flex-direction: column; gap: 6px; }   /* V0662: a scroll at the end of the history does not carry the page (and the composer) with it */
+/* V0663 (order 418): the line that names you, and the pill that says one waits out of view */
+.ost-msg.mentioned-you .ost-bubble { box-shadow: inset 4px 0 0 var(--accent-color, #f5a524); background: rgba(245, 165, 36, .12); }
+.ost-at-tag { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; font-size: .68rem; font-weight: 600; letter-spacing: .02em; color: var(--accent-color, #f5a524); margin-bottom: 2px; }
+.ost-at-tag :deep(svg) { width: .8rem; height: .8rem; }
+.ost-pills { position: sticky; bottom: 8px; align-self: flex-end; margin-top: auto; z-index: 3; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 100%; }   /* V0665: both pills in one row */
+.ost-mention-pill, .ost-newbelow-pill { display: inline-flex; align-items: center; gap: 6px;
+  background: var(--accent-color, #f5a524); color: #1a1a1a; border: none; border-radius: 999px; padding: 6px 12px; font-weight: 700; font-size: .78rem; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+.ost-mention-pill :deep(svg) { width: .9rem; height: .9rem; }
+.ost-newbelow-pill { background: var(--surface-elevated, #20242c); color: var(--text-primary, #f2f4f8); border: 1px solid var(--border-color, rgba(255,255,255,.18)); border-radius: 999px; padding: 6px 12px;
+  font-weight: 700; font-size: .78rem; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+.ost-newbelow-pill :deep(svg) { width: .9rem; height: .9rem; }
 .ost-older { align-self: center; min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px dashed var(--border-color, rgba(128,128,128,.3)); background: none; color: inherit; font-size: .8rem; }
 .ost-author { margin-top: 8px; }
 /* §DEALTHREADS — a rail speaking (system sender): labelled as machinery, not a person */
@@ -3383,6 +4403,9 @@ watch(convId, () => { dmTarget.value = null })   // V0655 (ay): the window belon
      line (his "the chat is very narrow it has a lot of space on the sides"; measured: 68rem of bubble holds 110 of the
      console's characters); Pocket keeps its own column. */
   .ost--desk { --ost-col: 78rem; --ost-msg: min(88%, 68rem); }
+  /* V0662: a line of prose is read best at about 80 characters; the desk's 68rem bubble held 110. The bubble stops there (a
+     code block or table inside it scrolls on its own), so a long message reads as a column and not a banner. */
+  .ost--desk .ost-bubble.ost-md { max-width: 80ch; }
   .ost-scroll > * { width: 100%; max-width: var(--ost-col); margin-left: auto; margin-right: auto; }
   .ost-scroll > .ost-msg { max-width: var(--ost-msg); }
   .ost-scroll > .ost-msg.mine { margin-right: max(0px, calc((100% - var(--ost-col)) / 2)); }
@@ -3425,6 +4448,61 @@ watch(convId, () => { dmTarget.value = null })   // V0655 (ay): the window belon
   color: #8b96a5; font-size: .68rem; cursor: pointer; opacity: 0; transition: opacity .12s; }
 .ost-msg:hover .ost-reply-btn, .ost-reply-btn:focus-visible { opacity: 1; }
 @media (hover: none) { .ost-reply-btn { opacity: .7; min-height: 36px; } }
+/* V0662: edit / take back, the edited mark and the earlier texts */
+.ost-change-btn { margin-left: 0; }
+/* V0662: reactions: hairline word chips under a line, yours marked */
+/* V0662: pins */
+.ost-pins { padding: 4px 10px; border-bottom: 1px solid var(--border-color, rgba(128,128,128,.2)); }
+.ost-pins-head { width: 100%; display: flex; align-items: baseline; gap: 10px; min-height: 32px; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-size: .78rem; cursor: pointer; text-align: left; }
+.ost-pins-title { flex: none; font-size: .66rem; letter-spacing: .08em; text-transform: uppercase; color: var(--nc-primary, #00d2d2); }
+.ost-pins-latest { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c4ccd6; }
+.ost-pins-toggle { flex: none; margin-left: auto; color: #8b96a5; font-size: .7rem; }
+.ost-pins-list { list-style: none; margin: 0; padding: 0 0 4px; display: flex; flex-direction: column; gap: 2px; max-height: 30vh; overflow-y: auto; }
+.ost-pin-row { display: flex; align-items: center; gap: 8px; }
+.ost-pin-jump { flex: 1; min-width: 0; text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 5px 8px; border-radius: 8px; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.ost-pin-jump:hover, .ost-pin-jump:focus-visible { background: rgba(128, 128, 128, .12); }
+.ost-pin-btn, .ost-link-btn, .ost-quote-btn { margin-left: 0; }
+.ost-order-ccy { width: 5.5rem; flex: none; text-transform: uppercase; }
+.ost-order-row { display: flex; align-items: center; gap: 8px; font-size: .82rem; }
+.ost-link-missing { padding: 6px 12px; cursor: pointer; }
+/* V0662: search */
+.ost-search { padding: 8px 10px; border-bottom: 1px solid var(--border-color, rgba(128,128,128,.2)); display: flex; flex-direction: column; gap: 6px; max-height: 45vh; overflow-y: auto; }
+.ost-search-row { display: flex; gap: 8px; }
+.ost-search-field { flex: 1; min-width: 0; min-height: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--nc-border, rgba(255,255,255,.3)); background: transparent; color: inherit; font: inherit; }
+.ost-search-note { font-size: .78rem; color: #8b96a5; }
+.ost-search-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.ost-search-hit { width: 100%; text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; border-radius: 8px; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.ost-search-hit:hover, .ost-search-hit:focus-visible { background: rgba(128, 128, 128, .12); }
+.ost-search-meta { font-size: .68rem; color: #8b96a5; }
+.ost-search-snip { font-size: .84rem; overflow-wrap: anywhere; }
+.ost-search-snip mark { background: rgba(var(--nc-primary-rgb, 0, 210, 210), .25); color: inherit; border-radius: 3px; padding: 0 1px; }
+.ost-msg.search-found .ost-bubble { box-shadow: 0 0 0 2px var(--nc-primary, #00d2d2); transition: box-shadow .3s; }
+.ost-reacts { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 3px 6px 0; }
+.ost-react { min-height: 24px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--nc-border, rgba(255,255,255,.28)); background: none; color: #a9b3c1;
+  font: inherit; font-size: .7rem; cursor: pointer; }
+.ost-react.mine { border-color: var(--nc-primary, #00d2d2); color: var(--nc-primary, #00d2d2); }
+.ost-react:disabled { cursor: default; opacity: .7; }
+.ost-react-open { margin-left: 0; }
+.ost-react-open[aria-expanded="true"] { opacity: 1; }
+@media (hover: none) { .ost-react { min-height: 32px; } }
+.ost-react-menu { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.ost-edited { border: 0; background: none; padding: 0 6px; min-height: 24px; color: #8b96a5; font: inherit; font-size: .68rem; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+.ost-editbox { flex: 1 1 100%; display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--nc-border, rgba(255,255,255,.25)); border-radius: 12px; }
+.ost-edit-field { width: 100%; box-sizing: border-box; resize: vertical; min-height: 56px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--nc-border, rgba(255,255,255,.25)); background: transparent; color: inherit; font: inherit; }
+.ost-edit-row { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.ost-edit-count { margin-right: auto; font-size: .68rem; color: #8b96a5; }
+.ost-edit-count.over { color: var(--warning-color, #f59e0b); }
+.ost-edit-btn2 { min-height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--nc-border, rgba(255,255,255,.3)); background: none; color: inherit; font: inherit; font-size: .8rem; cursor: pointer; }
+.ost-edit-btn2.primary { border-color: var(--nc-primary, #00d2d2); color: var(--nc-primary, #00d2d2); }
+.ost-edit-btn2:disabled { opacity: .5; cursor: default; }
+.ost-edit-err { flex-basis: 100%; font-size: .76rem; color: var(--warning-color, #f59e0b); }
+.ost-delask { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; font-size: .78rem; }
+.ost-history { flex-basis: 100%; margin: 4px 6px 0; padding: 6px 10px; border-left: 2px solid var(--nc-border, rgba(255,255,255,.3)); font-size: .76rem; }
+.ost-history-h { font-size: .66rem; letter-spacing: .08em; text-transform: uppercase; color: #8b96a5; }
+.ost-history-row { display: flex; gap: 8px; margin-top: 3px; }
+.ost-history-row time { flex: none; color: #8b96a5; }
+.ost-history-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ost-history-note { color: #8b96a5; }
 .ost-replying { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; padding: 4px 8px; border-left: 2px solid var(--nc-primary, #00d2d2);
   border-radius: 4px; background: rgba(var(--nc-primary-rgb, 0, 210, 210), .06); font-size: .76rem; }
 .ost-replying-tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c4ccd6; }
@@ -3495,14 +4573,37 @@ watch(convId, () => { dmTarget.value = null })   // V0655 (ay): the window belon
 /* V0652 (aj): a phone-width pane gives the message field the room: the chip keeps its icon and the name, not the "as" */
 .ost--narrow .ost-speaker { gap: 4px; padding: 0 8px; max-width: 104px; }
 .ost--narrow .ost-speaker-as { display: none; }
+/* V0664 (his seq 3744: "a lot of space wasted", the message field half the width): on a narrow pane the field takes the whole row and the
+   paperclip, the speaker chip and Send sit in a row of their own under it */
+.ost--narrow .ost-composer { flex-wrap: wrap; }
+.ost--narrow .ost-input-wrap { flex: 1 1 100%; }
+.ost--narrow .ost-attach { order: 2; }
+.ost--narrow .ost-speaker { order: 3; margin-left: auto; max-width: min(60%, 220px); }
+.ost--narrow .ost-send { order: 4; }
+.ost--narrow.ost--kb .ost-composer { padding-bottom: 8px; }
+/* V0664: the pictures that came with a message, above its words; a picture is never wider than the bubble */
+.ost-pics { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; max-width: 100%; }
+.ost-chip-thumb { width: 28px; height: 28px; object-fit: cover; border-radius: 6px; flex: none; }
 .ost-by-owner { font-size: .68rem; opacity: .7; margin-left: 6px; font-style: italic; }
 /* V0654 (aq): a member's wake mode in the member sheet */
 .ost-member-wake { margin-top: 4px; }
 .ost-wake-chip { font-size: .68rem; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border-color, rgba(128,128,128,.3)); opacity: .85; }
+.ost-pending { opacity: .85; }
+.ost-pending-body { display: grid; gap: 4px; padding: 8px 12px; border-radius: 14px; border: 1px dashed var(--border-color, rgba(128,128,128,.45)); max-width: 100%; }
+.ost-pending-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ost-pending-state { margin: 0; font-size: .76rem; opacity: .8; }
+.ost-pending[data-state="failed"] .ost-pending-body { border-color: var(--nc-danger, #ff8a8a); }
+.ost-pending-why { margin-right: 6px; }
+.ost-pending-again { min-height: 32px; border: none; background: none; color: var(--primary-color, #4fd8c4); font: inherit; font-weight: 600; cursor: pointer; }
 .ost-input-wrap { flex: 1; min-width: 0; position: relative; }
 .ost-hint { font-size: .78rem; opacity: .85; padding: 4px 2px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ost-change-pick { font-size: .8rem; padding: 4px 2px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ost-change-pick-q { flex-basis: 100%; opacity: .85; }
+.ost-change-pick code { font: .72rem "IBM Plex Mono", monospace; opacity: .8; }
 .ost-hint-send { min-height: 32px; border: none; background: none; color: var(--primary-color, #4fd8c4); font-weight: 600; cursor: pointer; }
-.ost-complete { position: absolute; bottom: 100%; left: 0; right: 0; background: var(--surface-1, #16181d); border: 1px solid var(--border-color, rgba(128,128,128,.3)); border-radius: 10px; overflow: hidden; z-index: 5; }
+.ost-complete { position: absolute; bottom: 100%; left: 0; right: 0; background: var(--surface-1, #16181d); border: 1px solid var(--border-color, rgba(128,128,128,.3)); border-radius: 10px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; z-index: 5;
+  /* V0662: the / list was as tall as its commands and grew up past the top of a phone's screen, out of reach; it is bounded to what the screen above the field can show and scrolls inside itself */
+  max-height: min(16rem, 35dvh); }
 .ost-complete-row { display: flex; flex-direction: column; align-items: flex-start; width: 100%; min-height: 44px; padding: 6px 12px; border: none; background: none; color: inherit; text-align: left; cursor: pointer; }
 .ost-complete-cmd { font-family: monospace; font-size: .82rem; }
 .ost-complete-gloss { font-size: .72rem; opacity: .6; }
@@ -3552,9 +4653,37 @@ watch(convId, () => { dmTarget.value = null })   // V0655 (ay): the window belon
   border-bottom: 1px solid var(--border-color, rgba(128,128,128,.15)); }
 .ost-support-note { opacity: .55; }
 .ost-support-err { color: var(--danger-color, #e0716b); }
-.ost-input { width: 100%; min-height: 44px; max-height: 120px; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--border-color, rgba(128,128,128,.3)); background: none; color: inherit; font: inherit; font-size: 16px; resize: none; }
+.ost-input { width: 100%; min-height: 44px; overflow-y: hidden; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--border-color, rgba(128,128,128,.3)); background: none; color: inherit; font: inherit; font-size: 16px; resize: none; }
 .ost-send { min-width: 44px; min-height: 44px; border-radius: 12px; border: none; background: var(--primary-color, #4fd8c4); color: #06211d; display: grid; place-items: center; cursor: pointer; }
 .ost-send:disabled { opacity: .4; }
+.ost-file { display: none; }
+.ost-attach { min-width: 44px; min-height: 44px; border: none; background: none; color: inherit; opacity: .65; border-radius: 12px; display: grid; place-items: center; cursor: pointer; }
+.ost-attach:hover, .ost-attach:focus-visible { opacity: 1; }
+.ost-staged { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 6px; }
+.ost-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 3px 4px 3px 8px; border-radius: 999px; border: 1px solid var(--border-color, rgba(128,128,128,.35)); font-size: .78rem; }
+.ost-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 14em; }
+.ost-chip-size { opacity: .6; font-variant-numeric: tabular-nums; }
+.ost-chip-x { width: 22px; height: 22px; border: none; background: none; color: inherit; opacity: .65; border-radius: 50%; display: grid; place-items: center; cursor: pointer; }
+.ost-chip-x:hover { opacity: 1; background: var(--hover-bg, rgba(128,128,128,.2)); }
+.ost-input-wrap.dropping .ost-input { outline: 2px dashed var(--primary-color, #4fd8c4); outline-offset: 2px; }
+.ost-grip { display: flex; align-items: center; gap: 6px; padding: 0 2px 3px; }
+.ost-grip-bar { flex: 1; height: 16px; display: grid; place-items: center; cursor: ns-resize; touch-action: none; border-radius: 6px; }
+.ost-grip-bar:focus-visible { outline: 2px solid var(--primary-color, #4fd8c4); outline-offset: 1px; }
+.ost-grip-line { width: 38px; height: 3px; border-radius: 3px; background: var(--border-color, rgba(128,128,128,.45)); }
+.ost-grip-btn { width: 28px; height: 28px; min-width: 28px; border: none; background: none; color: inherit; opacity: .6; border-radius: 8px; display: grid; place-items: center; cursor: pointer; }
+.ost-grip-btn:hover, .ost-grip-btn[aria-pressed="true"] { opacity: 1; }
+.ost-tools { display: flex; align-items: center; gap: 2px; padding: 0 0 4px; flex-wrap: wrap; }
+.ost-tool { min-width: 30px; height: 28px; border: none; background: none; color: inherit; opacity: .75; border-radius: 8px; font: inherit; font-size: .82rem; display: grid; place-items: center; cursor: pointer; }
+.ost-tool:hover { opacity: 1; background: var(--hover-bg, rgba(128,128,128,.15)); }
+.ost-tool-b { font-weight: 700; }
+.ost-tool-i { font-style: italic; }
+.ost-tools-gap { flex: 1; }
+.ost-tab { height: 28px; padding: 0 10px; border: none; background: none; color: inherit; opacity: .65; border-radius: 8px; font: inherit; font-size: .78rem; cursor: pointer; }
+.ost-tab.on { opacity: 1; background: var(--hover-bg, rgba(128,128,128,.18)); font-weight: 600; }
+.ost-preview { width: 100%; padding: 11px 12px; border-radius: 12px; border: 1px dashed var(--border-color, rgba(128,128,128,.3)); overflow-y: auto; font-size: 16px; }
+.ost-preview-empty { margin: 0; opacity: .6; font-size: .85rem; }
+.ost-count { font-size: .74rem; opacity: .75; text-align: right; padding: 3px 4px 0; font-variant-numeric: tabular-nums; }
+.ost-count.over { opacity: 1; color: var(--warning-color, #e5b567); }
 .ost-sheet-veil { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: flex-end; justify-content: center; z-index: 60; }
 .ost-sheet { width: 100%; max-width: 480px; max-height: 82vh; overflow-y: auto; background: var(--surface-1, #16181d); border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px; }
 /* §FINDFIX — ALL 15 thread sheets ride this one pair: on desktop they become
@@ -3679,4 +4808,11 @@ textarea.ost-sheet-input { resize: vertical; }
   border: 1px solid currentColor; background: transparent; color: inherit; cursor: pointer; }
 .ost-review-grant:disabled { opacity: .45; }
 .ost-review-msg { margin: 6px 0 0; opacity: .8; }
+/* V0663 (the browser pass, seq 3591): a short window (a keyboard open, a phone on its side) left the thread 20 px when a long room
+   name wrapped to three lines and the members row took a line more. The name stays on one line, the members row folds away (its
+   panel is one tap in the room's settings), and the hosting line stays: it is the visibility law and is never hidden. */
+@media (max-height: 560px) {
+  .ost-room-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ost-root :deep(.rp-head) { display: none; }
+}
 </style>

@@ -63,14 +63,14 @@ _RECOVERY_MARKERS = ("reinstate", "unblock", "unquarantine", "/activate",
 # token minting, projection snapshots, mass broadcasts (send comms). Reads
 # (GET simulation/status|topology|agents) are NOT here — only the mutators.
 _SIDE_EFFECT_MARKERS = (
-    "/simulation/start", "/simulation/stop", "/simulation/fund",
+    "/simulation/start", "/simulation/stop",
     "/simulation/mint", "/mint-frame-b", "/projection-snapshot",
     "/simulation/restart", "/simulation/deadman/",
 )
 
 
 # §SUITES1018 (2026-10-18): a READ is never destructive and never needs a counterparty, so no classifier below withholds
-# one (the markers are substrings and caught GET /admin/simulation/fund-status, GET /chat/blocks and every GET under
+# one (the markers are substrings and caught a GET under a simulation mutator's prefix, GET /chat/blocks and every GET under
 # /frame-invitations or /governance/federation/). Only the wildcard proxy shells stay out: they are not endpoints.
 _READ_METHODS = ("GET", "HEAD", "OPTIONS")
 

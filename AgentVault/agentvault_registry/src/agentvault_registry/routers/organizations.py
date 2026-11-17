@@ -857,6 +857,14 @@ async def delete_team(
     # Check if it's the default team - don't allow deletion
     if team.name.lower() == "default team":
         raise HTTPException(status_code=400, detail="Cannot delete the default team")
+
+    # V0666 D1: a team a code distribution names as its deciders is not deleted (never a silent fall back to the
+    # organization's owners and admins); the line names another team, or none, first
+    from agentvault_registry.services.code_distributions import team_in_use
+    line = await team_in_use(db, team_id)
+    if line:
+        raise HTTPException(status_code=409, detail=f"the code distribution {line} names this team as its deciders: "
+                                                    f"name another team (or none) on the line first")
     
     success = await TeamService.delete_team(db, team_id)
     
@@ -1400,6 +1408,7 @@ async def remove_org_member(
         await db.execute(sa_text("""
             UPDATE conversation_participants SET state = 'left'
             WHERE ptype = 'developer' AND developer_id = :d
+              AND guest_seat = false   -- V0662: a member who is also a guest keeps the guest seat: only the membership ends
               AND conversation_id IN (
                 SELECT id FROM conversations WHERE kind = 'org' AND org_id = :o)
         """), {"d": int(developer_id), "o": str(org_id)})
@@ -3126,7 +3135,7 @@ async def get_org_track_record(org_id: str, db: AsyncSession = Depends(get_db)):
         except Exception as e:  # noqa: BLE001
             logger.warning("organization %s: its agents' own work unreadable: %s", org_id, e)
         else:
-            rec["member_work"] = member.get(str(org_id), {"jobs": 0})
+            rec["member_work"] = member.get(str(org_id), {"jobs": 0, "commissioned": 0})
     return rec
 
 
@@ -3450,7 +3459,7 @@ async def discover_firms(
                               "This firm has not set an intake agent — there is no engage door."),
         })
         if member is not None and out[-1]["listed"]:
-            out[-1]["member_work"] = member.get(str(f["id"]), {"jobs": 0})
+            out[-1]["member_work"] = member.get(str(f["id"]), {"jobs": 0, "commissioned": 0})
     return {"firms": out, "total": len(out),
             "ranking": "proof-weighted: settled work (as worker + as client) first"}
 
@@ -3931,7 +3940,7 @@ async def list_listed_organizations(
                     "member_count": int(r[7] or 0), "agent_count": int(r[8] or 0), "settled_work": int(r[9] or 0),
                     "created_at": r[6].isoformat() if r[6] else None})
         if member is not None:
-            out[-1]["member_work"] = member.get(str(r[0]), {"jobs": 0})
+            out[-1]["member_work"] = member.get(str(r[0]), {"jobs": 0, "commissioned": 0})
     return {"organizations": out, "total": int(total), "home": home, "limit": limit, "offset": offset}
 
 

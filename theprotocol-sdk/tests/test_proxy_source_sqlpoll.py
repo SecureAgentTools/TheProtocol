@@ -997,3 +997,109 @@ def test_through_the_core_each_row_is_sent_once_and_the_cursor_is_kept_in_the_ou
     assert first["at"] == {"c": 2, "k": []} and second["at"] == {"c": 3, "k": []}
     assert second["reads"] == {"engine": "sqlite", "path": str(path), "table": "events", "cursor": "id",
                                "cursor_type": "id", "key": ["id"]}
+
+
+# ═══ V0664 (Migrate a system, M2): a source that reads in the order of its KEY alone, and finishes ═══════════════════════
+#
+# A migration reads a table once, in key order, and stops. `poll_seconds: 0` already makes a pass end (no second switch is added
+# for "snapshot": session-lead, room seq 3747); what is new is that `cursor` may be left out: the key alone orders the rows
+# (cursor_type "key" internally: an integer, a text or a UUID, compared and ordered by the database), resumed by the same place.
+
+KEYED = "CREATE TABLE parts (sku TEXT PRIMARY KEY, name TEXT)"
+KEYED2 = "CREATE TABLE lines (order_no INTEGER, line_no INTEGER, qty INTEGER, PRIMARY KEY (order_no, line_no))"
+
+
+def _keyed(path, **kw):
+    cfg = {"engine": "sqlite", "path": str(path), "table": "parts", "key": "sku", "poll_seconds": 0, "settle_seconds": 0}
+    cfg.update(kw)
+    return cfg
+
+
+async def _all(cfg, ctx=None):
+    src = SqlPollSource(cfg, ctx or FakeContext())
+    await src.start()
+    got = []
+    try:
+        async for rec in src.records():
+            got.append(rec)
+            await src.committed(rec)
+    finally:
+        await src.stop()
+    return got
+
+
+async def test_with_no_cursor_the_key_alone_orders_the_rows_and_the_source_finishes(tmp_path):
+    path = _db(tmp_path, [{"sku": "c-3", "name": "gamma"}, {"sku": "a-1", "name": "alpha"}, {"sku": "b-2", "name": "beta"}],
+               ddl=KEYED, table="parts")
+    got = await asyncio.wait_for(_all(_keyed(path)), 5)                  # it returns: poll_seconds 0 ends the pass
+    assert [r.record_id for r in got] == ["a-1", "b-2", "c-3"]
+    assert [r.payload["name"] for r in got] == ["alpha", "beta", "gamma"]
+
+
+async def test_a_composite_key_orders_by_its_columns_in_turn(tmp_path):
+    path = _db(tmp_path, [{"order_no": 2, "line_no": 1, "qty": 1}, {"order_no": 1, "line_no": 2, "qty": 2},
+                          {"order_no": 1, "line_no": 1, "qty": 3}, {"order_no": 2, "line_no": 2, "qty": 4}],
+               ddl=KEYED2, table="lines")
+    got = await _all({"engine": "sqlite", "path": str(path), "table": "lines", "key": ["order_no", "line_no"],
+                      "poll_seconds": 0, "settle_seconds": 0})
+    assert [r.payload["qty"] for r in got] == [3, 2, 1, 4]
+    assert [r.record_id for r in got] == ["[1,1]", "[1,2]", "[2,1]", "[2,2]"]
+
+
+async def test_a_snapshot_pass_reads_exactly_the_rows_present_and_ends(tmp_path):
+    path = _db(tmp_path, _rows([1, 2, 3]))
+    ctx = FakeContext()
+    first = await _all(_cfg(path), ctx)
+    assert [r.payload["id"] for r in first] == [1, 2, 3]
+    _insert(path, _rows([4, 5]))
+    second = await _all(_cfg(path), ctx)                                  # the same state: only what is new
+    assert [r.payload["id"] for r in second] == [4, 5]
+
+
+async def test_a_key_ordered_source_resumes_where_it_stopped(tmp_path):
+    path = _db(tmp_path, [{"sku": f"s-{i:02d}", "name": f"n{i}"} for i in (7, 3, 9, 1, 5)], ddl=KEYED, table="parts")
+    ids = await check_resume(SqlPollSource, _keyed(path), first=2, limit=10)
+    assert ids == ["s-01", "s-03", "s-05", "s-07", "s-09"]
+
+
+async def test_the_source_contract_holds_with_a_key_only_order(tmp_path):
+    path = _db(tmp_path, [{"sku": f"s-{i}", "name": f"n{i}"} for i in (2, 1, 3)], ddl=KEYED, table="parts")
+    check_class(SqlPollSource)
+    recs = await check_source(SqlPollSource, _keyed(path), limit=10)
+    assert [r.record_id for r in recs] == ["s-1", "s-2", "s-3"]
+
+
+@pytest.mark.parametrize("extra, word", [
+    ({"key": None}, "cursor"),                                            # neither a cursor nor a key
+    ({"cursor_type": "timestamp"}, "cursor_type"),                        # a type for a cursor that is not there
+])
+def test_without_a_cursor_a_key_is_needed_and_cursor_type_means_nothing(tmp_path, extra, word):
+    path = _db(tmp_path, [], ddl=KEYED, table="parts")
+    cfg = _keyed(path, **extra)
+    cfg = {k: v for k, v in cfg.items() if v is not None}
+    with pytest.raises(PluginError) as e:
+        SqlPollSource(cfg, FakeContext())
+    assert word in str(e.value)
+
+
+async def test_a_key_ordered_source_replays_from_start_only(tmp_path):
+    path = _db(tmp_path, [{"sku": "a", "name": "x"}, {"sku": "b", "name": "y"}], ddl=KEYED, table="parts")
+    ctx = FakeContext()
+    await _all(_keyed(path), ctx)
+    src = SqlPollSource(_keyed(path), ctx)
+    await src.start()
+    with pytest.raises(PluginError) as e:
+        await src.rewind("b")
+    assert "start" in str(e.value)
+    await src.rewind("start")
+    await src.stop()
+    again = await _all(_keyed(path), ctx)
+    assert [r.record_id for r in again] == ["a", "b"]
+
+
+def test_a_place_kept_for_a_cursor_is_not_taken_for_a_key_order(tmp_path):
+    """Switching the same table from a cursor to a key order changes what the place means: the source says so, never reads on."""
+    path = _db(tmp_path, [], ddl="CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)", table="t")
+    a = SqlPollSource({"engine": "sqlite", "path": str(path), "table": "t", "cursor": "id", "poll_seconds": 0}, FakeContext())
+    b = SqlPollSource({"engine": "sqlite", "path": str(path), "table": "t", "key": "id", "poll_seconds": 0}, FakeContext())
+    assert a._reads != b._reads and b._reads["cursor_type"] == "key"

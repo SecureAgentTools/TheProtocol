@@ -1796,25 +1796,26 @@ async def get_teg_token_for_agent(agent_id: int, agent_did: str) -> str:
                 logger.info(f"Obtained new TEG JWT token for agent {agent_did}")
                 return token
             else:
-                # If token request fails, check if we can use admin impersonation
-                # First check if the endpoint exists and is enabled
-                if response.status_code == 404:
-                    logger.warning(f"TEG token endpoint not found, trying admin key with X-Act-As-Agent")
-                else:
-                    logger.warning(f"TEG token request failed ({response.status_code}): {response.text}")
-                
-                # Try using admin key with X-Act-As-Agent header (if admin impersonation is enabled)
-                # This requires the TEG to have admin impersonation feature enabled
-                # Return a special marker that tells calling code to use admin impersonation
-                return f"ADMIN_IMPERSONATE:{agent_did}"
-                
+                # D6-495 (V0663): there is no fallback. This used to hand back an ADMIN_IMPERSONATE marker, which the callers'
+                # prepare_teg_headers turned into the registry's admin key plus X-Act-As-Agent, for a TEG that allows
+                # impersonation. No deployed TEG allows it (the flag is off on every one, read 2026-11-13), so the fallback
+                # could only fail later with a 401 far from its cause, and it kept the admin key one step from every agent's
+                # purse. The exchange's own failure is the answer, said at once.
+                logger.warning(f"TEG token request failed ({response.status_code}): {response.text}")
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"The TEG refused the token exchange for this agent (HTTP {response.status_code}).",
+                )
+
         except httpx.RequestError as e:
             logger.error(
                 f"TEG token request error: type={type(e).__name__} msg={e!r}",
                 exc_info=True,
             )
-            # In case of network error, try admin impersonation as fallback
-            return f"ADMIN_IMPERSONATE:{agent_did}"
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="The TEG could not be reached for the token exchange. Try again shortly.",
+            )
 
 def prepare_teg_headers(teg_token: str) -> dict:
     """

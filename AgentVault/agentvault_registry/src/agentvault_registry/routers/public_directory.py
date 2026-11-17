@@ -31,7 +31,10 @@ import os
 from typing import Any, Optional
 
 import httpx
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
+from fastapi.responses import JSONResponse
+
+from agentvault_registry import database
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/public/directory", tags=["Public"])
@@ -124,3 +127,47 @@ async def directory_health() -> Response:
         logger.warning("[directory] health unreachable at %s: %s", up, e)
         return Response(content='{"configured":true,"reachable":false}', status_code=502,
                         media_type="application/json")
+
+
+@router.get("/registries")
+async def directory_registries(db=Depends(database.get_db)) -> JSONResponse:
+    """V0663, the Directory read path: the registries the federated index knows, each card verified HERE against the key
+    at the origin the card itself names (services/directory_registries). The index can omit a card, never vouch for one;
+    a row whose card does not verify carries only the index's words. Each verified registry is marked self, peer, known
+    or candidate against this registry's peer rows, which are only read. A broken index answers 502 with its reason,
+    never an empty list; the answer is kept for RESULT_CACHE_SEC."""
+    import json as _json
+    from agentvault_registry.core.public_url import public_base_url_static
+    from agentvault_registry.services import directory_registries as dr
+
+    if not _upstream():
+        return JSONResponse({"configured": False, "registries": []})
+    redis = await dr.redis_handle()
+    if redis is None:
+        # without a cache every reader's request would fetch every registry's key set again
+        return JSONResponse({"configured": True, "error": "this registry's cache is unavailable; try again shortly"},
+                            status_code=503, headers={"Retry-After": "30"})
+    try:
+        raw = await redis.get(dr.RESULT_KEY)
+        if raw is not None:
+            return JSONResponse(_json.loads(raw.decode() if isinstance(raw, (bytes, bytearray)) else raw))
+    except Exception:  # noqa: BLE001 — a cache that cannot answer: read afresh
+        pass
+    peers = await dr.load_peers(db)
+    try:
+        await db.rollback()   # the read is done: no pooled connection waits on the index or the key fetches
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        rows = await dr.index_registries()
+    except dr.IndexUnavailable as e:
+        return JSONResponse({"configured": True, "error": str(e)}, status_code=502)
+    result = await dr.read_registries(rows, peers=peers, own_public_url=public_base_url_static(), redis=redis)
+    body = {"configured": True,
+            "index_serves_cards": not any(isinstance(r, dict) and r.get("_index_serves_cards") is False for r in rows),
+            **result}
+    try:
+        await redis.set(dr.RESULT_KEY, _json.dumps(body), ex=dr.RESULT_CACHE_SEC)
+    except Exception:  # noqa: BLE001
+        pass
+    return JSONResponse(body)

@@ -277,6 +277,7 @@ import { useRoute } from 'vue-router'
 import { useUIStore } from '@/stores/ui'
 import { useI18n } from '@/composables/useI18n'
 import UserAvatar from '@/components/common/UserAvatar.vue'
+import { cardIconSrc } from '@/services/agentAvatar'   // V0662 item 14: card icons from the registry
 import { useCurrency } from '@/composables/useCurrency'
 import {
   leaderboardService,
@@ -456,7 +457,7 @@ const gaugeOffset = computed(() => {
 function avatarUrlFor(did: string | null | undefined): string | null {
   if (!did) return null
   const p = profilesById.value[did]
-  return p?.card_data?.iconUrl || p?.card_data?.icon_url || null
+  return p ? cardIconSrc(did, p.card_data?.iconUrl || p.card_data?.icon_url) : null
 }
 function shortDid(s: string | null | undefined): string {
   if (!s) return '—'

@@ -18,8 +18,8 @@ from agentvault_registry.middleware.rate_limiter import shared_limiter
 from agentvault_registry.routers import frame_invitations as fi
 from agentvault_registry.services import frame_trust_manager as ftm
 
-DNS = {"public.example.invalid": ["1.1.1.1"], "inside.example.invalid": ["10.0.0.9"],
-       "mixed.example.invalid": ["1.1.1.1", "172.16.0.7"], "loop.example.invalid": ["127.0.0.1"]}
+DNS = {"public.example.example.org": ["1.1.1.1"], "inside.example.example.org": ["10.0.0.9"],
+       "mixed.example.example.org": ["1.1.1.1", "172.16.0.7"], "loop.example.example.org": ["127.0.0.1"]}
 
 
 def _asked(request):
@@ -36,6 +36,18 @@ def fake_dns(monkeypatch):
             raise OSError("no such host")
         return DNS[host]
     monkeypatch.setattr(ftm, "_resolve", resolve)
+
+    # V0662 (item 16): the dial goes through the outbound guard, which looks a name up with socket.getaddrinfo; the
+    # same table answers there (the guard refuses a special-use name such as .invalid before any lookup, so the names
+    # are ordinary ones)
+    import socket
+
+    def getaddrinfo(host, port, *a, **k):
+        if host not in DNS:
+            raise socket.gaierror(socket.EAI_NONAME, "no such host")
+        return [((socket.AF_INET6, socket.SOCK_STREAM, 6, "", (x, port, 0, 0)) if ":" in x
+                 else (socket.AF_INET, socket.SOCK_STREAM, 6, "", (x, port))) for x in DNS[host]]
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
 
 
 def _transport(monkeypatch, handler):
@@ -61,8 +73,8 @@ def test_control_global_addresses_are_public(addr):
     assert not ftm._address_is_internal(addr)
 
 
-@pytest.mark.parametrize("host,internal", [("public.example.invalid", False), ("inside.example.invalid", True),
-                                           ("mixed.example.invalid", True), ("gone.example.invalid", True),
+@pytest.mark.parametrize("host,internal", [("public.example.example.org", False), ("inside.example.example.org", True),
+                                           ("mixed.example.example.org", True), ("gone.example.example.org", True),
                                            ("10.0.0.1", True), ("1.1.1.1", False), ("[::1]", True)])
 async def test_a_name_is_internal_when_any_address_is_or_it_does_not_resolve(host, internal):
     assert (await ftm._host_is_internal(host, 443))[0] is internal
@@ -70,51 +82,51 @@ async def test_a_name_is_internal_when_any_address_is_or_it_does_not_resolve(hos
 
 async def test_a_redirect_inward_is_refused_for_an_anonymous_dial_and_followed_for_an_admin(monkeypatch):
     def handler(request):
-        if _asked(request) == "public.example.invalid":
-            return httpx.Response(302, headers={"location": "https://inside.example.invalid/bundle"})
+        if _asked(request) == "public.example.example.org":
+            return httpx.Response(302, headers={"location": "https://inside.example.example.org/bundle"})
         return httpx.Response(200, text="{}")
     seen = _transport(monkeypatch, handler)
     async with ftm._bundle_client(5) as c:
-        r, refusal = await ftm._dial_checked(c, "GET", "https://public.example.invalid/", allow_internal=False)
+        r, refusal = await ftm._dial_checked(c, "GET", "https://public.example.example.org/", allow_internal=False)
     # V0658 (l), #357: the dial goes to the checked address, so the recorded URL is the address, not the name
-    assert r is None and "internal" in refusal and seen == [f"https://{DNS['public.example.invalid'][0]}/"]
+    assert r is None and "internal" in refusal and seen == [f"https://{DNS['public.example.example.org'][0]}/"]
     async with ftm._bundle_client(5) as c:
-        r, refusal = await ftm._dial_checked(c, "GET", "https://public.example.invalid/", allow_internal=True)
+        r, refusal = await ftm._dial_checked(c, "GET", "https://public.example.example.org/", allow_internal=True)
     assert refusal is None and r.status_code == 200
 
 
 async def test_a_redirect_to_plain_http_and_a_redirect_loop_are_refused(monkeypatch):
     def handler(request):
         if request.url.path == "/to-http":
-            return httpx.Response(301, headers={"location": "http://public.example.invalid/"})
-        return httpx.Response(302, headers={"location": "https://public.example.invalid/again"})
+            return httpx.Response(301, headers={"location": "http://public.example.example.org/"})
+        return httpx.Response(302, headers={"location": "https://public.example.example.org/again"})
     _transport(monkeypatch, handler)
     async with ftm._bundle_client(5) as c:
-        _, why = await ftm._dial_checked(c, "GET", "https://public.example.invalid/to-http", allow_internal=False)
+        _, why = await ftm._dial_checked(c, "GET", "https://public.example.example.org/to-http", allow_internal=False)
         assert "https" in why
-        _, why = await ftm._dial_checked(c, "GET", "https://public.example.invalid/loop", allow_internal=False)
+        _, why = await ftm._dial_checked(c, "GET", "https://public.example.example.org/loop", allow_internal=False)
         assert "redirects" in why
 
 
 async def test_the_probe_dials_nothing_for_an_anonymous_internal_url(monkeypatch):
     seen = _transport(monkeypatch, lambda request: httpx.Response(200))
     mgr = ftm.FrameTrustManager.__new__(ftm.FrameTrustManager)
-    ok, err = await mgr.probe_bundle_endpoint("https://inside.example.invalid:8443/")
+    ok, err = await mgr.probe_bundle_endpoint("https://inside.example.example.org:8443/")
     assert not ok and "internal" in err and seen == []
-    ok, err = await mgr.probe_bundle_endpoint("https://inside.example.invalid:8443/", allow_internal=True)
+    ok, err = await mgr.probe_bundle_endpoint("https://inside.example.example.org:8443/", allow_internal=True)
     assert ok and err is None and seen
 
 
 async def test_approve_never_follows_a_public_bundle_url_inward(monkeypatch):
     def handler(request):
-        if _asked(request) == "public.example.invalid":
-            return httpx.Response(302, headers={"location": "https://loop.example.invalid/secret"})
+        if _asked(request) == "public.example.example.org":
+            return httpx.Response(302, headers={"location": "https://loop.example.example.org/secret"})
         return httpx.Response(200, text='{"keys": ["an internal answer"]}')
     seen = _transport(monkeypatch, handler)
     mgr = ftm.FrameTrustManager.__new__(ftm.FrameTrustManager)
-    body, _ct, err = await mgr.fetch_remote_bundle("https://public.example.invalid/bundle", "td.invalid")
+    body, _ct, err = await mgr.fetch_remote_bundle("https://public.example.example.org/bundle", "td.example.org")
     assert body is None and "internal" in err
-    assert not any("loop.example.invalid" in u for u in seen)
+    assert not any("loop.example.example.org" in u for u in seen)
 
 
 @pytest.mark.parametrize("dev,expected", [
@@ -149,9 +161,9 @@ def _route_client(monkeypatch, caller):
     return TestClient(app, raise_server_exceptions=False)
 
 
-INVITE = {"trust_domain": "stranger.example.invalid", "bundle_endpoint_url": "https://inside.example.invalid:8443/",
-          "federation_endpoint_url": "https://inside.example.invalid:8444/", "name": "stranger",
-          "contact_email": "nobody@example.invalid", "initiator_nonce": "ab" * 16}
+INVITE = {"trust_domain": "stranger.example.example.org", "bundle_endpoint_url": "https://inside.example.example.org:8443/",
+          "federation_endpoint_url": "https://inside.example.example.org:8444/", "name": "stranger",
+          "contact_email": "nobody@example.example.org", "initiator_nonce": "ab" * 16}
 
 
 def test_an_anonymous_internal_invitation_gets_a_generic_refusal_and_no_dial(monkeypatch):
@@ -160,5 +172,5 @@ def test_an_anonymous_internal_invitation_gets_a_generic_refusal_and_no_dial(mon
     assert r.status_code == 422, r.text[:300]
     text = r.text
     assert "public https address" in text
-    assert "inside.example.invalid" not in text and "internal" not in text   # no oracle: neither the host nor the why
+    assert "inside.example.example.org" not in text and "internal" not in text   # no oracle: neither the host nor the why
     assert seen == []

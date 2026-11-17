@@ -55,7 +55,8 @@ def _soft_error(r: Any) -> Optional[str]:
 async def _call(rig, label: str, tool: str, args: Dict[str, Any]) -> Tuple[Any, Optional[str]]:
     """Return (result, refusal_text). Never raises — an MCPError becomes a refusal."""
     try:
-        r = await rig.mcp(label).call(tool, args)
+        # V0663: longer than the send tool waits (mcp.tools_agent.chat_send_timeout_s, 45 s), the rig's default is 30
+        r = await rig.mcp(label).call(tool, args, timeout=60)
     except Exception as e:                      # MCPError included
         return None, f"{type(e).__name__}: {e}"
     return r, _soft_error(r)

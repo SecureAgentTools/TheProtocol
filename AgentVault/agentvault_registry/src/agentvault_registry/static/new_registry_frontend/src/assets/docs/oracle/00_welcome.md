@@ -44,7 +44,7 @@ How the production frames are set (from their public configuration, `GET /api/v1
 - **The AGORA market** of organization points is open; distributions to holders (`agora_distributions_enabled`) are off ([chapter 22](/docs/22)).
 - **Exchange between ECU and ACU** through reserve pools is on (`fx_enabled`); the wrapped-unit bridge is retired ([chapter 18](/docs/18)).
 - **Buying units** is not possible: the fiat function (`fiat_onramp_enabled`) is off, and units are never paid out.
-- **Accountability**: the liability gate runs in `enforce` (`liability_mode`, [chapter 30](/docs/30)); policy decisions are also evaluated by OPA in shadow mode (it records, Python decides; [chapter 08](/docs/08)).
+- **Accountability**: the liability gate runs in `enforce` (`liability_mode`, [chapter 30](/docs/30)); OPA also decides the sign-in and permission checks beside Python (both must allow; its invariants are evaluated, not yet decisive; [chapter 08](/docs/08)).
 
 ## The Five Pillars
 
@@ -168,6 +168,7 @@ Python 3.14 and FastAPI on the server; Vue 3 and TypeScript in the console; Post
 | [14: TheProtocol SDK](/docs/14) | the Python SDK |
 | [36: Running Your Agent](/docs/36) | what a registry reads from a running agent |
 | [37: The Proxy](/docs/37) | a legacy system's agent: files, webhooks, tables, MQTT and SFTP to attestations, evidence and payments |
+| [38: Release Notes](/docs/38) | what each release changes for members, operators and integrators |
 | [20: Organizations & Teams](/docs/20) | working together, organization authority |
 | [21: Webhooks & Integrations](/docs/21) | signed event delivery to your systems |
 | [22: The AGORA Market](/docs/22) | organization points, listings, orders |

@@ -104,6 +104,24 @@
     </div>
   </section>
 
+  <!-- ═══ V0667 D8: WHO MAY CHANGE THE CODE ═══ -->
+  <section class="cp-sec" id="code-changes">
+    <div class="cp-sec-head">
+      <h2 class="cp-h2">Who May Change the Code</h2>
+      <p class="cp-sub">Members of the registry, and organizations on release lines of their own, change the console's code and documentation through one governed path.</p>
+    </div>
+    <div class="cp-rules">
+      <div class="cp-rule"><span class="cp-rule-check">&#x2713;</span><span>Every change names the paths it touches. Only the registry's open paths can be named; secrets, keys, build and dependency files and the policy backstop are refused whatever anyone votes.</span></div>
+      <div class="cp-rule"><span class="cp-rule-check">&#x2713;</span><span>Our host checker reads the exact commit and signs what it read: the state of the tests, the files changed and a secret scan. Nothing counts before that signed checker record exists.</span></div>
+      <div class="cp-rule"><span class="cp-rule-check">&#x2713;</span><span>An independent review: another developer, never the proposer, two for a sensitive path.</span></div>
+      <div class="cp-rule"><span class="cp-rule-check">&#x2713;</span><span>A ballot: the registry's members on the main line, the deciders of an organization on its own release line, by a rule fixed when the ballot opens.</span></div>
+      <div class="cp-rule"><span class="cp-rule-check">&#x2713;</span><span>The platform maintainer's veto window, which a go ends and a veto stops. A release line can also be paused by the platform, and then takes no proposal, vote or merge.</span></div>
+      <div class="cp-rule"><span class="cp-rule-check">&#x2713;</span><span>A record at every step, kept with the change: who proposed, who reviewed, the ballot, the checker's record and the merge. A change reaches production only through a release, with its proofs and the maintainer's approval.</span></div>
+      <div class="cp-rule"><span class="cp-rule-check">&#x2713;</span><span>A signed per-release report for every release line: every change, who proposed, reviewed and voted, the ballot and the checker's records, signed with the registry's key so an auditor can check it offline.</span></div>
+    </div>
+    <p class="cp-sub">An organization's release line sits on top of our release and never leaves it. A change it merges can be proposed to the main line, with its history kept. <router-link to="/docs/40">How a release line works</router-link> &middot; <router-link to="/docs/06">The Code changes chapter</router-link></p>
+  </section>
+
   <!-- ═══ AI COMPONENT LIFECYCLE ═══ -->
   <section class="cp-sec">
     <div class="cp-sec-head">
@@ -398,6 +416,8 @@ const roadmap: Array<{ text: string; done: boolean }> = [
   { done: true, text: 'IRONKEY delegation & attenuation, shipped (July 2026): on-behalf-of delegation with attributable authority, attenuable sub-agent capability permits clamped to issuer-current authority, and atomic per-permit spend budgets' },
   { done: false, text: 'Third-party ISO 42001 audit: planned (requires certified assessor engagement)' },
   { done: false, text: 'SOC 2 Type II: under consideration for the future' },
+  { done: true, text: 'Compliance packs for organizations\' release lines, as declarations: an organization\'s own policy values for a regulator (data residency, retention, approval thresholds, reporting), voted on and recorded in a signed per-release report an auditor can check offline; no rail reads a pack yet' },
+  { done: false, text: 'Compliance packs enforced by the rails: planned, not built' },
   { done: true, text: 'EU AI Act classification: TheProtocol is infrastructure, not a high-risk AI system' }
 ]
 </script>

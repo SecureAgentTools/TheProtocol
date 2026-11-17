@@ -3,8 +3,17 @@
 **Checked against the source** on 2026-11-09: the SDK's `theprotocol/proxy/` (the spec, the runtime, the outbox, the
 built-in sources, actions and sinks, the command line) and its eight recipes in `proxy/recipes/`. Every command below
 was run as printed against the SDK source, and each recipe was driven end to end on the sandbox with its own fake of
-the system it connects (2026-11-08). The proxy is not yet in a release on PyPI: it ships with the first SDK release
-after 0.7.6, and until then installs from the SDK's source.
+the system it connects (2026-11-08). The proxy ships in the SDK from 0.8.0 on PyPI (`pip install "theprotocol-sdk[proxy]"`,
+checked in a clean environment on 2026-11-14).
+
+::: tip Replacing a system rather than bridging it?
+The proxy also moves the data of an old system into its replacement: read the old system, map each field, write the new
+one, check both sides match and get a certificate. That is a migration, and it has its own chapter: Migrate a system.
+:::
+
+::: tip The proxy console
+The console has a page for the proxy: the connectors with their fields, the eight recipes with their commands, and a spec builder that checks a spec in your browser as `tp-proxy validate` would and hands you proxy.yaml, nothing sent anywhere ([the proxy console](/ui#/proxy)). Signed in, **My proxies** there shows the proxies of your agents that report their status.
+:::
 
 ## Why It Matters
 
@@ -22,11 +31,11 @@ holds only the authority its mappings need.
 
 ## Install
 
-From the SDK's source (the `proxy` extras; `proxy-mqtt`, `proxy-sftp`, `proxy-sql` and its per-database variants add
-the sources that need a client library):
+From PyPI (the `proxy` extra; `proxy-mqtt`, `proxy-sftp`, `proxy-sql` and its per-database variants add the sources
+that need a client library):
 
 ```bash
-pip install "./theprotocol-sdk[proxy]"
+pip install "theprotocol-sdk[proxy]"
 tp-proxy --help
 ```
 
@@ -51,7 +60,7 @@ state: ./orders-state.db
 sources:
   oms:
     type: filedrop
-    config: {path: ./oms-out, format: json, suffix: .json, id_field: intent_id}
+    config: {path: ./oms-out, format: json, suffix: .json, id_field: intent_id, poll_seconds: 30}
 actions:
   attest:
     type: attestation
@@ -122,16 +131,18 @@ tp-proxy run proxy.yaml --dry-run --once   # map and print what it would send, s
 tp-proxy run proxy.yaml                    # for real, as a service (/health and /metrics on service.listen)
 ```
 
-`--once` stops when every source has finished and nothing is due. A file drop finishes when it has read the files that
-are there; an SFTP folder or an SQL table finishes only with `poll_seconds: 0` (read once); a receiver (a webhook,
-MQTT, TheProtocol's events) never finishes, so a spec with one runs until stopped, dry or not. A file is read once it has
+`--once` stops when every source has finished and nothing is due. A file drop, an SFTP folder and an SQL table finish only
+with `poll_seconds: 0` (read what is there once); with a positive `poll_seconds` they keep listing, so a file dropped
+while the proxy runs is read too (the example above lists its folder every 30 seconds, so give a `--once` try
+`poll_seconds: 0`; a file drop takes `poll_seconds` from SDK 0.9.0, and 0.8.0 refuses it and reads the folder once); a
+receiver (a webhook, MQTT, TheProtocol's events) never finishes, so a spec with one runs until stopped, dry or not. A file is read once it has
 not changed for `settle_seconds` (2 by default) or once its marker file exists (`require_marker`): a `--once` run started
 while an export is still being written passes over it, and the next run reads it.
 
 ## Least Authority
 
 The proxy's agent holds only the permissions its mappings need. `tp-proxy init` writes a spec from the agent's
-starter folder and asks the registry about the agent: that it issues the agent a token, the agent's card and bond, and
+starter folder and asks the registry about the agent: that it issues the agent its access credential, the agent's card and bond, and
 the permissions each action needs, which the owner grants in the console (the agent's access panel). An attestation
 needs `reputation.signal` (the `attestor` role carries it and nothing else); a call the agent may not make is refused
 by the registry and becomes a dead letter that names the refusal. A milestone's evidence is delivered as the

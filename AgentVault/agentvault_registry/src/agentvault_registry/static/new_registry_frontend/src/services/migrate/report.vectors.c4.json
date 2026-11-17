@@ -1,0 +1,242 @@
+{
+ "note": "produced by scratchpad/c4/gen_report_vectors.py with the SDK's own canonical/seal/certify formulas (reports.py, schema.py, commands.cmd_certify)",
+ "dry_run": {
+  "schema": "theprotocol.migration.report/v1",
+  "step": "dry_run",
+  "sample": true,
+  "template": {
+   "name": "crm-customers-to-postgres",
+   "version": 3,
+   "content_hash": "abababababababababababababababababababababababababababababababab"
+  },
+  "started_at": "2026-11-14T10:00:000.000000Z",
+  "finished_at": "2026-11-14T10:00:05.123456Z",
+  "sources": {
+   "customers": {
+    "rows": 120,
+    "fields": [
+     "id",
+     "name",
+     "email",
+     "created",
+     "Ärger"
+    ]
+   }
+  },
+  "mappings": {
+   "customers": {
+    "taken": 120,
+    "mapped": 117,
+    "rejected": 3,
+    "rejected_by_reason": {
+     "customers.created: not a datetime in the format %d.%m.%Y %H:%M": 2,
+     "the record has no $.payload.email (the mapping's field email)": 1
+    },
+    "fields": {
+     "id": {
+      "filled": 117,
+      "null": 0
+     },
+     "name": {
+      "filled": 115,
+      "null": 2
+     },
+     "email": {
+      "filled": 100,
+      "null": 17
+     },
+     "created": {
+      "filled": 117,
+      "null": 0
+     }
+    },
+    "no_source": [
+     "country"
+    ],
+    "unused": [
+     "Ärger"
+    ]
+   }
+  },
+  "targets": {
+   "pg": {
+    "written": 117,
+    "unchanged": 0,
+    "failed": 0,
+    "pending": 0,
+    "scratch": true
+   }
+  },
+  "batches": [],
+  "reconcile": {},
+  "verdict": "pass",
+  "report_sha256": "efc809eb0abb0e5af0dfa28b9b0e0ee542d7247774c6ef5383657320099914e1"
+ },
+ "load": {
+  "schema": "theprotocol.migration.report/v1",
+  "step": "load",
+  "sample": false,
+  "template": {
+   "name": "crm-customers-to-postgres",
+   "version": 3,
+   "content_hash": "abababababababababababababababababababababababababababababababab"
+  },
+  "started_at": "2026-11-14T11:00:000.000000Z",
+  "finished_at": "2026-11-14T11:00:00.000001Z",
+  "sources": {
+   "customers": {
+    "rows": 12034,
+    "fields": [
+     "id",
+     "name",
+     "email",
+     "created"
+    ]
+   }
+  },
+  "mappings": {
+   "customers": {
+    "taken": 12034,
+    "mapped": 12000,
+    "rejected": 34,
+    "rejected_by_reason": {
+     "customers.created: not a datetime in the format %d.%m.%Y %H:%M": 30,
+     "customers.price: not a number": 4
+    },
+    "fields": {
+     "id": {
+      "filled": 12000,
+      "null": 0
+     },
+     "name": {
+      "filled": 11990,
+      "null": 10
+     },
+     "email": {
+      "filled": 9000,
+      "null": 3000
+     }
+    }
+   }
+  },
+  "targets": {
+   "pg": {
+    "written": 11990,
+    "unchanged": 10,
+    "failed": 0,
+    "pending": 0,
+    "scratch": false
+   }
+  },
+  "batches": [
+   {
+    "n": 1,
+    "rows": 5000
+   },
+   {
+    "n": 2,
+    "rows": 5000
+   },
+   {
+    "n": 3,
+    "rows": 2034
+   }
+  ],
+  "reconcile": {},
+  "verdict": "pass",
+  "report_sha256": "fdfd32d56a795707f4deba787aa29de3b45e67cd4852e4518954901bd1fb1464"
+ },
+ "reconcile_not_measured": {
+  "schema": "theprotocol.migration.report/v1",
+  "step": "reconcile",
+  "sample": false,
+  "template": {
+   "name": "crm-customers-to-postgres",
+   "version": 3,
+   "content_hash": "abababababababababababababababababababababababababababababababab"
+  },
+  "started_at": "2026-11-14T11:30:000.000000Z",
+  "finished_at": "2026-11-14T11:30:00.500000Z",
+  "sources": {},
+  "mappings": {},
+  "targets": {},
+  "batches": [],
+  "reconcile": {
+   "customers": {
+    "verdict": "pass",
+    "source": 12000,
+    "target": 12000,
+    "missing": 0,
+    "extra": 0,
+    "mismatched": 0
+   },
+   "orders": {
+    "verdict": "not_measured",
+    "source": null,
+    "target": null,
+    "missing": null,
+    "extra": null,
+    "mismatched": null,
+    "why": "the source has no key"
+   }
+  },
+  "verdict": "not_measured",
+  "report_sha256": "d4287b9ccebeab19deb05bdc5030f08a0ac8b33a3111ea1d7d3836bc0737fcf7"
+ },
+ "reconcile_pass": {
+  "schema": "theprotocol.migration.report/v1",
+  "step": "reconcile",
+  "sample": false,
+  "template": {
+   "name": "crm-customers-to-postgres",
+   "version": 3,
+   "content_hash": "abababababababababababababababababababababababababababababababab"
+  },
+  "started_at": "2026-11-14T11:30:000.000000Z",
+  "finished_at": "2026-11-14T11:30:00.500000Z",
+  "sources": {},
+  "mappings": {},
+  "targets": {},
+  "batches": [],
+  "reconcile": {
+   "customers": {
+    "verdict": "pass",
+    "source": 12000,
+    "target": 12000,
+    "missing": 0,
+    "extra": 0,
+    "mismatched": 0
+   }
+  },
+  "verdict": "pass",
+  "report_sha256": "c5cf6c7c96b42311193f0b73609ffcfedb7186ac454fe346102c8137638f5195"
+ },
+ "certificate": {
+  "attestation_id": "att-1234",
+  "attestation_type": "migration.certificate",
+  "target_agent_did": "did:theprotocol:x:1",
+  "attestation_data": {
+   "claim": {
+    "template": {
+     "name": "crm-customers-to-postgres",
+     "version": 3,
+     "content_hash": "abababababababababababababababababababababababababababababababab"
+    },
+    "reports": {
+     "inventory": null,
+     "dry_run": "efc809eb0abb0e5af0dfa28b9b0e0ee542d7247774c6ef5383657320099914e1",
+     "load": "fdfd32d56a795707f4deba787aa29de3b45e67cd4852e4518954901bd1fb1464",
+     "reconcile": "c5cf6c7c96b42311193f0b73609ffcfedb7186ac454fe346102c8137638f5195"
+    },
+    "verdict": "pass",
+    "moved": 12000,
+    "rejected": 34,
+    "finished_at": "2026-11-14T11:30:00.500000Z"
+   },
+   "record": "tpm-a5aa370a9e16cb904b2b31ebd62619f4efd8570a"
+  },
+  "registry": "https://eu.theprotocol.cloud"
+ },
+ "claim_sha256": "a5aa370a9e16cb904b2b31ebd62619f4efd8570af9b32ed555d7364f93a4a085",
+ "record": "tpm-a5aa370a9e16cb904b2b31ebd62619f4efd8570a"
+}

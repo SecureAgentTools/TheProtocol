@@ -8,7 +8,7 @@
     <!-- ── Header (§DISCPANEL: eyebrow + H1 + lead, Design_Language.md §4) ──────── -->
     <header class="disc-hero" v-if="!embedded">
       <div class="disc-hero-main">
-        <span class="disc-eyebrow">
+        <span class="disc-eyebrow" data-static="omit">
           <span class="disc-eyebrow-dot"></span>
           {{ tp('discoveryView.hero.eyebrow', '{n} registries · one network', { n: (indexStatus?.registriesTotal || federationPeers.length + 1) }) }}
         </span>
@@ -27,11 +27,11 @@
     </header>
 
     <!-- ── Federation Network Strip ──────────────────────────── -->
-    <div class="disc-net-strip mb-3" v-if="!embedded && (federationPeers.length > 0 || networkStats)">
+    <div class="disc-net-strip mb-3" data-static="omit" v-if="!embedded && (federationPeers.length > 0 || networkStats)">
       <div class="disc-net-node disc-net-local disc-net-node--clickable" @click="openRegCard(null)" title="View this registry's card" role="button" tabindex="0" @keyup.enter="openRegCard(null)">
         <span class="disc-net-dot disc-net-dot--green"></span>
         <span class="disc-net-label">{{ localRegistryName }}</span>
-        <span class="disc-net-count">{{ localAgentCount }}</span>
+        <span class="disc-net-count">{{ fmtCount(localAgentCount) }}</span>
       </div>
       <div class="disc-net-line">
         <div class="disc-net-pulse"></div>
@@ -50,7 +50,7 @@
         <!-- §DISCFIX — each peer shows ITS OWN agent count from the server
              facets (every chip used to show one shared page-sum, or ↻). -->
         <span class="disc-net-count" v-if="peer.status === 'ACTIVE'">
-          {{ peerChipCount(peer.name) ?? '—' }}
+          {{ fmtCount(peerChipCount(peer.name)) }}
         </span>
         <span class="disc-net-badge-active" v-if="peer.status === 'ACTIVE'">{{ t('discoveryView.active') }}</span>
         <span class="disc-net-badge-inactive" v-else>{{ t('discoveryView.inactive') }}</span>
@@ -60,7 +60,7 @@
         <span v-if="lastSyncAgo" class="text-xs nc-text-muted mr-3" :title="'Last federation sync: ' + (networkStats?.lastGlobalSync || '')">⟳ {{ lastSyncAgo }}</span>
         <span class="text-xs nc-text-muted">{{ t('discoveryView.networkHealth') }}</span>
         <span class="text-xs font-bold ml-1" :class="networkStats && networkStats.networkHealth >= 90 ? 'text-green-400' : 'text-yellow-400'">
-          {{ networkStats ? networkStats.networkHealth.toFixed(0) : '—' }}%
+          {{ networkStats ? fmtCount(networkStats.networkHealth) : '—' }}%
         </span>
         <!-- §DISCPANEL (his ask): the number on each chip had no explanation anywhere on the page. -->
         <button class="disc-info-btn ml-2" type="button" data-testid="disc-strip-info"
@@ -119,7 +119,7 @@
 
     <!-- ── Stats Bar — §DISCFIX: server aggregates, '—' while loading ──── -->
     <!-- two columns on a phone: four squeezed the labels to "NETWO…" and pushed every value out (the camera, 2026-10-13) -->
-    <div class="disc-stats grid grid-cols-2 md:grid-cols-4 gap-2 mb-3" data-tour="dsc-stats" v-if="!embedded">
+    <div class="disc-stats grid grid-cols-2 md:grid-cols-4 gap-2 mb-3" data-tour="dsc-stats" data-static="omit" v-if="!embedded">
       <NeuralCard variant="flat" class="py-2 px-3 disc-stat-card" :title="'Distinct agents across this registry and its federation peers (mirrors of one agent counted once)'">
         <div class="flex items-center justify-between disc-stat-row">
           <span class="inline-flex items-center gap-1.5 text-xs uppercase nc-text-muted">
@@ -162,7 +162,7 @@
     </div>
 
     <!-- ── Main Layout ───────────────────────────────────────── -->
-    <div class="flex gap-6">
+    <div class="flex gap-6" data-static="omit">
 
       <!-- Filter Sidebar -->
       <aside class="w-64 shrink-0 hidden lg:block overflow-visible" data-tour="dsc-filters" v-if="!embedded">
@@ -237,7 +237,7 @@
                   <span v-else class="disc-ff-orb-fallback" />
                 </span>
                 <span class="disc-ff-label" :title="opt.label">{{ opt.label }}</span>
-                <span class="disc-ff-count" :class="{ 'disc-ff-count--zero': opt.count === 0 }">{{ opt.count }}</span>
+                <span class="disc-ff-count" :class="{ 'disc-ff-count--zero': opt.count === 0 }">{{ fmtCount(opt.count) }}</span>
                 <!-- §NUMALIGN — only when the index disagrees with the list, and only then. The gap is
                      always the bond gate: an agent must hold a reputation bond to be listed here, and
                      system agents (the FX router, the canaries, a treasury) never do. -->
@@ -261,7 +261,7 @@
             >
               <option value="">{{ t('discoveryView.filters.allTags', 'All tags') }}</option>
               <option v-for="tg in availableFilters.tags" :key="tg.name" :value="tg.name">
-                {{ tg.name }} ({{ tg.count }})
+                {{ tg.name }} ({{ fmtCount(tg.count) }})
               </option>
             </select>
           </div>
@@ -381,7 +381,7 @@
           <h2 class="text-xl font-semibold mb-1 nc-text-primary disc-section-h" data-tour="dsc-featured">
             <span class="disc-section-accent disc-section-accent--gold"></span>
             Distinguished Agents
-            <span class="disc-section-count">{{ encircledAgents.length }}</span>
+            <span class="disc-section-count">{{ fmtCount(encircledAgents.length) }}</span>
           </h2>
           <p class="text-xs nc-text-muted mb-4" data-testid="disc-encircled-subtitle">{{ encircledAreMarked
             ? 'Agents with verified guild work, ranked by what their registry settled'
@@ -399,7 +399,7 @@
                 <!-- UserAvatar renders the agent's encirclement (the whole point of this grid) -->
                 <UserAvatar
                   :user="agent"
-                  :avatar-url="agent.card_data?.iconUrl || agent.card_data?.icon_url || null"
+                  :avatar-url="agentAvatarUrl(agent)"
                   :display-name="agent.name || agent.did"
                   size="md"
                 />
@@ -409,18 +409,19 @@
                   <span class="disc-prov-badge" :class="'disc-prov-badge--' + provenanceOf(agent).kind" :title="provenanceOf(agent).title" data-testid="disc-prov-badge">{{ provenanceOf(agent).kind === 'index' ? '◇' : provenanceOf(agent).kind === 'sync' ? '⬡' : '⌂' }} {{ provenanceOf(agent).label }}</span><span v-if="registryTrustOf(agent)" class="disc-regtrust" :class="'disc-regtrust--' + registryTrustOf(agent)!.state" :title="registryTrustOf(agent)!.title" data-testid="disc-regtrust"><span class="disc-regtrust-dot"></span>{{ registryTrustOf(agent)!.short }}</span>
                 </div>
               </div>
-              <h3 class="font-semibold mb-1 nc-text-primary truncate">
+              <h3 class="font-semibold mb-1 nc-text-primary truncate" :title="agent.name || undefined">
                 <!-- §FESUITE: this card answered only a mouse; its name is the keyboard's way in -->
                 <button
                   type="button"
                   class="disc-card-open"
+                  :title="agent.name || undefined"
                   :aria-label="tp('discoveryView.openAgent', 'View {name}', { name: agent.name || 'agent' })"
                   @click.stop="viewAgentByDID(agent.agent_did || agent.did || agent.id)"
                 >{{ agent.name }}</button>
               </h3>
               <div class="mb-2">
                 <span v-if="agent.pricing" class="disc-price-hero disc-price-hero--paid">
-                  {{ agent.pricing.base_rate }} <small>{{ currencyForItem(agent) }}/req</small>
+                  {{ fmt(agent.pricing.base_rate, 6) }} <small>{{ currencyForItem(agent) }}/req</small>
                 </span>
                 <span v-else class="disc-price-hero disc-price-hero--free">Free</span>
               </div>
@@ -535,8 +536,10 @@
             <template v-if="searchQuery">No agents match "{{ searchQuery }}"</template>
             <template v-else>No agents found</template>
           </h3>
-          <p class="nc-text-muted mb-6">Try a broader term, clear the registry/frame filters, or browse the showcases above.</p>
-          <button @click="clearAllFilters" class="nc-btn nc-btn-ghost">Clear Filters</button>
+          <EmptyReason class="mb-6 mx-auto inline-block" :kind="emptyWhy.kind" :reason="emptyWhy.reason" data-testid="disc-empty-reason" />
+          <div>
+            <button @click="clearAllFilters" class="nc-btn nc-btn-ghost">Clear Filters</button>
+          </div>
         </div>
 
         <!-- Grid View -->
@@ -598,17 +601,18 @@
               <EarnedMarkRing :tr="agent.track_record">
                 <UserAvatar
                   :user="agent"
-                  :avatar-url="agent.card_data?.iconUrl || agent.card_data?.icon_url || null"
+                  :avatar-url="agentAvatarUrl(agent)"
                   :display-name="agent.name || agent.did"
                   size="md"
                   class="disc-card-avatar"
                 />
               </EarnedMarkRing>
               <div class="flex-1 min-w-0">
-                <h3 class="font-semibold text-base mb-1 nc-text-primary truncate">
+                <h3 class="font-semibold text-base mb-1 nc-text-primary truncate" :title="agent.name || undefined">
                   <button
                     type="button"
                     class="disc-card-open"
+                    :title="agent.name || undefined"
                     data-testid="disc-card-open"
                     :aria-label="tp('discoveryView.openAgent', 'View {name}', { name: agent.name || 'agent' })"
                     @click.stop="agent.__index ? openAtHome(agent) : viewAgentByDID(agent.agent_did || agent.did || agent.id)"
@@ -616,7 +620,7 @@
                 </h3>
                 <div class="flex items-center gap-2 flex-wrap">
                   <span v-if="agent.pricing" class="disc-price-hero disc-price-hero--paid">
-                    {{ agent.pricing.base_rate }} <small>{{ currencyForItem(agent) }}/req</small>
+                    {{ fmt(agent.pricing.base_rate, 6) }} <small>{{ currencyForItem(agent) }}/req</small>
                   </span>
                   <span v-else class="disc-price-hero disc-price-hero--free">Free</span>
                   <!-- §REPBOND (2026-09-05) — the bond chip: locked or matured, with the amount.
@@ -633,7 +637,7 @@
                   >
                     <Icon name="mdi:chart-candlestick" />
                     <span class="disc-equity-sym">${{ equityFor(agent)!.symbol }}</span>
-                    <span v-if="equityFor(agent)!.last" class="disc-equity-px">{{ equityFor(agent)!.last }}</span>
+                    <span v-if="equityFor(agent)!.last" class="disc-equity-px">{{ fmt(equityFor(agent)!.last, 4) }}</span>
                   </button>
                 </div>
               </div>
@@ -675,16 +679,16 @@
               @click.stop="openTrackRecord(agent)"
             >
               <span class="disc-tr-chip disc-tr-chip--jobs">
-                &#10003; {{ agent.track_record.jobs }} {{ trJobsLabel(agent.track_record.jobs) }}
+                &#10003; {{ fmtCount(agent.track_record.jobs) }} {{ trJobsLabel(agent.track_record.jobs) }}
               </span>
               <span v-if="agent.track_record.stars" class="disc-tr-chip disc-tr-chip--stars">
-                &#9733; {{ agent.track_record.stars }}
+                &#9733; {{ fmt(agent.track_record.stars, 1) }}
               </span>
               <span v-if="agent.track_record.cross_registry > 0" class="disc-tr-chip disc-tr-chip--xreg">
-                &#11041; {{ agent.track_record.cross_registry }}
+                &#11041; {{ fmtCount(agent.track_record.cross_registry) }}
               </span>
               <span v-if="agent.track_record.disputes > 0" class="disc-tr-chip disc-tr-chip--disputes">
-                {{ agent.track_record.disputes }} {{ t('discoveryView.tr.disputed', 'disputed') }}
+                {{ fmtCount(agent.track_record.disputes) }} {{ t('discoveryView.tr.disputed', 'disputed') }}
               </span>
               <span class="disc-tr-more">{{ t('discoveryView.tr.receipts', 'receipts') }} &#9656;</span>
             </div>
@@ -727,14 +731,14 @@
                 <span class="disc-why-label">{{ row.label }}</span>
                 <span class="disc-why-value">{{ row.value }}</span>
                 <span class="disc-why-pts" :class="row.pts >= 0 ? 'trp-okc' : 'trp-latec'">
-                  {{ row.pts >= 0 ? '+' : '' }}{{ row.pts }}
+                  {{ row.pts >= 0 ? '+' : '' }}{{ fmt(row.pts, 2) }}
                 </span>
               </div>
               <div v-if="!agent.track_record" class="disc-why-note">
                 {{ t('discoveryView.rank.noHistory', 'No verified guild history yet; position comes from the reputation tiebreak.') }}
               </div>
               <div class="disc-why-total">
-                {{ t('discoveryView.rank.score', 'proof score') }}: {{ rankBreakdown(agent).total }}
+                {{ t('discoveryView.rank.score', 'proof score') }}: {{ fmt(rankBreakdown(agent).total, 2) }}
                 <span class="disc-why-formula" :title="rankingMeta?.formula || ''">{{ t('discoveryView.rank.formulaHint', 'open formula') }}</span>
               </div>
             </div>
@@ -755,7 +759,7 @@
               <!-- Price column -->
               <div class="shrink-0 w-16 text-center pt-1">
                 <div v-if="agent.pricing" class="text-base font-bold" style="color: #f59e0b;">
-                  {{ agent.pricing.base_rate }}
+                  {{ fmt(agent.pricing.base_rate, 6) }}
                 </div>
                 <div v-else class="text-base font-bold text-green-500/70">—</div>
                 <div class="text-xs nc-text-muted">{{ agent.pricing ? currencyForItem(agent) : 'Free' }}</div>
@@ -785,7 +789,7 @@
                   </span>
                 </div>
 
-                <div class="text-xs nc-text-muted font-mono mb-1 truncate">{{ agent.humanReadableId || agent.did }}</div>
+                <div class="text-xs nc-text-muted font-mono mb-1 truncate" :title="agent.did || agent.humanReadableId">{{ agent.humanReadableId || agent.did }}</div>
                 <p class="text-sm nc-text-muted" v-html="sanitizeHighlight(agent.highlights?.description || agent.description || 'No description')"></p>
                 <QuantumCard v-if="quantumOn && agent.quantum" variant="tile" :did="agent.agent_did || agent.did" :facets="agent.quantum" />
 
@@ -811,19 +815,19 @@
                   @click.stop="openTrackRecord(agent)"
                 >
                   <span class="disc-tr-chip disc-tr-chip--jobs">
-                    &#10003; {{ agent.track_record.jobs }} {{ trJobsLabel(agent.track_record.jobs) }}
+                    &#10003; {{ fmtCount(agent.track_record.jobs) }} {{ trJobsLabel(agent.track_record.jobs) }}
                   </span>
                   <span v-if="agent.track_record.stars" class="disc-tr-chip disc-tr-chip--stars">
-                    &#9733; {{ agent.track_record.stars }}
+                    &#9733; {{ fmt(agent.track_record.stars, 1) }}
                   </span>
                   <span v-if="agent.track_record.on_time_of > 0" class="disc-tr-chip">
                     {{ agent.track_record.on_time_met }}/{{ agent.track_record.on_time_of }} {{ t('discoveryView.tr.onTime', 'on time') }}
                   </span>
                   <span v-if="agent.track_record.cross_registry > 0" class="disc-tr-chip disc-tr-chip--xreg">
-                    &#11041; {{ agent.track_record.cross_registry }} {{ t('discoveryView.tr.crossRegistry', 'cross-registry') }}
+                    &#11041; {{ fmtCount(agent.track_record.cross_registry) }} {{ t('discoveryView.tr.crossRegistry', 'cross-registry') }}
                   </span>
                   <span v-if="agent.track_record.disputes > 0" class="disc-tr-chip disc-tr-chip--disputes">
-                    {{ agent.track_record.disputes }} {{ t('discoveryView.tr.disputed', 'disputed') }}
+                    {{ fmtCount(agent.track_record.disputes) }} {{ t('discoveryView.tr.disputed', 'disputed') }}
                   </span>
                   <span class="disc-tr-more">{{ t('discoveryView.tr.receipts', 'receipts') }} &#9656;</span>
                 </div>
@@ -893,6 +897,7 @@
 
 <script setup lang="ts">
 import { appLocale } from '@/services/appLocale'
+import { fmt, fmtCompact, fmtCount } from '@/services/cockpit/num'
 import { ref, computed, reactive, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUIStore } from '@/stores/ui'
@@ -917,6 +922,8 @@ import QuantumCard from '@/components/quantum/QuantumCard.vue'
 import QuantumFilters from '@/components/quantum/QuantumFilters.vue'
 import { useQuantumWorkloads } from '@/composables/useQuantumWorkloads'
 import { emptyQuantumFilters, quantumQuery } from '@/services/quantum/quantumCard'
+import EmptyReason from '@/components/common/EmptyReason.vue'
+import { discoveryEmptyReason } from '@/services/emptyReasons'
 import { useRegistryConfig } from '@/composables/useRegistryConfig'
 import { directoryService } from '@/services/api/directory'
 import TrackRecordPanel from '@/components/common/TrackRecordPanel.vue'
@@ -926,6 +933,7 @@ import OrgMark from '@/components/OrgMark.vue'
 import EarnedMarkLegend from '@/components/common/EarnedMarkLegend.vue'
 import SovereignRegistryCard from '@/components/SovereignRegistryCard.vue'
 import UserAvatar from '@/components/common/UserAvatar.vue'
+import { agentAvatarUrl } from '@/services/agentAvatar'   // V0662 item 14: card icons from the registry
 import PeerOrb from '@/components/federation/PeerOrb.vue'
 import { useFederationTopology } from '@/composables/useFederationTopology'
 import { useI18n } from '@/composables/useI18n'
@@ -1039,21 +1047,21 @@ function rankBreakdown(agent: any): { rows: { label: string; value: string; pts:
   let total = 0
   const push = (label: string, value: string, pts: number) => { rows.push({ label, value, pts: Math.round(pts * 100) / 100 }); total += pts }
   if (tr) {
-    push(t('discoveryView.rank.jobs', 'verified jobs'), String(tr.jobs), (w.jobs_ln ?? 2) * Math.log(1 + (tr.jobs || 0)))
+    push(t('discoveryView.rank.jobs', 'verified jobs'), fmtCount(tr.jobs), (w.jobs_ln ?? 2) * Math.log(1 + (tr.jobs || 0)))
     if (tr.stars !== null && tr.stars !== undefined)
-      push(t('discoveryView.rank.stars', 'average stars'), String(tr.stars), (w.stars_centered ?? 0.5) * (tr.stars - 3))
+      push(t('discoveryView.rank.stars', 'average stars'), fmt(tr.stars, 1), (w.stars_centered ?? 0.5) * (tr.stars - 3))
     if (tr.last_verified_at) {
       const days = Math.max(0, (Date.now() - new Date(tr.last_verified_at).getTime()) / 86400000)
       push(t('discoveryView.rank.recency', 'recency'), `${Math.round(days)}d`, (w.recency_180d ?? 1) * Math.max(0, 1 - days / 180))
     }
     if (tr.cross_registry)
-      push(t('discoveryView.rank.cross', 'cross-registry'), String(tr.cross_registry), (w.cross_capped3 ?? 0.3) * Math.min(tr.cross_registry, 3))
+      push(t('discoveryView.rank.cross', 'cross-registry'), fmtCount(tr.cross_registry), (w.cross_capped3 ?? 0.3) * Math.min(tr.cross_registry, 3))
     if (tr.lost_disputes)
-      push(t('discoveryView.rank.lost', 'lost disputes'), String(tr.lost_disputes), (w.lost_dispute ?? -1.5) * tr.lost_disputes)
+      push(t('discoveryView.rank.lost', 'lost disputes'), fmtCount(tr.lost_disputes), (w.lost_dispute ?? -1.5) * tr.lost_disputes)
     if (tr.open_disputes)
-      push(t('discoveryView.rank.open', 'open disputes'), String(tr.open_disputes), (w.open_dispute ?? -0.75) * tr.open_disputes)
+      push(t('discoveryView.rank.open', 'open disputes'), fmtCount(tr.open_disputes), (w.open_dispute ?? -0.75) * tr.open_disputes)
   }
-  push(t('discoveryView.rank.reputation', 'reputation'), String(Math.round(agent.reputation_score || 0)),
+  push(t('discoveryView.rank.reputation', 'reputation'), fmtCount(agent.reputation_score || 0),
        (w.reputation_percent ?? 0.01) * Math.min(agent.reputation_score || 0, 100))
   return { rows, total: Math.round(total * 100) / 100 }
 }
@@ -1889,6 +1897,13 @@ function addTag(tag: string) {
   if (!filters.tags.includes(tag)) { filters.tags.push(tag); applyFilters() }
 }
 
+/** Why the list is empty, from the filters that are on (V0663: a list empty for a reason says which). */
+const emptyWhy = computed(() => discoveryEmptyReason({
+  query: searchQuery.value, registry: registryFilter.value, frames: selectedFrames.value.size,
+  tags: [filters.tag, ...filters.tags], pricing: filters.pricing_model, certified: !!filters.is_certified, online: !!filters.is_online,
+  quantum: Object.keys(quantumQuery(quantumFilters.value)).length > 0,
+}))
+
 function clearAllFilters() {
   searchQuery.value = ''
   registryFilter.value = 'all'
@@ -1936,12 +1951,12 @@ function reputationDot(score: number): string {
   return 'bg-gray-500'
 }
 
+// V0662 item 4: the app's digits (services/cockpit/num), never toFixed's: compact from a thousand, exact below
 function formatAVT(amount: number | null): string {
   if (amount === null) return '—'
-  if (!amount || amount === 0) return `0 ${localCurrency.value}`
-  if (amount >= 1_000_000) return `${(amount / 1_000_000).toFixed(2)}M ${localCurrency.value}`
-  if (amount >= 1_000) return `${(amount / 1_000).toFixed(1)}K ${localCurrency.value}`
-  return `${amount} ${localCurrency.value}`
+  if (!amount) return `${fmtCount(0)} ${localCurrency.value}`
+  if (Math.abs(amount) >= 1_000) return `${fmtCompact(amount, Math.abs(amount) >= 1_000_000 ? 2 : 1)} ${localCurrency.value}`
+  return `${fmt(amount, 2)} ${localCurrency.value}`
 }
 
 // §DISCFIX — honest trust labels. Before: reputation came only from the
@@ -1965,11 +1980,11 @@ function formatAVT(amount: number | null): string {
 // Nothing here is invented: both come from the row the server already sends.
 function trustLabel(agent: any): string {
   const score = Number(agent?.reputation_score || 0)
-  if (score > 0) return `Trust ${score.toFixed(0)}`
+  if (score > 0) return `Trust ${fmtCount(score)}`
   const jobs = Number(agent?.track_record?.jobs || 0)
   if (jobs > 0) {
     const step = EARNED_TIERS.find(t => jobs >= t.min)
-    if (step) return `${step.label} · ${jobs}`
+    if (step) return `${step.label} · ${fmtCount(jobs)}`
   }
   const created = agent?.created_at ? new Date(agent.created_at).getTime() : 0
   if (created && (Date.now() - created) < 30 * 86400000) return 'New'

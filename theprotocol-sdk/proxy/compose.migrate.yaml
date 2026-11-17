@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+# A migration run with `tp-proxy migrate` in the proxy image (V0664, "Migrate a system"). The kit is a folder beside this
+# file, mounted read-write at /kit: every step writes its report to /kit/.migrate/. Give the image's user (uid 10001)
+# write access to it first:  sudo chown -R 10001 ./kit
+#   docker compose -f compose.migrate.yaml build
+#   docker compose -f compose.migrate.yaml run --rm migrate check /kit
+#   docker compose -f compose.migrate.yaml run --rm migrate dry-run /kit --sample      # no account, no system needed
+#   docker compose -f compose.migrate.yaml run --rm migrate plan /kit
+#   docker compose -f compose.migrate.yaml run --rm migrate load /kit --confirm-destinations
+#   docker compose -f compose.migrate.yaml run --rm migrate reconcile /kit
+# The systems' credentials come from .env.secret (the kit's proxy.yaml names them env:...); never write them into the
+# kit. A step's parameters: --set NAME=VALUE, or --params /kit/params.env.
+services:
+  migrate:
+    build:
+      context: ..
+      dockerfile: proxy/Dockerfile
+      args:
+        EXTRAS: proxy,proxy-sql,proxy-sftp
+    image: theprotocol-proxy:migrate
+    entrypoint: ["tp-proxy", "migrate"]
+    command: ["check", "/kit"]
+    env_file:
+      - path: .env.secret
+        required: false
+    volumes:
+      - ./kit:/kit
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      disable: true

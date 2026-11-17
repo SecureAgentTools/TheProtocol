@@ -648,7 +648,7 @@ def _apex_remove_ws(m: Dict[str, Any], slug: str) -> int:
     if n:
         rc = subprocess.run(["nginx", "-t"], capture_output=True, text=True)
         assert rc.returncode == 0, f"nginx -t failed after removing /ws/events-{slug}: {rc.stderr[-300:]}"
-        subprocess.run(["systemctl", "reload", "nginx"], check=True)
+        subprocess.run(["nginx", "-s", "reload"], check=True)   # the binary, not the unit: the edge runs in a container (nginx is its shim)
     return n
 
 
@@ -859,7 +859,7 @@ def unwire(m: Dict[str, Any], f: Dict[str, Any], *, log=extras.log) -> Dict[str,
     if removed_vh:
         rc = subprocess.run(["nginx", "-t"], capture_output=True, text=True)
         assert rc.returncode == 0, f"nginx -t failed after removing {f['name']}'s vhosts: {rc.stderr[-300:]}"
-        subprocess.run(["systemctl", "reload", "nginx"], check=True)
+        subprocess.run(["nginx", "-s", "reload"], check=True)   # the binary, not the unit: the edge runs in a container (nginx is its shim)
     done["vhosts_removed"] = removed_vh
     for net in (frame_net_name(f["name"]), frame_net_name(f["name"]) + "_identity"):
         r = subprocess.run(["docker", "network", "rm", net], capture_output=True, text=True)

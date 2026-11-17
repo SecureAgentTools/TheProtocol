@@ -69,9 +69,16 @@ NATIVE_SUPPLY_TOL = float(os.getenv("NATIVE_SUPPLY_TOL", "50") or 50)
 # the baseline date to exclude pre-cutover guard-era inflation.
 TRUE_SUPPLY_SINCE = os.getenv("TRUE_SUPPLY_SINCE", "2026-05-29T00:00:00+00:00")
 
+# V0666 FA-2 (Frame A's retirement, approved in room seq 4404 "retire frame-a approved"): FRAME_A_ENABLED=false (or 0, no, off)
+# drops the frame-a slot. No fallback fills it, no FRAME_A_* setting brings it back and no frames-file entry under its id
+# is taken, so nothing in this auditor reads Frame A's store, and the readers built from FRAMES (the audit loop, /latest,
+# /health, /frames, /modes and its attested tiers, /metrics) name it nowhere. Frame A was the last frame of the legacy
+# tier, so that tier goes with it. Its stored history and its signed attestation chain stay readable. Unset: on, as before.
+FRAME_A_ENABLED: bool = (os.getenv("FRAME_A_ENABLED", "") or "").strip().lower() not in ("0", "false", "no", "off")
+
 # Back-compat: a legacy prod env relied on FRAME_A_EVENT_STORE_URL defaulting to
 # EVENT_STORE_URL. Preserve that so an un-migrated prod deployment still shows A.
-if not os.getenv("FRAME_A_EVENT_STORE_URL"):
+if FRAME_A_ENABLED and not os.getenv("FRAME_A_EVENT_STORE_URL"):
     os.environ["FRAME_A_EVENT_STORE_URL"] = EVENT_STORE_URL
 
 # (mode, frame-id, display-name, url-env, dsn-env, currency) — id is GLOBALLY
@@ -160,6 +167,8 @@ FX_ROUTER_RESIDUE_THRESHOLD = float(os.getenv("FX_ROUTER_RESIDUE_THRESHOLD", "10
 AUDITOR_SOLO = (os.getenv("AUDITOR_SOLO", "") or "").strip().lower() in ("1", "true", "yes", "on")
 FRAMES: list[dict] = []
 for _mode, _fid, _name, _url_env, _dsn_env, _ccy in ([] if AUDITOR_SOLO else _FRAME_SLOTS):
+    if _fid == "frame-a" and not FRAME_A_ENABLED:
+        continue                                        # retired (FA-2): whatever FRAME_A_* the env still carries
     _url = (os.getenv(_url_env, "") or "").strip()
     _dsn = (os.getenv(_dsn_env, "") or "").strip()
     if _url or _dsn:
@@ -290,6 +299,9 @@ def apply_extra_frames(extra: list) -> dict:
             continue
         if f["id"] in BUILTIN_FRAME_IDS:
             continue   # an env slot is the older carrier of the same frame; it wins, the entry is inert
+        if f["id"] == "frame-a" and not FRAME_A_ENABLED:
+            print("[config] extra frame entry skipped: frame-a is retired here (FRAME_A_ENABLED=false)")
+            continue
         wanted[f["id"]] = f
     added, removed, replaced = [], [], []
     for f in list(FRAMES):

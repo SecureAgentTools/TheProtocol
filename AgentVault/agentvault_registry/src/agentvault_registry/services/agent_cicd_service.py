@@ -1358,6 +1358,7 @@ class AgentCICDService:
                     response = await post_to_checked_address(
                         client, url, request.content,
                         {**headers, "Content-Type": request.headers["Content-Type"]},
+                        site="cicd_webhook",   # V0662: counted apart from developer webhooks in the guard's refusals
                     )
 
                 # 2xx — success.

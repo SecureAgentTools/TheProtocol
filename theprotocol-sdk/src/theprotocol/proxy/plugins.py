@@ -246,7 +246,9 @@ BUILTINS: Dict[str, Dict[str, str]] = {
                # V0659 (c)
                "theprotocol_events": "theprotocol.proxy.sources_builtin:TheProtocolEventsSource",
                # V0660 (c): the QPU recipe's results
-               "quantum_results": "theprotocol.proxy.quantum.plugins:QuantumResultSource"},
+               "quantum_results": "theprotocol.proxy.quantum.plugins:QuantumResultSource",
+               # V0664 (M3): used by tp-proxy migrate --sample only: a kit's sample read as the source it stands in for
+               "migrate_sample": "theprotocol.proxy.migrate.sample:MigrateSampleSource"},
     "action": {"attestation": "theprotocol.proxy.actions_builtin:AttestationAction",
                "a2a_task": "theprotocol.proxy.actions_builtin:A2ATaskAction",
                "payment": "theprotocol.proxy.actions_builtin:PaymentAction",
@@ -258,6 +260,10 @@ BUILTINS: Dict[str, Dict[str, str]] = {
              "calendar": "theprotocol.proxy.sinks_builtin:CalendarSink",
              "email_digest": "theprotocol.proxy.sinks_builtin:EmailDigestSink",
              "evidence": "theprotocol.proxy.evidence:EvidenceSink",
+             # V0664 (Migrate a system, M1): the writers, the new system's side of a migration
+             "sql_upsert": "theprotocol.proxy.sinks.sql_upsert:SqlUpsertSink",
+             "rest": "theprotocol.proxy.sinks.rest:RestSink",
+             "file_out": "theprotocol.proxy.sinks.file_out:FileOutSink",
              "quantum_submit": "theprotocol.proxy.quantum.plugins:QuantumSubmitSink"},
 }
 

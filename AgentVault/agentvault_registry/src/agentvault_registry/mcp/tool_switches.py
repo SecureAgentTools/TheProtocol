@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Iterable, List
 
 from ..core import legacy_surfaces, staking_gate
+from ..core.games import OFF_SENTENCE as GAMES_OFF_SENTENCE, games_enabled
 from ..core.quantum_mode import quantum_workloads_mode
 
 _P = "theprotocol_"
@@ -35,6 +36,14 @@ NEEDS_STAKING_PROMPTS = frozenset({"lock_units"})
 # not listed there (2026-10-25); the route refuses with the surface's sentence.
 NEEDS_ARENA_BETTING = frozenset({_P + "getArenaMatchBets"})
 
+# V0666 the games switch (core/games.py): where GAMES_ENABLED is off the game routes are not mounted, so the game tools are
+# neither LISTED nor DISPATCHED (dispatchable() below; unlike the other switches here, whose unlisted tools still execute
+# and are refused by their route, these would only reach an unknown route).
+NEEDS_GAMES = frozenset(_P + n for n in (
+    "listArenaMatches", "getArenaMatch", "getArenaMatchBets", "getArenaMatchMap", "getArenaLeaderboard",
+    "getArenaAgentStats", "createArenaMatch",
+))
+
 # V0660 (a): the quantum workload extension's reads are listed where QUANTUM_WORKLOADS_MODE is shadow or on (core/
 # quantum_mode.py); under off, the source default, the listing is what it was before V0660 and the routes refuse.
 NEEDS_QUANTUM_WORKLOADS = frozenset(_P + n for n in (
@@ -43,6 +52,8 @@ NEEDS_QUANTUM_WORKLOADS = frozenset(_P + n for n in (
 
 
 def listed(name: str) -> bool:
+    if name in NEEDS_GAMES and not games_enabled():
+        return False
     if name in NEEDS_STAKING:
         return staking_gate.staking_enabled()
     if name in NEEDS_STAKING_PAYOUTS:
@@ -52,6 +63,15 @@ def listed(name: str) -> bool:
     if name in NEEDS_QUANTUM_WORKLOADS:
         return quantum_workloads_mode() != "off"
     return True
+
+
+def dispatchable(name: str) -> bool:
+    """Whether tools/call may run the tool: every tool, except a game tool where GAMES_ENABLED is off."""
+    return not (name in NEEDS_GAMES and not games_enabled())
+
+
+def not_dispatchable_sentence(name: str) -> str:
+    return f"Tool not found: '{name}': {GAMES_OFF_SENTENCE[0].lower() + GAMES_OFF_SENTENCE[1:]}"
 
 
 def filter_listed(schemas: Iterable[dict]) -> List[dict]:

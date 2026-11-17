@@ -87,6 +87,14 @@ export function isAgentEndpoint(url?: string, method?: string): boolean {
     return false                                 // GET discovery is public
   }
 
+  // V0664 M5: the template library (/workflow-templates) acts AS the selected agent where it changes something (create, version,
+  // publish, fork, purchase, instantiate, certified: the author, the buyer and the workflow's owner are agents); the listing, a
+  // template's page and a free kit are public reads. The generated map (authTiers.generated.json) answers once the registry's
+  // routes are in it; this is the fallback until then and for an older map.
+  if (url.includes('/workflow-templates')) {
+    return method === 'post' || method === 'patch'
+  }
+
   // Most staking endpoints require agent token, but admin endpoints need developer token
   if (url.includes('/staking/')) {
     // These staking sub-endpoints use developer JWT (get_current_developer), not agent JWT

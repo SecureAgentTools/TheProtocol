@@ -343,7 +343,10 @@
                 <span v-if="failureReason(proposal)" class="sn-prop-reason" data-testid="sen-fail-reason" :data-reason="failureReason(proposal)">
                   {{ failureReason(proposal) === 'quorum_not_met' ? t('senateView.governance.failQuorum', 'quorum not met') : t('senateView.governance.failMajority', 'majority against') }}
                 </span>
-                <span :class="['sn-prop-type-pill', proposal.proposalType === 'policy_change' ? 'sn-prop-type-pill--policy' : 'sn-prop-type-pill--standard']">
+                <span v-if="proposal.proposalType === 'code_change'" class="sn-prop-type-pill sn-prop-type-pill--code">
+                  {{ t('senateView.governance.codeChange', 'Code change') }}
+                </span>
+                <span v-else :class="['sn-prop-type-pill', proposal.proposalType === 'policy_change' ? 'sn-prop-type-pill--policy' : 'sn-prop-type-pill--standard']">
                   {{ proposal.proposalType === 'policy_change' ? t('senateView.governance.policyChange') : t('senateView.governance.standard') }}
                 </span>
               </div>
@@ -847,6 +850,7 @@ import { useGovernanceStore } from '@/stores/governance'
 import { useTegStore } from '@/stores/teg'
 import { useUIStore } from '@/stores/ui'
 import { useAuthStore } from '@/stores/auth'
+import { hasAdminFlag } from '@/composables/usePermissions'
 import { useI18n } from '@/composables/useI18n'
 import { useCurrency } from '@/composables/useCurrency'
 import { apiClient } from '@/services/api/client'
@@ -1154,6 +1158,7 @@ async function submitFedVote(inFavor: boolean) {
 }
 
 async function submitFedVeto() {
+  if (!hasAdminFlag(authStore.user, 'platform')) return   // V0662 admin guard (layer 3): a member's page never asks an admin route (CrowdSec counts each refusal)
   if (!selectedFedProposal.value || !fedVetoReason.value) return
   isActing.value = true
   try {
@@ -1219,6 +1224,7 @@ const autoTallyInterval = ref<number>(60)
 // token for these dev-tier endpoints — manual Authorization headers were
 // redundant + raced against the auth-store on logout. Removed.
 async function fetchAutoTallyConfig() {
+  if (!hasAdminFlag(authStore.user, 'platform')) return   // read on every visit: an admin_platform route
   try {
     const { data } = await apiClient.get('/governance/auto-tally/config')
     autoTallyConfig.value = data
@@ -1227,6 +1233,7 @@ async function fetchAutoTallyConfig() {
 }
 
 async function toggleAutoTally() {
+  if (!hasAdminFlag(authStore.user, 'platform')) return
   try {
     const { data } = await apiClient.put('/governance/auto-tally/config', { enabled: !autoTallyConfig.value.enabled })
     autoTallyConfig.value = data
@@ -1239,6 +1246,7 @@ async function toggleAutoTally() {
 }
 
 async function updateAutoTallyInterval() {
+  if (!hasAdminFlag(authStore.user, 'platform')) return
   try {
     const { data } = await apiClient.put('/governance/auto-tally/config', { interval_seconds: autoTallyInterval.value })
     autoTallyConfig.value = data
@@ -2201,6 +2209,8 @@ async function refreshGovernance() {
 
 .sn-prop-type-pill--standard { background: rgba(var(--nc-primary-rgb),0.07); color: rgba(var(--nc-primary-rgb),0.7); }
 .sn-prop-type-pill--policy   { background: rgba(167,139,250,0.1); color: var(--sn-purple); }
+/* V0663 governed code: a code change on the floor */
+.sn-prop-type-pill--code { color: var(--nc-primary-bright, #00e5e5); border-color: rgba(var(--nc-primary-rgb, 0, 210, 210), 0.35); }
 
 .sn-proposal-card__title {
   font-size: 0.95rem; font-weight: 600; color: #e2e8f0;

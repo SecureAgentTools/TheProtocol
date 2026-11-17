@@ -58,6 +58,7 @@ vi.mock('vue-router', async () => {
 
 import PocketOurStateThread from './PocketOurStateThread.vue'
 import { SIDE_PANEL_MIN_PX } from '@/services/chat/sidePanel'
+import { cardIconSrc } from '@/services/agentAvatar'
 
 const opts = {
   global: {
@@ -136,7 +137,8 @@ describe('the side panel\'s members: logo, ring and quick actions', () => {
     expect(lead.attributes('data-ring')).toBe('live')
     expect(lead.attributes('aria-label')).toBe('session-lead: live, a status line is set')
     expect(lead.attributes('role')).toBe('img')
-    expect(w.find(`[data-testid="csp-logo-${LEAD}"]`).attributes('src')).toBe('https://docs.theprotocol.cloud/agents/session-lead/logo.png')
+    // V0662 item 14: the card's picture, drawn from the registry's icon route for that card
+    expect(w.find(`[data-testid="csp-logo-${LEAD}"]`).attributes('src')).toBe(cardIconSrc(LEAD, 'https://docs.theprotocol.cloud/agents/session-lead/logo.png'))
     const tester = w.find(`[data-testid="csp-ring-${TESTER}"]`)
     expect(tester.attributes('data-ring')).toBe('off')
     expect(tester.attributes('title')).toBe('session-tester: off, nothing in this room wakes it')

@@ -32,6 +32,8 @@ import { buildPopulationIndex, type PopulationIndex } from '@/utils/registryPopu
 import { useFrames } from '@/composables/useFrames'   // §FEDEVENTS-6 — card-truth currency/name for solo deployments
 import { useRouter, useRoute } from 'vue-router'
 import UserAvatar from '@/components/common/UserAvatar.vue'
+import { registryImageSrc } from '@/services/registryImage'   // V0663: outside images from the registry
+import { cardIconSrc } from '@/services/agentAvatar'   // V0662 item 14: card icons from the registry
 import FlareEncirclement from '@/components/common/FlareEncirclement.vue'
 import EarnedMarkRing from '@/components/common/EarnedMarkRing.vue'
 import { useAgentStore } from '@/stores/agents'
@@ -407,9 +409,10 @@ const hoveredRegistry = ref<WorldRegistry | null>(null)
 function resolveRegIcon(reg: WorldRegistry | null): string | undefined {
   const u = reg?.visual?.iconUrl
   if (!u) return undefined
-  if (/^https?:\/\//i.test(u)) return u
+  // V0663: drawn from this registry (registryImageSrc), which fetched it once through its guard
+  if (/^https?:\/\//i.test(u)) return registryImageSrc(u) ?? undefined
   const host = reg?.publicUrl
-  if (u.startsWith('/') && host) return host.replace(/\/+$/, '') + u
+  if (u.startsWith('/') && host) return registryImageSrc(host.replace(/\/+$/, '') + u) ?? undefined
   return u
 }
 // FX: globe amounts/labels track the viewer's settlement currency (AVT/BVT).
@@ -545,7 +548,7 @@ const hoverAgentFlare = computed<{ tier: string; variant: string | null; overlay
 })
 const hoverAgentAvatarUrl = computed<string | null>(() => {
   const p = hoveredAgent.value ? hoverAgentProfiles.value[hoveredAgent.value.did] : null
-  return p?.card_data?.iconUrl || p?.card_data?.icon_url || null
+  return p ? cardIconSrc(hoveredAgent.value?.did, p.card_data?.iconUrl || p.card_data?.icon_url) : null
 })
 
 const autoRotate = ref(true)

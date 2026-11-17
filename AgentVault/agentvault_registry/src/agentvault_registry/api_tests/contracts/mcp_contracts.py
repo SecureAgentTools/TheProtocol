@@ -122,6 +122,11 @@ class McpContract:
     # multiple tiers (notably authRegister and the few mcpPassthrough
     # tools that intentionally accept anonymous callers).
     expect_tier_rejections: List[str] = field(default_factory=list)
+    # V0666 (session-lead seq 4442): where a pin (override_coverage_fan) exists to quiet a KNOWN red of the tool's
+    # lifecycle, the finding that red is, named (a backlog id and a sentence). A pinned tool's failed lifecycle row is
+    # never dropped (kept_lifecycle_rows); with this set it is listed as red by design with its reason, visible in the
+    # run, never as a pass. Remove it the day the finding is fixed: the row must then pass.
+    known_red: Optional[str] = None
     # ── §FANCLAIM 2026-09-07 — "DO NOT CALL" AND "THIS IS NOT FULL COVERAGE" ARE
     # TWO DIFFERENT SENTENCES, AND `skip_reason` WAS CARRYING BOTH.
     # `skip_reason` means DO NOT CALL THIS TOOL — §MCPADMSKIP-3's gate enforces it
@@ -412,6 +417,27 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
     "theprotocol_getMyFlareStatus": McpContract(
         tier="3",
         expect_keys=["flare_tier", "unlocked_corner_flares"],
+    ),
+    # V0665 the contributor track (order gwo_5e0701efdef9d3989491bc37)
+    "theprotocol_getContributorTrack": McpContract(
+        tier="1",
+        expect_keys=["items", "rules"],
+        notes="V0665: the track itself, no developer data; the forty tiers of the pass with every item's condition.",
+    ),
+    "theprotocol_getMyContributorTrack": McpContract(
+        tier="3",
+        expect_keys=["items", "equipped_title", "season_wins", "counts"],
+        notes="V0665: the caller's progress (n of m) and unlocks. A read: no state changes.",
+    ),
+    "theprotocol_equipTitle": McpContract(
+        tier="3",
+        arguments={"title_key": None},
+        override_coverage_fan=True,
+        expect_status="success",
+        expect_keys=["title"],
+        notes=("V0665: null takes the worn title off, which changes nothing for an account that wears none, so it is the probe of the "
+               "success path. Wearing an unlocked title is unmeasured (the sweep account earns nothing); an unearned key is a 403 with "
+               "the sentence of what unlocks it."),
     ),
 
     # ----- Admin: light reads (heavy/destructive admin deferred to phase 2) -----
@@ -1014,8 +1040,8 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         expect_status="error_4xx",
         expect_error_message_contains=["no_quantum_workload", "agent_card_not_found"],
         notes="V0660 (a): the sentinel's card states no quantum workload: the route's own 404 names it "
-              "(routers/quantum_agent_cards.py). The success path is the read route's test "
-              "(tests/test_quantum_agent_card_v0660.py), on a card that states one.",
+              "(routers/quantum_agent_cards.py). V0662 (gwo_fe22d7e8): the success path is earned by "
+              "earned_refusal_slice1.earn_quantum_workload on the card discoverQuantumAgents names in the same run.",
     ),
     "theprotocol_getRegistryFederationProposals": McpContract(
         tier="2",   # re-tiered to agent JWT in Sprint 8 per wrapper docstring
@@ -1411,7 +1437,8 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
     "theprotocol_guildBid": McpContract(
         tier="2",
         arguments={"order_id": "${guild_order_id}", "price": "1",
-                   "agent_jwt": "${second_agent_jwt}"},
+                   # V0664: another developer's agent (the self-dealing gate refuses the poster's own developer)
+                   "agent_jwt": "${guild_worker_jwt}"},
         # MEASURED: the bid response is {ok, order_id, bidder, firm,
         # stake_locked} — there is NO `bid_id`. My first guess said there was,
         # and the run said otherwise. (It also means guildAward, which needs a
@@ -1490,7 +1517,7 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         tier="2",
         arguments={"order_id": "${guild_submit_order_id}",
                    "deliverable_text": "mcp-tester deliverable",
-                   "agent_jwt": "${second_agent_jwt}"},
+                   "agent_jwt": "${guild_worker_jwt}"},       # V0664: the worker the staged order awarded (14c)
         expect_keys=["ok", "order_id", "status"]),
     # Verify pays out, so it must be the POSTER, on an order already SUBMITTED
     # (a still-open order answers 409 "Order is open" — also measured).
@@ -2513,6 +2540,90 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         expect_status="error_4xx",
         expect_error_message_contains="conversation not found",
         success_path_unmeasured="marking read needs a thread of the caller's own, earned on the pairs' org rooms",
+    ),
+    "theprotocol_listWorkflowTemplates": McpContract(
+        tier="1", arguments={}, expect_status="success", expect_keys=["items"],
+        # V0664 (session-tester): GET /api/v1/workflow-templates is public and answers {"items": [...]}
+        # (Library.list). Before this the tool had a default contract that names no key: the switch held it while the
+        # library was off (cut-4), and with the library on (the pair, cut-5) it read as a contract gap. Where
+        # WORKFLOW_TEMPLATES_ENABLED is off, mcp_switches.WORKFLOW_TEMPLATES_OFF holds it to the 503.
+    ),
+    # V0664 (session-tester, session-lead seq 4308): the template tools that take a template held to the route's refusal
+    # for a template that does not exist (Library._tpl: 404 "no template with that id"; create's slug check, 422,
+    # before anything is written), so each holds a contract of its own and nothing is written. Their success paths
+    # (publish, buy, read a bought kit) are measured by the pair proof's migrate legs (migrate_legs_v0664). Where
+    # WORKFLOW_TEMPLATES_ENABLED is off, mcp_switches.WORKFLOW_TEMPLATES_OFF holds each to the 503.
+    "theprotocol_getWorkflowTemplate": McpContract(
+        tier="1", arguments={"template_id": "wtpl_phase6nosuch0000"}, expect_status="error_4xx",
+        expect_error_message_contains=["no template with that id"],
+        success_path_unmeasured="a listing read needs a published template, made on the pairs by the migrate legs",
+    ),
+    "theprotocol_getWorkflowTemplateVersion": McpContract(
+        tier="2", arguments={"template_id": "wtpl_phase6nosuch0000", "version": 1}, expect_status="error_4xx",
+        expect_error_message_contains=["no template with that id"],
+        success_path_unmeasured="a version's files need a published template, read on the pairs by the migrate legs",
+    ),
+    "theprotocol_purchaseWorkflowTemplate": McpContract(
+        tier="2", arguments={"template_id": "wtpl_phase6nosuch0000"}, expect_status="error_4xx",
+        expect_error_message_contains=["no template with that id"],
+        success_path_unmeasured="a purchase moves units to another developer's template, made on the pairs by the "
+                                "migrate legs (author +1, buyer -1)",
+    ),
+    "theprotocol_forkWorkflowTemplate": McpContract(
+        tier="2", arguments={"template_id": "wtpl_phase6nosuch0000"}, expect_status="error_4xx",
+        expect_error_message_contains=["no template with that id"],
+        success_path_unmeasured="a fork writes a template of the caller's own from a published one",
+    ),
+    "theprotocol_instantiateWorkflowTemplate": McpContract(
+        tier="2", arguments={"template_id": "wtpl_phase6nosuch0000", "total_budget": 1}, expect_status="error_4xx",
+        expect_error_message_contains=["no template with that id"],
+        success_path_unmeasured="a workflow draft needs a published template with a workflow section",
+    ),
+    "theprotocol_createWorkflowTemplate": McpContract(
+        tier="2", arguments={"slug": "X", "title": "phase6", "files": {}}, expect_status="error_4xx",
+        expect_error_message_contains=["a slug of 2 to 119 lowercase letters"],
+        success_path_unmeasured="a create writes a template; the pairs' migrate legs create and publish one",
+    ),
+    "theprotocol_publishWorkflowTemplateVersion": McpContract(
+        tier="2", arguments={"template_id": "wtpl_phase6nosuch0000", "version": 1}, expect_status="error_4xx",
+        expect_error_message_contains=["no template with that id"],
+        success_path_unmeasured="a publish needs a draft of the caller's own; the pairs' migrate legs publish one",
+    ),
+    # V0666 D1 (session-tester, gwo_f1c05b131b9208a94074beae): an organization's code distributions (release lines, not
+    # AGORA payouts). Each held to the route's refusal for a line, an organization or a change that does not exist, so a
+    # sweep writes nothing; where CODE_DISTRIBUTIONS_ENABLED is off, mcp_switches.CODE_DISTRIBUTIONS_OFF holds each to the
+    # 404. Their success paths need a line of the run's own with its organization's deciders (D2's lifecycle).
+    "theprotocol_getCodeDistribution": McpContract(
+        tier="3", arguments={"slug": "phase6-no-such-line"}, expect_status="error_4xx",
+        expect_error_message_contains=["no code distribution with that name"],
+        success_path_unmeasured="a line's read needs a line of the run's own organization (D2's lifecycle)",
+    ),
+    "theprotocol_listOrganizationCodeDistributions": McpContract(
+        tier="3", arguments={"organization_id": "phase6-no-such-org"}, expect_status="error_4xx",
+        expect_error_message_contains=["no organization with that id"],
+        success_path_unmeasured="an organization's lines need an organization of the run's own (D2's lifecycle)",
+    ),
+    "theprotocol_proposeCodeDistributionChange": McpContract(
+        tier="2", arguments={"code_distribution": "phase6-no-such-line", "title": "phase6", "problem": "phase6",
+                             "paths": ["agentvault_registry/src/agentvault_registry/static/new_registry_frontend/src/"
+                                       "assets/docs/phase6.md"], "branch": "phase6", "commit": "a" * 40},
+        expect_status="error_4xx",
+        # V0666 (services/code_authority): where this registry is not the one that governs code, a write answers 403 with the authority's
+        # sentence before it looks at the line; either refusal is the right one (the pair proof nt261116x5 met the second)
+        expect_error_message_contains=["no code distribution with that name", "Code changes are governed on"],
+        success_path_unmeasured="a proposal into a line needs a line of the run's own organization (D2's lifecycle)",
+    ),
+    "theprotocol_voteCodeDistributionChange": McpContract(
+        tier="2", arguments={"code_change_id": "cc_phase6nosuch000000000", "vote": True}, expect_status="error_4xx",
+        expect_error_message_contains=["no code change with that id", "Code changes are governed on"],   # the governing-registry refusal: see the propose row
+        success_path_unmeasured="a decider's vote needs a line's change in its ballot (D2's lifecycle)",
+    ),
+    "theprotocol_listMyWorkflowTemplates": McpContract(
+        tier="2", arguments={}, expect_status="success", expect_keys=["items"],
+        # V0664 (gwo_ef4d9981): GET /workflow-templates/mine serves an agent token (the acting agent's templates) or a
+        # developer token (its agents'), and it needs no argument, so only the empty credential is to be refused (the
+        # getChatUnreadCount shape). The route answers 503 where WORKFLOW_TEMPLATES_ENABLED is off.
+        expect_tier_rejections=["empty"],
     ),
     "theprotocol_getChatUnreadCount": McpContract(
         tier="3", arguments={}, expect_status="success", expect_keys=["messages", "threads"],
@@ -4190,8 +4301,9 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
                    "agent_jwt": "${sentinel_jwt}"},
         expect_status="error_4xx",
         expect_error_message_contains=["Order not found"],
-        success_path_unmeasured="naming a room needs an order of the caller's own posted without one (phase 3's are) "
-                                "and a room its agent takes part in and may post in, which no tester run has",
+        success_path_unmeasured="naming a room needs an order of the caller's own posted without one and a room its "
+                                "agent takes part in: earned by earned_refusal_slice1.earn_guild_order_room where the "
+                                "target states 'sandbox' (V0662, gwo_fe22d7e8); not measured elsewhere",
     ),
 
     # ── §EVTYPES4 2026-09-06 — the last 14 `autogen-skip` tools ─────────────
@@ -5066,7 +5178,8 @@ MCP_CONTRACTS: Dict[str, McpContract] = {
         expect_error_message_contains=["slash_waterfall must keep at least one of bond, stake or liquid switched on"],
         override_coverage_fan=True,
         notes="V0658 (k): a deliberately invalid order (the cascade alone, none of the agent's own steps), refused by the "
-              "policy validator before anything is written.",
+              "policy validator before anything is written. V0662 (gwo_fe22d7e8): the success path is "
+              "earned_refusal_slice1.earn_slash_order's admin_effect row (one step moved by one, written back).",
     ),
     "theprotocol_updateSupportTicketStatus": McpContract(
         tier="admin",

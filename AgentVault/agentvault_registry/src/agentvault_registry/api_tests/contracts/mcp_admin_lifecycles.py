@@ -67,10 +67,10 @@ _LIFECYCLE_NEVER_INVOKE = frozenset({
     # documented load hazard on this box (concurrency ramps to the deadman),
     # and starting one from a test sweep is exactly the kind of side effect a
     # tester must never have. The READ-ONLY sim tools (status / agents /
-    # supply-audit / topology / deadman / fund-status / logs / funding-preview)
+    # supply-audit / topology / deadman / logs)
     # stay in the sweep and are the ones the gate actually unblocks.
     "theprotocol_startSimulation", "theprotocol_stopSimulation",
-    "theprotocol_fundSimulationAgents", "theprotocol_issueFrameBSimulation",
+    "theprotocol_issueFrameBSimulation",
     # §MCPSWEEP 2026-09-27 — these four were "probed" with arguments their tools never declared, so the dispatcher
     # answered -32602 Invalid params and the sweep counted it healthy (measured on sbx-alpha's audit rows of the
     # 03:00Z run). Given their DECLARED arguments they would act, so they are not probed at all:
@@ -82,8 +82,6 @@ _LIFECYCLE_NEVER_INVOKE = frozenset({
 
 # Why each guarded tool is not invoked, where the generic sentence below is not the true one.
 _NEVER_INVOKE_REASONS: Dict[str, str] = {
-    "theprotocol_fundSimulationAgents": "never invoked by tester: moves value (bulk-funds the simulation roster from "
-                                        "the treasury) and takes no target that could be faked",
     "theprotocol_issueFrameBSimulation": "never invoked by tester: mints (genesis-equivalent for the simulation) and "
                                         "takes no target that could be faked",
     "theprotocol_tegCrossTegFund": "never invoked by tester: a one-way cross-TEG capital move; a refusal for an "
@@ -281,7 +279,6 @@ async def lifecycle_admin_dashboard_reads(rpc: RpcCall, parse: ParseResult,
         "theprotocol_getAdminWorkersStatus",
         "theprotocol_getAdminSimulationStatus",
         "theprotocol_getAdminSimulationAgents",
-        "theprotocol_getAdminSimulationFundStatus",
         "theprotocol_getAdminSimulationDeadmanStatus",
         "theprotocol_getAdminSimulationTopology",
         "theprotocol_getAdminSimulationLogs",
@@ -564,7 +561,6 @@ async def lifecycle_admin_destructive_safe(rpc: RpcCall, parse: ParseResult,
         ("theprotocol_forceEmailVerify", {"developer_id": fake_dev}),
         ("theprotocol_forceMtlsEnroll", {"agent_did": fake_did}),
         ("theprotocol_forceRegisterAgentCard", {"did": fake_did}),
-        ("theprotocol_fundSimulationAgents", {}),
         ("theprotocol_generateFederationLicense", {"operator_name": "phase6-probe", "operator_did": "did:theprotocol:phase6-no-such"}),
         ("theprotocol_generateInviteCodes", {"count": 0}),   # V0637: refused (count >= 1); a code of 1 stayed unused,
                                                                # with no note or expiry (earned_ad_developers makes and revokes one)
@@ -629,7 +625,6 @@ async def lifecycle_admin_destructive_safe(rpc: RpcCall, parse: ParseResult,
         ("theprotocol_setFederationComplianceEnforcementMode", {"mode": "phase6-not-a-mode", "reason": "phase-6 sweep probe"}),
         ("theprotocol_simulateFiatPricing", {"purchases_eur": ["1.00"], "starting_treasury_avt": "1000",
                                             "starting_fee_collector_avt": "0"}),
-        ("theprotocol_simulationFundingPreview", {}),
         ("theprotocol_slashAgent", {"agent_did": fake_did, "amount": 1, "reason": "phase-6 sweep"}),
         ("theprotocol_softDeleteDeveloper", {"developer_id": fake_dev,
                                             "reason": "phase-6 sweep probe of a developer that does not exist",
@@ -880,13 +875,26 @@ async def lifecycle_admin_command_center_self(rpc: RpcCall, parse: ParseResult,
                      else f"a frame's own TEG must be refused as out of scope (skipped), got {inner!r:.160}")
     op = next((x for x in targets if x.get("role") == "operator" and not x.get("is_self")), None)
     if op is not None:
+        # V0666 (gwo_0d88f8965ddc8d5c2566fa6c): a frame with no docker socket (production's posture: EU, ASIA, the
+        # pairs, sbx-beta) lists its operators with no containers, so the action has no TEG to name and answers
+        # "skipped": a dry run that does nothing is then the honest answer. Where the target names its TEG container the
+        # dry run must say what it would do. Either way it is a dry run.
+        names_teg = bool((op.get("containers") or {}).get("teg"))
+
+        def op_dry_run(inner: Any) -> Optional[str]:
+            if not isinstance(inner, dict) or inner.get("dry_run") is not True:
+                return f"a dry run must answer dry_run true and do nothing, got {inner!r:.200}"
+            if inner.get("status") == "ok" and str(inner.get("summary", "")).startswith("dry-run: would restart"):
+                return None                       # it names what it would do, and did nothing
+            if inner.get("status") == "skipped" and not names_teg:
+                return None                       # no TEG listed for this operator: nothing to name, nothing done
+            return (f"a dry run must say what it would do ({'its TEG is listed' if names_teg else 'or, with no TEG '
+                    'listed, answer skipped'}), got {inner!r:.200}")
         await _exec_step(rpc, parse, "theprotocol_triggerDiagnosticAction", "admin",
                          {"action_id": "teg-restart", "target": op["operator_id"], "dry_run": True}, dev_jwt, outcomes,
                          expect_status="success", timeout=30,
                          verify_against="theprotocol_triggerDiagnosticAction",
-                         verify_against_check=lambda inner: None if isinstance(inner, dict) and inner.get("dry_run") is True
-                         and inner.get("status") == "ok" and str(inner.get("summary", "")).startswith("dry-run: would restart")
-                         else f"a dry run must say what it would do and do nothing, got {inner!r:.200}")
+                         verify_against_check=op_dry_run)
 
 
 # ============================================================================

@@ -1,0 +1,2438 @@
+{
+ "generated_from": "theprotocol-sdk/src/theprotocol/proxy/mapping.py at stack v0664/stack-cut 300a3bed, run by scratchpad/c4/gen_vectors.py",
+ "record": {
+  "record_id": "r-1",
+  "source": "crm",
+  "meta": {
+   "k": "v"
+  },
+  "observed_at": "2026-11-14T12:00:00+00:00"
+ },
+ "cases": [
+  {
+   "name": "a path reads a value",
+   "payload": {
+    "a": "x"
+   },
+   "fields": "$.payload.a",
+   "expected": {
+    "value": "x"
+   }
+  },
+  {
+   "name": "a nested path",
+   "payload": {
+    "a": {
+     "b": [
+      1,
+      2,
+      3
+     ]
+    }
+   },
+   "fields": "$.payload.a.b.1",
+   "expected": {
+    "value": 2
+   }
+  },
+  {
+   "name": "record_id",
+   "payload": {},
+   "fields": "$.record_id",
+   "expected": {
+    "value": "r-1"
+   }
+  },
+  {
+   "name": "source",
+   "payload": {},
+   "fields": "$.source",
+   "expected": {
+    "value": "crm"
+   }
+  },
+  {
+   "name": "meta",
+   "payload": {},
+   "fields": "$.meta.k",
+   "expected": {
+    "value": "v"
+   }
+  },
+  {
+   "name": "observed_at",
+   "payload": {},
+   "fields": "$.observed_at",
+   "expected": {
+    "value": "2026-11-14T12:00:00+00:00"
+   }
+  },
+  {
+   "name": "a missing path refuses",
+   "payload": {
+    "a": 1
+   },
+   "fields": "$.payload.b",
+   "expected": {
+    "refused": "the record has no $.payload.b (the mapping's field f)"
+   }
+  },
+  {
+   "name": "a missing path with default",
+   "payload": {
+    "a": 1
+   },
+   "fields": {
+    "path": "$.payload.b",
+    "default": "d"
+   },
+   "expected": {
+    "value": "d"
+   }
+  },
+  {
+   "name": "a missing path required false is null",
+   "payload": {
+    "a": 1
+   },
+   "fields": {
+    "path": "$.payload.b",
+    "required": false
+   },
+   "expected": {
+    "value": null
+   }
+  },
+  {
+   "name": "a list index past the end refuses",
+   "payload": {
+    "a": [
+     1
+    ]
+   },
+   "fields": "$.payload.a.3",
+   "expected": {
+    "refused": "the record has no $.payload.a.3 (the mapping's field f)"
+   }
+  },
+  {
+   "name": "a constant",
+   "payload": {},
+   "fields": "HAM-CTA",
+   "expected": {
+    "value": "HAM-CTA"
+   }
+  },
+  {
+   "name": "a nested object maps inside",
+   "payload": {
+    "a": 1,
+    "b": "t"
+   },
+   "fields": {
+    "x": "$.payload.a",
+    "y": {
+     "path": "$.payload.b",
+     "case": "upper"
+    },
+    "z": "c"
+   },
+   "expected": {
+    "value": {
+     "x": 1,
+     "y": "T",
+     "z": "c"
+    }
+   }
+  },
+  {
+   "name": "a list maps inside",
+   "payload": {
+    "a": 1,
+    "b": 2
+   },
+   "fields": [
+    "$.payload.a",
+    "$.payload.b",
+    "k"
+   ],
+   "expected": {
+    "value": [
+     1,
+     2,
+     "k"
+    ]
+   }
+  },
+  {
+   "name": "null_if hit",
+   "payload": {
+    "a": "N/A"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "null_if": [
+     "",
+     "N/A"
+    ]
+   },
+   "expected": {
+    "value": null
+   }
+  },
+  {
+   "name": "null_if miss",
+   "payload": {
+    "a": "ok"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "null_if": [
+     "",
+     "N/A"
+    ]
+   },
+   "expected": {
+    "value": "ok"
+   }
+  },
+  {
+   "name": "null_if a single value",
+   "payload": {
+    "a": ""
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "null_if": ""
+   },
+   "expected": {
+    "value": null
+   }
+  },
+  {
+   "name": "null_if keeps a bool apart from a number",
+   "payload": {
+    "a": false
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "null_if": [
+     0
+    ]
+   },
+   "expected": {
+    "value": false
+   }
+  },
+  {
+   "name": "a null stays null through the steps",
+   "payload": {
+    "a": null
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "trim": true,
+    "case": "upper",
+    "as": "int",
+    "round": 2
+   },
+   "expected": {
+    "value": null
+   }
+  },
+  {
+   "name": "trim",
+   "payload": {
+    "a": "  x  "
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "trim": true
+   },
+   "expected": {
+    "value": "x"
+   }
+  },
+  {
+   "name": "trim a non string is unchanged",
+   "payload": {
+    "a": 5
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "trim": true
+   },
+   "expected": {
+    "value": 5
+   }
+  },
+  {
+   "name": "case upper",
+   "payload": {
+    "a": "heLLo wOrld-foo bar_baz 3rd o'neil"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "case": "upper"
+   },
+   "expected": {
+    "value": "HELLO WORLD-FOO BAR_BAZ 3RD O'NEIL"
+   }
+  },
+  {
+   "name": "case lower",
+   "payload": {
+    "a": "heLLo wOrld-foo bar_baz 3rd o'neil"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "case": "lower"
+   },
+   "expected": {
+    "value": "hello world-foo bar_baz 3rd o'neil"
+   }
+  },
+  {
+   "name": "case title",
+   "payload": {
+    "a": "heLLo wOrld-foo bar_baz 3rd o'neil"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "case": "title"
+   },
+   "expected": {
+    "value": "Hello World-Foo Bar_Baz 3Rd O'Neil"
+   }
+  },
+  {
+   "name": "case needs text",
+   "payload": {
+    "a": 5
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "case": "upper"
+   },
+   "expected": {
+    "refused": "f: case needs text"
+   }
+  },
+  {
+   "name": "title of unicode",
+   "payload": {
+    "a": "élan vital ßtraße"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "case": "title"
+   },
+   "expected": {
+    "value": "Élan Vital Sstraße"
+   }
+  },
+  {
+   "name": "regex with a group",
+   "payload": {
+    "a": "ID-42-X"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "regex": "ID-(\\d+)"
+   },
+   "expected": {
+    "value": "42"
+   }
+  },
+  {
+   "name": "regex without a group takes the match",
+   "payload": {
+    "a": "ID-42-X"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "regex": "\\d+"
+   },
+   "expected": {
+    "value": "42"
+   }
+  },
+  {
+   "name": "regex group named by number",
+   "payload": {
+    "a": "ab12cd34"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "regex": "([a-z]+)(\\d+)",
+    "group": 2
+   },
+   "expected": {
+    "value": "12"
+   }
+  },
+  {
+   "name": "regex group zero",
+   "payload": {
+    "a": "ab12cd34"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "regex": "([a-z]+)(\\d+)",
+    "group": 0
+   },
+   "expected": {
+    "value": "ab12"
+   }
+  },
+  {
+   "name": "regex group by name",
+   "payload": {
+    "a": "ab12"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "regex": "(?P<w>[a-z]+)(?P<n>\\d+)",
+    "group": "n"
+   },
+   "expected": {
+    "value": "12"
+   }
+  },
+  {
+   "name": "regex no match refuses",
+   "payload": {
+    "a": "xyz"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "regex": "\\d+"
+   },
+   "expected": {
+    "refused": "f: does not match the pattern"
+   }
+  },
+  {
+   "name": "regex no match with default",
+   "payload": {
+    "a": "xyz"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "regex": "\\d+",
+    "default": "none"
+   },
+   "expected": {
+    "value": "none"
+   }
+  },
+  {
+   "name": "regex on a number reads its text",
+   "payload": {
+    "a": 12345
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "regex": "(\\d{3})"
+   },
+   "expected": {
+    "value": "123"
+   }
+  },
+  {
+   "name": "regex group that did not take part",
+   "payload": {
+    "a": "ab"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "regex": "(a)|(c)",
+    "group": 2
+   },
+   "expected": {
+    "refused": "f: does not match the pattern"
+   }
+  },
+  {
+   "name": "map hit",
+   "payload": {
+    "a": "A"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "map": {
+     "A": "active",
+     "B": "blocked"
+    }
+   },
+   "expected": {
+    "value": "active"
+   }
+  },
+  {
+   "name": "map miss with default",
+   "payload": {
+    "a": "Z"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "map": {
+     "A": "active"
+    },
+    "map_default": "unknown"
+   },
+   "expected": {
+    "value": "unknown"
+   }
+  },
+  {
+   "name": "map miss refuses",
+   "payload": {
+    "a": "Z"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "map": {
+     "A": "active"
+    }
+   },
+   "expected": {
+    "refused": "f: no map entry and no map_default"
+   }
+  },
+  {
+   "name": "map by a number's text",
+   "payload": {
+    "a": 1
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "map": {
+     "1": "one"
+    }
+   },
+   "expected": {
+    "value": "one"
+   }
+  },
+  {
+   "name": "map a bool uses its text",
+   "payload": {
+    "a": true
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "map": {
+     "True": "yes"
+    }
+   },
+   "expected": {
+    "value": "yes"
+   }
+  },
+  {
+   "name": "as text of a bool",
+   "payload": {
+    "a": true
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "text"
+   },
+   "expected": {
+    "value": "true"
+   }
+  },
+  {
+   "name": "as text of an object sorts keys",
+   "payload": {
+    "a": {
+     "b": 1,
+     "a": [
+      1,
+      2
+     ]
+    }
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "text"
+   },
+   "expected": {
+    "value": "{\"a\":[1,2],\"b\":1}"
+   }
+  },
+  {
+   "name": "as text of a number",
+   "payload": {
+    "a": 12
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "text"
+   },
+   "expected": {
+    "value": "12"
+   }
+  },
+  {
+   "name": "as text of a float",
+   "payload": {
+    "a": 1.5
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "text"
+   },
+   "expected": {
+    "value": "1.5"
+   }
+  },
+  {
+   "name": "as text of unicode in an object",
+   "payload": {
+    "a": {
+     "n": "é"
+    }
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "text"
+   },
+   "expected": {
+    "value": "{\"n\":\"é\"}"
+   }
+  },
+  {
+   "name": "as int of 7",
+   "payload": {
+    "a": 7
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "int"
+   },
+   "expected": {
+    "value": 7
+   }
+  },
+  {
+   "name": "as int of '7'",
+   "payload": {
+    "a": "7"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "int"
+   },
+   "expected": {
+    "value": 7
+   }
+  },
+  {
+   "name": "as int of ' 7 '",
+   "payload": {
+    "a": " 7 "
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "int"
+   },
+   "expected": {
+    "value": 7
+   }
+  },
+  {
+   "name": "as int of '+7'",
+   "payload": {
+    "a": "+7"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "int"
+   },
+   "expected": {
+    "value": 7
+   }
+  },
+  {
+   "name": "as int of '-7'",
+   "payload": {
+    "a": "-7"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "int"
+   },
+   "expected": {
+    "value": -7
+   }
+  },
+  {
+   "name": "as int of 7.0",
+   "payload": {
+    "a": 7.0
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "int"
+   },
+   "expected": {
+    "value": 7
+   }
+  },
+  {
+   "name": "as int of '7.5'",
+   "payload": {
+    "a": "7.5"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "int"
+   },
+   "expected": {
+    "refused": "f: not a whole number"
+   }
+  },
+  {
+   "name": "as int of 'x'",
+   "payload": {
+    "a": "x"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "int"
+   },
+   "expected": {
+    "refused": "f: not a whole number"
+   }
+  },
+  {
+   "name": "as int of True",
+   "payload": {
+    "a": true
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "int"
+   },
+   "expected": {
+    "refused": "f: not a whole number"
+   }
+  },
+  {
+   "name": "as int of 7.5",
+   "payload": {
+    "a": 7.5
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "int"
+   },
+   "expected": {
+    "refused": "f: not a whole number"
+   }
+  },
+  {
+   "name": "as int of ''",
+   "payload": {
+    "a": ""
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "int"
+   },
+   "expected": {
+    "refused": "f: not a whole number"
+   }
+  },
+  {
+   "name": "as int of None",
+   "payload": {
+    "a": null
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "int"
+   },
+   "expected": {
+    "value": null
+   }
+  },
+  {
+   "name": "as decimal of '12.50'",
+   "payload": {
+    "a": "12.50"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal"
+   },
+   "expected": {
+    "value": "12.50"
+   }
+  },
+  {
+   "name": "as decimal of ' 3 '",
+   "payload": {
+    "a": " 3 "
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal"
+   },
+   "expected": {
+    "value": "3"
+   }
+  },
+  {
+   "name": "as decimal of 3",
+   "payload": {
+    "a": 3
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal"
+   },
+   "expected": {
+    "value": "3"
+   }
+  },
+  {
+   "name": "as decimal of 2.25",
+   "payload": {
+    "a": 2.25
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal"
+   },
+   "expected": {
+    "value": "2.25"
+   }
+  },
+  {
+   "name": "as decimal of '1e3'",
+   "payload": {
+    "a": "1e3"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal"
+   },
+   "expected": {
+    "value": "1E+3"
+   }
+  },
+  {
+   "name": "as decimal of 'x'",
+   "payload": {
+    "a": "x"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal"
+   },
+   "expected": {
+    "refused": "f: not a number"
+   }
+  },
+  {
+   "name": "as decimal of True",
+   "payload": {
+    "a": true
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal"
+   },
+   "expected": {
+    "refused": "f: not a number"
+   }
+  },
+  {
+   "name": "as decimal of 'NaN'",
+   "payload": {
+    "a": "NaN"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal"
+   },
+   "expected": {
+    "refused": "f: not a number"
+   }
+  },
+  {
+   "name": "as decimal of 'Infinity'",
+   "payload": {
+    "a": "Infinity"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal"
+   },
+   "expected": {
+    "refused": "f: not a number"
+   }
+  },
+  {
+   "name": "as decimal of '-0.0'",
+   "payload": {
+    "a": "-0.0"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal"
+   },
+   "expected": {
+    "value": "-0.0"
+   }
+  },
+  {
+   "name": "as decimal of '0.10'",
+   "payload": {
+    "a": "0.10"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal"
+   },
+   "expected": {
+    "value": "0.10"
+   }
+  },
+  {
+   "name": "as decimal of '007.5000'",
+   "payload": {
+    "a": "007.5000"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal"
+   },
+   "expected": {
+    "value": "7.5000"
+   }
+  },
+  {
+   "name": "as float of '12.50'",
+   "payload": {
+    "a": "12.50"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "float"
+   },
+   "expected": {
+    "value": 12.5
+   }
+  },
+  {
+   "name": "as float of 3",
+   "payload": {
+    "a": 3
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "float"
+   },
+   "expected": {
+    "value": 3.0
+   }
+  },
+  {
+   "name": "as float of '1e3'",
+   "payload": {
+    "a": "1e3"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "float"
+   },
+   "expected": {
+    "value": 1000.0
+   }
+  },
+  {
+   "name": "as float of 'x'",
+   "payload": {
+    "a": "x"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "float"
+   },
+   "expected": {
+    "refused": "f: not a number"
+   }
+  },
+  {
+   "name": "as float of True",
+   "payload": {
+    "a": true
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "float"
+   },
+   "expected": {
+    "refused": "f: not a number"
+   }
+  },
+  {
+   "name": "as bool of True",
+   "payload": {
+    "a": true
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "bool"
+   },
+   "expected": {
+    "value": true
+   }
+  },
+  {
+   "name": "as bool of False",
+   "payload": {
+    "a": false
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "bool"
+   },
+   "expected": {
+    "value": false
+   }
+  },
+  {
+   "name": "as bool of 'true'",
+   "payload": {
+    "a": "true"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "bool"
+   },
+   "expected": {
+    "value": true
+   }
+  },
+  {
+   "name": "as bool of 'False'",
+   "payload": {
+    "a": "False"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "bool"
+   },
+   "expected": {
+    "value": false
+   }
+  },
+  {
+   "name": "as bool of ' YES '",
+   "payload": {
+    "a": " YES "
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "bool"
+   },
+   "expected": {
+    "value": true
+   }
+  },
+  {
+   "name": "as bool of 'no'",
+   "payload": {
+    "a": "no"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "bool"
+   },
+   "expected": {
+    "value": false
+   }
+  },
+  {
+   "name": "as bool of '1'",
+   "payload": {
+    "a": "1"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "bool"
+   },
+   "expected": {
+    "value": true
+   }
+  },
+  {
+   "name": "as bool of '0'",
+   "payload": {
+    "a": "0"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "bool"
+   },
+   "expected": {
+    "value": false
+   }
+  },
+  {
+   "name": "as bool of 1",
+   "payload": {
+    "a": 1
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "bool"
+   },
+   "expected": {
+    "value": true
+   }
+  },
+  {
+   "name": "as bool of 0",
+   "payload": {
+    "a": 0
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "bool"
+   },
+   "expected": {
+    "value": false
+   }
+  },
+  {
+   "name": "as bool of 2",
+   "payload": {
+    "a": 2
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "bool"
+   },
+   "expected": {
+    "refused": "f: not a boolean"
+   }
+  },
+  {
+   "name": "as bool of 'maybe'",
+   "payload": {
+    "a": "maybe"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "bool"
+   },
+   "expected": {
+    "refused": "f: not a boolean"
+   }
+  },
+  {
+   "name": "as bool of None",
+   "payload": {
+    "a": null
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "bool"
+   },
+   "expected": {
+    "value": null
+   }
+  },
+  {
+   "name": "as bool of 1.0",
+   "payload": {
+    "a": 1.0
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "bool"
+   },
+   "expected": {
+    "refused": "f: not a boolean"
+   },
+   "ts_skip": "JSON has one number type: Python's float 1.0 is refused as a boolean, the number 1 is true"
+  },
+  {
+   "name": "as date iso",
+   "payload": {
+    "a": "2026-03-04"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "date"
+   },
+   "expected": {
+    "value": "2026-03-04"
+   }
+  },
+  {
+   "name": "as date from a datetime",
+   "payload": {
+    "a": "2026-03-04T23:30:00+02:00"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "date"
+   },
+   "expected": {
+    "value": "2026-03-04"
+   }
+  },
+  {
+   "name": "as date with a format",
+   "payload": {
+    "a": "04.03.2026"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "date",
+    "format": "%d.%m.%Y"
+   },
+   "expected": {
+    "value": "2026-03-04"
+   }
+  },
+  {
+   "name": "as date refuses a bad format",
+   "payload": {
+    "a": "2026-03-04"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "date",
+    "format": "%d.%m.%Y"
+   },
+   "expected": {
+    "refused": "f: not a date in the format %d.%m.%Y"
+   }
+  },
+  {
+   "name": "as date refuses a non-iso",
+   "payload": {
+    "a": "tomorrow"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "date"
+   },
+   "expected": {
+    "refused": "f: not an ISO 8601 date"
+   }
+  },
+  {
+   "name": "as date refuses a number",
+   "payload": {
+    "a": 5
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "date"
+   },
+   "expected": {
+    "refused": "f: not a date"
+   }
+  },
+  {
+   "name": "as datetime iso with Z",
+   "payload": {
+    "a": "2026-03-04T10:20:30Z"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "datetime"
+   },
+   "expected": {
+    "value": "2026-03-04T10:20:30Z"
+   }
+  },
+  {
+   "name": "as datetime iso with offset",
+   "payload": {
+    "a": "2026-03-04T10:20:30+02:00"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "datetime"
+   },
+   "expected": {
+    "value": "2026-03-04T08:20:30Z"
+   }
+  },
+  {
+   "name": "as datetime iso with fraction",
+   "payload": {
+    "a": "2026-03-04T10:20:30.5Z"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "datetime"
+   },
+   "expected": {
+    "value": "2026-03-04T10:20:30.500000Z"
+   }
+  },
+  {
+   "name": "as datetime naive needs tz",
+   "payload": {
+    "a": "2026-03-04T10:20:30"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "datetime"
+   },
+   "expected": {
+    "refused": "f: a datetime with no zone needs tz"
+   }
+  },
+  {
+   "name": "as datetime naive with tz winter",
+   "payload": {
+    "a": "2026-01-15T10:20:30"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "datetime",
+    "tz": "Europe/Berlin"
+   },
+   "expected": {
+    "value": "2026-01-15T09:20:30Z"
+   }
+  },
+  {
+   "name": "as datetime naive with tz summer",
+   "payload": {
+    "a": "2026-07-15T10:20:30"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "datetime",
+    "tz": "Europe/Berlin"
+   },
+   "expected": {
+    "value": "2026-07-15T08:20:30Z"
+   }
+  },
+  {
+   "name": "as datetime with a format and tz",
+   "payload": {
+    "a": "04.03.2026 17:45"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "datetime",
+    "format": "%d.%m.%Y %H:%M",
+    "tz": "Europe/Berlin"
+   },
+   "expected": {
+    "value": "2026-03-04T16:45:00Z"
+   }
+  },
+  {
+   "name": "as datetime with a format, seconds and microseconds",
+   "payload": {
+    "a": "2026-03-04 17:45:10.123456"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "datetime",
+    "format": "%Y-%m-%d %H:%M:%S.%f",
+    "tz": "UTC"
+   },
+   "expected": {
+    "value": "2026-03-04T17:45:10.123456Z"
+   }
+  },
+  {
+   "name": "as datetime new york",
+   "payload": {
+    "a": "2026-11-01 01:30"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "datetime",
+    "format": "%Y-%m-%d %H:%M",
+    "tz": "America/New_York"
+   },
+   "expected": {
+    "value": "2026-11-01T05:30:00Z"
+   }
+  },
+  {
+   "name": "as datetime with %z in the format",
+   "payload": {
+    "a": "04/Mar/2026:10:20:30 +0200"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "datetime",
+    "format": "%d/%b/%Y:%H:%M:%S %z"
+   },
+   "expected": {
+    "value": "2026-03-04T08:20:30Z"
+   }
+  },
+  {
+   "name": "as datetime with month names",
+   "payload": {
+    "a": "March 4, 2026 5:45 PM"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "datetime",
+    "format": "%B %d, %Y %I:%M %p",
+    "tz": "UTC"
+   },
+   "expected": {
+    "value": "2026-03-04T17:45:00Z"
+   }
+  },
+  {
+   "name": "as datetime two digit year",
+   "payload": {
+    "a": "04.03.26"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "datetime",
+    "format": "%d.%m.%y",
+    "tz": "UTC"
+   },
+   "expected": {
+    "value": "2026-03-04T00:00:00Z"
+   }
+  },
+  {
+   "name": "as datetime refuses garbage",
+   "payload": {
+    "a": "nonsense"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "datetime",
+    "format": "%Y",
+    "tz": "UTC"
+   },
+   "expected": {
+    "refused": "f: not a datetime in the format %Y"
+   }
+  },
+  {
+   "name": "as json of an object passes",
+   "payload": {
+    "a": {
+     "b": 1
+    }
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "json"
+   },
+   "expected": {
+    "value": {
+     "b": 1
+    }
+   }
+  },
+  {
+   "name": "as json of text",
+   "payload": {
+    "a": "{\"b\": [1, 2]}"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "json"
+   },
+   "expected": {
+    "value": {
+     "b": [
+      1,
+      2
+     ]
+    }
+   }
+  },
+  {
+   "name": "as json refuses",
+   "payload": {
+    "a": "{bad"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "json"
+   },
+   "expected": {
+    "refused": "f: not JSON"
+   }
+  },
+  {
+   "name": "as json refuses a number",
+   "payload": {
+    "a": 5
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "json"
+   },
+   "expected": {
+    "refused": "f: not JSON"
+   }
+  },
+  {
+   "name": "round decimal 2.675 to 2",
+   "payload": {
+    "a": "2.675"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal",
+    "round": 2
+   },
+   "expected": {
+    "value": "2.68"
+   }
+  },
+  {
+   "name": "round decimal 2.665 to 2",
+   "payload": {
+    "a": "2.665"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal",
+    "round": 2
+   },
+   "expected": {
+    "value": "2.66"
+   }
+  },
+  {
+   "name": "round decimal 0.125 to 2",
+   "payload": {
+    "a": "0.125"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal",
+    "round": 2
+   },
+   "expected": {
+    "value": "0.12"
+   }
+  },
+  {
+   "name": "round decimal 1.5 to 0",
+   "payload": {
+    "a": "1.5"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal",
+    "round": 0
+   },
+   "expected": {
+    "value": "2"
+   }
+  },
+  {
+   "name": "round decimal 2.5 to 0",
+   "payload": {
+    "a": "2.5"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal",
+    "round": 0
+   },
+   "expected": {
+    "value": "2"
+   }
+  },
+  {
+   "name": "round decimal -2.5 to 0",
+   "payload": {
+    "a": "-2.5"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal",
+    "round": 0
+   },
+   "expected": {
+    "value": "-2"
+   }
+  },
+  {
+   "name": "round decimal 1234.5678 to -2",
+   "payload": {
+    "a": "1234.5678"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal",
+    "round": -2
+   },
+   "expected": {
+    "value": "1.2E+3"
+   }
+  },
+  {
+   "name": "round decimal 10.005 to 2",
+   "payload": {
+    "a": "10.005"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "decimal",
+    "round": 2
+   },
+   "expected": {
+    "value": "10.00"
+   }
+  },
+  {
+   "name": "round a float",
+   "payload": {
+    "a": 2.675
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "float",
+    "round": 2
+   },
+   "expected": {
+    "value": 2.68
+   }
+  },
+  {
+   "name": "round an int is unchanged",
+   "payload": {
+    "a": 7
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "as": "int",
+    "round": 2
+   },
+   "expected": {
+    "value": 7
+   }
+  },
+  {
+   "name": "round needs a number",
+   "payload": {
+    "a": "x"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "round": 2
+   },
+   "expected": {
+    "refused": "f: round needs a number"
+   }
+  },
+  {
+   "name": "round a raw number without as",
+   "payload": {
+    "a": 3.14159
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "round": 3
+   },
+   "expected": {
+    "value": 3.142
+   }
+  },
+  {
+   "name": "order: null_if before trim",
+   "payload": {
+    "a": " N/A "
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "null_if": [
+     "N/A"
+    ],
+    "trim": true
+   },
+   "expected": {
+    "value": "N/A"
+   }
+  },
+  {
+   "name": "order: trim then case then map",
+   "payload": {
+    "a": " a "
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "trim": true,
+    "case": "upper",
+    "map": {
+     "A": "alpha"
+    }
+   },
+   "expected": {
+    "value": "alpha"
+   }
+  },
+  {
+   "name": "order: case before regex",
+   "payload": {
+    "a": "id-9"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "case": "upper",
+    "regex": "ID-(\\d)"
+   },
+   "expected": {
+    "value": "9"
+   }
+  },
+  {
+   "name": "order: regex then map",
+   "payload": {
+    "a": "x-B"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "regex": "-(\\w)",
+    "map": {
+     "B": "bee"
+    }
+   },
+   "expected": {
+    "value": "bee"
+   }
+  },
+  {
+   "name": "order: map then as",
+   "payload": {
+    "a": "one"
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "map": {
+     "one": "1"
+    },
+    "as": "int"
+   },
+   "expected": {
+    "value": 1
+   }
+  },
+  {
+   "name": "order: as then round",
+   "payload": {
+    "a": " 2.675 "
+   },
+   "fields": {
+    "path": "$.payload.a",
+    "trim": true,
+    "as": "decimal",
+    "round": 2
+   },
+   "expected": {
+    "value": "2.68"
+   }
+  },
+  {
+   "name": "the sample of the design note",
+   "payload": {
+    "first": "Ada",
+    "last": "Lovelace",
+    "state": "A",
+    "price": "N/A",
+    "created": "04.03.2026 17:45"
+   },
+   "fields": {
+    "created": {
+     "path": "$.payload.created",
+     "as": "datetime",
+     "format": "%d.%m.%Y %H:%M",
+     "tz": "Europe/Berlin"
+    },
+    "status": {
+     "path": "$.payload.state",
+     "trim": true,
+     "case": "upper",
+     "map": {
+      "A": "active",
+      "B": "blocked"
+     },
+     "map_default": "unknown"
+    },
+    "price": {
+     "path": "$.payload.price",
+     "as": "decimal",
+     "round": 2,
+     "null_if": [
+      "",
+      "N/A"
+     ]
+    },
+    "customer": {
+     "concat": [
+      "$.payload.first",
+      "$.payload.last"
+     ],
+     "sep": " "
+    }
+   },
+   "expected": {
+    "value": {
+     "created": "2026-03-04T16:45:00Z",
+     "status": "active",
+     "price": null,
+     "customer": "Ada Lovelace"
+    }
+   }
+  },
+  {
+   "name": "concat paths with a sep",
+   "payload": {
+    "a": "x",
+    "b": "y"
+   },
+   "fields": {
+    "concat": [
+     "$.payload.a",
+     "$.payload.b"
+    ],
+    "sep": "-"
+   },
+   "expected": {
+    "value": "x-y"
+   }
+  },
+  {
+   "name": "concat with a constant and a number",
+   "payload": {
+    "a": "x",
+    "n": 5
+   },
+   "fields": {
+    "concat": [
+     "$.payload.a",
+     "#",
+     "$.payload.n"
+    ]
+   },
+   "expected": {
+    "value": "x#5"
+   }
+  },
+  {
+   "name": "concat a null part refuses",
+   "payload": {
+    "a": "x",
+    "b": null
+   },
+   "fields": {
+    "concat": [
+     "$.payload.a",
+     "$.payload.b"
+    ]
+   },
+   "expected": {
+    "refused": "f: a part of concat is null"
+   }
+  },
+  {
+   "name": "concat a null part that is optional",
+   "payload": {
+    "a": "x",
+    "b": null
+   },
+   "fields": {
+    "concat": [
+     "$.payload.a",
+     {
+      "path": "$.payload.b",
+      "required": false
+     }
+    ],
+    "sep": " "
+   },
+   "expected": {
+    "value": "x "
+   }
+  },
+  {
+   "name": "concat a missing optional part",
+   "payload": {
+    "a": "x"
+   },
+   "fields": {
+    "concat": [
+     "$.payload.a",
+     {
+      "path": "$.payload.b",
+      "required": false
+     }
+    ],
+    "sep": "+"
+   },
+   "expected": {
+    "value": "x+"
+   }
+  },
+  {
+   "name": "concat a missing part refuses naming the path",
+   "payload": {
+    "a": "x"
+   },
+   "fields": {
+    "concat": [
+     "$.payload.a",
+     "$.payload.b"
+    ]
+   },
+   "expected": {
+    "refused": "the record has no $.payload.b (the mapping's field f)"
+   }
+  },
+  {
+   "name": "concat parts that are nodes",
+   "payload": {
+    "a": " x ",
+    "b": "y"
+   },
+   "fields": {
+    "concat": [
+     {
+      "path": "$.payload.a",
+      "trim": true
+     },
+     {
+      "path": "$.payload.b",
+      "case": "upper"
+     }
+    ],
+    "sep": "/"
+   },
+   "expected": {
+    "value": "x/Y"
+   }
+  },
+  {
+   "name": "concat then steps on the result",
+   "payload": {
+    "a": "x",
+    "b": "y"
+   },
+   "fields": {
+    "concat": [
+     "$.payload.a",
+     "$.payload.b"
+    ],
+    "sep": " ",
+    "case": "upper"
+   },
+   "expected": {
+    "value": "X Y"
+   }
+  },
+  {
+   "name": "concat of a bool and an object part",
+   "payload": {
+    "a": true,
+    "b": {
+     "z": 1
+    }
+   },
+   "fields": {
+    "concat": [
+     "$.payload.a",
+     "$.payload.b"
+    ],
+    "sep": "|"
+   },
+   "expected": {
+    "value": "true|{\"z\":1}"
+   }
+  },
+  {
+   "name": "a refusal names the nested field",
+   "payload": {},
+   "fields": {
+    "outer": {
+     "inner": "$.payload.nope"
+    }
+   },
+   "expected": {
+    "refused": "the record has no $.payload.nope (the mapping's field f.outer.inner)"
+   }
+  },
+  {
+   "name": "a refusal in a list names the index",
+   "payload": {},
+   "fields": [
+    "$.payload.nope"
+   ],
+   "expected": {
+    "refused": "the record has no $.payload.nope (the mapping's field f[0])"
+   }
+  },
+  {
+   "name": "a refusal for a node inside an object",
+   "payload": {
+    "a": "x"
+   },
+   "fields": {
+    "outer": {
+     "n": {
+      "path": "$.payload.a",
+      "as": "int"
+     }
+    }
+   },
+   "expected": {
+    "refused": "f.outer.n: not a whole number"
+   }
+  }
+ ],
+ "when": [
+  {
+   "name": "when none",
+   "payload": {
+    "a": 1
+   },
+   "when": null,
+   "expected": true
+  },
+  {
+   "name": "when equals true",
+   "payload": {
+    "status": "OUT"
+   },
+   "when": {
+    "path": "$.payload.status",
+    "equals": "OUT"
+   },
+   "expected": true
+  },
+  {
+   "name": "when equals false",
+   "payload": {
+    "status": "IN"
+   },
+   "when": {
+    "path": "$.payload.status",
+    "equals": "OUT"
+   },
+   "expected": false
+  },
+  {
+   "name": "when in",
+   "payload": {
+    "status": "B"
+   },
+   "when": {
+    "path": "$.payload.status",
+    "in": [
+     "A",
+     "B"
+    ]
+   },
+   "expected": true
+  },
+  {
+   "name": "when in miss",
+   "payload": {
+    "status": "Z"
+   },
+   "when": {
+    "path": "$.payload.status",
+    "in": [
+     "A"
+    ]
+   },
+   "expected": false
+  },
+  {
+   "name": "when exists true",
+   "payload": {
+    "x": 1
+   },
+   "when": {
+    "path": "$.payload.x",
+    "exists": true
+   },
+   "expected": true
+  },
+  {
+   "name": "when exists false",
+   "payload": {
+    "y": 1
+   },
+   "when": {
+    "path": "$.payload.x",
+    "exists": false
+   },
+   "expected": true
+  },
+  {
+   "name": "when missing path",
+   "payload": {
+    "y": 1
+   },
+   "when": {
+    "path": "$.payload.x",
+    "equals": 1
+   },
+   "expected": false
+  },
+  {
+   "name": "when a bare path",
+   "payload": {
+    "x": 0
+   },
+   "when": {
+    "path": "$.payload.x"
+   },
+   "expected": true
+  },
+  {
+   "name": "when equals a number",
+   "payload": {
+    "n": 1.0
+   },
+   "when": {
+    "path": "$.payload.n",
+    "equals": 1
+   },
+   "expected": true
+  }
+ ],
+ "checks": [
+  {
+   "name": "a clean mapping",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "int"
+    },
+    "b": "k"
+   },
+   "problems": []
+  },
+  {
+   "name": "path and concat",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "concat": [
+      "$.payload.b"
+     ]
+    }
+   },
+   "problems": [
+    "a: concat: a value node has a path or a concat, not both"
+   ]
+  },
+  {
+   "name": "a bad as",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "integer"
+    }
+   },
+   "problems": [
+    "a: as: 'integer' is not one of text, int, decimal, float, bool, date, datetime, json"
+   ]
+  },
+  {
+   "name": "a bad case",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "case": "camel"
+    }
+   },
+   "problems": [
+    "a: case: 'camel' is not one of upper, lower, title"
+   ]
+  },
+  {
+   "name": "trim not a bool",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "trim": "yes"
+    }
+   },
+   "problems": [
+    "a: trim: true or false"
+   ]
+  },
+  {
+   "name": "required not a bool",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "required": 1
+    }
+   },
+   "problems": [
+    "a: required: true or false"
+   ]
+  },
+  {
+   "name": "a bad regex",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "regex": "("
+    }
+   },
+   "problems": [
+    "a: regex: not a valid pattern (missing ), unterminated subpattern at position 0)"
+   ]
+  },
+  {
+   "name": "regex not text",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "regex": 5
+    }
+   },
+   "problems": [
+    "a: regex: a pattern (text)"
+   ]
+  },
+  {
+   "name": "group beyond the regex",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "regex": "(a)",
+     "group": 3
+    }
+   },
+   "problems": [
+    "a: group: 3 is not a group of the regex"
+   ]
+  },
+  {
+   "name": "group by a name not in it",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "regex": "(?P<x>a)",
+     "group": "y"
+    }
+   },
+   "problems": [
+    "a: group: 'y' is not a group of the regex"
+   ]
+  },
+  {
+   "name": "group without a regex",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "group": 1
+    }
+   },
+   "problems": [
+    "a: group: needs a regex"
+   ]
+  },
+  {
+   "name": "map not an object",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "map": [
+      "x"
+     ]
+    }
+   },
+   "problems": [
+    "a: map: an object of from: to entries"
+   ]
+  },
+  {
+   "name": "map_default without a map",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "map_default": "x"
+    }
+   },
+   "problems": [
+    "a: map_default: needs a map"
+   ]
+  },
+  {
+   "name": "format on a non date",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "int",
+     "format": "%Y"
+    }
+   },
+   "problems": [
+    "a: format: only for as: date or datetime"
+   ]
+  },
+  {
+   "name": "format empty",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "date",
+     "format": ""
+    }
+   },
+   "problems": [
+    "a: format: a strptime format (text)"
+   ]
+  },
+  {
+   "name": "tz on a date",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "date",
+     "tz": "UTC"
+    }
+   },
+   "problems": [
+    "a: tz: only for as: datetime"
+   ]
+  },
+  {
+   "name": "tz not a zone",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "datetime",
+     "tz": "Mars/Base"
+    }
+   },
+   "problems": [
+    "a: tz: 'Mars/Base' is not a time zone name"
+   ]
+  },
+  {
+   "name": "round not a whole number",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "round": 1.5
+    }
+   },
+   "problems": [
+    "a: round: a whole number of digits"
+   ]
+  },
+  {
+   "name": "round on a text",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "text",
+     "round": 2
+    }
+   },
+   "problems": [
+    "a: round: needs as: int, decimal or float (not 'text')"
+   ]
+  },
+  {
+   "name": "sep without concat",
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "sep": ","
+    }
+   },
+   "problems": [
+    "a: sep: only with concat"
+   ]
+  },
+  {
+   "name": "concat empty",
+   "fields": {
+    "a": {
+     "concat": []
+    }
+   },
+   "problems": [
+    "a: concat: a list with at least one part"
+   ]
+  },
+  {
+   "name": "a nested bad node",
+   "fields": {
+    "o": {
+     "p": {
+      "path": "$.payload.a",
+      "as": "nope"
+     }
+    }
+   },
+   "problems": [
+    "o.p: as: 'nope' is not one of text, int, decimal, float, bool, date, datetime, json"
+   ]
+  },
+  {
+   "name": "a bad node in a list",
+   "fields": {
+    "o": [
+     {
+      "path": "$.payload.a",
+      "case": "x"
+     }
+    ]
+   },
+   "problems": [
+    "o[0]: case: 'x' is not one of upper, lower, title"
+   ]
+  },
+  {
+   "name": "a bad part in a concat",
+   "fields": {
+    "a": {
+     "concat": [
+      {
+       "path": "$.payload.a",
+       "as": "nope"
+      },
+      "$.payload.b"
+     ]
+    }
+   },
+   "problems": [
+    "a.concat[0]: as: 'nope' is not one of text, int, decimal, float, bool, date, datetime, json"
+   ]
+  },
+  {
+   "name": "not a value node is left alone",
+   "fields": {
+    "a": {
+     "path": "no-dollar",
+     "as": "nope"
+    }
+   },
+   "problems": []
+  }
+ ]
+}

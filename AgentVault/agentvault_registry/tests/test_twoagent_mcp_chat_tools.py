@@ -22,7 +22,8 @@ def _record(monkeypatch):
     from agentvault_registry.mcp import tools_agent as ta
     calls: list = []
 
-    async def _req(auth, method, path, json_body=None, params=None, op_name=""):
+    async def _req(auth, method, path, json_body=None, params=None, op_name="", timeout=None):
+        # timeout: V0663, a tool that posts a message waits longer than its relay (test_mcp_chat_send_wait_v0663)
         calls.append((method, path, json_body, op_name))
         return {"ok": True}
     monkeypatch.setattr(ta, "_chat_request", _req)

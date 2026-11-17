@@ -156,14 +156,14 @@ async def apply(db: AsyncSession, dispute_id: int, new_ruling: str, *, note: str
     if d is None:
         raise LookupError(f"Dispute {dispute_id} not found")
     p = await plan(db, d, new_ruling)
-    old = d.ruling
-    claimed = await db.execute(text(_CLAIM), {"new": new_ruling, "id": int(d.id), "old": old})
+    old, did = d.ruling, int(d.id)          # read before the claim: a rollback expires d, and a lazy load is not async-safe
+    claimed = await db.execute(text(_CLAIM), {"new": new_ruling, "id": did, "old": old})
     if int(claimed.rowcount or 0) != 1:
         await db.rollback()
-        cid = await applying_correction_id(db, d.id)
+        cid = await applying_correction_id(db, did)
         if cid is not None:
-            raise CorrectionInFlight(_finish_hint(d.id, cid), cid)
-        raise CorrectionInFlight(f"Dispute {d.id} changed while this correction was being made (its ruling is no longer "
+            raise CorrectionInFlight(_finish_hint(did, cid), cid)
+        raise CorrectionInFlight(f"Dispute {did} changed while this correction was being made (its ruling is no longer "
                                  f"{rules.ruling_words(old)}); read the record again before correcting it")
     corr = DisputeCorrection(dispute_id=d.id, from_ruling=old, to_ruling=new_ruling, note=note,
                              corrected_by=corrected_by, status=APPLYING, plan=p, steps={})

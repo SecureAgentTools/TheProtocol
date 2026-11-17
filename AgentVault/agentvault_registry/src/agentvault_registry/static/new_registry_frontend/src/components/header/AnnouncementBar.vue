@@ -16,9 +16,10 @@ import { useRouter } from 'vue-router'
 import { useI18n } from '@/composables/useI18n'
 import { useAuthStore } from '@/stores/auth'
 import { hasAdminFlag } from '@/composables/usePermissions'
-import { useNotificationStore } from '@/stores/notifications'
+import { useNotificationStore, type BroadcastItem } from '@/stores/notifications'
 import Icon from '@/components/Icon.vue'
 import { alertsChip, oneLine, orderBroadcasts, shortAge } from '@/services/header/headerStrip'
+import { fetchPublicAnnouncements } from '@/services/announcements/publicAnnouncements'
 import { acquireActiveAlerts, activeAlerts, refreshActiveAlerts } from '@/services/header/activeAlerts'
 
 const { t } = useI18n()
@@ -29,7 +30,21 @@ const notif = useNotificationStore()
 
 const ROTATE_MS = 8000
 
-const ordered = computed(() => orderBroadcasts(notif.items))
+// V0664: a guest has no account to read broadcasts through, but an admin can mark an announcement public: the bar shows a guest
+// those (GET /public/announcements), shaped as the bar's own items, and a member the bell's unread ones as before.
+const isGuest = computed(() => !authStore.isAuthenticated)
+const publicItems = ref<BroadcastItem[]>([])
+async function loadPublic() {
+  try {
+    publicItems.value = (await fetchPublicAnnouncements(10)).map((a) => ({
+      id: a.id, title: a.title, body: a.body, broadcast_type: a.type, created_at: a.createdAt }))
+  } catch (_) {
+    publicItems.value = []   // a read that failed shows a guest nothing: there is no account to tell it to
+  }
+}
+watch(isGuest, (guest) => { if (guest) void loadPublic(); else publicItems.value = [] }, { immediate: true })
+
+const ordered = computed(() => orderBroadcasts(isGuest.value ? publicItems.value : notif.items))
 const index = ref(0)
 const current = computed(() => (ordered.value.length ? ordered.value[Math.min(index.value, ordered.value.length - 1)] : null))
 watch(() => ordered.value.length, (n) => { if (index.value >= n) index.value = 0 })
@@ -72,6 +87,8 @@ function step(delta: number) {
 
 function openCurrent() {
   if (!current.value) return
+  // a guest has no bell: the announcement opens on the public page
+  if (isGuest.value) { void router.push('/announcements'); return }
   try {
     window.dispatchEvent(new CustomEvent('theprotocol:open-notification-bell', { detail: { broadcastId: current.value.id } }))
   } catch (_) { /* ignore */ }
@@ -117,7 +134,10 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <!-- V0662: a guest has no broadcasts read, so the bar showed nothing. V0664: an admin can mark an announcement public, so a guest's
+       bar shows those; with none, or a read that failed, it still shows nothing -->
   <div
+    v-if="authStore.isAuthenticated || publicItems.length"
     class="ab-wrap"
     data-testid="announcement-bar"
     :data-state="readState"
@@ -159,6 +179,7 @@ onUnmounted(() => {
         <button
           type="button"
           class="ab-icon-btn"
+          v-if="!isGuest"
           data-testid="ab-mark-read"
           :aria-label="t('headerStrip.markRead', 'Mark as read')"
           :title="t('headerStrip.markRead', 'Mark as read')"

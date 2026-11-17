@@ -135,5 +135,5 @@ fi
 
 # 3) Demo vhosts off — the retired hetzner names (a frame's own five are removed by the unwire above)
 for V in hetzner-frame hetzner-es hetzner-spire; do rm -f "/etc/nginx/sites-enabled/$V"; done
-nginx -t && systemctl reload nginx && echo "[teardown] vhosts disabled, nginx reloaded"
+nginx -t && nginx -s reload && echo "[teardown] vhosts disabled, nginx reloaded"
 echo "[teardown] DONE — takedown promise honored"

@@ -50,14 +50,15 @@ class WebhookHostNotReachable(RuntimeError):
 
 
 async def post_to_checked_address(client: httpx.AsyncClient, url: str, body: bytes,
-                                  headers: Dict[str, str]) -> httpx.Response:
+                                  headers: Dict[str, str], site: str = "webhook_delivery") -> httpx.Response:
     """D6-842 (2026-10-26): POST `body` to `url` through `client` the way a developer webhook is delivered (SEC-14): the
     URL is checked at the moment of sending and the request connects only to an address that check approved. For a
     sender that is not a developer webhook (the CI/CD deployment webhook), so that both keep ONE rule. Raises
-    WebhookUrlRefused or WebhookHostNotReachable before anything is sent."""
+    WebhookUrlRefused or WebhookHostNotReachable before anything is sent. `site` names the sender in the outbound
+    guard's refusal count (V0662)."""
     sender = WebhookService()
     sender.client = client
-    return await sender._post_to_checked_address(url, body, headers)
+    return await sender._post_to_checked_address(url, body, headers, site=site)
 
 
 class WebhookService:
@@ -466,44 +467,37 @@ class WebhookService:
         ts = delivery.delivered_at.isoformat() if delivery.delivered_at else None
         return {"id": delivery.id, "event": delivery.event_type, "data": p, "timestamp": ts, "agent_did": None}
 
-    # SEC-14: how many of the checked addresses one send tries, in the resolver's order, when connecting fails
-    PINNED_ADDRESSES_TRIED = 4
+    async def _post_to_checked_address(self, url: str, body: bytes, headers: Dict[str, str],
+                                       site: str = "webhook_delivery") -> httpx.Response:
+        """POST `body` to the stored webhook URL through the one outbound guard (V0662, item 16; core/outbound_guard).
 
-    async def _post_to_checked_address(self, url: str, body: bytes, headers: Dict[str, str]) -> httpx.Response:
-        """POST `body` to the stored webhook URL, connecting only to an address checked for this very send.
-
-        D6-760: the stored URL is resolved at the moment of sending and refused when any address it resolves to is
-        internal, so a URL stored before the check existed, or a name whose address has changed since, is never called.
-        SEC-14 (2026-10-17): and the send then connects to one of the addresses that check approved. It used to hand
-        the URL to the HTTP client, which looked the name up again, so a name answering differently the second time
-        reached an address nobody checked. The request still names the webhook's host: its Host header and, for https,
-        the TLS server name (so the certificate is verified for that name), and it asks for the connection to be
-        closed after the answer, so no other webhook sharing the address reuses a connection made for this name. When
-        connecting to an address fails (nothing was sent), the next checked address is tried. A refusal, or a host
-        that resolves to nothing, is raised inside the delivery's try and recorded as that delivery's error like any
-        failed send."""
-        from agentvault_registry.input_validators import WebhookHostUnresolved, awebhook_target_addresses
+        D6-760: the stored URL is checked at the moment of sending, so a URL stored before the check existed, or a name
+        whose address has changed since, is never called. SEC-14: the send connects only to an address that check
+        approved, still naming the webhook's host (its Host header and, for https, the TLS server name, so the
+        certificate is verified for that name), asks for the connection to be closed after the answer, and tries the
+        next checked address when connecting fails (nothing was sent). Since V0662 the guard does all of it, the rule
+        every other outbound fetch follows, and counts a refusal under `site`. D6-760's literal checks of the URL itself
+        run first. A refusal, or a host that resolves to nothing, is raised inside the delivery's try and recorded as
+        that delivery's error like any failed send. The connection layer is this service's own client's (its pool, its
+        TLS settings); the guard decides and pins in front of it and leaves it open."""
+        from agentvault_registry.core.outbound_guard import OutboundRefused, guarded_client
+        from agentvault_registry.input_validators import validate_webhook_url
         try:
-            addresses = await awebhook_target_addresses(url)
-        except WebhookHostUnresolved as e:
-            raise WebhookHostNotReachable(f"Webhook host not reachable: {e}")
+            validate_webhook_url(url, resolve=False)
         except ValueError as e:
             raise WebhookUrlRefused(f"Webhook URL refused: {e}")
         if not self.client:
             self.client = httpx.AsyncClient(timeout=10.0)
-        if not addresses:   # the host is written as an address, checked above: connected to as written
-            return await self.client.post(url, content=body, headers=headers)
-        target = httpx.URL(url)
-        pinned = {**headers, "Host": target.netloc.decode("ascii"), "Connection": "close"}
-        extensions = {"sni_hostname": target.raw_host.decode("ascii")} if target.scheme == "https" else {}
-        failure: Optional[Exception] = None
-        for address in addresses[:self.PINNED_ADDRESSES_TRIED]:
-            try:
-                return await self.client.post(str(target.copy_with(host=address)), content=body, headers=pinned,
-                                              extensions=extensions)
-            except (httpx.ConnectError, httpx.ConnectTimeout) as e:   # nothing reached this address: try the next
-                failure = e
-        raise failure
+        inner = getattr(self.client, "_transport", None)
+        try:
+            async with guarded_client(site, inner=inner, timeout=self.client.timeout) as client:
+                return await client.fetch("POST", url, content=body, headers=headers)
+        except OutboundRefused as e:
+            raise WebhookUrlRefused(f"Webhook URL refused: the outbound guard refused its destination ({e.reason})")
+        except httpx.ConnectError as e:
+            if "resolves to no address" in str(e):
+                raise WebhookHostNotReachable("Webhook host not reachable: the URL's host resolves to no address right now")
+            raise
 
     async def retry_delivery(
         self,

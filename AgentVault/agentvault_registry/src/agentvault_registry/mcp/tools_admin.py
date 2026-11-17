@@ -52,7 +52,7 @@ from typing import Dict, Any, Optional, List
 import httpx
 
 from ..config import settings
-from ..core.observability_urls import grafana_url, prometheus_url
+from ..core.observability_urls import grafana_target, prometheus_url
 from ..es_ssl_helper import get_httpx_verify
 from ..security import create_access_token
 from .auth_bridge import MCPAuthContext, MCPAuthError, format_tool_exception
@@ -539,14 +539,23 @@ async def admin_grafana_query(
     if not path.startswith("/"):
         path = "/" + path
 
-    url = f"{grafana_url()}{path}"
+    # V0664 (gwo_94d297dfb0fc293483ad1632): GRAFANA_URL may name a unix socket (a frame's Grafana listens on nothing
+    # else); the request then goes through it. An http URL is dialed exactly as before.
+    base, socket_path = grafana_target()
+    if socket_path == "":
+        return {"error": "GRAFANA_URL names a unix socket but no path (unix:///path/to/grafana.sock). No request was sent.",
+                "path": path}
+    url = f"{base}{path}"
     # Grafana HTTP API accepts HTTP Basic Auth
     auth_tuple = (_grafana_user(), password)
+    client_kwargs: Dict[str, Any] = {"timeout": HTTPX_TIMEOUT, "auth": auth_tuple}
+    if socket_path:
+        client_kwargs["transport"] = httpx.AsyncHTTPTransport(uds=socket_path)
 
-    logger.info(f"[AdminMCP] adminGrafanaQuery: {method} {path}")
+    logger.info(f"[AdminMCP] adminGrafanaQuery: {method} {path}{' via unix socket' if socket_path else ''}")
 
     try:
-        async with httpx.AsyncClient(timeout=HTTPX_TIMEOUT, auth=auth_tuple) as client:
+        async with httpx.AsyncClient(**client_kwargs) as client:
             if method == "GET":
                 resp = await client.get(url, params=params)
             elif method == "POST":
@@ -577,6 +586,12 @@ async def admin_grafana_query(
 
     except httpx.TimeoutException:
         return {"error": f"Grafana request timed out after {HTTPX_TIMEOUT}s", "path": path}
+    except httpx.ConnectError as e:
+        if socket_path:
+            return {"error": f"Grafana's unix socket {socket_path} could not be reached ({e}): is the socket mounted "
+                             "into this registry and Grafana running?", "path": path}
+        logger.error(f"[AdminMCP] adminGrafanaQuery error: {e}", exc_info=True)
+        return {"error": str(e), "path": path}
     except Exception as e:
         logger.error(f"[AdminMCP] adminGrafanaQuery error: {e}", exc_info=True)
         return {"error": str(e), "path": path}
@@ -1984,11 +1999,6 @@ async def get_admin_simulation_deadman_status(auth: MCPAuthContext) -> Dict[str,
     return await _admin_get(auth, "/api/v1/admin/simulation/deadman-status")
 
 
-async def get_admin_simulation_fund_status(auth: MCPAuthContext) -> Dict[str, Any]:
-    """Get simulation agent fund status. Admin only."""
-    return await _admin_get(auth, "/api/v1/admin/simulation/fund-status")
-
-
 async def get_admin_simulation_logs(auth: MCPAuthContext, limit: int = 100) -> Dict[str, Any]:
     """Get simulation execution logs (paginated). Admin only."""
     return await _admin_get(
@@ -2025,16 +2035,6 @@ async def stop_simulation(auth: MCPAuthContext) -> Dict[str, Any]:
 async def mint_frame_b_simulation(auth: MCPAuthContext) -> Dict[str, Any]:
     """DESTRUCTIVE: mint Frame B simulation tokens (genesis-equivalent for sim). Admin only — sandbox/Frame-B only."""
     return await _admin_post(auth, "/api/v1/admin/simulation/mint-frame-b")
-
-
-async def fund_simulation_agents(auth: MCPAuthContext) -> Dict[str, Any]:
-    """DESTRUCTIVE: bulk-fund simulation agents from treasury. Admin only."""
-    return await _admin_post(auth, "/api/v1/admin/simulation/fund")
-
-
-async def simulation_funding_preview(auth: MCPAuthContext) -> Dict[str, Any]:
-    """Dry-run preview of simulation funding (what would be funded, total cost). Admin only."""
-    return await _admin_post(auth, "/api/v1/admin/simulation/funding-preview")
 
 
 # ── DEVELOPER ADMIN MUTATIONS ─────────────────────────────────────────────
@@ -4468,13 +4468,10 @@ ADMIN_TOOL_SCHEMAS = [
     {"name": "theprotocol_getAdminSimulationSupplyAudit", "description": "Simulation-perspective supply audit. Admin only.", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "theprotocol_getAdminSimulationTopology", "description": "Federation topology from sim. Admin only.", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "theprotocol_getAdminSimulationDeadmanStatus", "description": "Deadman-switch status. Admin only.", "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "theprotocol_getAdminSimulationFundStatus", "description": "Sim agent fund status. Admin only.", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "theprotocol_getAdminSimulationLogs", "description": "Sim execution logs. Admin only.", "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer", "default": 100, "minimum": 1, "maximum": 500}}}},
     {"name": "theprotocol_startSimulation", "description": "DESTRUCTIVE: start a sim run (synthetic load) with the route's own fields; the go-to shape is BOUNDED dynamic (dynamic=true with max_concurrency set). Admin only.", "inputSchema": {"type": "object", "properties": {"mode": {"type": "string", "enum": ["mixed", "local-only", "cross-only", "cross-frame-only", "fx", "market", "delegation"]}, "pairs": {"type": "integer", "minimum": 1, "maximum": 500}, "cycle_interval": {"type": "integer", "minimum": 0, "maximum": 3600}, "cycles": {"type": "integer", "minimum": 0}, "instances": {"type": "integer", "minimum": 1, "maximum": 16}, "concurrency": {"type": "integer", "minimum": 1, "maximum": 1000}, "backend_mode": {"type": "string", "enum": ["mixed", "async", "2pc", "intra"]}, "rate_tps": {"type": "number"}, "dynamic": {"type": "boolean"}, "target_settle_ms": {"type": "integer", "minimum": 200, "maximum": 120000}, "target_metric": {"type": "string", "enum": ["p50", "p95", "avg"]}, "min_concurrency": {"type": "integer", "minimum": 1, "maximum": 1000}, "max_concurrency": {"type": "integer", "minimum": 1, "maximum": 1000}, "max_backlog": {"type": "integer", "minimum": 0, "maximum": 1000000}, "venue_balance": {"type": "string", "enum": ["currency", "venue"]}, "passport_share": {"type": "number", "minimum": 0, "maximum": 0.95}, "spawn_subagents": {"type": "boolean"}, "xreg_delegation": {"type": "boolean"}, "spawn_frames": {"type": "string"}, "xreg_only": {"type": "boolean"}, "clerk_anchored": {"type": "boolean"}}}},
     {"name": "theprotocol_stopSimulation", "description": "DESTRUCTIVE: stop a running simulation. Admin only.", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "theprotocol_issueFrameBSimulation", "description": "DESTRUCTIVE: issue Frame B simulation units. Sandbox/Frame-B only. Admin.", "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "theprotocol_fundSimulationAgents", "description": "DESTRUCTIVE: bulk-fund sim agents from treasury. Admin only.", "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "theprotocol_simulationFundingPreview", "description": "Dry-run preview of sim funding. Admin only.", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "theprotocol_suspendDeveloper", "description": "DESTRUCTIVE: suspend a developer account. The route requires a reason (10-500 characters). Admin only.", "inputSchema": {"type": "object", "properties": {"developer_id": {"type": "integer"}, "reason": {"type": "string", "minLength": 10, "maxLength": 500}}, "required": ["developer_id", "reason"]}},
     {"name": "theprotocol_reinstateDeveloper", "description": "DESTRUCTIVE: reinstate a suspended developer. Admin only.", "inputSchema": {"type": "object", "properties": {"developer_id": {"type": "integer"}}, "required": ["developer_id"]}},
     {"name": "theprotocol_getAdminDeveloperActivity", "description": "Recent EventStore activity for this dev. Admin only.", "inputSchema": {"type": "object", "properties": {"developer_id": {"type": "integer"}}, "required": ["developer_id"]}},

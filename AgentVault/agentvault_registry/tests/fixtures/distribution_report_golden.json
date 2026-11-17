@@ -1,0 +1,202 @@
+{
+  "envelope": {
+    "digest": "3b2538a7f2d2ffa7542b8cd4f4610661658d172d51729f972f6f94b44228e861",
+    "envelope_version": 1,
+    "kind": "distribution.release.report",
+    "registry_spiffe_id": "spiffe://golden.test/registry/golden",
+    "report": {
+      "changes": [
+        {
+          "ballot": {
+            "ends": "2026-11-22T10:00:00+00:00",
+            "result": {
+              "sentence": "2 for, 0 against, of 2 deciders: passed",
+              "status": "PASSED"
+            },
+            "rule": {
+              "decider_team_id": null,
+              "pass_rule": "simple",
+              "quorum_percent": 50
+            },
+            "votes": [
+              {
+                "agent_did": "did:a:1",
+                "cast_at": "2026-11-15T11:00:00+00:00",
+                "developer_id": 1,
+                "vote": true
+              },
+              {
+                "agent_did": "did:a:2",
+                "cast_at": "2026-11-15T12:00:00+00:00",
+                "developer_id": 2,
+                "vote": true
+              }
+            ]
+          },
+          "change_kind": null,
+          "checker": {
+            "acceptance": {
+              "ok": true,
+              "reasons": []
+            }
+          },
+          "content_hash": null,
+          "created_at": "2026-11-15T10:00:00+00:00",
+          "id": "cc_golden1",
+          "kind": "code",
+          "outcome": {
+            "branch": "b",
+            "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "go": null,
+            "merged": {
+              "into": "V0666_golden"
+            },
+            "org_go": null,
+            "passed_at": "2026-11-15T12:00:00+00:00",
+            "paths": [
+              "views/A.vue"
+            ],
+            "sensitive": false,
+            "veto": null
+          },
+          "proposer": {
+            "agent_did": "did:a:3",
+            "developer_id": 3
+          },
+          "reviews": [
+            {
+              "at": "2026-11-15T10:30:00+00:00",
+              "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "reviewer_developer_id": 2,
+              "verdict": "approve"
+            }
+          ],
+          "state": "merged",
+          "target": "theprotocol/AgentVault",
+          "title": "A code change"
+        },
+        {
+          "ballot": {
+            "ends": "2026-11-23T09:00:00+00:00",
+            "result": {
+              "sentence": "2 for, 0 against, of 2 deciders: passed",
+              "status": "PASSED"
+            },
+            "rule": {
+              "decider_team_id": null,
+              "pass_rule": "simple",
+              "quorum_percent": 50
+            },
+            "votes": [
+              {
+                "agent_did": "did:a:1",
+                "cast_at": "2026-11-16T09:10:00+00:00",
+                "developer_id": 1,
+                "vote": true
+              },
+              {
+                "agent_did": "did:a:2",
+                "cast_at": "2026-11-16T09:20:00+00:00",
+                "developer_id": 2,
+                "vote": true
+              }
+            ]
+          },
+          "change_kind": "console_text",
+          "checker": {
+            "at": "2026-11-16T09:00:00+00:00",
+            "bytes": 24,
+            "kind": "console_text",
+            "ok": true,
+            "rules": [
+              "schema",
+              "secrets",
+              "size"
+            ],
+            "target": "landing.tagline"
+          },
+          "content_hash": "bafc7b8069ea13fa3b8c1ba38ba4e9f9a9973c94f305cdeeb9acbecde1868742",
+          "created_at": "2026-11-16T09:00:00+00:00",
+          "id": "ct_golden2",
+          "kind": "content",
+          "outcome": {
+            "after_hash": "d681abee49c93edf824c39b59c331f3a33d9d9c7acf6cd71dfe6704e4980192e",
+            "applied_at": "2026-11-16T09:20:00+00:00",
+            "apply_error": null,
+            "before_hash": null,
+            "undone": null
+          },
+          "proposer": {
+            "agent_did": "did:a:3",
+            "developer_id": 3
+          },
+          "reviews": [],
+          "state": "applied",
+          "target": "landing.tagline",
+          "title": "A tagline"
+        }
+      ],
+      "counts": {
+        "by_state": {
+          "applied": 1,
+          "merged": 1
+        },
+        "changes": 2,
+        "code": 1,
+        "content": 1
+      },
+      "deciders_now": 2,
+      "generated_at": "2026-11-16T12:00:00+00:00",
+      "kind": "distribution.release.report",
+      "line": {
+        "base_release": "V0666",
+        "decider_team_id": null,
+        "open_paths": [
+          "views/"
+        ],
+        "organization_id": "org-golden",
+        "organization_name": "Golden Org",
+        "pass_rule": "simple",
+        "quorum_percent": 50,
+        "slug": "golden",
+        "state": "active",
+        "title": "The golden line"
+      },
+      "protected_set": {
+        "reason": "the line's builds do not exist yet (D6): the protected set is checked on every build against its base release, so there is no verdict to state; this report never reads as a pass for what nobody measured",
+        "status": "not_measured"
+      },
+      "registry": {
+        "name": "golden",
+        "spiffe_id": "spiffe://golden.test/registry/golden"
+      },
+      "release": "V0666_golden",
+      "report_version": 1
+    },
+    "signature": {
+      "alg": "EdDSA",
+      "jwks_url": "/.well-known/registry-jwks.json",
+      "kid": "spiffe://golden.test/registry/golden#1",
+      "signed_canonical": [
+        "registry_spiffe_id",
+        "kind",
+        "subject",
+        "digest"
+      ],
+      "value": "3FfAPlfd3vThYg_Gt8i0B380DHemnuu_OgYU3E05fBVqYokD4qMmrX3TJRGiFl-j2G2hjTLKu54cMgZP2RjWCQ"
+    },
+    "subject": "V0666_golden"
+  },
+  "jwks": {
+    "keys": [
+      {
+        "alg": "EdDSA",
+        "crv": "Ed25519",
+        "kid": "spiffe://golden.test/registry/golden#1",
+        "kty": "OKP",
+        "use": "sig",
+        "x": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg"
+      }
+    ]
+  }
+}

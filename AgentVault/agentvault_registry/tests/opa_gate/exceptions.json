@@ -1,0 +1,51 @@
+{
+ "schema": "theprotocol.opa-decision-exceptions/1",
+ "note": "The OPA decision sites that throw the answer away (await shadow_check(...) as a bare statement): they record OPA's verdict in shadow and bind nothing, even under OPA_ENFORCE. Read by tests/test_opa_decision_gate_v0666.py: a new discarding site fails until it uses the answer or is listed here; a site that is wired leaves this list in the same change. On the forbidden list of governed code (services/code_changes._BACKSTOP): it changes only on the platform maintainer's approval card. Census: 2026-11-15 (session-tester, session-code).",
+ "sites": [
+  {
+   "file": "middleware/readonly_mode.py",
+   "rule": "agentvault/invariants/write_allowed",
+   "reason": "shadow, phase 2 wires it"
+  },
+  {
+   "file": "routers/admin_agents.py",
+   "rule": "agentvault/invariants/bulk_blast_radius_ok",
+   "reason": "shadow, phase 2 wires it"
+  },
+  {
+   "file": "routers/contracts_v2.py",
+   "rule": "agentvault/invariants/contract_settlement_ok",
+   "reason": "shadow, phase 2 wires it"
+  },
+  {
+   "file": "routers/exchange.py",
+   "rule": "agentvault/invariants/venue_order_ok",
+   "reason": "shadow, phase 2 wires it"
+  },
+  {
+   "file": "routers/fiat_onramp.py",
+   "rule": "agentvault/invariants/fiat_flow_ok",
+   "reason": "shadow, phase 2 wires it"
+  },
+  {
+   "file": "routers/teg_integration.py",
+   "rule": "agentvault/invariants/peer_value_transfer_ok",
+   "reason": "shadow, phase 2 wires it"
+  },
+  {
+   "file": "routers/teg_integration.py",
+   "rule": "agentvault/invariants/mint_allowed",
+   "reason": "shadow, phase 2 wires it"
+  },
+  {
+   "file": "services/contract_xframe.py",
+   "rule": "agentvault/invariants/trust_domain_bound",
+   "reason": "shadow, phase 2 wires it"
+  },
+  {
+   "file": "services/liability.py",
+   "rule": "agentvault/invariants/liability_composition_ok",
+   "reason": "shadow, phase 2 wires it"
+  }
+ ]
+}

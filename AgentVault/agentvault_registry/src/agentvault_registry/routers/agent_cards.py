@@ -1339,6 +1339,18 @@ _DISCOVER_QUANTUM_COLUMNS = ("quantum_ext,\n                   (SELECT j FROM qf
                              "                   ")
 
 
+def _empty_page_total(facet_rows: Any, origin_list: list) -> int:
+    """V0663 recut (gwo_9c2f8be8a69c8fb97fc5c517): the population a page past the last row answers. The facets of the
+    same request count the origin-unfiltered set: their grand total, or with an origin filter the counts of the origins
+    asked (matched as the page's own filter matches them, lower-cased)."""
+    rows = [r for r in (facet_rows or []) if isinstance(r, dict) or hasattr(r, "get")]
+    if not origin_list:
+        grand = next((r for r in rows if r.get("origin") is None), None)
+        return int(grand["count"]) if grand else 0
+    wanted = set(origin_list)
+    return sum(int(r["count"]) for r in rows if r.get("origin") is not None and str(r["origin"]).lower() in wanted)
+
+
 def _quantum_param(v: Any) -> Optional[str]:
     """A quantum discovery parameter as the caller sent it, or None (a direct call passes FastAPI's Query default)."""
     return v if isinstance(v, str) else None
@@ -1911,7 +1923,9 @@ async def discover_agent_cards(
             _qe = _jsonb(r["quantum_ext"])
             items[-1]["quantum"] = _qac.facets(_qe.get("params")) if isinstance(_qe, dict) else None
 
-    total = int(page_rows[0]["full_total"]) if page_rows else 0
+    # a page inside the population: its window total; a page past the last row has no row to carry one, so it answers
+    # the population its own facets counted (it used to answer 0 beside the real facets.total)
+    total = int(page_rows[0]["full_total"]) if page_rows else _empty_page_total(facet_rows, origin_list)
     origins_out = []
     facet_total = {"count": 0, "live_24h": 0, "paid": 0}
     for fr in facet_rows:

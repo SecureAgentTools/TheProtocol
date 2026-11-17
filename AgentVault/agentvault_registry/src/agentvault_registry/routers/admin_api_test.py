@@ -8485,8 +8485,6 @@ async def test_endpoint(
                         "/admin/docker-stats",
                         "/admin/combined-health",
                         "/admin/simulation/agents",
-                        "/admin/simulation/fund",
-                        "/admin/simulation/funding-preview",
                         "/admin/api-test/run-all",
                         "/admin/api-test/test-federation",
                         # 2026-04-26 — Production admin aggregation endpoints
@@ -9278,8 +9276,7 @@ async def test_endpoint(
             # post-processor. Same patterns, fallback path coverage.
             elif (_sc is None or _sc == 504) and (original_path or "") in (
                 "/admin/docker-stats", "/admin/combined-health",
-                "/admin/simulation/agents", "/admin/simulation/fund",
-                "/admin/simulation/funding-preview",
+                "/admin/simulation/agents",
                 "/admin/api-test/run-all", "/admin/api-test/test-federation",
                 # 2026-04-26 — Production admin aggregation endpoints (mirror)
                 "/admin/system-resources",

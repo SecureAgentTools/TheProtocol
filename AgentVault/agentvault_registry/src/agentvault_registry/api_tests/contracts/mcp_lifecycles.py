@@ -516,8 +516,7 @@ async def lifecycle_webhook_full_crud(rpc: RpcCall, parse: ParseResult,
     ok, r = await _exec_step(rpc, parse,
         "theprotocol_createWebhook", "3",
         {"url": "https://webhook.example.test/lifecycle-crud",
-         "events": ["agent.created"],
-         "description": "phase-4 lifecycle test"},
+         "events": ["agent.created"]},
         dev_jwt, outcomes,
     )
     if not ok or "id" not in r:
@@ -3437,7 +3436,14 @@ async def lifecycle_deployment_safe_paths(rpc: RpcCall, parse: ParseResult,
 async def lifecycle_arena_safe_paths(rpc: RpcCall, parse: ParseResult,
                                        bag: Any, outcomes: Dict[str, dict]) -> None:
     """Arena match creation, then the two reads asked about the match made (§MCPTEST30 V0636: they were only ever
-    asked about one that does not exist); the unknown-match probes stay, as refusal rows."""
+    asked about one that does not exist); the unknown-match probes stay, as refusal rows. V0666: where the target's games are
+    off (games_enabled false) nothing is called and every arena row is NOT MEASURED."""
+    _off = _switches.unmeasured_off("theprotocol_createArenaMatch")
+    if _off:
+        for _t, _tier in (("theprotocol_createArenaMatch", "1"), ("theprotocol_getArenaMatch", "1"),
+                          ("theprotocol_getArenaMatchMap", "1"), ("theprotocol_getArenaMatchBets", "1")):
+            outcomes[_t] = _not_measured(_t, _tier, _off)
+        return
     # createArenaMatch is developer-tier (administrators only, D6-634); the route reads mode and add_bots
     # §BEARER4 2026-09-07 — the MCP ENDPOINT wants a bearer on every path (401 otherwise) even for a tier-1 TOOL: with
     # none, the call 401'd with an EMPTY body and the lifecycle recorded it healthy under expect_status="any", so the
@@ -4749,8 +4755,7 @@ async def lifecycle_chat_requests_blocks_and_leave(rpc: RpcCall, parse: ParseRes
             return
         r1, r2, r3 = rs
         ok, h = await _exec_step(rpc, parse, "theprotocol_createWebhook", "3",
-                                 {"url": f"https://lc-chat-{run}.invalid/hook", "events": ["chat.request.accepted"],
-                                  "description": "chat lifecycle: a host that never resolves; the record is read"},
+                                 {"url": f"https://lc-chat-{run}.invalid/hook", "events": ["chat.request.accepted"]},
                                  dev_b, outcomes, expect_status="any", record_as_separate=False)
         hook_id = h.get("id") if ok and isinstance(h, dict) else None
         if not hook_id:
@@ -5579,10 +5584,9 @@ async def _own_webhook(rpc: RpcCall, parse: ParseResult, outcomes: Dict[str, Any
     """A webhook of the owner's, made for this: the other developer reads it, changes it, deletes it; the owner proves
     after each attempt that it is as it was, and removes it."""
     t0 = time.time()
-    desc = f"owner-scoping probe {tag}"
     ok, body, code = await rpc("theprotocol_createWebhook",
-                               {"url": f"https://webhook.example.test/owner-scoping-{tag}", "events": ["agent.created"],
-                                "description": desc}, jwt=owner_jwt, timeout=20)
+                               {"url": f"https://webhook.example.test/owner-scoping-{tag}", "events": ["agent.created"]},
+                               jwt=owner_jwt, timeout=20)
     made = parse(body)
     wid = made.get("id") if _answered(ok, made, code) and isinstance(made, dict) else None
     checks = ("getWebhook", "getWebhookDeliveries", "updateWebhook (another developer's)",
@@ -7003,8 +7007,46 @@ async def _ledger_liquid(bag: Any, parse: ParseResult, did: str) -> Optional[Any
         return None
 
 
+async def _commons_write_off_on_a_pair(bag: Any, parse: ParseResult, outcomes: Dict[str, dict], sid: int,
+                                       struck: Optional[int], dev_jwt: str) -> None:
+    """§MCPTEST30 V0662 Wave 1 (gwo_fe22d7e8; his seq 3182 allows "a failed payment", made on the sandbox only and
+    cleaned up after): adminCommonsWriteOffAward's success, on a target torn down after its run only. A healthy target
+    never gives a run a payment that failed, so one is made: an award of 0 for the run's OWN struck submission (no
+    tally gave it one; the season's real award is untouched), marked failed with its first attempt now, written through
+    the target's database. The write-off settles it: the answer reads written_off with the real award still unpaid, and
+    no money moves (it was 0 and never sent). The pair is torn down after the run, the row with it."""
+    tool = "theprotocol_adminCommonsWriteOffAward"
+    if not isinstance(struck, int):
+        return _ef.effect_unmeasured(outcomes, tool, "the run's own struck submission has no id, so no failed award "
+                                                     "could be made for it")
+    n, why = await _target_db(bag, "INSERT INTO commons_awards (season_id, submission_id, recipient_did, developer_id, "
+                                   "median_points, voters, share, amount, status, attempted_at, error) "
+                                   "SELECT s.season_id, s.id, s.submitter_did, s.developer_id, 0, 0, 0, 0, 'failed', "
+                                   "now(), 'MCP tester: a manufactured failed payment of 0 (his seq 3182)' "
+                                   "FROM commons_submissions s WHERE s.id = :x AND s.season_id = :s",
+                              {"x": struck, "s": sid}, write=True)
+    if why or n != 1:
+        return _ef.effect_unmeasured(outcomes, tool, f"the failed award could not be made on the run's own struck "
+                                                     f"submission ({why or f'{n} rows'})")
+    award, why = await _target_db(bag, "SELECT id FROM commons_awards WHERE season_id = :s AND submission_id = :x "
+                                       "AND status = 'failed' AND amount = 0", {"s": sid, "x": struck})
+    if why or not isinstance(award, int):
+        return _ef.effect_unmeasured(outcomes, tool, f"the failed award made could not be read back ({why})")
+
+    def _settled(a: dict) -> Optional[str]:
+        if a.get("status") != "written_off" or a.get("id") != award:
+            return f"the answer reads award {a.get('id')!r} status={a.get('status')!r}, not {award} written_off"
+        if a.get("unpaid_awards") != 1:
+            return f"the answer reads unpaid_awards={a.get('unpaid_awards')!r}: the season's real award is not left"
+        return None
+    await _ef.effect(bag, parse, tool, {"season_id": sid, "award_id": award,
+                                        "reason": "MCP tester: a manufactured failed payment of 0"}, outcomes,
+                     check=_settled)
+
+
 async def _commons_pay_on_a_pair(rpc: RpcCall, parse: ParseResult, bag: Any, outcomes: Dict[str, dict], sid: int,
-                                 voted: int, dev_jwt: str, events: Any, ballots: Optional[str] = None) -> bool:
+                                 voted: int, dev_jwt: str, events: Any, ballots: Optional[str] = None,
+                                 struck: Optional[int] = None) -> bool:
     """§MCPTEST30 (tester batch 2 item 3, gwo_e3bad842b1a5943022b01d40): on a target torn down after its run only, the
     closed season this run opened is PAID. Its one award (the member's ballot for the second developer's submission) is
     first held to write-off's rule (a refusal row: only a payment that failed or never answered is written off, and a
@@ -7028,6 +7070,7 @@ async def _commons_pay_on_a_pair(rpc: RpcCall, parse: ParseResult, bag: Any, out
     await _ef.refusal_step(bag.rpc_admin, parse, write_off, "admin",
                            {"season_id": sid, "award_id": award["id"], "reason": "MCP tester: the award was never sent"},
                            dev_jwt, outcomes, "an award that was never sent", codes=(409,), text="award_not_failed")
+    await _commons_write_off_on_a_pair(bag, parse, outcomes, sid, struck, dev_jwt)      # V0662: before the pay
     before = await _ledger_liquid(bag, parse, did)
 
     def _dec(v: Any) -> Optional[Decimal]:
@@ -7238,7 +7281,7 @@ async def lifecycle_commons_season(rpc: RpcCall, parse: ParseResult, bag: Any, o
             from agentvault_registry.api_tests.contracts.earned_ad_ephemeral import ephemeral_target
             if ephemeral_target():
                 paid = await _commons_pay_on_a_pair(rpc, parse, bag, outcomes, sid, member["voted"], dev_jwt, events,
-                                                    ballots=member.get("ballots"))
+                                                    ballots=member.get("ballots"), struck=xid)
     finally:
         cancel_sid: Optional[int] = sid
         if paid:
@@ -7355,7 +7398,7 @@ LIFECYCLES: List[Dict[str, Any]] = [
     # ── Sprint 5.8 batch — governance + auth + dispute ──
     {"name": "governance_proposal",       "runner": lifecycle_governance_proposal_vote_tally},
     # §MEMBERSHIP phase B (V0551): a commons season from open to cancel, where the commons is on
-    {"name": "commons_season",            "runner": lifecycle_commons_season},
+    {"name": "commons_season",            "runner": lifecycle_commons_season, "needs": ("target_db",)},
     {"name": "log_enhanced_dispute",      "runner": lifecycle_log_enhanced_dispute},
     {"name": "safe_invalid_input_paths",  "runner": lifecycle_safe_invalid_input_paths},
     # ── Sprint 5.9 mega-batch — coverage extension ──

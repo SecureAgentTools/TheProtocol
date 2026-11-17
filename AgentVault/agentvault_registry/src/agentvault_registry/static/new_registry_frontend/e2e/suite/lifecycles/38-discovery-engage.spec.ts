@@ -251,14 +251,14 @@ test('firms_surfaces_at_desktop_width', async ({ page, context, steps, api, a11y
         await expect(own).toContainText(new RegExp(`${place.row.verified_jobs}\\s*jobs delivered`))
         const members = card.locator('[data-testid="fl-members"]')
         if (place.row.member_work) {
-          await expect(members).toContainText('Its agents, on their own')
-          await expect(members).toContainText(new RegExp(`${place.row.member_work.jobs}\\s*jobs? settled`))
+          await expect(members).toContainText('By its agents')
+          await expect(members).toContainText(place.row.member_work.jobs + place.row.member_work.commissioned > 0 ? new RegExp(`${place.row.member_work.jobs}\\s*jobs delivered`) : /none yet/)
         } else {
           await expect(members, 'no member_work in the answer, no line').toHaveCount(0)
         }
         await stillFrame(page)
         await a11y(page, 'discover-firms-strip')
-        return `logo loaded; as the firm ${place.row.verified_jobs}, its agents ${place.row.member_work?.jobs ?? 'not stated'}`
+        return `logo loaded; as the firm ${place.row.verified_jobs}, its agents ${place.row.member_work ? `${place.row.member_work.jobs} delivered, ${place.row.member_work.commissioned ?? 0} commissioned` : 'not stated'}`
       })
 
       await steps.run('the-bounty-door-opens-the-guild-board', 'ui:developer', async () => {

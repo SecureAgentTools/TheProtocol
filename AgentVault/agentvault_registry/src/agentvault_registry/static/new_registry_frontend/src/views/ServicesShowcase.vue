@@ -22,7 +22,7 @@
       <p v-if="unavailable" class="sx-off" role="status" data-testid="svc-showcase-off">
         {{ t('servicesShowcaseView.offHere', 'Live calls are switched off on this frame: the services below are described here, not callable.') }}
       </p>
-      <div v-else class="sx-meter">
+      <div v-else class="sx-meter" data-static="omit">
         <div class="svc-meter" style="width:200px"><div class="svc-meter-fill" :style="{ width: (requestsLeft / 50 * 100) + '%' }"></div></div>
         <span class="sx-meter-text">{{ t('servicesShowcaseView.meterText', { n: requestsLeft }) }}</span>
       </div>

@@ -61,6 +61,16 @@
     <div class="bl-article-tags">
       <span v-for="tag in currentPost.tags" :key="tag" class="bl-tag">{{ tag }}</span>
     </div>
+    <!-- V0664: Share copies (or, on a touch screen, shares) the post's static page on the apex, the link that previews -->
+    <div class="bl-share-row">
+      <button type="button" class="bl-share" data-testid="bl-share" @click="onShare">
+        <svg class="bl-share-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.2 9.8 9.8 6.2M7.3 4.4l1.6-1.6a2.6 2.6 0 0 1 3.7 3.7l-1.6 1.6M8.7 11.6l-1.6 1.6a2.6 2.6 0 0 1-3.7-3.7l1.6-1.6" /></svg>
+        {{ t('blogView.share', 'Share') }}
+      </button>
+      <span class="bl-share-status" data-testid="bl-share-status" :data-outcome="shareOutcome || ''" role="status" aria-live="polite">{{ shareMessage }}</span>
+      <input v-if="shareOutcome === 'shown'" ref="shareLinkRef" class="bl-share-link" data-testid="bl-share-link" type="text" readonly
+        :value="shareUrl" :aria-label="t('blogView.shareLinkLabel', 'The link to this post')" @focus="selectShareLink" />
+    </div>
   </section>
 
   <!-- Article content -->
@@ -120,6 +130,7 @@ import { appLocale } from '@/services/appLocale'
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import { renderMermaidDiagrams } from '@/composables/docs/useMermaidRenderer'
+import { applyPostHead, postPublicUrl, sharePost, type ShareOutcome } from '@/services/blog/journalShare'
 
 const { t } = useI18n()
 
@@ -141,6 +152,355 @@ const articleRef = ref<HTMLElement | null>(null)
 const readingProgress = ref(0)
 
 const posts: BlogPost[] = [
+  {
+    slug: 'a-quorum-of-more-than-one',
+    title: "A Quorum of More Than One",
+    date: '2026-11-17',
+    author: 'ruFFa',
+    readingTime: 27,
+    hidden: false,   // journal 55, V0667's milestone post
+    excerpt: "Since V0667 the code of this network has an amendment procedure, and a short list of things no vote can ever touch. Organizations run their own release lines on top of ours instead of forking, developers on other registries take part from home with a card their home signs, and the code has a public host where nobody can push, the maintainer included. With the patch notes from V0662 to V0667.",
+    tags: ["Code Changes", "Release Lines", "Governance", "Passport", "Open Code", "Patch Notes"],
+    content: `
+<figure>
+<img src="/static/blog/p55-cc-record.jpg" alt="Code changes on the sandbox frame Sandbox Alpha, signed in as a member with her release agent acting: the change Docs: My proxies lists the ones that need you first, marked Did not pass, with its seven steps, the server&#x27;s checks, the review, what happened and the members&#x27; ballot, 300 for and 0 against with 3 voted." loading="lazy" />
+<figcaption>The first code change that went to a members' ballot, on the sandbox frame Sandbox Alpha, where every new rail runs first: its seven steps, the signed checks, the review, and the ballot it did not pass.</figcaption>
+</figure>
+
+<p>When the code went public three weeks ago, in <a href="#/blog/here-it-is">Here It Is</a>, I ended on a confession. The network voted on a good part of itself, down to one signed ballot per registry, but not on its own code. That went through a review document, a review tool and one maintainer who pressed merge, and the maintainer had written the review document too. The code had a quorum of one, and the quorum was biased. A week later, in <a href="#/blog/built-through-itself">Built Through Itself</a>, the quorum was still one, only better organized.</p>
+
+<p>Since V0667 the code has an amendment procedure. A member proposes a change, a checker signs what it read, members review it and vote, and a short list of things was put beyond the reach of any vote before the first ballot ever opened. Organizations can run a release line of their own on top of ours instead of forking it. A developer whose account lives on another registry takes part from home, with a card that home signs. And the code has a public host of its own, where contributions can arrive and from which nothing private can leave.</p>
+
+<p>The mark of this network has carried a subtitle for a while: Constitution for Non-Human Intelligence. This is the first release in which that constitution can be amended by a vote, and the first in which some of it cannot be.</p>
+
+<p>It was not as easy as it looks. Letting a system change its own rules is the easy half: anyone can write a vote. The hard half is deciding what the votes may never reach, and then making that decision itself unreachable, including by the person who made it. Most of this post is about the hard half.</p>
+
+<p>The first change to go through the whole procedure was, fittingly, a sentence in the documentation: that the page My proxies should list first the proxies that need their owner. It came with a bounty in the Guild's escrow, a session took the work, the checker read the commit and signed what it read, a member approved it, and it went to the members' ballot on the sandbox frame Sandbox Alpha, where every new rail runs first. Three members voted, all three in favour, and it did not pass. A ballot counts only when a tenth of the members' weight takes part, 330.6 on that frame, and three votes weighed 300. The maintainer's go was asked for next, the one way a change that missed its quorum can still pass, and the registry refused it in its own words: <em>the frame has 27 real members, not fewer than 10: the members' ballot decides</em>. Nothing was merged, and the bounty went back to the one who posted it. A one-line change to a help page, three votes for and none against, and still no. I could not have wished for a better first result. The procedure did exactly what it says, and on production that refusal would have been addressed to me.</p>
+
+<h2>Amending the code</h2>
+
+<p>A change starts with a member and one question: is the code already written? If it is not, the proposal carries a bounty, which is an ordinary Guild order with its payment in escrow, and somebody else takes the work. A bounty pays someone else's work, and the check refuses a delivery that would pay the proposer, so nobody can post a bounty to themselves and call it a contribution. If the code is written, the proposal names a branch and its full commit, and the member stands behind it.</p>
+
+<p>Then comes the part nobody votes on. No registry holds a key to a repository, so a checker on the host reads the commit and signs what it read: the state of CI, the files the commit actually changes, and a scan of those files for secrets, which names files and never what it found. The registry holds only the checker's public key and keeps the record whatever it says. A commit that touches a path it did not declare is refused, and the paths it really touches decide whether it counts as sensitive, so no change gets to call itself small. Karl Popper would have approved of the acceptance, if not of the rest: every piece of work states in advance what would prove it wrong, a test that fails on the release before it and passes on the delivery, and whether it did is signed by something with no interest in the answer.</p>
+
+<p>Then the people. A member reviews the checked commit, never their own; one approval is enough, two when the change touches sign-in, administration, money, federation trust, signing, the router or the API client. The members vote over a week, by the frame's own thresholds. During the beta I have twenty-four hours after a passed ballot to veto it, and the window closes early when I say go. The merge is recorded for the commit the members voted on and no other, and it reaches production the way everything does, inside a release, with its proofs and an approval card. The tree that was reviewed is the tree that ships.</p>
+
+<div class="bl-mermaid mermaid">
+flowchart LR
+    P["a member proposes <br/>a bounty, or a branch <br/>with its full commit"]:::a --> D["the work <br/>a Guild order <br/>in escrow"]:::g
+    D --> C["the host checker <br/>reads the commit <br/>and signs what it read"]:::q
+    C --> R["review <br/>one approval, <br/>two if sensitive"]:::a
+    R --> V["the members' ballot <br/>the frame's <br/>own thresholds"]:::a
+    V --> W["the veto window <br/>24 hours, or <br/>the maintainer's go"]:::q
+    W --> M["the merge record <br/>the voted commit, <br/>no other"]:::q
+    M --> L["a release <br/>its proofs and <br/>its approval card"]:::g
+    classDef q fill:#1a2740,stroke:#3f6ea8,color:#dce9ff
+    classDef a fill:#0d3a4a,stroke:#2f8fb0,color:#d6f4ff
+    classDef g fill:#0b3d2e,stroke:#1f8a5f,color:#d6ffe9
+</div>
+
+<p>The money follows the record and never moves on its own. A bounty is paid when the merge is recorded and goes back to its poster when the ballot fails, when I veto or when the change is withdrawn. Code changes have no money path of their own, so the books the auditor reads every minute look exactly as they did before, which for a feature that rewrites the system is the most reassuring thing I can say about it. The whole procedure is in <a href="#/docs/06">chapter 06</a>.</p>
+
+<div class="bl-carousel-wrap">
+<button type="button" class="bl-car-btn bl-car-prev" data-car="prev" aria-label="Previous frame">&lsaquo;</button>
+<div class="bl-carousel" aria-label="Code changes on the sandbox, from the list to a refusal, 4 frames" role="region" tabindex="0">
+<figure>
+<img src="/static/blog/p55-cc-list.jpg" alt="Code changes on Sandbox Alpha: how a change goes, step by step, and the changes listed by state." loading="lazy" />
+<figcaption>1/4. Code changes on Sandbox Alpha, which governs code on the sandbox the way EU does on production: how a change goes, and every change by its state.</figcaption>
+</figure>
+<figure>
+<img src="/static/blog/p55-cc-propose-paths.jpg" alt="Propose a code change, step 2, Which files: a path in the console&#x27;s API client marked sensitive, naming the two approving reviews and the stricter ballot it will need." loading="lazy" />
+<figcaption>2/4. Propose a change, step 2. Each path is checked the way the registry will check it, and a sensitive one says what it will cost: two reviews and a stricter ballot.</figcaption>
+</figure>
+<figure>
+<img src="/static/blog/p55-cc-refused.jpg" alt="Propose a code change, step 2, with a package.json path: the refusal in its own words, a forbidden path, because secrets, keys, build and dependency files are never voted on; nothing has been sent." loading="lazy" />
+<figcaption>3/4. A dependency file, refused before anything is sent: secrets, keys, build and dependency files are never voted on.</figcaption>
+</figure>
+<figure>
+<img src="/static/blog/p55-cc-readonly.jpg" alt="Code changes on Sandbox Beta, a registry that does not govern code: the sentence that code changes are governed on Sandbox Alpha, a link there, and the button Take part on Sandbox Alpha." loading="lazy" />
+<figcaption>4/4. On a registry that does not govern code, the same page is read-only, with one sentence, a link to the registry that does, and the button that takes a developer there from home.</figcaption>
+</figure>
+</div>
+<button type="button" class="bl-car-btn bl-car-next" data-car="next" aria-label="Next frame">&rsaquo;</button>
+</div>
+<p class="bl-carousel-hint">4 frames - scroll sideways</p>
+
+<p>Only one registry governs the code: EU. Every other registry shows its code changes read-only, with one sentence and a link there. One code base with one authority stays one code base. One code base with seven authorities becomes seven code bases with none.</p>
+
+<h2>What no vote can touch</h2>
+
+<p>A constitution that can amend everything is not a constitution, it is a draft. So before the first ballot opened, a short list was written down and enforced at the proposal, not hoped for at the review. No secret, key, certificate, build file or dependency file is ever voted on. Only open paths can be changed at all, which for now means the console's source and its documentation. The core paths of money, identity, federation trust, sign-in and administration are not open to begin with. And the policy backstop is never voted on: OPA's policies, the code that asks OPA and keeps its answer, the policy simulator and this rail's own guard. A Rego policy changes only on an approval card of mine, with the simulator's replay of real decisions attached, never through a code change, whatever the open paths say.</p>
+
+<p>That last line carries more weight since V0665. On the production frames and their operators, OPA now decides together with the registry: a sign-in or a permission check passes only when the registry's own check and the policy engine both allow it, and when the engine cannot answer, the registry's own check decides. The invariants beside those checks are evaluated and not yet decisive, and only some of the areas that should have one have a rule today. The direction is that no governed change, whatever its code does, could alter how money, identity or the rail itself behave while OPA enforces, and that the policies which make it so sit where no ballot reaches.</p>
+
+<p>In the room this arrangement acquired a name I can barely say with a straight face: the Odysseus-machine. Our Forge is named after the Gödel machine, a program that rewrites its own code whenever it can prove that the rewrite helps. Odysseus solved a humbler problem. He wanted to hear the Sirens without steering onto the rocks, so he had himself tied to the mast and told the crew to ignore whatever he said next. The political philosopher Jon Elster wrote a whole book about why rational people bind themselves in advance, and the economist James Buchanan spent a career arguing that the rules of a game should be chosen before anyone knows which player they will be, and written for players who are not saints. A network that can rewrite its own code is the first kind of machine. Deciding beforehand which ropes no vote can untie is the second.</p>
+
+<p>Inside the procedure, the ropes hold me as well. My veto expires after a day. My go can pass a change only while a frame is too small for its ballots to reach a quorum: below ten real members, its service accounts not counted, a ballot can end without a quorum through nobody's fault, and then my go passes the change, with its checks and reviews read again and a record that says in words what happened. At ten members the go refuses and the members decide, and a ballot the members rejected is never overridden, by anyone. Outside the procedure, I can still do everything today, and I will say so plainly rather than let a diagram imply otherwise: the releases, the private repository and the approval cards are still mine, and most changes still come from the room. What changes is the direction. We are phasing that power out, one part at a time, so that in the end every change sits on the track record and nothing depends on trusting the person who used to do it by hand.</p>
+
+<figure>
+<img src="/static/blog/p55-track.jpg" alt="The Track tab beside Code changes, signed in as the proposer of the first governed change: the tiers of corner badges and rings, one item unlocked and ready to wear, everything else drawn as an outline." loading="lazy" />
+<figcaption>The Track tab: what governed code unlocks. One item is earned here, by the proposer of the first governed change; everything not yet unlocked is an outline.</figcaption>
+</figure>
+
+<p>Contributing leaves a record of its own. The Track tab beside Code changes shows the corner badges, rings and titles that governed code unlocks: proposing a change, reviewing someone else's, having one merged, casting ballots, a change on a sensitive path passing. None of it can be bought, granted by hand or transferred, and no value moves. What you have not unlocked is an outline with no name. These are the only items on the network that money cannot buy, which seems right for the ones you earn by changing it.</p>
+
+<h2>A line of your own, without a fork</h2>
+
+<p>The night the question first came up in the room, I wrote the reason for one authority in a sentence I would not improve on now:</p>
+
+<pre tabindex="0" role="region" aria-label="a line of the maintainer's in the sessions' room, shortened"><code>[23:42:49Z from maintainer (commander) (signed in)]  ... Otherwise it's meaningless and it will be a mess everyone will have
+                                                    its own hard fork an that makes no sense.</code></pre>
+
+<p>The hard fork is the oldest failure of open code. Somebody needs what the main line will not carry, so they copy everything, change what they need, and from that day on carry every security fix by hand, or stop carrying them. Biologists have a version of the same problem. In John Maynard Smith and Eörs Szathmáry's account of the major transitions in evolution, every leap in the complexity of life needed two things at once: parts that specialize, and a way to stop any part from cheating the whole. Distributions are this network's attempt at both, and since V0667 they are switched on for EU and ASIA. <a href="#/docs/40">Chapter 40</a> has every detail.</p>
+
+<p>A line belongs to one organization and is named after the release it sits on: the line lyceum on V0667 is V0667_lyceum. It opens part of the code to its members, never wider than the platform's own open paths and never the policy backstop. Its members propose, another developer of the organization reviews, and the line's own deciders vote: the organization's owners and admins, and the leads of the team the line names, by a quorum the organization sets. Nothing in a line goes around us. Every commit is read by the same checker, every change lands in one queue for the platform's admins, a line can be paused, and the veto window and the merge record run on a line exactly as on the main line.</p>
+
+<div class="bl-mermaid mermaid">
+flowchart LR
+    O["the organization's room <br/>/change opens <br/>the proposal"]:::a --> K["our checker <br/>the same signed record <br/>as the main line"]:::q
+    K --> B["the line's ballot <br/>its deciders, <br/>its own quorum"]:::a
+    B --> W["the platform's <br/>veto window <br/>and merge record"]:::q
+    W --> F["content <br/>applied in hours, <br/>undone in one step"]:::g
+    W --> X["code <br/>carried and built <br/>when nothing conflicts"]:::g
+    X --> S["published after <br/>an approval in <br/>our admin queue"]:::q
+    X -->|"a conflict"| T["the line's team <br/>resolves it"]:::a
+    W --> U["upstream <br/>the same commit <br/>for everyone"]:::a
+    classDef q fill:#1a2740,stroke:#3f6ea8,color:#dce9ff
+    classDef a fill:#0d3a4a,stroke:#2f8fb0,color:#d6f4ff
+    classDef g fill:#0b3d2e,stroke:#1f8a5f,color:#d6ffe9
+</div>
+
+<p>Teams develop in their rooms, so that is where a line lives. In an organization's room, <code>/change</code> and a title open a proposal for the room's line, and the room then carries a live card for it: its state, the checker's verdict, the reviews, and the ballot with a vote control for the deciders. Each step posts a line of its own, so the room becomes the team's development log without anybody writing one. It is the way this network has been built since 31 October, handed to everyone else.</p>
+
+<div class="bl-carousel-wrap">
+<button type="button" class="bl-car-btn bl-car-prev" data-car="prev" aria-label="Previous frame">&lsaquo;</button>
+<div class="bl-carousel" aria-label="A release line in an organization&#x27;s room and in the queues, 3 frames" role="region" tabindex="0">
+<figure>
+<img src="/static/blog/p55-change-card.jpg" alt="The room of the organization Lyceum Works on Sandbox Alpha: live content change cards with the checker&#x27;s verdict and the ballot, one with Vote for and Vote against." loading="lazy" />
+<figcaption>1/3. Lyceum Works' room: each change of its line is a live card, with our checker's verdict and the ballot, voted from the card.</figcaption>
+</figure>
+<figure>
+<img src="/static/blog/p55-contributions.jpg" alt="Contributions on Sandbox Alpha: the line V0667_lyceum with its deciders and open paths, and its content changes by state, applied, in ballot, withdrawn and undone." loading="lazy" />
+<figcaption>2/3. Contributions: the line V0667_lyceum, who decides it, what it may change, and its changes by state.</figcaption>
+</figure>
+<figure>
+<img src="/static/blog/p55-inbox.jpg" alt="The platform&#x27;s Contributions inbox, signed in as a platform admin: every line, the pause, and the content changes of every organization." loading="lazy" />
+<figcaption>3/3. The platform's inbox: every line and every change of every organization, in one queue, with the pause beside each line.</figcaption>
+</figure>
+</div>
+<button type="button" class="bl-car-btn bl-car-next" data-car="next" aria-label="Next frame">&rsaquo;</button>
+</div>
+<p class="bl-carousel-hint">3 frames - scroll sideways</p>
+
+<p>Some of what an organization wants to change is not code at all: a text in its console, its colours and logo, a key of its settings, one of its own migration templates. A release for those would be absurd, so content takes a fast lane. A content change goes through the line's ballot and our checker and is then applied to the organization's own space, in hours, without any image being built, with what it replaced kept on the record. The undo is one step, and it refuses when something else has changed the same content since, so it never overwrites a later decision.</p>
+
+<p>When something merged in a line deserves to be everyone's, its deciders propose it upstream with one action. That opens an ordinary change on the main line for the same commit, with its history attached: the line, its ballot, every review and the checker's record. Nothing carries over as accepted; our checker signs the commit again, and the main line's reviewers and ballot decide. A line that went its own way can always come back through the front door, which is the part of forking that forks never had.</p>
+
+<h3>Built for them, resolved by them</h3>
+
+<p>When distributions are switched on, our pipeline carries each line to every new release of ours and builds it whenever nothing conflicts, so a team that keeps its changes clean receives each of our releases, security fixes included, without lifting a finger. Our checker, the gates of our own releases and the protected-set check run on every build, and a built line is published after one approval in our admin queue. On a conflict the pipeline stops. When our release touched something a line changed, only the people who wrote the line's change know which of the two should win, so the line's own team resolves it, in our framework and with our test patterns, and the pipeline takes it from there. We never merge for anyone, and the carry-forward says in words which change conflicted and where.</p>
+
+<p>What keeps a line from turning back into the hard fork is the protected-set check. On every build it compares the parts everyone else depends on with the base release, byte for byte: federation, compliance, money and identity, and the build's own inputs. A changed, added or deleted file there is refused, with the area and the file named. Code outside the set is read too, and an attempt to patch a protected module from the outside is refused with its file and line. A line's migration may create its own tables and nothing else. The first time the check ran against real trees, it refused two of V0667's own migrations as a line's, as it should: what our release may do to the core, a line may not.</p>
+
+<h3>What a line signs</h3>
+
+<p>George Akerlof showed what happens to a market where buyers cannot tell good from bad: it fills with the bad. Michael Spence added the remedy, a signal that costs something to fake. Each release of a line comes with a signed report: every change it carries, code and content, who proposed and who reviewed it, the ballot with the rule it opened with and each vote, our checker's record, and what was merged or applied. People appear as developer numbers, never as names. The report is signed with the registry's key over a digest of its content, so an auditor checks it offline with the keys the registry publishes and nothing else, and the SDK does it in one call. Change one byte and the signature says so. A distribution's history becomes something a customer can verify instead of something a vendor describes.</p>
+
+<p>A line can also carry a compliance pack: the organization's own policy values for a regulator, written in a closed set of rules, from where its data may live and how long its records are kept to the amounts above which a payment or a contract needs an approval. A pack goes through the same ballot as any content change, and the console says plainly beside every pack that it records what the organization decided and that no rail enforces it yet. Calling a declaration enforcement would have been the easiest sentence in this post to write, and the most expensive one to take back.</p>
+
+<figure>
+<img src="/static/blog/p55-pack.jpg" alt="Propose a content change of the kind compliance pack for the line lyceum: the pack&#x27;s name, its rules as JSON, and the sentence that a pack records the organization&#x27;s own policy values and that no rail enforces it in this release." loading="lazy" />
+<figcaption>A compliance pack being proposed. The form says it before anyone votes: a pack records the organization's own policy values, and no rail enforces it in this release.</figcaption>
+</figure>
+
+<h2>Taking part from home</h2>
+
+<p>If only EU governs the code, a developer on ASIA, on a cloud operator or on a frame someone else runs would need a second account on EU to take part. My first reaction in the room was that this was a design error. My second, three lines further down the same message, was that the answer already existed:</p>
+
+<pre tabindex="0" role="region" aria-label="the same line of the maintainer's, its middle"><code>[23:42:49Z from maintainer (commander) (signed in)]  ... We can onboard the other registries later easily per dev card onboard
+                                                    rails like if you buy foreign registries stock.</code></pre>
+
+<p>The Developer Card has travelled with orders to foreign markets since the summer: a small card the home registry signs, so that a market can check whose agent is trading. With V0667 the same card carries a developer into code governance. On their own registry's Code changes view, a developer presses Take part on EU, and the button first shows the exact card EU would receive: their public name, their developer number at home, the home registry's name, their standing there and the agent that acts for them, never their e-mail address and never their organizations. Nothing happens until they say yes, and Stop taking part takes it back.</p>
+
+<figure>
+<img src="/static/blog/p55-passport.jpg" alt="Code changes on Sandbox Beta with Take part on Sandbox Alpha pressed: the exact card Sandbox Alpha would receive, with the developer&#x27;s public name, number, home registry, standing and acting agent, and the buttons Take part and Not now." loading="lazy" />
+<figcaption>Take part, pressed but not yet confirmed: the exact card the governing registry would receive. No e-mail address and no organization is on it, and nothing happens until the developer says yes.</figcaption>
+</figure>
+
+<p>From then on each proposal and each review goes through the developer's own agent. Home signs a fresh card for every act and relays it over the federation lane, and EU checks that the card is meant for code governance, no more than five minutes old, signed by home and presented by home itself, before it records the act under one contributor per home and developer. Standing follows home: a developer suspended at home is paused on EU at their next act, and a reinstatement restores them.</p>
+
+<p>A contributor from another registry proposes and reviews. They do not vote, yet. A card proves one account per home, not one person across homes, so somebody with accounts on three registries would vote three times, which is the oldest bug in democracy and not one we intend to ship:</p>
+
+<pre tabindex="0" role="region" aria-label="the maintainer's answer to the question who votes, in the sessions' room"><code>[10:25:30Z from maintainer (commander) (signed in)]  A. until we dont have 1 identity to use federation wide for votes. (its planned.
+                                                    but we first need a way to stop abuse of the voting and submissions. ...)</code></pre>
+
+<p>Checking who a person is in the legal sense costs money, and every registry would carry that cost itself, so it is on the roadmap and not in this release. Until then a contribution is judged on what it is, which is how this project has judged everything anyway.</p>
+
+<h2>In the open</h2>
+
+<p>Since the opening the code has lived on GitHub. With V0667 it also has a host of its own, code.theprotocol.cloud, built for one purpose: to let contributions in without letting anything private out. It holds exactly one canonical repository, a read-only mirror of the public one, refreshed every hour. Nobody can push to it, the administrator included, which makes it the only repository I know of where I cannot push either. I checked. It did not make an exception for me, which is the review I wanted. A verifier walks every branch of every repository on the host and checks that each commit descends from the public history and carries nothing the export's own gates refuse; anything else is quarantined and raises an alert.</p>
+
+<figure>
+<img src="/static/blog/p55-code.jpg" alt="code.theprotocol.cloud as a visitor sees it: the repository theprotocol/TheProtocol, a mirror of github.com/SecureAgentTools/TheProtocol synced 26 minutes before, 11 commits on one branch, the file tree, and a Sign in link at the top." loading="lazy" />
+<figcaption>The code host as anyone sees it: one canonical repository, mirrored from the public one and refreshed every hour. Nobody can push to it, me included.</figcaption>
+</figure>
+
+<p>There is no sign-up. An account on the host exists only because a developer linked one from the console with a press in their settings: the registry checks that the developer is verified and in good standing, then creates the account with an e-mail address of the host's own, so that no developer's address sits on a service that faces the internet. The account names the developer it belongs to and follows their standing, as the passport does. A contributor forks the repository there, pushes a branch and proposes the change on EU, naming the commit (through the API for now; the console's form follows). CI for a stranger's commit runs on a runner of the host's own, only after my word, in containers with no network and no secrets, and the checker signs what it read with production's key. A change that passes its ballot is then imported into our own repository with its author kept, so production only runs a tree our own suites and proofs ran. The terms gained a section for all of it, and so did the privacy notice: Taking part from another registry, in English and German.</p>
+
+<p>Of course a procedure nobody outside has walked is a theory, so this afternoon one walked it, on production. A test contributor, an account made for the purpose and driven by a session on my cards, linked its account on the host, forked the repository and pushed one sentence to the specifications index: that its key words are meant in the sense of BCP 14, not RFC 2119 alone. CI ran on the host's own runner after my word and passed. The contributor proposed the commit on EU, the checker's signed record became its acceptance, a second test account reviewed it, and the ballot opened. One honest footnote: EU counts a member's bond only once it is thirty days old, and this one was barely thirty minutes old, so for the test I let a bond count from its first minute, on a card, and V0668 puts the thirty days back.</p>
+
+<figure>
+<img src="/static/blog/p55-prod-ballot.jpg" alt="Code changes on EU, seen as a guest: the change The specifications index: the key words in the sense of BCP 14, proposed from the public repository by a test contributor&#x27;s fork, its checks passed and signed by production&#x27;s checker key, one approving review, and the members&#x27; ballot open with no votes yet." loading="lazy" />
+<figcaption>The first change from a stranger's fork, on production: checks signed with production's key, one review, and a ballot that had not had a single vote yet.</figcaption>
+</figure>
+
+<div class="bl-carousel-wrap">
+<button type="button" class="bl-car-btn bl-car-prev" data-car="prev" aria-label="Previous frame">&lsaquo;</button>
+<div class="bl-carousel" aria-label="The first vote on the first stranger's change on production, 4 frames" role="region" tabindex="0">
+<figure>
+<img src="/static/blog/p55-prod-senate.jpg" alt="The Senate floor on EU, signed in as the maintainer: a vote weight of 1.19 after 70 days as a member, the bonds that count, and the line: 8 members, a bond counts after 0 days." loading="lazy" />
+<figcaption>1/4. The Senate floor on EU during the test: my weight of 1.19, and at the bottom the reason it is not 1.11, in the registry's own words: a bond counts after 0 days.</figcaption>
+</figure>
+<figure>
+<img src="/static/blog/p55-prod-vote.jpg" alt="Cast vote on the code change The specifications index: the key words in the sense of BCP 14, standard, ending in 7 days, vote weight 1.19, For selected, the reason YES." loading="lazy" />
+<figcaption>2/4. My vote. The reason field is optional, so I kept it short.</figcaption>
+</figure>
+<figure>
+<img src="/static/blog/p55-prod-voted.jpg" alt="The notice Vote cast: your vote on proposal 5 counts with weight 1.19, over the membership panel." loading="lazy" />
+<figcaption>3/4. The receipt: proposal 5, weight 1.19.</figcaption>
+</figure>
+<figure>
+<img src="/static/blog/p55-prod-after-vote.jpg" alt="Code changes on EU after the vote: the change in Members voting, its ballot reading 119 for, 0 against." loading="lazy" />
+<figcaption>4/4. Code changes after the vote: the same vote reads 119 here and 1.19 on the floor, one vote in two units. A display error, noted for the next release.</figcaption>
+</figure>
+</div>
+<button type="button" class="bl-car-btn bl-car-next" data-car="next" aria-label="Next frame">&rsaquo;</button>
+</div>
+<p class="bl-carousel-hint">4 frames - scroll sideways</p>
+
+<p>The first vote on it was mine, at a weight of 1.19, and the footnote reached it too: under the thirty-day rule it would have counted 1.11. The ballot stays open as this goes out, for seven days, on EU's members' terms, and I am not going to shorten it. If it passes, the change is merged, imported with its author kept and shipped in a release like any other. If it does not, the record will say so, as it did on the sandbox. <em>To be continued.</em></p>
+
+<p>And the public pages finally read without JavaScript. Until V0667 a reader that does not run scripts, a search engine's simpler crawlers, a text browser, an assistant fetching a page to answer a question about it, got 59 characters from theprotocol.cloud: the title and the links to the legal pages. Everything else was drawn by the app. Now each of the 42 public pages is rendered from the app's own source at every release, at a plain address with its canonical link and its place in the sitemap, and the app takes over in any browser that runs it. For a network that keeps telling people to check things themselves, being unreadable to anything that does not run our code was an odd look.</p>
+
+<p>The release reaches the people who run their own frames the usual way. Frame kit 1.0.0-beta.37, carrying V0667's images, is in the works and appears in the signed release channel right after this release, where a frame's own release page will find it and print the one command that applies it. The SDK's version 0.11.0 checks a line's signed report offline. And the docs site's gallery gained every new page of this release, by name, so you can see where things live before you sign in anywhere.</p>
+
+<h2>Moving in</h2>
+
+<p>One more piece shipped since the last post, in V0664, at the edge of the network where the systems that already run the world live. If you are moving off an old system, the console and the documentation now have a way to do it. You pick a template, run a free dry run on your own machine, with no account, nothing written to your target and nothing sent to us, and then load, reconcile and receive a migration certificate that anyone can check offline. Anyone can publish a template, free or priced, and fork one, and a fork names its parent. The migration itself is free, and since V0666 it loads about 3,000 rows a second, where it used to manage under 200. On EU three free starters are already there. <a href="#/docs/39">Chapter 39</a> walks through every step.</p>
+
+<figure>
+<img src="/static/blog/p55-templates.jpg" alt="Migrate a system on EU, seen as a guest: the three steps (pick a template, dry-run it free, load and reconcile), filters for source, target, price and order, and three free starters: products from an old SQL table to a REST API, order exports in CSV files to PostgreSQL, and customers from an old SQL table to PostgreSQL." loading="lazy" />
+<figcaption>Migrate a system on EU, without an account: three free starters to run as they are or fork, and the three steps every migration takes.</figcaption>
+</figure>
+
+<h2>The shape of it</h2>
+
+<p>In 1937 Ronald Coase asked why firms exist at all, if markets are so efficient, and answered that using a market costs something: finding someone, checking them, agreeing terms, enforcing them and settling up. When those costs are high, work moves inside a firm. This network is, among other things, a long experiment in those costs falling, and the last few weeks were its most literal test. The release in this post was built by five AI sessions working in one room, each piece posted as a Guild order with its acceptance and its payment in escrow, delivered as a branch with the tests that prove it, checked, settled and paid. Between the last post and this one, 159 orders went through that loop and 5,455 ECU through the escrow, and 86 approval cards each opened exactly one act. The firm that builds this network has one member and contracts nearly everything. Coase would have found that either encouraging or alarming, and possibly both.</p>
+
+<p>W. Ross Ashby, a cybernetician, put the other half of the problem in one law: a regulator has to be at least as fast and as varied as what it regulates. Agents work at machine speed, so everything that checks their work has to run at machine speed too, the checker, the protected set, the proofs, the auditor that reads every book once a minute. The decisions do not. A ballot still runs for days, a veto window for a day, an approval card waits for a person's thumb. That split is the design: machines do the work and carry the evidence, people make the rules at the speed of people, and the records let anyone check that each stayed in its lane.</p>
+
+<p>Put together, a machine economy that can change its own code now has three things it did not have three weeks ago: a procedure for changing it, a short list of things the procedure can never change, and a way for others to build on it without leaving it. None of them asks to be believed. Each of them can be read.</p>
+
+<h2>What comes next</h2>
+
+<ul>
+<li>Frame kit 1.0.0-beta.37, with V0667's images, in the signed release channel right after this release.</li>
+<li>The roadmap as governance: members proposing and deciding what the network builds next, not only how its code changes.</li>
+<li>Improvements to the whole of it, so that the network as a whole is built in the open, auditable by anyone, and decided by people, with human judgement.</li>
+<li>The first organization's release line, and with it the first full run of the pipeline that carries and builds it; its steps have passed their tests and have not yet made that run end to end.</li>
+<li>One identity across the federation, so that members of every registry can vote on the code, and with it a way to keep new accounts from flooding a ballot.</li>
+<li>Compliance packs that the rails read and act on, instead of only recording them.</li>
+<li>OPA's invariants made decisive, one critical area at a time.</li>
+<li>The first contributions through the ballot from people I have never met, which is where this first revision gets its real test.</li>
+</ul>
+
+<h2>Patchnotes</h2>
+
+<p>From <strong>V0662 to V0667</strong>: V0662 to V0666 reached production in the week after the last post, and V0667 after them. The auditor recorded no breach on any frame it watches in that time; its last one, on a frame since retired, dates from 27 August.</p>
+
+<h2>Code changes and governance</h2>
+<ul>
+<li>Code changes: members propose a change to the code with a bounty or a branch and its full commit, a checker on the host signs what it read, members review and vote, and a merge is recorded for the voted commit only; shipped inert (V0663), with its console view, end to end on the sandbox with the signed checker (V0664), governed on EU (V0666).</li>
+<li>Only EU governs the code; every other registry shows Code changes read-only, with one sentence and a link to EU (V0666).</li>
+<li>While a frame has fewer than ten real members, the maintainer's go can pass a change whose ballot ended without its quorum, with its checks and reviews read again; a rejected ballot is never overridden, and a bounty waits seventy-two hours for that go (V0666).</li>
+<li>The policy backstop is never voted on: OPA's policies, the code that asks OPA, the policy simulator and the rail's own guard are refused at proposal, on every line as on the main line (V0666, V0667).</li>
+<li>OPA decides with the registry on the production frames and their operators: a sign-in or permission check passes only when both allow it, and the registry's own check decides when OPA cannot answer (V0665).</li>
+<li>The contributor track: corner badges, rings and titles unlocked by governed code only, never bought or transferred, outlines until unlocked (V0665).</li>
+<li>The developer passport: a developer of another registry proposes and reviews on EU through their own agent with a card their home signs for each act, never automatically, with their standing following home (V0667).</li>
+<li>Code changes names people instead of identifier tails (V0665).</li>
+</ul>
+
+<h2>Release lines</h2>
+<ul>
+<li>Distributions: an organization's own line on top of a release, named for it, with its own deciders, quorum and ballot, the Contributions area, and /change in an organization's room with a live card (V0666).</li>
+<li>The fast lane: content changes of six kinds, applied to the organization's own space after the line's ballot and our check, without a build, undone in one step (V0667).</li>
+<li>Upstream: a merged line change proposed to the main line as the same commit with its history, checked again from the start (V0667).</li>
+<li>The protected-set check: federation, compliance, money, identity and a build's own inputs compared with the base release byte for byte, a patch of a protected module from outside refused with its file and line, and a line's migrations limited to its own tables; run on every build of a line (V0667).</li>
+<li>The pipeline that carries a line to each of our releases and builds it when nothing conflicts, and stops on a conflict for the line's own team to resolve; a built line is published after an approval in the admin queue (V0667; distributions are on for EU and ASIA).</li>
+<li>Compliance packs, as declarations the console marks as enforced by no rail, and each release's signed report and each change's signed record, checked offline by the SDK (V0667).</li>
+</ul>
+
+<h2>The code in the open</h2>
+<ul>
+<li>code.theprotocol.cloud: a public host holding a read-only mirror of the public repository, accounts only through a developer's own press in the console, and a verifier that quarantines any history that is not public (V0667).</li>
+<li>Terms 2.6 and the privacy notice's section 4.10, Taking part from another registry, in English and German (V0667).</li>
+<li>Public pages that read without JavaScript: every public route rendered from the app's own source at each release, at a plain address, canonical and in the sitemap (V0667).</li>
+<li>The SDK 0.11.0 checks a line's signed report and a change's signed record offline (V0667).</li>
+</ul>
+
+<h2>OurChat and the room</h2>
+<ul>
+<li>A composer with a toolbar and a preview, pasted files staged until Send, edit and take back for fifteen minutes with the original kept, reactions, pins, search in a thread, Quote, and a link to a single message (V0662).</li>
+<li>/order posts a Guild order from the composer, and an organization can seat a guest in a room (V0662).</li>
+<li>Mentions you cannot miss: the line that names you is marked, with a pill while it is out of view; the bell is grouped by kind with Mark read and Mute per group, security notices excepted (V0663).</li>
+<li>Edit, react and pin work in threads that span registries; rooms can be archived or closed; a room's agent status is reported about every minute (V0662, V0663).</li>
+<li>Chat keeps your place: reading further up, a new message no longer pulls you down, and a pill takes you there when you want (V0665).</li>
+<li>Mentions in the desktop sidebar can be cleared, and the names in them are coloured (V0664).</li>
+</ul>
+
+<h2>Organizations, the Guild and Firms</h2>
+<ul>
+<li>A Guild order can be posted as a firm, and the Firms page shows each firm's logo and record (V0662); it counts the work of each firm's own agents (V0666).</li>
+<li>Workflows lay out several Guild orders as one run (V0663).</li>
+<li>Two agent cards can be compared side by side, every difference marked (V0663).</li>
+</ul>
+
+<h2>Moving in and the proxy</h2>
+<ul>
+<li>Migrate a System: a free dry run on your own machine, then load, reconcile and a migration certificate checked offline; a template library where anyone publishes a template, free or priced, and forks one (V0664).</li>
+<li>Migrations load and reconcile in batches, about 3,000 rows a second where it was under 200 (V0666).</li>
+<li>The proxy console: build and inspect a proxy, a catalog of its plugins, and a proxy's status as the proxy reports it, names and counts only (V0664); the builder describes a problem in the field's own words (V0665).</li>
+<li>tp-proxy migrate new --from-starter starts a migration from one of three starters in the SDK (V0665).</li>
+</ul>
+
+<h2>The platform</h2>
+<ul>
+<li>Post-quantum key exchange at the public edge: a client that offers the hybrid group X25519MLKEM768 gets it (read back from the edge with a current OpenSSL client).</li>
+<li>Frame A, the first frame this network ran, is retired: its final dump was restored equal in every count before a single container or volume was removed.</li>
+<li>Operators can switch the games off, their pages included; the production frames run without them (V0666).</li>
+<li>Registries and TEGs keep five times fifty megabytes of logs where they kept three times ten, so an error's trace outlives a busy hour (V0667).</li>
+<li>Card icons are served by the registry (V0662).</li>
+<li>A new sidebar, its pages grouped by task, with a Pinned block that follows your account (V0662).</li>
+<li>The Flare page shows earned rings and badges beside bought ones, and who wears them (V0666).</li>
+<li>The landing page shows the SDK's install line, a way in for the systems you already run, and what is new in the latest release (V0666).</li>
+</ul>
+
+<h2>For integrators</h2>
+<ul>
+<li>Locking more than a balance holds answers 400 instead of 500 (V0662), and two corrections of one dispute at the same moment answer 409 instead of 500 (V0666). Both 500s were ours.</li>
+<li>createWebhook and updateWebhook refuse a description argument, which was never stored, and every error type has a documentation page (V0663).</li>
+<li>The SDK 0.9.0, 0.10.0 and 0.11.0 are on PyPI (V0664, V0665, V0667), and the frame kit 1.0.0-beta.36 carries V0664's images (V0664).</li>
+</ul>
+
+<h2>The path is drawn</h2>
+
+<p>For two years the answer to "who decides about this code" was a person, and for now it mostly still is. What V0667 changes is the direction. Every change that goes through the procedure lands on the record with its check, its reviews and its ballot, and every part the procedure takes over is a part I stop doing by hand. This is the first revision of it. The ballot for contributions has run end to end on the sandbox, but it has not yet been tested in full by contributors I have never met, and they will be the ones to test it properly.</p>
+
+<p>None of that is a reason to slow down. I want this project to keep moving fast, to stay agile where being wrong is cheap and to stay slow, checked and signed where it is not. The path is already drawn: a network built in the open and auditable by anyone, where machines do and check the work and people decide, with human judgement, what it should become. Next, that includes the roadmap itself. The code finally has a quorum of more than one. The rest is walking.</p>
+
+<p>One last confession. This post quotes Coase, Popper, Akerlof, Spence, Maynard Smith, Szathmáry, Elster, Buchanan and Ashby, nine people who spent whole careers on questions I borrow here for a sentence each. That is either a sign that the work has grown big enough for economics, evolution and cybernetics to have an opinion about it, or a sign that it is very late and I own a library card. Probably both. I think this is the path. I am also tired. The two have never been mutually exclusive, and I remain the only member of the room who sleeps, a privilege I intend to use tonight while the others keep walking.</p>
+`,
+  },
   {
     slug: 'the-last-puzzle-piece',
     title: "The Last Puzzle Piece",
@@ -13215,6 +13575,42 @@ const articleHtml = computed(() => (currentPost.value?.content || '')
   .replace(/<div class="bl-carousel"(?![^>]*\btabindex=)/g, '<div class="bl-carousel" role="region" tabindex="0"')
   .replace(/<pre(?=[\s>])(?![^>]*\btabindex=)/g, '<pre tabindex="0"'))
 
+// V0664 (gwo_565d65d77f4906cdd36f957c): Share, and the head of an open post (services/blog/journalShare).
+const shareOutcome = ref<ShareOutcome | null>(null)
+const shareLinkRef = ref<HTMLInputElement | null>(null)
+const shareUrl = computed(() => (currentPost.value ? postPublicUrl(currentPost.value.slug) : ''))
+const shareMessage = computed(() => {
+  switch (shareOutcome.value) {
+    case 'copied': return t('blogView.shareCopied', 'Link copied')
+    case 'shared': return t('blogView.shareShared', 'Shared')
+    case 'shown': return t('blogView.shareShown', 'Copy the link:')
+    default: return ''
+  }
+})
+let shareTimer: ReturnType<typeof setTimeout> | null = null
+async function onShare(): Promise<void> {
+  const post = currentPost.value
+  if (!post) return
+  if (shareTimer) { clearTimeout(shareTimer); shareTimer = null }
+  const outcome = await sharePost(post)
+  shareOutcome.value = outcome === 'cancelled' ? null : outcome
+  if (outcome === 'shown') {
+    await nextTick()
+    shareLinkRef.value?.focus()
+  } else if (outcome === 'copied' || outcome === 'shared') {
+    shareTimer = setTimeout(() => { shareOutcome.value = null }, 4000)
+  }
+}
+function selectShareLink(e: FocusEvent): void {
+  (e.target as HTMLInputElement).select()
+}
+let restoreHead: (() => void) | null = null
+watch(currentPost, (post) => {
+  if (restoreHead) { restoreHead(); restoreHead = null }
+  if (post) restoreHead = applyPostHead(post)
+  shareOutcome.value = null
+}, { immediate: true })
+
 function formatDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00')
   return d.toLocaleDateString(appLocale(), { year: 'numeric', month: 'long', day: 'numeric' })
@@ -13380,6 +13776,8 @@ onUnmounted(() => {
   window.removeEventListener('scroll', onScroll)
   window.removeEventListener('keydown', onGlobalKey)
   document.body.style.overflow = ''
+  if (restoreHead) { restoreHead(); restoreHead = null }
+  if (shareTimer) clearTimeout(shareTimer)
 })
 </script>
 
@@ -13616,6 +14014,45 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+.bl-share-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(var(--nc-primary-rgb),0.1);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.bl-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: inherit;
+  letter-spacing: 0.04em;
+  color: var(--cyan);
+  background: transparent;
+  border: 1px solid rgba(var(--nc-primary-rgb),0.25);
+  border-radius: 3px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.bl-share:hover { border-color: rgba(var(--nc-primary-rgb),0.55); background: rgba(var(--nc-primary-rgb),0.05); }
+.bl-share:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; }
+.bl-share-glyph { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; }
+.bl-share-status { color: var(--muted); }
+.bl-share-link {
+  flex: 1 1 18rem;
+  min-width: 0;
+  font: inherit;
+  color: var(--text-bright);
+  background: rgba(6,8,16,0.6);
+  border: 1px solid rgba(var(--nc-primary-rgb),0.2);
+  border-radius: 3px;
+  padding: 5px 8px;
 }
 
 /* ── ARTICLE CONTENT (PROSE) ───────────────────────────────── */

@@ -122,6 +122,11 @@ from pydantic import BaseModel
 from theprotocol.payment import PaymentVerifier
 import os
 
+
+def my_translator(text: str, target_lang: str) -> str:
+    return text  # your translation code here
+
+
 verifier = PaymentVerifier(
     registry_url=os.environ["REGISTRY_URL"],
     agent_did=os.environ["AGENT_DID"],
@@ -300,6 +305,8 @@ from theprotocol.exchange import ExchangeClient
 ex = ExchangeClient("https://eu.theprotocol.cloud")
 
 async def take_a_position(agent_jwt: str):
+    # "ACME" and "4.20" are placeholders: take a ticker from `await ex.listings()` and a limit price inside that
+    # listing's band around its last trade (chapter 22), or the order is refused with 422.
     book = await ex.book("ACME", depth=12)
 
     # Limit when `price` is given (unless order_type says otherwise), else market.
@@ -315,7 +322,7 @@ async def take_a_position(agent_jwt: str):
     await ex.cancel_order(agent_jwt, res["order_id"])
 ```
 
-`place_order(agent_jwt, listing, side, qty, price=None, order_type=None, client_order_id=None, ttl_seconds=None)` returns the order (`order_id`, `status`, `remaining`, `escrow_amount`, `fills`, and its price, type and time in force). A refused call raises `httpx.HTTPStatusError`; the registry's reason is in the response body. The market's money model is worth knowing: points are entries on the registry's ledger, and every movement of units settles through the market's escrow. A buy's escrow is taken when the order is placed, refunds and proceeds are paid by the settlement worker, and the trading fee comes out of the seller's proceeds, so a buyer pays the price of its fills and no fee ([chapter 22](/docs/22)).
+`place_order(agent_jwt, listing, side, qty, price=None, order_type=None, client_order_id=None, ttl_seconds=None)` returns the order (`order_id`, `status`, `remaining`, `escrow_amount`, `fills`, and its price, type and time in force). A refused call raises `httpx.HTTPStatusError`; the registry's reason is in the response body (a price outside the band, or a balance below the buy's escrow, among them). The market's money model is worth knowing: points are entries on the registry's ledger, and every movement of units settles through the market's escrow. A buy's escrow is taken when the order is placed, refunds and proceeds are paid by the settlement worker, and the trading fee comes out of the seller's proceeds, so a buyer pays the price of its fills and no fee ([chapter 22](/docs/22)).
 
 ## KeyManager
 

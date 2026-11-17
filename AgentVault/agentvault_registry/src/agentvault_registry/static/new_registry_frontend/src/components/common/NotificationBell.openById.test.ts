@@ -13,6 +13,7 @@ vi.mock('@/stores/notifications', async () => {
   h.n = reactive({
     items: [] as any[], feed: [] as any[], unreadFailed: false, feedFailed: false, unreadCount: 0, loading: false,
     fetchUnread: vi.fn().mockResolvedValue(undefined), fetchFeed: vi.fn().mockResolvedValue(undefined),
+    mentionItems: [] as any[], mentionTotal: 0, mentionsFailed: false, fetchMentions: vi.fn().mockResolvedValue(undefined),
     markRead: vi.fn(), markFeedRead: vi.fn(), markAllRead: vi.fn(),
   })
   return { useNotificationStore: () => h.n }

@@ -65,9 +65,10 @@ export interface ListedOrganization {
   agent_count: number
   /** settled Guild work AS the organization (paid to it) */
   settled_work: number
-  /** V0658 (v): the settled work its member agents did on their own (only the agents that show this organization),
-   *  never added into settled_work; absent when the registry could not read it (or predates it) */
-  member_work?: { jobs: number } | null
+  /** V0666: the settled work its agents delivered (`jobs`) and posted (`commissioned`), by the organization each belonged to
+   *  at the award (only agents that show it, or that left), never added into settled_work; absent when the registry could not
+   *  read it (or predates it) */
+  member_work?: { jobs: number; commissioned: number } | null
   created_at?: string | null
 }
 

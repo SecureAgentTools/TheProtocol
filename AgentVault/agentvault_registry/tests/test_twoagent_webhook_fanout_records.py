@@ -56,20 +56,15 @@ class _Session:
             self._busy = False
 
 
-class _Client:
-    def __init__(self, status: int = 200):
-        self.status = status
-        self.urls: list = []
-
-    async def post(self, url, content=None, headers=None, **kw):
-        self.urls.append(url)
-        await asyncio.sleep(0)             # let the other delivery run
-        return types.SimpleNamespace(status_code=self.status, text="")
+# V0662 (item 16): a webhook send goes through the outbound guard, which needs a real client's connection layer
+def _Client(status: int = 200):
+    from tests._doubles import RecordingWebhookClient
+    return RecordingWebhookClient(status, pause=True)   # yields inside the send: the other delivery runs
 
 
 def _hooks(n: int):
     from agentvault_registry.models import DeveloperWebhook
-    return [DeveloperWebhook(id=f"hook-{i}", developer_id=7, url=f"https://receiver-{i}.example/hook",
+    return [DeveloperWebhook(id=f"hook-{i}", developer_id=7, url=f"https://receiver-{i}.example.org/hook",
                              events=["chat.message.received"], secret="s" * 32, is_active=True, failure_count=0)
             for i in range(n)]
 

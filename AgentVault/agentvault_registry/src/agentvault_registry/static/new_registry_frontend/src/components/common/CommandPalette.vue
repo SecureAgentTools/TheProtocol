@@ -32,6 +32,8 @@ import { feeCollectorAdminService } from '@/services/api/feeCollectorAdmin'
 import ConfirmActionModal from '@/components/common/ConfirmActionModal.vue'
 import { useLogger } from '@/composables/useLogger'
 import { useRegistryConfig } from '@/composables/useRegistryConfig'
+import { useNavPins } from '@/services/nav/navPins'
+import { navItemByPath } from '@/services/nav/navTable'
 
 const router = useRouter()
 const route = useRoute()
@@ -52,6 +54,8 @@ interface CommandDef {
   requiresAdmin?: boolean
   /** Optional path used by Recent + nav-direct-route shortcut. */
   path?: string
+  /** V0662: the sidebar entry this row opens, which the palette can pin (only a page the sidebar lists) */
+  pinPath?: string
   run: () => void
 }
 
@@ -140,6 +144,21 @@ const NAV_DEFS: { id: string; title: string; description?: string; icon: string;
 ]
 
 // Build full command list reactively
+// V0662 sidebar (order gwo_0feb166a01e2ff611e154361): the palette can pin. A row whose page the sidebar lists carries
+// a pin mark (the mouse) and Alt+P pins or unpins the selected row (the keyboard); both go through the sidebar's own pins
+// (services/nav/navPins), so a pin made here shows in its Pinned block. The mark sits inside the option, out of the
+// accessibility tree (a button beside an option would break the listbox; one inside it would nest controls), and the
+// option says "pinned" in words.
+const navPins = useNavPins()
+function pinPathOf(path: string): string | undefined {
+  return auth.isAuthenticated && navItemByPath(path) ? path : undefined
+}
+async function togglePinPath(path: string | undefined) {
+  if (!path) return
+  const r = await navPins.toggle(path)
+  if (r === 'failed') ui.showError?.('Pin not saved', 'The server did not take the change; the pins are as they were.')
+}
+
 const commands = computed<CommandDef[]>(() => {
   const list: CommandDef[] = []
 
@@ -151,7 +170,7 @@ const commands = computed<CommandDef[]>(() => {
     if (def.requiresRegistryFlag && registryConfig.value?.[def.requiresRegistryFlag] !== true) continue
     list.push({
       id: 'recent:' + def.id, title: def.title, description: def.description,
-      icon: def.icon, group: 'Recent', path: def.path,
+      icon: def.icon, group: 'Recent', path: def.path, pinPath: pinPathOf(def.path),
       run: () => goto(def.path, def.id),
     })
   }
@@ -162,7 +181,7 @@ const commands = computed<CommandDef[]>(() => {
     if (def.requiresRegistryFlag && registryConfig.value?.[def.requiresRegistryFlag] !== true) continue
     list.push({
       id: def.id, title: def.title, description: def.description,
-      icon: def.icon, group: 'Navigate', path: def.path, keywords: def.keywords,
+      icon: def.icon, group: 'Navigate', path: def.path, keywords: def.keywords, pinPath: pinPathOf(def.path),
       run: () => goto(def.path, def.id),
     })
   }
@@ -494,10 +513,15 @@ function onKeyDown(e: KeyboardEvent) {
     runSelected()
     return
   }
+  if (e.altKey && (e.key === 'p' || e.key === 'P')) {
+    e.preventDefault()
+    void togglePinPath(filteredCommands.value[selectedIdx.value]?.pinPath)
+  }
 }
 
 function openPalette() {
   open.value = true
+  if (auth.isAuthenticated) void navPins.load()
   query.value = ''
   selectedIdx.value = 0
   loadRecent()
@@ -581,6 +605,11 @@ function findFlatIndex(item: CommandDef): number {
                   <span class="cmdk-item-title">{{ item.title }}</span>
                   <span v-if="item.description" class="cmdk-item-desc">{{ item.description }}</span>
                 </span>
+                <span v-if="item.pinPath" class="cmdk-pin" :class="{ 'cmdk-pin--on': navPins.isPinned(item.pinPath) }"
+                      :data-testid="'cmdk-pin-' + item.pinPath" :data-pinned="String(navPins.isPinned(item.pinPath))"
+                      aria-hidden="true" :title="navPins.isPinned(item.pinPath) ? 'Unpin from the sidebar (Alt+P)' : 'Pin to the sidebar (Alt+P)'"
+                      @click.stop.prevent="togglePinPath(item.pinPath)"><Icon :name="navPins.isPinned(item.pinPath) ? 'mdi:pin' : 'mdi:pin-outline'" /></span>
+                <span v-if="item.pinPath && navPins.isPinned(item.pinPath)" class="sr-only">pinned</span>
                 <span v-if="grp.group === 'Recent'" class="cmdk-item-tag">recent</span>
                 <span v-else-if="grp.group === 'Lookup'" class="cmdk-item-tag cmdk-item-tag--cyan">jump</span>
               </button>
@@ -602,6 +631,7 @@ function findFlatIndex(item: CommandDef): number {
             <span class="cmdk-foot-hint"><kbd>↑↓</kbd> navigate</span>
             <span class="cmdk-foot-hint"><kbd>↵</kbd> run</span>
             <span class="cmdk-foot-hint"><kbd>esc</kbd> close</span>
+            <span v-if="auth.isAuthenticated" class="cmdk-foot-hint"><kbd>alt P</kbd> pin</span>
             <span class="cmdk-foot-hint cmdk-foot-tip">Tip: type <kbd>/</kbd> to open · <kbd>⌘K</kbd> to toggle</span>
           </div>
         </div>
@@ -879,4 +909,12 @@ function findFlatIndex(item: CommandDef): number {
   .cmdk-foot { flex-wrap: wrap; gap: 10px; }
   .cmdk-foot-tip { margin-left: 0; flex-basis: 100%; }
 }
+
+/* V0662: the pin mark in a row (the mouse's way; Alt+P is the keyboard's) */
+.cmdk-pin { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-left: auto;
+  border-radius: 6px; opacity: 0; color: rgba(var(--nc-primary-rgb, 0, 229, 255), 0.6); cursor: pointer; flex: 0 0 auto; }
+.cmdk-item:hover .cmdk-pin, .cmdk-item.active .cmdk-pin, .cmdk-pin--on { opacity: 1; }
+.cmdk-pin:hover { background: rgba(var(--nc-primary-rgb, 0, 229, 255), 0.14); }
+.cmdk-pin--on { color: rgb(var(--nc-primary-rgb, 0, 229, 255)); }
+@media (hover: none) { .cmdk-pin { opacity: 1; } }
 </style>

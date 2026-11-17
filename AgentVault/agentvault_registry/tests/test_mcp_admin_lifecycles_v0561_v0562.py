@@ -238,3 +238,57 @@ def test_both_lifecycles_run_after_phase_6():
     names = [x["name"] for x in m.ADMIN_LIFECYCLES]
     assert names.index("admin_destructive_safe") < names.index("admin_compliance_baseline") < \
         names.index("admin_command_center_self")
+
+
+# V0666 Tests package A (gwo_0d88f8965ddc8d5c2566fa6c, session-tester): the V0664 pair read triggerDiagnosticAction
+# refusal-only. A frame on production's posture (no docker socket, EU's and the pair's) lists its operators with no
+# containers, so the dry run of teg-restart on one answers "skipped" (read on sbx-beta 2026-11-15: target op-sbxbetaop,
+# containers {}, HTTP 200 skipped dry_run true). The operator step demanded "ok", its check downgraded the frame's own
+# healthy row, and a pinned tool's lifecycle row that is not a success is dropped (kept_lifecycle_rows), so the tool lost
+# its earned row with no red anywhere. Where the target names no TEG container a dry run that does nothing ("skipped",
+# dry_run true) is the honest answer; where it names one, the dry run must say what it would do. Red on 146acef6c.
+
+OP_NO_CONTAINERS = {"operator_id": "op-sbxbetaop", "role": "operator", "containers": {}}
+OP_WITH_TEG = {"operator_id": "op-sbxalphaop", "role": "operator", "containers": {"teg": "cloud-op-sbxalphaop-teg"}}
+
+
+def _cc_skipped_everywhere(targets):
+    base = _cc_answer(targets)
+
+    def answer(tool, args):
+        if tool == "theprotocol_triggerDiagnosticAction":
+            return 200, {"status": "skipped", "dry_run": True,
+                         "summary": "only this frame's own operators' TEGs are restarted here"}
+        return base(tool, args)
+    return answer
+
+
+@pytest.mark.asyncio
+async def test_an_operator_listed_with_no_containers_answers_a_dry_run_that_does_nothing():
+    rpc, parse, calls = _harness(_cc_skipped_everywhere([SELF_T, OP_NO_CONTAINERS]))
+    outcomes = {}
+    await m.lifecycle_admin_command_center_self(rpc, parse, BAG, outcomes)
+    assert [a.get("target") for t, a in calls if t == "theprotocol_triggerDiagnosticAction"] == ["sandbox-alpha",
+                                                                                                  "op-sbxbetaop"]
+    row = outcomes["theprotocol_triggerDiagnosticAction"]
+    assert row["healthy"] is True and int(row["status_code"]) == 200, row
+
+
+@pytest.mark.asyncio
+async def test_an_operator_whose_teg_is_listed_must_say_what_its_dry_run_would_do():
+    rpc, parse, _ = _harness(_cc_skipped_everywhere([SELF_T, OP_WITH_TEG]))
+    outcomes = {}
+    await m.lifecycle_admin_command_center_self(rpc, parse, BAG, outcomes)
+    assert outcomes["theprotocol_triggerDiagnosticAction"]["healthy"] is False
+
+
+@pytest.mark.asyncio
+async def test_a_dry_run_that_is_not_a_dry_run_is_a_finding_whatever_the_containers():
+    def acts(tool, args):
+        if tool == "theprotocol_triggerDiagnosticAction" and args["target"] == "op-sbxbetaop":
+            return 200, {"status": "skipped", "dry_run": False, "summary": "skipped"}
+        return _cc_skipped_everywhere([SELF_T, OP_NO_CONTAINERS])(tool, args)
+    rpc, parse, _ = _harness(acts)
+    outcomes = {}
+    await m.lifecycle_admin_command_center_self(rpc, parse, BAG, outcomes)
+    assert outcomes["theprotocol_triggerDiagnosticAction"]["healthy"] is False

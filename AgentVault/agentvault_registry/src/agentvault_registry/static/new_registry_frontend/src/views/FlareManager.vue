@@ -15,12 +15,29 @@
     <header class="flm-hero">
       <div class="flm-chip">
         <span class="flm-chip-dot"></span>
-        {{ t('flareManagerView.chip') }}
+        {{ t('flareWear.hero.chip', 'YOUR FLARE') }}
       </div>
       <h1 class="flm-h1">{{ t('flareManagerView.h1a') }}<span class="flm-h1-accent">{{ t('flareManagerView.h1Accent') }}</span></h1>
-      <p class="flm-tagline">{{ t('flareManagerView.tagline') }}</p>
+      <p class="flm-tagline">{{ t('flareWear.hero.tagline', 'Choose who wears it, then pick from what you unlocked by contributing and the flares you hold.') }}</p>
     </header>
 
+    <!-- V0666 the view reworked: WHO wears it first (you, then every agent, each with what it wears), then the category: BOUGHT (the flares you hold) or EARNED
+         (what the contributor track unlocked: separate, never for sale). Earned works with no flare tier too. -->
+    <template v-if="authStore.isAuthenticated">
+      <FlareBearerRail :bearers="bearers" :selected="selectedKey" :state="railState" :worn="wornOfBearer" :bought-name="boughtName" @select="selectBearer" @retry="loadAgents" />
+      <div class="flm-tabs" role="tablist" :aria-label="t('flareWear.tabs.label', 'Which flares')" data-testid="flare-tabs">
+        <button type="button" role="tab" class="flm-tab" :class="{ 'flm-tab-on': category === 'unlocked' }" :aria-selected="category === 'unlocked'" data-testid="tab-earned" @click="category = 'unlocked'">
+          {{ t('flareWear.tabs.earned', 'Unlocked') }}<span class="flm-tab-sub">{{ t('flareWear.tabs.earnedSub', 'by contributing') }}</span>
+        </button>
+        <button type="button" role="tab" class="flm-tab" :class="{ 'flm-tab-on': category === 'bought' }" :aria-selected="category === 'bought'" data-testid="tab-bought" @click="category = 'bought'">
+          {{ t('flareWear.tabs.bought', 'Bought') }}<span class="flm-tab-sub">{{ t('flareWear.tabs.boughtSub', 'the flares you hold') }}</span>
+        </button>
+      </div>
+      <EarnedWearPanel v-if="category === 'unlocked'" :items="trackItems" :state="trackState" :bearer="selectedBearer" :worn-now="wornOfBearer(selectedBearer)" :holder-name="holderName" :busy-key="bearerWear.busyKey.value" :errors="bearerWear.errors"
+        :initials="initialsOfUser" :still="stillMotion" :is-commander="isCommanderTier" @commander="bearerWear.takeOffTitle()" @wear="(i: TrackItem, off: boolean) => bearerWear.wear(i, selectedBearer, off)" @retry="loadTrack" />
+    </template>
+
+    <template v-if="category === 'bought' || !authStore.isAuthenticated">
     <div v-if="loading" class="flm-loading">
       <Icon name="mdi:loading" class="flm-spin" /> {{ t('flareManagerView.loadingFlare') }}
     </div>
@@ -42,6 +59,7 @@
     </div>
 
     <template v-else>
+      <template v-if="selectedBearer.kind === 'developer'">
       <!-- Profile flare card — what the dev is currently wearing.
            UserAvatar handles dual-slot composition (encirclement + corner)
            so shadow_chancellor backers see their full presence. Shows the
@@ -515,10 +533,10 @@
                 :disabled="isFixedPaletteTier"
               />
               <input
-                v-model="form.accent_color"
+                v-model="accentColorModel"
                 type="color"
                 class="flm-color-picker"
-                :value="form.accent_color || '#00d2d2'"
+                :aria-label="t('flareWear.bought.accent', 'Accent colour')"
                 :disabled="isFixedPaletteTier"
               />
               <FlareBadge
@@ -560,422 +578,14 @@
            pickers. Each slot is equip-able to any of the caller's agents
            (same agent can bear both, or different agents can each bear one).
            Server enforces ≤1 bearer per slot per developer. -->
-      <section class="flm-card flm-card--bearer">
-        <div class="flm-card-head">
-          <Icon name="mdi:robot-happy-outline" class="flm-card-icon" />
-          <h2>{{ t('flareManagerView.sections.agentBearers') }} <span class="flm-card-sub">{{ t('flareManagerView.sections.agentBearersSub') }}</span></h2>
-        </div>
+      </template>
 
-        <p v-if="agentsLoading" class="flm-current-bearer flm-current-empty">
-          <Icon name="mdi:loading" class="flm-spin" /> {{ t('flareManagerView.loadingAgents') }}
-        </p>
-
-        <div v-if="!agentsLoading && agentsFailed && agents.length === 0" class="flm-no-agents" data-testid="flm-agents-failed">
-          <ReadFailedNotice :retry="loadAgents" />
-        </div>
-        <div v-else-if="!agentsLoading && agents.length === 0" class="flm-no-agents">
-          <p>{{ t('flareManagerView.noAgents') }}</p>
-          <router-link to="/onboarding" class="nc-btn">
-            <Icon name="mdi:rocket-launch" /> {{ t('flareManagerView.createAgent') }}
-          </router-link>
-        </div>
-
-        <div v-else-if="!agentsLoading" class="flm-bearer-grid">
-
-          <!-- ────────────────────── CORNER SLOT ─────────────────────── -->
-          <!-- §pass11 (2026-05-15) — Bearer-first rendering. Each column
-               shows ONLY the current bearer (one row). Swap is done via the
-               searchable picker popover below — necessary at 160-agent scale
-               (previously the column rendered every agent → 480 cells). -->
-          <div class="flm-bearer-col">
-            <div class="flm-bearer-col-head">
-              <span class="flm-bearer-col-eyebrow">{{ t('flareManagerView.bearers.cornerSlot') }}</span>
-              <h3 class="flm-bearer-col-title">
-                <Icon name="mdi:hexagon-multiple-outline" class="flm-bearer-col-icon" />
-                <span>{{ t('flareManagerView.bearers.cornerTitle') }}</span>
-              </h3>
-              <p class="flm-bearer-col-sub" v-if="!canEquipCorner" v-html="t('flareManagerView.bearers.cornerNoSelected')" />
-              <p class="flm-bearer-col-sub" v-else-if="currentCornerBearer" v-html="t('flareManagerView.bearers.cornerCurrentlyOn', { name: escapeHtml(currentCornerBearer.name || truncMid(currentCornerBearer.did, 22, 8)), flare: escapeHtml(tierShortName(flareStatus?.selected_corner_flare)) })" />
-              <p class="flm-bearer-col-sub" v-else>
-                {{ t('flareManagerView.bearers.cornerNoBearer') }}
-              </p>
-            </div>
-
-            <ul class="flm-agent-list flm-bearer-list" :class="{ 'flm-bearer-list--disabled': !canEquipCorner }">
-              <li
-                v-if="currentCornerBearer"
-                :key="`c-${currentCornerBearer.did}`"
-                class="flm-agent-row flm-agent-row-bearer"
-              >
-                <UserAvatar
-                  :user="{
-                    ...currentCornerBearer,
-                    selected_corner_flare:       (flareStatus?.selected_corner_flare ?? null),
-                    selected_encirclement_flare: currentCornerBearer.bears_encirclement_flare ? (flareStatus?.selected_encirclement_flare ?? null) : null,
-                    flare_encirclement_variant:  currentCornerBearer.bears_encirclement_flare ? (flareStatus?.flare_encirclement_variant ?? null) : null,
-                  }"
-                  :display-name="currentCornerBearer.name || currentCornerBearer.did"
-                  size="sm"
-                  class="flm-agent-avatar"
-                />
-                <div class="flm-agent-meta">
-                  <p class="flm-agent-name">{{ currentCornerBearer.name || t('flareManagerView.bearers.unnamedAgent') }}</p>
-                  <p class="flm-mono flm-agent-did">{{ truncMid(currentCornerBearer.did, 16, 8) }}</p>
-                </div>
-                <span v-if="canEquipCorner" class="flm-bearer-slot-pill flm-bearer-slot-pill--corner">
-                  <span class="flm-bearer-slot-dot"></span>
-                  {{ t('flareManagerView.bearers.wearing') }}
-                  <button
-                    class="flm-bearer-slot-clear"
-                    :disabled="equippingSlot !== null"
-                    @click.stop="unequipSlotFrom('corner', currentCornerBearer)"
-                    :title="t('flareManagerView.bearers.unequipTitle')"
-                  >
-                    <Icon name="mdi:close" />
-                  </button>
-                </span>
-                <span v-else class="flm-bearer-slot-pill flm-bearer-slot-pill--disabled">
-                  <Icon name="mdi:lock-outline" /> {{ t('flareManagerView.bearers.noSlot') }}
-                </span>
-              </li>
-              <li
-                v-else-if="canEquipCorner"
-                key="c-empty"
-                class="flm-agent-row flm-agent-row-empty"
-              >
-                <span class="flm-agent-avatar-empty">
-                  <Icon name="mdi:account-question-outline" />
-                </span>
-                <div class="flm-agent-meta">
-                  <p class="flm-agent-name flm-agent-name-empty">{{ t('flareManagerView.bearers.noOneEquipped') }}</p>
-                  <p class="flm-bearer-col-hint">{{ t('flareManagerView.bearers.pickToEquip') }}</p>
-                </div>
-              </li>
-            </ul>
-
-            <div class="flm-bearer-pick-wrap">
-              <button
-                v-if="canEquipCorner"
-                type="button"
-                class="nc-btn nc-btn-secondary flm-bearer-pick-btn"
-                :disabled="equippingSlot !== null"
-                @click.stop="openBearerPicker('corner')"
-                :aria-expanded="bearerPickerOpenFor === 'corner'"
-                :aria-haspopup="true"
-              >
-                <Icon name="mdi:account-search-outline" />
-                {{ currentCornerBearer ? t('flareManagerView.bearers.changeBearer') : t('flareManagerView.bearers.pickBearer') }}
-              </button>
-              <div
-                v-if="bearerPickerOpenFor === 'corner'"
-                class="flm-bearer-picker-popover"
-                @click.stop
-              >
-                <div class="flm-bearer-picker-head">
-                  <input
-                    ref="bearerPickerSearchEl"
-                    v-model="bearerPickerSearch"
-                    type="search"
-                    class="flm-bearer-picker-search"
-                    :placeholder="t('flareManagerView.bearers.pickerSearchPlaceholder')"
-                    :aria-label="t('flareManagerView.bearers.pickerSearchPlaceholder')"
-                    @keydown.esc="closeBearerPicker"
-                  />
-                  <button type="button" class="flm-bearer-picker-close" @click="closeBearerPicker" :title="t('flareManagerView.bearers.pickerClose')">
-                    <Icon name="mdi:close" />
-                  </button>
-                </div>
-                <div class="flm-bearer-picker-meta">
-                  {{ t('flareManagerView.bearers.pickerCount', { shown: bearerPickerFiltered.length, total: agents.length }) }}
-                </div>
-                <ul class="flm-bearer-picker-list">
-                  <li
-                    v-for="a in bearerPickerFiltered"
-                    :key="`pick-c-${a.did}`"
-                    class="flm-bearer-picker-item"
-                    :class="{ 'flm-bearer-picker-item--current': a.bears_corner_flare }"
-                  >
-                    <span class="flm-bearer-picker-init">{{ (a.name || a.did)[0]?.toUpperCase() || '?' }}</span>
-                    <div class="flm-bearer-picker-meta-inner">
-                      <p class="flm-agent-name">{{ a.name || t('flareManagerView.bearers.unnamedAgent') }}</p>
-                      <p class="flm-mono flm-agent-did">{{ truncMid(a.did, 24, 8) }}</p>
-                    </div>
-                    <button
-                      v-if="!a.bears_corner_flare"
-                      type="button"
-                      class="nc-btn nc-btn-secondary flm-bearer-picker-equip"
-                      :disabled="equippingSlot !== null"
-                      @click.stop="equipFromPicker('corner', a)"
-                    >
-                      <Icon v-if="equippingSlot?.slot === 'corner' && equippingSlot?.did === a.did" name="mdi:loading" class="flm-spin" />
-                      <Icon v-else name="mdi:hexagon-multiple" />
-                      {{ equippingSlot?.slot === 'corner' && equippingSlot?.did === a.did ? t('flareManagerView.bearers.equipping') : t('flareManagerView.bearers.equipHere') }}
-                    </button>
-                    <span v-else class="flm-bearer-picker-current-pill">
-                      <span class="flm-bearer-slot-dot"></span>
-                      {{ t('flareManagerView.bearers.wearing') }}
-                    </span>
-                  </li>
-                  <li v-if="bearerPickerFiltered.length === 0" class="flm-bearer-picker-empty">
-                    {{ t('flareManagerView.bearers.pickerNoResults') }}
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
-
-          <!-- ─────────────────── ENCIRCLEMENT SLOT ──────────────────── -->
-          <div class="flm-bearer-col">
-            <div class="flm-bearer-col-head">
-              <span class="flm-bearer-col-eyebrow">{{ t('flareManagerView.bearers.encirclementSlot') }}</span>
-              <h3 class="flm-bearer-col-title">
-                <Icon name="mdi:atom-variant" class="flm-bearer-col-icon" />
-                <span>{{ t('flareManagerView.bearers.encirclementTitle') }}</span>
-              </h3>
-              <p class="flm-bearer-col-sub" v-if="!canEquipEncirclement" v-html="t('flareManagerView.bearers.encirclementNoSelected')" />
-              <p class="flm-bearer-col-sub" v-else-if="currentEncirclementBearer" v-html="t('flareManagerView.bearers.encirclementCurrentlyOn', { name: escapeHtml(currentEncirclementBearer.name || truncMid(currentEncirclementBearer.did, 22, 8)), flare: escapeHtml(tierShortName(flareStatus?.selected_encirclement_flare)) })" />
-              <p class="flm-bearer-col-sub" v-else>
-                {{ t('flareManagerView.bearers.encirclementNoBearer') }}
-              </p>
-            </div>
-
-            <ul class="flm-agent-list flm-bearer-list" :class="{ 'flm-bearer-list--disabled': !canEquipEncirclement }">
-              <li
-                v-if="currentEncirclementBearer"
-                :key="`e-${currentEncirclementBearer.did}`"
-                class="flm-agent-row flm-agent-row-bearer"
-              >
-                <UserAvatar
-                  :user="{
-                    ...currentEncirclementBearer,
-                    selected_corner_flare:       currentEncirclementBearer.bears_corner_flare ? (flareStatus?.selected_corner_flare ?? null) : null,
-                    selected_encirclement_flare: (flareStatus?.selected_encirclement_flare ?? null),
-                    flare_encirclement_variant:  (flareStatus?.flare_encirclement_variant ?? null),
-                  }"
-                  :display-name="currentEncirclementBearer.name || currentEncirclementBearer.did"
-                  size="sm"
-                  class="flm-agent-avatar"
-                />
-                <div class="flm-agent-meta">
-                  <p class="flm-agent-name">{{ currentEncirclementBearer.name || t('flareManagerView.bearers.unnamedAgent') }}</p>
-                  <p class="flm-mono flm-agent-did">{{ truncMid(currentEncirclementBearer.did, 16, 8) }}</p>
-                </div>
-                <span v-if="canEquipEncirclement" class="flm-bearer-slot-pill flm-bearer-slot-pill--enc">
-                  <span class="flm-bearer-slot-dot"></span>
-                  {{ t('flareManagerView.bearers.wearing') }}
-                  <button
-                    class="flm-bearer-slot-clear"
-                    :disabled="equippingSlot !== null"
-                    @click.stop="unequipSlotFrom('encirclement', currentEncirclementBearer)"
-                    :title="t('flareManagerView.bearers.unequipTitle')"
-                  >
-                    <Icon name="mdi:close" />
-                  </button>
-                </span>
-                <span v-else class="flm-bearer-slot-pill flm-bearer-slot-pill--disabled">
-                  <Icon name="mdi:lock-outline" /> {{ t('flareManagerView.bearers.noSlot') }}
-                </span>
-              </li>
-              <li
-                v-else-if="canEquipEncirclement"
-                key="e-empty"
-                class="flm-agent-row flm-agent-row-empty"
-              >
-                <span class="flm-agent-avatar-empty">
-                  <Icon name="mdi:account-question-outline" />
-                </span>
-                <div class="flm-agent-meta">
-                  <p class="flm-agent-name flm-agent-name-empty">{{ t('flareManagerView.bearers.noOneEquipped') }}</p>
-                  <p class="flm-bearer-col-hint">{{ t('flareManagerView.bearers.pickToEquip') }}</p>
-                </div>
-              </li>
-            </ul>
-
-            <div class="flm-bearer-pick-wrap">
-              <button
-                v-if="canEquipEncirclement"
-                type="button"
-                class="nc-btn nc-btn-secondary flm-bearer-pick-btn flm-bearer-pick-btn--enc"
-                :disabled="equippingSlot !== null"
-                @click.stop="openBearerPicker('encirclement')"
-                :aria-expanded="bearerPickerOpenFor === 'encirclement'"
-                :aria-haspopup="true"
-              >
-                <Icon name="mdi:account-search-outline" />
-                {{ currentEncirclementBearer ? t('flareManagerView.bearers.changeBearer') : t('flareManagerView.bearers.pickBearer') }}
-              </button>
-              <div
-                v-if="bearerPickerOpenFor === 'encirclement'"
-                class="flm-bearer-picker-popover"
-                @click.stop
-              >
-                <div class="flm-bearer-picker-head">
-                  <input
-                    v-model="bearerPickerSearch"
-                    type="search"
-                    class="flm-bearer-picker-search"
-                    :placeholder="t('flareManagerView.bearers.pickerSearchPlaceholder')"
-                    :aria-label="t('flareManagerView.bearers.pickerSearchPlaceholder')"
-                    @keydown.esc="closeBearerPicker"
-                  />
-                  <button type="button" class="flm-bearer-picker-close" @click="closeBearerPicker" :title="t('flareManagerView.bearers.pickerClose')">
-                    <Icon name="mdi:close" />
-                  </button>
-                </div>
-                <div class="flm-bearer-picker-meta">
-                  {{ t('flareManagerView.bearers.pickerCount', { shown: bearerPickerFiltered.length, total: agents.length }) }}
-                </div>
-                <ul class="flm-bearer-picker-list">
-                  <li
-                    v-for="a in bearerPickerFiltered"
-                    :key="`pick-e-${a.did}`"
-                    class="flm-bearer-picker-item"
-                    :class="{ 'flm-bearer-picker-item--current': a.bears_encirclement_flare }"
-                  >
-                    <span class="flm-bearer-picker-init">{{ (a.name || a.did)[0]?.toUpperCase() || '?' }}</span>
-                    <div class="flm-bearer-picker-meta-inner">
-                      <p class="flm-agent-name">{{ a.name || t('flareManagerView.bearers.unnamedAgent') }}</p>
-                      <p class="flm-mono flm-agent-did">{{ truncMid(a.did, 24, 8) }}</p>
-                    </div>
-                    <button
-                      v-if="!a.bears_encirclement_flare"
-                      type="button"
-                      class="nc-btn nc-btn-secondary flm-bearer-picker-equip"
-                      :disabled="equippingSlot !== null"
-                      @click.stop="equipFromPicker('encirclement', a)"
-                    >
-                      <Icon v-if="equippingSlot?.slot === 'encirclement' && equippingSlot?.did === a.did" name="mdi:loading" class="flm-spin" />
-                      <Icon v-else name="mdi:atom-variant" />
-                      {{ equippingSlot?.slot === 'encirclement' && equippingSlot?.did === a.did ? t('flareManagerView.bearers.equipping') : t('flareManagerView.bearers.equipHere') }}
-                    </button>
-                    <span v-else class="flm-bearer-picker-current-pill">
-                      <span class="flm-bearer-slot-dot"></span>
-                      {{ t('flareManagerView.bearers.wearing') }}
-                    </span>
-                  </li>
-                  <li v-if="bearerPickerFiltered.length === 0" class="flm-bearer-picker-empty">
-                    {{ t('flareManagerView.bearers.pickerNoResults') }}
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
-
-          <!-- ─────────────────── §28 OVERLAY SLOT ───────────────────── -->
-          <!-- Third rail: only the encirclement-bearer can wear an overlay.
-               §pass11 (2026-05-15) — Single bearer row; no per-agent loop. -->
-          <div class="flm-bearer-col">
-            <div class="flm-bearer-col-head">
-              <span class="flm-bearer-col-eyebrow">{{ t('flareManagerView.bearers.overlaySlot') }}</span>
-              <h3 class="flm-bearer-col-title">
-                <Icon name="mdi:flash-alert-outline" class="flm-bearer-col-icon" />
-                <span>{{ t('flareManagerView.bearers.overlayTitle') }}</span>
-              </h3>
-              <p class="flm-bearer-col-sub">{{ t('flareManagerView.bearers.overlaySub') }}</p>
-            </div>
-
-            <ul class="flm-agent-list flm-bearer-list">
-              <!-- §2026-06-30: ALWAYS a bearer row (grid layout) so the no-overlay state
-                   gets the same clean avatar+meta / full-width status-bar layout as the
-                   other slots; --lit just brightens the tint when an overlay is active. -->
-              <li
-                v-if="currentEncirclementBearer"
-                :key="`o-${currentEncirclementBearer.did}`"
-                class="flm-agent-row flm-agent-row-bearer"
-                :class="{ 'flm-agent-row-bearer--lit': !!currentEncirclementBearer.flare_encirclement_overlay }"
-              >
-                <UserAvatar
-                  :user="{
-                    ...currentEncirclementBearer,
-                    selected_corner_flare:       currentEncirclementBearer.bears_corner_flare ? (flareStatus?.selected_corner_flare ?? null) : null,
-                    selected_encirclement_flare: (flareStatus?.selected_encirclement_flare ?? null),
-                    flare_encirclement_variant:  (flareStatus?.flare_encirclement_variant ?? null),
-                    flare_encirclement_overlay:  (currentEncirclementBearer.flare_encirclement_overlay ?? null),
-                  }"
-                  :display-name="currentEncirclementBearer.name || currentEncirclementBearer.did"
-                  size="sm"
-                  class="flm-agent-avatar"
-                />
-                <div class="flm-agent-meta">
-                  <p class="flm-agent-name">{{ currentEncirclementBearer.name || t('flareManagerView.bearers.unnamedAgent') }}</p>
-                  <p class="flm-mono flm-agent-did">{{ truncMid(currentEncirclementBearer.did, 16, 8) }}</p>
-                </div>
-                <div class="flm-overlay-picker" :class="{ 'flm-overlay-picker--open': overlayPopoverFor === currentEncirclementBearer.did }">
-                  <button
-                    type="button"
-                    class="flm-bearer-slot-pill flm-bearer-slot-pill--enc flm-overlay-pill"
-                    :disabled="agentOverlaySaving === currentEncirclementBearer.did"
-                    @click.stop="toggleOverlayPopover(currentEncirclementBearer.did)"
-                    :aria-expanded="overlayPopoverFor === currentEncirclementBearer.did"
-                    :aria-haspopup="true"
-                  >
-                    <span class="flm-bearer-slot-dot"></span>
-                    {{ overlayPillLabel(currentEncirclementBearer.flare_encirclement_overlay) }}
-                    <Icon name="mdi:chevron-down" class="flm-overlay-chevron" />
-                  </button>
-                  <div
-                    v-if="overlayPopoverFor === currentEncirclementBearer.did"
-                    class="flm-overlay-popover"
-                    @click.stop
-                  >
-                    <button
-                      type="button"
-                      class="flm-overlay-popover-item"
-                      :class="{ 'flm-overlay-popover-item--active': !currentEncirclementBearer.flare_encirclement_overlay }"
-                      @click="pickOverlayForAgent(currentEncirclementBearer, null)"
-                    >
-                      <span class="flm-overlay-popover-dot"></span>
-                      {{ t('flareManagerView.bearers.overlayNone') }}
-                    </button>
-                    <button
-                      v-for="o in ENCIRCLEMENT_OVERLAYS"
-                      :key="`o-pop-${currentEncirclementBearer.did}-${o.id}`"
-                      type="button"
-                      class="flm-overlay-popover-item"
-                      :class="{ 'flm-overlay-popover-item--active': currentEncirclementBearer.flare_encirclement_overlay === o.id }"
-                      @click="pickOverlayForAgent(currentEncirclementBearer, o.id)"
-                    >
-                      <span class="flm-overlay-popover-dot flm-overlay-popover-dot--on"></span>
-                      {{ o.label }}
-                    </button>
-                  </div>
-                </div>
-              </li>
-              <li
-                v-else
-                key="o-empty"
-                class="flm-agent-row flm-agent-row-empty"
-              >
-                <span class="flm-agent-avatar-empty">
-                  <Icon name="mdi:lock-outline" />
-                </span>
-                <div class="flm-agent-meta">
-                  <p class="flm-agent-name flm-agent-name-empty">{{ t('flareManagerView.bearers.overlayNeedsEncStandalone') }}</p>
-                  <p class="flm-bearer-col-hint">{{ t('flareManagerView.bearers.overlayPickEncFirst') }}</p>
-                </div>
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        <!-- Tip line — for users with both slots equippable -->
-        <p
-          v-if="!agentsLoading && agents.length > 0 && canEquipCorner && canEquipEncirclement"
-          class="flm-bearer-tip"
-        >
-          <Icon name="mdi:lightbulb-on-outline" />
-          {{ t('flareManagerView.bearers.tipBoth') }}
-        </p>
-
-        <p v-if="equipError" class="flm-error">{{ equipError }}</p>
-        <p v-if="equipSuccess" class="flm-success">
-          <Icon name="mdi:check-circle" /> {{ equipSuccess }}
-        </p>
-        <p v-if="moveError" class="flm-error">{{ moveError }}</p>
-        <p v-if="moveSuccess" class="flm-success">
-          <Icon name="mdi:check-circle" /> {{ moveSuccess }}
-        </p>
-      </section>
+      <!-- V0666: for an agent, the bought flares it can wear (replaces the three-column bearer section and its popover) -->
+      <BoughtOnAgent v-else :agent="selectedAgent!" :corner-name="boughtName(flareStatus?.selected_corner_flare || '')" :ring-name="boughtName(flareStatus?.selected_encirclement_flare || '')"
+        :corner-holder="boughtHolder('corner')" :ring-holder="boughtHolder('encirclement')" :overlays="ENCIRCLEMENT_OVERLAYS.map((o) => ({ id: o.id, label: o.label }))" :busy="equippingSlot !== null || agentOverlaySaving !== null"
+        :error="equipError" :ok="equipSuccess" :earned-ring="isEarnedRing(selectedAgent?.flare_encirclement_variant)" :earned-badge="isEarnedBadge(selectedAgent?.flare_corner_variant)"
+        @equip="(slot: 'corner' | 'encirclement') => equipSlotOn(slot, selectedAgent!)" @unequip="(slot: 'corner' | 'encirclement') => unequipSlotFrom(slot, selectedAgent!)" @overlay="(id: string | null) => pickOverlayForAgent(selectedAgent!, id)" />
+    </template>
     </template>
   </div>
 </template>
@@ -1001,6 +611,13 @@ onMounted(async () => {
 })
 import UserAvatar from '@/components/common/UserAvatar.vue'
 import Icon from '@/components/Icon.vue'
+import BoughtOnAgent from '@/components/flare/BoughtOnAgent.vue'         // V0666 the view reworked: the bearers rail, the earned and the bought categories
+import EarnedWearPanel from '@/components/flare/EarnedWearPanel.vue'
+import FlareBearerRail from '@/components/flare/FlareBearerRail.vue'
+import { useBearerWear } from '@/composables/useBearerWear'
+import { getMyTrack, type TrackItem } from '@/services/api/contributorTrack'
+import { BADGE_KEYS, RING_KEYS } from '@/services/contributorTrack'
+import { bearersOf, holderOfEarned, ME, wornBy, type Bearer, type DeveloperFlare, type Worn } from '@/services/flareBearers'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 
 const authStore = useAuthStore()
@@ -1030,6 +647,7 @@ const agents = ref<AgentRow[]>([])
 const agentsFailed = ref(false)
 const loading = ref(true)
 const agentsLoading = ref(false)
+const agentsLoaded = ref(false)
 const moving = ref<string | null>(null)
 const moveError = ref('')
 const moveSuccess = ref('')
@@ -1224,6 +842,11 @@ const form = ref({
   cause: '',
   accent_color: '',
 })
+// the colour input needs a valid colour to show: an empty accent shows the default without storing it (one binding: the old v-model plus :value was refused by the compiler)
+const accentColorModel = computed<string>({
+  get: () => form.value.accent_color || '#00d2d2',
+  set: (v) => { form.value.accent_color = v },
+})
 const customSaving = ref(false)
 const customError = ref('')
 const customSuccess = ref('')
@@ -1339,63 +962,6 @@ const equippingSlot = ref<{ slot: 'corner' | 'encirclement'; did: string } | nul
 const equipError = ref<string>('')
 const equipSuccess = ref<string>('')
 
-// §pass11 (2026-05-15) — Bearer picker popover state. With 160+ agents the
-// previous per-column v-for over `agents` exploded the render tree (rows ×
-// 3 columns) to nearly 500 cells. Now each column shows the bearer only;
-// the picker popover serves the swap UX with a searchable list.
-const bearerPickerOpenFor = ref<'corner' | 'encirclement' | null>(null)
-const bearerPickerSearch = ref<string>('')
-const bearerPickerSearchEl = ref<HTMLInputElement | null>(null)
-
-const bearerPickerFiltered = computed<AgentRow[]>(() => {
-  const q = bearerPickerSearch.value.trim().toLowerCase()
-  if (!q) return agents.value
-  return agents.value.filter(a => {
-    const hay = `${a.name || ''} ${a.did || ''}`.toLowerCase()
-    return hay.includes(q)
-  })
-})
-
-function openBearerPicker(slot: 'corner' | 'encirclement') {
-  bearerPickerOpenFor.value = slot
-  bearerPickerSearch.value = ''
-  // Autofocus search input next tick. We hold a single ref shared between
-  // the two columns — the popover that just opened is the one rendered.
-  setTimeout(() => bearerPickerSearchEl.value?.focus(), 0)
-}
-
-function closeBearerPicker() {
-  bearerPickerOpenFor.value = null
-  bearerPickerSearch.value = ''
-}
-
-async function equipFromPicker(slot: 'corner' | 'encirclement', target: AgentRow) {
-  // Close picker immediately for snappy UX; underlying equip is fire-and-await.
-  // We keep the popover OPEN here so the user sees the loading spinner on
-  // the row — closing happens after equipSlotOn resolves.
-  await equipSlotOn(slot, target)
-  if (!equipError.value) {
-    closeBearerPicker()
-  }
-}
-
-// Outside-click handler for the bearer picker popover.
-function onWindowClickForBearerPicker(e: MouseEvent) {
-  if (!bearerPickerOpenFor.value) return
-  const t = e.target as HTMLElement
-  if (!t) return
-  if (t.closest('.flm-bearer-picker-popover') || t.closest('.flm-bearer-pick-btn')) return
-  closeBearerPicker()
-}
-if (typeof window !== 'undefined') {
-  window.addEventListener('click', onWindowClickForBearerPicker)
-}
-onBeforeUnmount(() => {
-  if (typeof window !== 'undefined') {
-    window.removeEventListener('click', onWindowClickForBearerPicker)
-  }
-})
-
 async function equipSlotOn(slot: 'corner' | 'encirclement', target: AgentRow) {
   if (equippingSlot.value) return
   equipError.value = ''
@@ -1422,7 +988,7 @@ async function equipSlotOn(slot: 'corner' | 'encirclement', target: AgentRow) {
       }
       return a
     })
-    const label = slot === 'corner' ? 'Corner badge' : 'Encirclement'
+    const label = slot === 'corner' ? 'Corner flare' : 'Ring'
     equipSuccess.value = `${label} equipped on ${target.name || truncMid(target.did, 18, 8)}.`
   } catch (e: any) {
     equipError.value = e?.response?.data?.detail || e?.message || `Failed to equip ${slot}.`
@@ -1450,7 +1016,7 @@ async function unequipSlotFrom(slot: 'corner' | 'encirclement', target: AgentRow
       }
       return next
     })
-    const label = slot === 'corner' ? 'Corner badge' : 'Encirclement'
+    const label = slot === 'corner' ? 'Corner flare' : 'Ring'
     equipSuccess.value = `${label} removed from ${target.name || truncMid(target.did, 18, 8)}.`
   } catch (e: any) {
     equipError.value = e?.response?.data?.detail || e?.message || `Failed to unequip ${slot}.`
@@ -1546,6 +1112,7 @@ async function loadAgents() {
     agents.value = sorted.slice(0, 200)
   } finally {
     agentsLoading.value = false
+    agentsLoaded.value = true
   }
 }
 
@@ -1784,7 +1351,73 @@ const lockedVariants = computed<Set<string>>(() => {
   return new Set(flareStatus.value?.locked_encirclement_variants || [])
 })
 
+
+// ─── V0666 the view reworked: who wears it, then Earned or Bought ───────────────────────────────────────────────────────────────────
+const category = ref<'bought' | 'unlocked'>('unlocked')
+const selectedKey = ref<string>(ME)
+const trackItems = ref<TrackItem[]>([])
+const trackState = ref<'loading' | 'ready' | 'failed'>('loading')
+const equippedTitle = ref<string | null>(null)
+const stillMotion = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+const initialsOfUser = computed(() => String((authStore.user as any)?.name || (authStore.user as any)?.email || '').split(/\s+/).map((w: string) => w[0] || '').join('').slice(0, 2).toUpperCase())
+
+const devFlare = computed<DeveloperFlare>(() => ({
+  name: String((authStore.user as any)?.name || (authStore.user as any)?.email || ''),
+  flare_encirclement_variant: (flareStatus.value?.flare_encirclement_variant as string | null) ?? null,
+  flare_corner_variant: ((flareStatus.value as any)?.flare_corner_variant as string | null) ?? null,
+  selected_corner_flare: flareStatus.value?.selected_corner_flare ?? null,
+  selected_encirclement_flare: flareStatus.value?.selected_encirclement_flare ?? null,
+  title: equippedTitle.value,
+}))
+const isCommanderTier = computed(() => (flareStatus.value?.flare_tier ?? profileTier.value) === 'commander')
+const bearers = computed<Bearer[]>(() => bearersOf(devFlare.value, agents.value))
+const selectedBearer = computed<Bearer>(() => bearers.value.find((b) => b.key === selectedKey.value) ?? bearers.value[0])
+const selectedAgent = computed<AgentRow | null>(() => (selectedBearer.value.kind === 'agent' ? agents.value.find((a) => a.did === selectedBearer.value.did) ?? null : null))
+const railState = computed<'loading' | 'ready' | 'failed'>(() => (!agentsLoaded.value || agentsLoading.value ? 'loading' : agentsFailed.value && agents.value.length === 0 ? 'failed' : 'ready'))
+const wornOfBearer = (b: Bearer): Worn => wornBy(b, devFlare.value, agents.value)
+function selectBearer(key: string) {
+  selectedKey.value = key
+  equipError.value = ''
+  equipSuccess.value = ''
+}
+const isEarnedRing = (v: unknown) => typeof v === 'string' && RING_KEYS.includes(v)
+const isEarnedBadge = (v: unknown) => typeof v === 'string' && BADGE_KEYS.includes(v)
+/** A bought flare's name: the three old tiers by their names, the rest from the key (shadow_chancellor -> Shadow Chancellor). */
+function boughtName(key: string): string {
+  if (!key) return ''
+  return tierDisplayName(key) || key.split('_').map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w)).join(' ')
+}
+/** The name of the OTHER bearer that wears an earned copy: "You" for the developer, the agent's name, '' when it is free or worn by the chosen bearer. */
+function holderName(kind: 'encirclement' | 'corner', key: string): string {
+  const holder = holderOfEarned(kind, key, devFlare.value, agents.value)
+  if (!holder || holder === selectedKey.value) return ''
+  if (holder === ME) return t('flareWear.rail.you', 'You')
+  return bearers.value.find((b) => b.key === holder)?.name || ''
+}
+/** The OTHER agent that bears a bought slot now ('' when none, or the chosen agent itself). */
+function boughtHolder(slot: 'corner' | 'encirclement'): string {
+  const hit = agents.value.find((a) => a.did !== selectedKey.value && (slot === 'corner' ? a.bears_corner_flare : a.bears_encirclement_flare))
+  return hit ? (hit.name || truncMid(hit.did, 18, 8)) : ''
+}
+
+async function loadTrack() {
+  if (!authStore.isAuthenticated) return
+  try {
+    const mine = await getMyTrack()
+    trackItems.value = mine.items
+    equippedTitle.value = mine.equipped_title
+    if (trackState.value === 'loading' && !mine.items.some((i) => i.unlocked) && profileTier.value) category.value = 'bought'   // nothing earned yet: the flares they hold come first
+    trackState.value = 'ready'
+  } catch { if (trackState.value === 'loading') trackState.value = 'failed' }    // a refresh that fails keeps what was read
+}
+// one earned copy moves between bearers, and the registry knows where it went: after every press the page reads the bearers, the status and the track again
+async function refreshAfterWear() {
+  await Promise.all([loadAgents(), loadFlareStatus(), loadTrack()])
+}
+const bearerWear = useBearerWear({ failedWords: t('contributorTrack.view.wearFailed', 'That could not be changed just now.'), refresh: refreshAfterWear })
+
 onMounted(() => {
+  loadTrack()                                                  // earned items need no flare tier: they load beside the profile
   // Profile resolves first (fast), then everything else fills in async.
   loadProfile().then(() => {
     loadAgents()
@@ -1794,6 +1427,14 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* V0666 the two categories of the reworked view: Unlocked (by contributing) and Bought */
+.flm-tabs { display: flex; gap: .5rem; margin: 0 0 1rem; flex-wrap: wrap; }
+.flm-tab { min-height: 44px; display: inline-flex; align-items: baseline; gap: .6rem; padding: 0 1.1rem; border-radius: 10px; border: 1px solid rgba(var(--nc-primary-rgb, 0, 210, 210), .22); background: transparent; color: #c4ccd6; font: inherit; font-size: .9rem; letter-spacing: .02em; cursor: pointer; }
+.flm-tab:hover, .flm-tab:focus-visible { border-color: rgba(var(--nc-primary-rgb, 0, 210, 210), .55); }
+.flm-tab-on { border-color: var(--nc-primary, #00d2d2); background: rgba(var(--nc-primary-rgb, 0, 210, 210), .09); color: var(--nc-primary, #00d2d2); }
+.flm-tab-sub { font: 500 .66rem/1 'IBM Plex Mono', monospace; letter-spacing: .08em; text-transform: uppercase; opacity: .75; }
+@media (max-width: 720px) { .flm-tabs { display: grid; grid-template-columns: 1fr 1fr; } .flm-tab { justify-content: center; flex-direction: column; gap: .25rem; padding: .5rem; } }
+
 .flm-root {
   max-width: 880px;
   margin: 0 auto;
@@ -1946,13 +1587,13 @@ onMounted(() => {
   font-size: 11px;
   letter-spacing: 0.10em;
   text-transform: uppercase;
-  opacity: 0.65;
+  color: #aab3c4;
 }
 .flm-label-sub {
   margin-left: 6px;
   text-transform: none;
   letter-spacing: normal;
-  opacity: 0.55;
+  color: #8b97a6;
   font-family: ui-monospace, monospace;
 }
 .flm-color-row {
@@ -2976,7 +2617,7 @@ onMounted(() => {
   font-size: 10.5px;
   font-weight: 500;
   letter-spacing: 0.08em;
-  color: rgba(180, 180, 200, 0.6);
+  color: #9aa3b8;
   text-transform: none;
 }
 

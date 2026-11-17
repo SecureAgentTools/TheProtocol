@@ -15,8 +15,8 @@ vi.mock('@/services/api/simulation', () => ({
     getMetrics: vi.fn().mockResolvedValue(null), getDeadmanStatus: vi.fn().mockResolvedValue(null),
     getAgents: vi.fn().mockResolvedValue({ registries: [] }), getTopology: vi.fn().mockResolvedValue({ registries: [], edges: [] }),
     getLogs: vi.fn().mockResolvedValue({ lines: [] }), getSupplyAudit: vi.fn().mockResolvedValue({}),
-    getFundStatus: vi.fn().mockResolvedValue({ lines: [] }), start: vi.fn(), stop: vi.fn(), fundAgents: vi.fn(),
-    fundingPreview: vi.fn(), mintTokens: vi.fn(),
+    start: vi.fn(), stop: vi.fn(),
+    mintTokens: vi.fn(),
   },
 }))
 vi.mock('@/services/api/exchangeAdminService', () => ({

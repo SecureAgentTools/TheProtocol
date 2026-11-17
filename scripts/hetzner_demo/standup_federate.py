@@ -593,7 +593,7 @@ def add_peer_ledger_lane(name: str, peer_name: str, peer_es_port: int, *, log_fn
     rc = subprocess.run(["nginx", "-t"], capture_output=True, text=True)
     if rc.returncode != 0:
         raise SystemExit(f"federate: nginx -t failed after adding /ws/events-{peer_name} to {path}: {rc.stderr[-300:]}")
-    subprocess.run(["systemctl", "reload", "nginx"], check=True)
+    subprocess.run(["nginx", "-s", "reload"], check=True)   # the binary, not the unit: the edge runs in a container (nginx is its shim)
     log_fn(f"federate: console vhost {name}-theprotocol now proxies /ws/events-{peer_name} → 127.0.0.1:{peer_es_port}")
     return True
 

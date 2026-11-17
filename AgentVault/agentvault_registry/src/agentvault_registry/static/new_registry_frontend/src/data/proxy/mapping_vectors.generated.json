@@ -1,0 +1,2781 @@
+{
+ "schema": "theprotocol.proxy.mapping-vectors/v1",
+ "note": "Written by hand from mapping.py's documented behaviour; read by the SDK's tests and, copied into the console, by the TypeScript port's tests.",
+ "cases": [
+  {
+   "name": "a path into the payload",
+   "covers": [
+    "path:payload"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "x"
+    }
+   },
+   "fields": {
+    "f": "$.payload.a"
+   },
+   "expect": {
+    "f": "x"
+   }
+  },
+  {
+   "name": "a nested path and a list index",
+   "covers": [
+    "path:payload",
+    "path:list-index"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": {
+      "b": [
+       10,
+       20,
+       {
+        "c": "deep"
+       }
+      ]
+     }
+    }
+   },
+   "fields": {
+    "x": "$.payload.a.b.1",
+    "y": "$.payload.a.b.2.c"
+   },
+   "expect": {
+    "x": 20,
+    "y": "deep"
+   }
+  },
+  {
+   "name": "the record's own id, source and meta",
+   "covers": [
+    "path:record_id",
+    "path:source",
+    "path:meta"
+   ],
+   "record": {
+    "record_id": "row-7",
+    "source": "legacy",
+    "meta": {
+     "batch": 3
+    },
+    "payload": {
+     "a": 1
+    }
+   },
+   "fields": {
+    "id": "$.record_id",
+    "src": "$.source",
+    "m": "$.meta.batch"
+   },
+   "expect": {
+    "id": "row-7",
+    "src": "legacy",
+    "m": 3
+   }
+  },
+  {
+   "name": "observed_at is the record's time as text",
+   "covers": [
+    "path:observed_at"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 1
+    },
+    "observed_at": "2026-11-14T10:00:00+00:00"
+   },
+   "fields": {
+    "t": "$.observed_at"
+   },
+   "expect": {
+    "t": "2026-11-14T10:00:00+00:00"
+   }
+  },
+  {
+   "name": "a constant is a constant",
+   "covers": [
+    "constant"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 1
+    }
+   },
+   "fields": {
+    "k": "HAM-CTA",
+    "n": 5,
+    "b": true,
+    "z": null
+   },
+   "expect": {
+    "k": "HAM-CTA",
+    "n": 5,
+    "b": true,
+    "z": null
+   }
+  },
+  {
+   "name": "a nested object is mapped inside",
+   "covers": [
+    "nested:object"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "first": "Ada",
+     "n": "7"
+    }
+   },
+   "fields": {
+    "customer": {
+     "name": "$.payload.first",
+     "age": {
+      "path": "$.payload.n",
+      "as": "int"
+     }
+    }
+   },
+   "expect": {
+    "customer": {
+     "name": "Ada",
+     "age": 7
+    }
+   }
+  },
+  {
+   "name": "a list is mapped inside",
+   "covers": [
+    "nested:list"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": " x ",
+     "b": "2"
+    }
+   },
+   "fields": {
+    "lines": [
+     {
+      "path": "$.payload.a",
+      "trim": true
+     },
+     {
+      "path": "$.payload.b",
+      "as": "int"
+     },
+     "k"
+    ]
+   },
+   "expect": {
+    "lines": [
+     "x",
+     2,
+     "k"
+    ]
+   }
+  },
+  {
+   "name": "a dict with a key that is no value key is a plain object, its paths still read",
+   "covers": [
+    "plain-dict-is-not-a-node"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "A"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "extra": 1
+    }
+   },
+   "expect": {
+    "f": {
+     "path": "A",
+     "extra": 1
+    }
+   }
+  },
+  {
+   "name": "a missing path refuses the record naming the path and the field",
+   "covers": [
+    "path:missing"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 1
+    }
+   },
+   "fields": {
+    "f": "$.payload.nope"
+   },
+   "refusal": "the record has no $.payload.nope (the mapping's field f)"
+  },
+  {
+   "name": "a missing path inside a nested object names the dotted field",
+   "covers": [
+    "path:missing",
+    "nested:object"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 1
+    }
+   },
+   "fields": {
+    "o": {
+     "p": "$.payload.nope"
+    }
+   },
+   "refusal": "the record has no $.payload.nope (the mapping's field o.p)"
+  },
+  {
+   "name": "a missing path in a list names the index",
+   "covers": [
+    "path:missing",
+    "nested:list"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 1
+    }
+   },
+   "fields": {
+    "l": [
+     "$.payload.a",
+     "$.payload.nope"
+    ]
+   },
+   "refusal": "the record has no $.payload.nope (the mapping's field l[1])"
+  },
+  {
+   "name": "a missing path in a value node refuses the same way",
+   "covers": [
+    "path:missing"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 1
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.nope",
+     "trim": true
+    }
+   },
+   "refusal": "the record has no $.payload.nope (the mapping's field f)"
+  },
+  {
+   "name": "default is used when the path is missing",
+   "covers": [
+    "op:default"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 1
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.nope",
+     "default": "x"
+    }
+   },
+   "expect": {
+    "f": "x"
+   }
+  },
+  {
+   "name": "default null is a null",
+   "covers": [
+    "op:default"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 1
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.nope",
+     "default": null
+    }
+   },
+   "expect": {
+    "f": null
+   }
+  },
+  {
+   "name": "default is not applied to a present value",
+   "covers": [
+    "op:default"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "here"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "default": "x"
+    }
+   },
+   "expect": {
+    "f": "here"
+   }
+  },
+  {
+   "name": "required false makes a missing path a null",
+   "covers": [
+    "op:required_false"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 1
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.nope",
+     "required": false
+    }
+   },
+   "expect": {
+    "f": null
+   }
+  },
+  {
+   "name": "required false changes nothing for a present value",
+   "covers": [
+    "op:required_false"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "v"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "required": false
+    }
+   },
+   "expect": {
+    "f": "v"
+   }
+  },
+  {
+   "name": "default skips the steps: it is the value",
+   "covers": [
+    "op:default",
+    "order:null-stays-null"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 1
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.nope",
+     "default": "x",
+     "case": "upper",
+     "as": "int"
+    }
+   },
+   "expect": {
+    "f": "x"
+   }
+  },
+  {
+   "name": "null_if one value",
+   "covers": [
+    "op:null_if"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "-"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "null_if": "-"
+    }
+   },
+   "expect": {
+    "f": null
+   }
+  },
+  {
+   "name": "null_if a list, a miss stays",
+   "covers": [
+    "op:null_if"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "N/A",
+     "b": "ok"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "null_if": [
+      "",
+      "N/A"
+     ]
+    },
+    "g": {
+     "path": "$.payload.b",
+     "null_if": [
+      "",
+      "N/A"
+     ]
+    }
+   },
+   "expect": {
+    "f": null,
+    "g": "ok"
+   }
+  },
+  {
+   "name": "null_if keeps false apart from the number 0",
+   "covers": [
+    "op:null_if",
+    "bool-is-not-a-number"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": false,
+     "b": 0
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "null_if": [
+      0
+     ]
+    },
+    "g": {
+     "path": "$.payload.b",
+     "null_if": [
+      0
+     ]
+    },
+    "h": {
+     "path": "$.payload.a",
+     "null_if": [
+      false
+     ]
+    }
+   },
+   "expect": {
+    "f": false,
+    "g": null,
+    "h": null
+   }
+  },
+  {
+   "name": "trim strips both ends of text",
+   "covers": [
+    "op:trim"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "  \t x y \n"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "trim": true
+    }
+   },
+   "expect": {
+    "f": "x y"
+   }
+  },
+  {
+   "name": "trim leaves a number alone",
+   "covers": [
+    "op:trim"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 5
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "trim": true
+    }
+   },
+   "expect": {
+    "f": 5
+   }
+  },
+  {
+   "name": "case upper",
+   "covers": [
+    "op:case:upper"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "ada Lovelace"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "case": "upper"
+    }
+   },
+   "expect": {
+    "f": "ADA LOVELACE"
+   }
+  },
+  {
+   "name": "case lower",
+   "covers": [
+    "op:case:lower"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "ADA Lovelace"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "case": "lower"
+    }
+   },
+   "expect": {
+    "f": "ada lovelace"
+   }
+  },
+  {
+   "name": "case title",
+   "covers": [
+    "op:case:title"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "ada lovelace"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "case": "title"
+    }
+   },
+   "expect": {
+    "f": "Ada Lovelace"
+   }
+  },
+  {
+   "name": "title casing is Python's str.title: a new word after every character that is not a letter",
+   "covers": [
+    "op:case:title",
+    "title-is-pythons"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "it's an O'NEIL-smith 3rd"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "case": "title"
+    }
+   },
+   "expect": {
+    "f": "It'S An O'Neil-Smith 3Rd"
+   }
+  },
+  {
+   "name": "case needs text",
+   "covers": [
+    "op:case:upper"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 5
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "case": "upper"
+    }
+   },
+   "refusal": "f: case needs text"
+  },
+  {
+   "name": "regex with no group takes the whole match",
+   "covers": [
+    "op:regex"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "tel: +49 30 1234"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "regex": "\\+[0-9 ]+"
+    }
+   },
+   "expect": {
+    "f": "+49 30 1234"
+   }
+  },
+  {
+   "name": "regex takes group 1 by default when the pattern has a group",
+   "covers": [
+    "op:regex"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "id=A-17;"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "regex": "id=(\\w+-\\d+);"
+    }
+   },
+   "expect": {
+    "f": "A-17"
+   }
+  },
+  {
+   "name": "regex group 0 is the whole match",
+   "covers": [
+    "op:regex",
+    "op:regex:group"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "id=A-17;"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "regex": "id=(\\w+-\\d+);",
+     "group": 0
+    }
+   },
+   "expect": {
+    "f": "id=A-17;"
+   }
+  },
+  {
+   "name": "regex group by number and by name",
+   "covers": [
+    "op:regex",
+    "op:regex:group"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "2024-05-06"
+    }
+   },
+   "fields": {
+    "y": {
+     "path": "$.payload.a",
+     "regex": "(\\d+)-(\\d+)-(\\d+)",
+     "group": 1
+    },
+    "m": {
+     "path": "$.payload.a",
+     "regex": "(\\d+)-(?P<month>\\d+)-(\\d+)",
+     "group": "month"
+    },
+    "d": {
+     "path": "$.payload.a",
+     "regex": "(\\d+)-(\\d+)-(\\d+)",
+     "group": 3
+    }
+   },
+   "expect": {
+    "y": "2024",
+    "m": "05",
+    "d": "06"
+   }
+  },
+  {
+   "name": "regex searches anywhere in the text",
+   "covers": [
+    "op:regex"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "xxabc123yy"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "regex": "\\d+"
+    }
+   },
+   "expect": {
+    "f": "123"
+   }
+  },
+  {
+   "name": "regex reads a number as its text",
+   "covers": [
+    "op:regex"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 12345
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "regex": "23"
+    }
+   },
+   "expect": {
+    "f": "23"
+   }
+  },
+  {
+   "name": "regex with no match uses default",
+   "covers": [
+    "op:regex:default",
+    "op:regex"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "none here"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "regex": "\\d+",
+     "default": "n/a"
+    }
+   },
+   "expect": {
+    "f": "n/a"
+   }
+  },
+  {
+   "name": "regex with no match refuses",
+   "covers": [
+    "op:regex"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "none here"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "regex": "\\d+"
+    }
+   },
+   "refusal": "f: does not match the pattern"
+  },
+  {
+   "name": "regex whose chosen group did not take part refuses",
+   "covers": [
+    "op:regex"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "ab"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "regex": "(a)|(x)",
+     "group": 2
+    }
+   },
+   "refusal": "f: does not match the pattern"
+  },
+  {
+   "name": "map translates a code",
+   "covers": [
+    "op:map"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "s": "A"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.s",
+     "map": {
+      "A": "active",
+      "I": "inactive"
+     }
+    }
+   },
+   "expect": {
+    "f": "active"
+   }
+  },
+  {
+   "name": "map_default for a code with no entry",
+   "covers": [
+    "op:map",
+    "op:map_default"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "s": "X"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.s",
+     "map": {
+      "A": "active"
+     },
+     "map_default": "unknown"
+    }
+   },
+   "expect": {
+    "f": "unknown"
+   }
+  },
+  {
+   "name": "map reads a number by its text when the number is no key",
+   "covers": [
+    "op:map"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "s": 1
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.s",
+     "map": {
+      "1": "one",
+      "2": "two"
+     }
+    }
+   },
+   "expect": {
+    "f": "one"
+   }
+  },
+  {
+   "name": "map reads a bool as True or False",
+   "covers": [
+    "op:map",
+    "bool-is-not-a-number"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "s": true
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.s",
+     "map": {
+      "True": "yes",
+      "False": "no"
+     }
+    }
+   },
+   "expect": {
+    "f": "yes"
+   }
+  },
+  {
+   "name": "map_default may be null",
+   "covers": [
+    "op:map_default"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "s": "X"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.s",
+     "map": {
+      "A": "a"
+     },
+     "map_default": null
+    }
+   },
+   "expect": {
+    "f": null
+   }
+  },
+  {
+   "name": "map with no entry and no map_default refuses",
+   "covers": [
+    "op:map"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "s": "X"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.s",
+     "map": {
+      "A": "active"
+     }
+    }
+   },
+   "refusal": "f: no map entry and no map_default"
+  },
+  {
+   "name": "as text of numbers, bools and structures",
+   "covers": [
+    "as:text"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "i": 5,
+     "x": 1.5,
+     "t": true,
+     "o": {
+      "b": 1,
+      "a": [
+       1,
+       2
+      ]
+     }
+    }
+   },
+   "fields": {
+    "i": {
+     "path": "$.payload.i",
+     "as": "text"
+    },
+    "x": {
+     "path": "$.payload.x",
+     "as": "text"
+    },
+    "t": {
+     "path": "$.payload.t",
+     "as": "text"
+    },
+    "o": {
+     "path": "$.payload.o",
+     "as": "text"
+    }
+   },
+   "expect": {
+    "i": "5",
+    "x": "1.5",
+    "t": "true",
+    "o": "{\"a\":[1,2],\"b\":1}"
+   }
+  },
+  {
+   "name": "as int of a whole number in text, with spaces and a sign",
+   "covers": [
+    "as:int"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "42",
+     "b": " 7 ",
+     "c": "-3",
+     "d": "+8",
+     "e": 3.0,
+     "f": 9
+    }
+   },
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "int"
+    },
+    "b": {
+     "path": "$.payload.b",
+     "as": "int"
+    },
+    "c": {
+     "path": "$.payload.c",
+     "as": "int"
+    },
+    "d": {
+     "path": "$.payload.d",
+     "as": "int"
+    },
+    "e": {
+     "path": "$.payload.e",
+     "as": "int"
+    },
+    "f": {
+     "path": "$.payload.f",
+     "as": "int"
+    }
+   },
+   "expect": {
+    "a": 42,
+    "b": 7,
+    "c": -3,
+    "d": 8,
+    "e": 3,
+    "f": 9
+   }
+  },
+  {
+   "name": "as int refuses 3.5",
+   "covers": [
+    "as:int"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 3.5
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "int"
+    }
+   },
+   "refusal": "f: not a whole number"
+  },
+  {
+   "name": "as int refuses a decimal in text",
+   "covers": [
+    "as:int"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "4.2"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "int"
+    }
+   },
+   "refusal": "f: not a whole number"
+  },
+  {
+   "name": "as int refuses a bool",
+   "covers": [
+    "as:int",
+    "bool-is-not-a-number"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": true
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "int"
+    }
+   },
+   "refusal": "f: not a whole number"
+  },
+  {
+   "name": "as int refuses text that is no number and never repeats it",
+   "covers": [
+    "as:int",
+    "refusal-never-has-value"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "Zq-7731-secret"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "int"
+    }
+   },
+   "refusal": "f: not a whole number",
+   "never_contains": [
+    "Zq-7731-secret"
+   ]
+  },
+  {
+   "name": "as decimal keeps the exact digits as text",
+   "covers": [
+    "as:decimal"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "1234.567",
+     "b": 5,
+     "c": "0.10",
+     "d": " 2.50 ",
+     "e": "-0.5"
+    }
+   },
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "decimal"
+    },
+    "b": {
+     "path": "$.payload.b",
+     "as": "decimal"
+    },
+    "c": {
+     "path": "$.payload.c",
+     "as": "decimal"
+    },
+    "d": {
+     "path": "$.payload.d",
+     "as": "decimal"
+    },
+    "e": {
+     "path": "$.payload.e",
+     "as": "decimal"
+    }
+   },
+   "expect": {
+    "a": "1234.567",
+    "b": "5",
+    "c": "0.10",
+    "d": "2.50",
+    "e": "-0.5"
+   }
+  },
+  {
+   "name": "as decimal of a float is its shortest text",
+   "covers": [
+    "as:decimal"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 1.1,
+     "b": 0.1
+    }
+   },
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "decimal"
+    },
+    "b": {
+     "path": "$.payload.b",
+     "as": "decimal"
+    }
+   },
+   "expect": {
+    "a": "1.1",
+    "b": "0.1"
+   }
+  },
+  {
+   "name": "as decimal refuses text that is no number",
+   "covers": [
+    "as:decimal"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "twelve"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "decimal"
+    }
+   },
+   "refusal": "f: not a number"
+  },
+  {
+   "name": "as decimal refuses NaN and infinity",
+   "covers": [
+    "as:decimal"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "NaN"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "decimal"
+    }
+   },
+   "refusal": "f: not a number"
+  },
+  {
+   "name": "as decimal refuses a bool",
+   "covers": [
+    "as:decimal",
+    "bool-is-not-a-number"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": true
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "decimal"
+    }
+   },
+   "refusal": "f: not a number"
+  },
+  {
+   "name": "as decimal refuses a list",
+   "covers": [
+    "as:decimal"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": [
+      1
+     ]
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "decimal"
+    }
+   },
+   "refusal": "f: not a number"
+  },
+  {
+   "name": "as float is a JSON number",
+   "covers": [
+    "as:float"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "12.5",
+     "b": "0.1",
+     "c": 3,
+     "d": "-2"
+    }
+   },
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "float"
+    },
+    "b": {
+     "path": "$.payload.b",
+     "as": "float"
+    },
+    "c": {
+     "path": "$.payload.c",
+     "as": "float"
+    },
+    "d": {
+     "path": "$.payload.d",
+     "as": "float"
+    }
+   },
+   "expect": {
+    "a": 12.5,
+    "b": 0.1,
+    "c": 3.0,
+    "d": -2.0
+   }
+  },
+  {
+   "name": "as float refuses text that is no number",
+   "covers": [
+    "as:float"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "x1"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "float"
+    }
+   },
+   "refusal": "f: not a number"
+  },
+  {
+   "name": "as bool reads the words a legacy system uses",
+   "covers": [
+    "as:bool"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "yes",
+     "b": "No",
+     "c": "1",
+     "d": "0",
+     "e": "TRUE",
+     "f": " false ",
+     "g": 1,
+     "h": 0,
+     "i": true
+    }
+   },
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "bool"
+    },
+    "b": {
+     "path": "$.payload.b",
+     "as": "bool"
+    },
+    "c": {
+     "path": "$.payload.c",
+     "as": "bool"
+    },
+    "d": {
+     "path": "$.payload.d",
+     "as": "bool"
+    },
+    "e": {
+     "path": "$.payload.e",
+     "as": "bool"
+    },
+    "f": {
+     "path": "$.payload.f",
+     "as": "bool"
+    },
+    "g": {
+     "path": "$.payload.g",
+     "as": "bool"
+    },
+    "h": {
+     "path": "$.payload.h",
+     "as": "bool"
+    },
+    "i": {
+     "path": "$.payload.i",
+     "as": "bool"
+    }
+   },
+   "expect": {
+    "a": true,
+    "b": false,
+    "c": true,
+    "d": false,
+    "e": true,
+    "f": false,
+    "g": true,
+    "h": false,
+    "i": true
+   }
+  },
+  {
+   "name": "as bool refuses a word it does not know",
+   "covers": [
+    "as:bool"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "maybe"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "bool"
+    }
+   },
+   "refusal": "f: not a boolean"
+  },
+  {
+   "name": "as bool refuses the number 2",
+   "covers": [
+    "as:bool"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 2
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "bool"
+    }
+   },
+   "refusal": "f: not a boolean"
+  },
+  {
+   "name": "as date of an ISO date and of an ISO datetime",
+   "covers": [
+    "as:date"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "2024-01-05",
+     "b": "2024-01-05T23:30:00+02:00",
+     "c": "2024-01-05T10:00:00Z"
+    }
+   },
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "date"
+    },
+    "b": {
+     "path": "$.payload.b",
+     "as": "date"
+    },
+    "c": {
+     "path": "$.payload.c",
+     "as": "date"
+    }
+   },
+   "expect": {
+    "a": "2024-01-05",
+    "b": "2024-01-05",
+    "c": "2024-01-05"
+   }
+  },
+  {
+   "name": "as date with a format",
+   "covers": [
+    "as:date",
+    "op:format"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "05.01.2024",
+     "b": "1/2/24"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "date",
+     "format": "%d.%m.%Y"
+    },
+    "g": {
+     "path": "$.payload.b",
+     "as": "date",
+     "format": "%m/%d/%y"
+    }
+   },
+   "expect": {
+    "f": "2024-01-05",
+    "g": "2024-01-02"
+   }
+  },
+  {
+   "name": "as date refuses a text that does not fit the format",
+   "covers": [
+    "as:date",
+    "op:format"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "2024-01-05"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "date",
+     "format": "%d.%m.%Y"
+    }
+   },
+   "refusal": "f: not a date in the format %d.%m.%Y",
+   "never_contains": [
+    "2024-01-05"
+   ]
+  },
+  {
+   "name": "as date refuses a text that is no ISO date",
+   "covers": [
+    "as:date"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "5 Jan 2024"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "date"
+    }
+   },
+   "refusal": "f: not an ISO 8601 date"
+  },
+  {
+   "name": "as date refuses a number",
+   "covers": [
+    "as:date"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 20240105
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "date"
+    }
+   },
+   "refusal": "f: not a date"
+  },
+  {
+   "name": "as datetime turns a zone into UTC",
+   "covers": [
+    "as:datetime"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "2024-01-05T10:00:00+02:00",
+     "b": "2024-01-05T10:00:00Z",
+     "c": "2024-01-05T10:00:00-05:00"
+    }
+   },
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "datetime"
+    },
+    "b": {
+     "path": "$.payload.b",
+     "as": "datetime"
+    },
+    "c": {
+     "path": "$.payload.c",
+     "as": "datetime"
+    }
+   },
+   "expect": {
+    "a": "2024-01-05T08:00:00Z",
+    "b": "2024-01-05T10:00:00Z",
+    "c": "2024-01-05T15:00:00Z"
+   }
+  },
+  {
+   "name": "as datetime keeps microseconds",
+   "covers": [
+    "as:datetime"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "2024-01-05T10:00:00.250000Z"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "datetime"
+    }
+   },
+   "expect": {
+    "f": "2024-01-05T10:00:00.250000Z"
+   }
+  },
+  {
+   "name": "as datetime with a zone name reads a naive text in that zone, winter and summer",
+   "covers": [
+    "as:datetime",
+    "op:tz",
+    "tz:summer-and-winter"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "w": "2024-01-05T10:00:00",
+     "s": "2024-07-05T10:00:00"
+    }
+   },
+   "fields": {
+    "w": {
+     "path": "$.payload.w",
+     "as": "datetime",
+     "tz": "Europe/Berlin"
+    },
+    "s": {
+     "path": "$.payload.s",
+     "as": "datetime",
+     "tz": "Europe/Berlin"
+    }
+   },
+   "expect": {
+    "w": "2024-01-05T09:00:00Z",
+    "s": "2024-07-05T08:00:00Z"
+   }
+  },
+  {
+   "name": "as datetime with a format and a zone",
+   "covers": [
+    "as:datetime",
+    "op:format",
+    "op:tz"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "05.01.2024 10:30"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "datetime",
+     "format": "%d.%m.%Y %H:%M",
+     "tz": "America/New_York"
+    }
+   },
+   "expect": {
+    "f": "2024-01-05T15:30:00Z"
+   }
+  },
+  {
+   "name": "as datetime: a zone in the text wins over tz",
+   "covers": [
+    "as:datetime",
+    "op:tz"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "2024-01-05T10:00:00+02:00"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "datetime",
+     "tz": "America/New_York"
+    }
+   },
+   "expect": {
+    "f": "2024-01-05T08:00:00Z"
+   }
+  },
+  {
+   "name": "as datetime with no zone and no tz refuses",
+   "covers": [
+    "as:datetime"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "2024-01-05T10:00:00"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "datetime"
+    }
+   },
+   "refusal": "f: a datetime with no zone needs tz"
+  },
+  {
+   "name": "as datetime refuses a text that does not fit its format",
+   "covers": [
+    "as:datetime",
+    "op:format"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "yesterday"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "datetime",
+     "format": "%d.%m.%Y %H:%M",
+     "tz": "UTC"
+    }
+   },
+   "refusal": "f: not a datetime in the format %d.%m.%Y %H:%M",
+   "never_contains": [
+    "yesterday"
+   ]
+  },
+  {
+   "name": "as datetime refuses a number",
+   "covers": [
+    "as:datetime"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 5
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "datetime"
+    }
+   },
+   "refusal": "f: not a datetime"
+  },
+  {
+   "name": "as json keeps an object and a list and reads a text",
+   "covers": [
+    "as:json"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "o": {
+      "a": 1
+     },
+     "l": [
+      1,
+      2
+     ],
+     "t": "{\"k\":[1,2]}",
+     "u": "[3]"
+    }
+   },
+   "fields": {
+    "o": {
+     "path": "$.payload.o",
+     "as": "json"
+    },
+    "l": {
+     "path": "$.payload.l",
+     "as": "json"
+    },
+    "t": {
+     "path": "$.payload.t",
+     "as": "json"
+    },
+    "u": {
+     "path": "$.payload.u",
+     "as": "json"
+    }
+   },
+   "expect": {
+    "o": {
+     "a": 1
+    },
+    "l": [
+     1,
+     2
+    ],
+    "t": {
+     "k": [
+      1,
+      2
+     ]
+    },
+    "u": [
+     3
+    ]
+   }
+  },
+  {
+   "name": "as json refuses a text that is no JSON",
+   "covers": [
+    "as:json"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "{broken"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "json"
+    }
+   },
+   "refusal": "f: not JSON",
+   "never_contains": [
+    "broken"
+   ]
+  },
+  {
+   "name": "as json refuses a number",
+   "covers": [
+    "as:json"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 5
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "json"
+    }
+   },
+   "refusal": "f: not JSON"
+  },
+  {
+   "name": "round of a decimal is half to even",
+   "covers": [
+    "op:round",
+    "round:half-even"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "2.675",
+     "b": "2.665",
+     "c": "0.125",
+     "d": "1234.567",
+     "e": "0.135"
+    }
+   },
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "decimal",
+     "round": 2
+    },
+    "b": {
+     "path": "$.payload.b",
+     "as": "decimal",
+     "round": 2
+    },
+    "c": {
+     "path": "$.payload.c",
+     "as": "decimal",
+     "round": 2
+    },
+    "d": {
+     "path": "$.payload.d",
+     "as": "decimal",
+     "round": 2
+    },
+    "e": {
+     "path": "$.payload.e",
+     "as": "decimal",
+     "round": 2
+    }
+   },
+   "expect": {
+    "a": "2.68",
+    "b": "2.66",
+    "c": "0.12",
+    "d": "1234.57",
+    "e": "0.14"
+   }
+  },
+  {
+   "name": "round to a whole number is half to even",
+   "covers": [
+    "op:round",
+    "round:half-even"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "2.5",
+     "b": "3.5",
+     "c": "-2.5"
+    }
+   },
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "decimal",
+     "round": 0
+    },
+    "b": {
+     "path": "$.payload.b",
+     "as": "decimal",
+     "round": 0
+    },
+    "c": {
+     "path": "$.payload.c",
+     "as": "decimal",
+     "round": 0
+    }
+   },
+   "expect": {
+    "a": "2",
+    "b": "4",
+    "c": "-2"
+   }
+  },
+  {
+   "name": "round pads the scale: a whole number rounds to two digits as 7.00",
+   "covers": [
+    "op:round"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "7",
+     "b": "7.1"
+    }
+   },
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "decimal",
+     "round": 2
+    },
+    "b": {
+     "path": "$.payload.b",
+     "as": "decimal",
+     "round": 2
+    }
+   },
+   "expect": {
+    "a": "7.00",
+    "b": "7.10"
+   }
+  },
+  {
+   "name": "round of a float is a float and rounds on its shortest text",
+   "covers": [
+    "op:round",
+    "as:float"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "2.675",
+     "b": "1.005"
+    }
+   },
+   "fields": {
+    "a": {
+     "path": "$.payload.a",
+     "as": "float",
+     "round": 2
+    },
+    "b": {
+     "path": "$.payload.b",
+     "as": "float",
+     "round": 2
+    }
+   },
+   "expect": {
+    "a": 2.68,
+    "b": 1.0
+   }
+  },
+  {
+   "name": "round of an int leaves it",
+   "covers": [
+    "op:round"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "12"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "int",
+     "round": 2
+    }
+   },
+   "expect": {
+    "f": 12
+   }
+  },
+  {
+   "name": "round needs a number",
+   "covers": [
+    "op:round"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "12.345"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "round": 2
+    }
+   },
+   "refusal": "f: round needs a number"
+  },
+  {
+   "name": "every step in its order: trim, case, regex, map, as, round",
+   "covers": [
+    "order:trim-case-regex-map-as-round",
+    "op:trim",
+    "op:case:lower",
+    "op:regex",
+    "op:map",
+    "op:round"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "  PRICE: 12.345 EUR "
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "trim": true,
+     "case": "lower",
+     "regex": "([0-9.]+)",
+     "map": {
+      "12.345": "7.005"
+     },
+     "as": "decimal",
+     "round": 2
+    }
+   },
+   "expect": {
+    "f": "7.00"
+   }
+  },
+  {
+   "name": "trim comes before regex (the pattern is anchored)",
+   "covers": [
+    "order:trim-case-regex-map-as-round"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "  ab12  "
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "trim": true,
+     "regex": "^ab(\\d+)$",
+     "as": "int"
+    }
+   },
+   "expect": {
+    "f": 12
+   }
+  },
+  {
+   "name": "case comes before map: the table sees the cased text",
+   "covers": [
+    "order:trim-case-regex-map-as-round"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "yes"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "case": "upper",
+     "map": {
+      "YES": "Y",
+      "yes": "wrong"
+     }
+    }
+   },
+   "expect": {
+    "f": "Y"
+   }
+  },
+  {
+   "name": "map comes before as",
+   "covers": [
+    "order:map-before-as",
+    "op:map"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "A"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "map": {
+      "A": "5"
+     },
+     "as": "int"
+    }
+   },
+   "expect": {
+    "f": 5
+   }
+  },
+  {
+   "name": "null_if sees the value before trim, so a padded N/A is not null and is refused by as",
+   "covers": [
+    "order:null_if-before-trim",
+    "op:null_if"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": " N/A "
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "null_if": [
+      "N/A"
+     ],
+     "trim": true,
+     "as": "int"
+    }
+   },
+   "refusal": "f: not a whole number"
+  },
+  {
+   "name": "null_if first: an exact match is null and nothing after it runs",
+   "covers": [
+    "order:null_if-before-trim",
+    "order:null-stays-null"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "N/A"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "null_if": [
+      "N/A"
+     ],
+     "trim": true,
+     "case": "upper",
+     "regex": "\\d+",
+     "map": {
+      "x": "y"
+     },
+     "as": "int",
+     "round": 2
+    }
+   },
+   "expect": {
+    "f": null
+   }
+  },
+  {
+   "name": "a null value stays null through as and round",
+   "covers": [
+    "order:null-stays-null"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": null
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "as": "decimal",
+     "round": 2
+    },
+    "g": {
+     "path": "$.payload.a",
+     "case": "upper",
+     "trim": true
+    }
+   },
+   "expect": {
+    "f": null,
+    "g": null
+   }
+  },
+  {
+   "name": "concat joins paths and constants with sep",
+   "covers": [
+    "op:concat",
+    "op:concat:sep"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "Ada",
+     "b": "Lovelace"
+    }
+   },
+   "fields": {
+    "f": {
+     "concat": [
+      "$.payload.a",
+      "$.payload.b"
+     ],
+     "sep": " "
+    },
+    "g": {
+     "concat": [
+      "$.payload.a",
+      "-",
+      "$.payload.b"
+     ]
+    }
+   },
+   "expect": {
+    "f": "Ada Lovelace",
+    "g": "Ada-Lovelace"
+   }
+  },
+  {
+   "name": "concat turns numbers and bools into text",
+   "covers": [
+    "op:concat"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": 7,
+     "b": true,
+     "c": 1.5
+    }
+   },
+   "fields": {
+    "f": {
+     "concat": [
+      "$.payload.a",
+      "$.payload.b",
+      "$.payload.c"
+     ],
+     "sep": "|"
+    }
+   },
+   "expect": {
+    "f": "7|true|1.5"
+   }
+  },
+  {
+   "name": "concat parts may be value nodes",
+   "covers": [
+    "op:concat"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "  ada ",
+     "b": "LOVELACE"
+    }
+   },
+   "fields": {
+    "f": {
+     "concat": [
+      {
+       "path": "$.payload.a",
+       "trim": true,
+       "case": "title"
+      },
+      {
+       "path": "$.payload.b",
+       "case": "title"
+      }
+     ],
+     "sep": " "
+    }
+   },
+   "expect": {
+    "f": "Ada Lovelace"
+   }
+  },
+  {
+   "name": "concat's result goes through the same steps",
+   "covers": [
+    "op:concat",
+    "order:trim-case-regex-map-as-round"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "ada",
+     "b": "x"
+    }
+   },
+   "fields": {
+    "f": {
+     "concat": [
+      "$.payload.a",
+      "$.payload.b"
+     ],
+     "sep": " ",
+     "case": "upper"
+    }
+   },
+   "expect": {
+    "f": "ADA X"
+   }
+  },
+  {
+   "name": "concat with a part that says required false is empty text when null",
+   "covers": [
+    "op:concat",
+    "op:required_false"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "Ada",
+     "b": null
+    }
+   },
+   "fields": {
+    "f": {
+     "concat": [
+      "$.payload.a",
+      {
+       "path": "$.payload.b",
+       "required": false
+      }
+     ],
+     "sep": ", "
+    }
+   },
+   "expect": {
+    "f": "Ada, "
+   }
+  },
+  {
+   "name": "a concat part may be a value node with no step",
+   "covers": [
+    "op:concat"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "x"
+    }
+   },
+   "fields": {
+    "f": {
+     "concat": [
+      {
+       "path": "$.payload.a"
+      }
+     ]
+    }
+   },
+   "expect": {
+    "f": "x"
+   }
+  },
+  {
+   "name": "concat refuses a null part",
+   "covers": [
+    "op:concat"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "Ada",
+     "b": null
+    }
+   },
+   "fields": {
+    "f": {
+     "concat": [
+      "$.payload.a",
+      "$.payload.b"
+     ],
+     "sep": " "
+    }
+   },
+   "refusal": "f: a part of concat is null"
+  },
+  {
+   "name": "concat refuses a missing path",
+   "covers": [
+    "op:concat",
+    "path:missing"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "Ada"
+    }
+   },
+   "fields": {
+    "f": {
+     "concat": [
+      "$.payload.a",
+      "$.payload.nope"
+     ],
+     "sep": " "
+    }
+   },
+   "refusal": "the record has no $.payload.nope (the mapping's field f)"
+  },
+  {
+   "name": "a nested field's refusal names its dotted field and not the value",
+   "covers": [
+    "refusal-never-has-value",
+    "nested:object"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "SECRET-ID-99"
+    }
+   },
+   "fields": {
+    "customer": {
+     "age": {
+      "path": "$.payload.a",
+      "as": "int"
+     }
+    }
+   },
+   "refusal": "customer.age: not a whole number",
+   "never_contains": [
+    "SECRET-ID-99"
+   ]
+  },
+  {
+   "name": "a list element's refusal names its index and not the value",
+   "covers": [
+    "refusal-never-has-value",
+    "nested:list"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "SECRET-ID-99"
+    }
+   },
+   "fields": {
+    "l": [
+     "x",
+     {
+      "path": "$.payload.a",
+      "as": "decimal"
+     }
+    ]
+   },
+   "refusal": "l[1]: not a number",
+   "never_contains": [
+    "SECRET-ID-99"
+   ]
+  },
+  {
+   "name": "a map refusal does not repeat the code",
+   "covers": [
+    "refusal-never-has-value",
+    "op:map"
+   ],
+   "record": {
+    "record_id": "r1",
+    "source": "legacy",
+    "meta": {},
+    "payload": {
+     "a": "SECRET-CODE"
+    }
+   },
+   "fields": {
+    "f": {
+     "path": "$.payload.a",
+     "map": {
+      "A": "b"
+     }
+    }
+   },
+   "refusal": "f: no map entry and no map_default",
+   "never_contains": [
+    "SECRET-CODE"
+   ]
+  }
+ ],
+ "generated_by": "scripts/distribution/gen_proxy_catalog.py --write"
+}

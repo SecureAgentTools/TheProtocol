@@ -145,7 +145,7 @@ server {
 EOF
 ln -sf "$VHOST" "$LINK"
 nginx -t || { echo "FATAL: nginx config test failed; removing link" >&2; rm -f "$LINK"; nginx -t; exit 1; }
-systemctl reload nginx
+nginx -s reload   # the binary, not the unit: the edge runs in a container (nginx is its shim)
 echo "[nginx] reloaded"
 fi
 
@@ -207,4 +207,4 @@ if [ "$DRY" -eq 0 ]; then
   [ "$GETPUB" = " 403 403 403" ] || { echo "FAIL: a public GET publish form was not refused" >&2; exit 1; }
   echo "[verify] subscribe-only confirmed"
 fi
-echo "DONE. Rollback: rm $LINK && systemctl reload nginx; cp -p $COMPOSE.bak-pre-pushpublic-$STAMP $COMPOSE && recreate."
+echo "DONE. Rollback: rm $LINK && nginx -s reload; cp -p $COMPOSE.bak-pre-pushpublic-$STAMP $COMPOSE && recreate."

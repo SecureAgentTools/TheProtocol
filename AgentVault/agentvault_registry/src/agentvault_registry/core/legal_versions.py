@@ -13,10 +13,15 @@ from __future__ import annotations
 
 from ..config import settings
 
-DOCUMENTS_VERSION = "2.5"
-PUBLISHED = "2026-10-04"
-EFFECTIVE = "2026-11-03"
-EFFECTIVE_LABEL = "3 November 2026"
+# Set 2.6 (V0667): the public code host (Terms 2.5 § 5.12; Privacy Policy §§ 3.8, 4.9; Software License Notice § 6). Terms § 10.2:
+# it binds existing members 30 days after publication; whoever presses "Link repository account" accepts it at the press
+# (services/repo_accounts). ONE pair of dates, the same in the console's content/legal/suiteV2.ts: the V0667 cut sets the
+# publication day, the effective day is 30 days after it (tests/test_legal_set_26_v0667.py). Set 2.5: published 2026-10-04,
+# effective 2026-11-03.
+DOCUMENTS_VERSION = "2.6"
+PUBLISHED = "2026-11-17"
+EFFECTIVE = "2026-12-17"
+EFFECTIVE_LABEL = "17 December 2026"
 
 # Set 2.4 (2026-09-30) changed only the Federation Operator Terms (1.2) materially: DOCUMENTS_VERSION moved, so every
 # account holding an operator relationship accepts them again; the Terms stay at 2.3 and are not asked again.

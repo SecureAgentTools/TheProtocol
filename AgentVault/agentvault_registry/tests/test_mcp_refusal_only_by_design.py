@@ -16,13 +16,14 @@ from agentvault_registry.api_tests.categories.flow_mcp_lifecycle import test_flo
 from agentvault_registry.routers import mcp_tester
 from agentvault_registry.routers.mcp_tester import _REFUSAL_ONLY_REASON, _apply_refusal_only, refusal_only_reason
 
-# the frame's refusal-only tools of nt261025x3 (scratchpad/mcpgaps/nt261025x3_frame_refusal_only.json)
+# the frame's refusal-only tools of nt261025x3 (scratchpad/mcpgaps/nt261025x3_frame_refusal_only.json); 41 then,
+# 40 since V0663 removed simulationFundingPreview with its route (gwo_be8899e9eb589224813ec90a)
 NT261025X3_FRAME = """acknowledgeAgentFlag adminDownloadOperatorBundle adminGrafanaQuery approveFrameInvitation
 approveOperatorApplication blacklistRegistry completeAdmission deleteFederationLicense deleteOauthFederationTrust
 federationCliAudit federationPolicyUpdateRequest finalizeRetryFrameInvitation fireCanaryPath forceEmailVerify liftQuarantine
 quarantineRegistry refundFiatPurchase reinstateFederationLicense reinstateOperator rejectOperatorApplication
 replayFiatPurchase resendFiatMagicLink resyncFrameEventStore revokeFederationLicense revokeFrame revokeOperatorAccess
-rotateOperatorPullToken simulationFundingPreview suspendFederationLicense suspendOperator tegTreasuryIssue toggleCanaryPath
+rotateOperatorPullToken suspendFederationLicense suspendOperator tegTreasuryIssue toggleCanaryPath
 triggerDiagnosticAction updateEnforcementPolicy uploadRegistryCardIcon getOperatorMyBundle oauthIntrospect oauthRevoke
 oauthTokenExchange operatorPortalSelfLogs requestFrame""".split()
 
@@ -43,12 +44,16 @@ OPERATORS_SANDBOX_ONLY = """previewVotingPowerAttestation runAttestationExpirySw
 # §MCPTEST30 (tester batch 2 item 3): the commons season's money steps, refusal-only on a standing frame (write-off
 # everywhere: a healthy target never gives a run a failed payment)
 COMMONS_MONEY = """adminCommonsPaySeason adminCommonsWriteOffAward""".split()
+# V0666 Tests package B: the five template tools that write a template (earned on the nightly and proof pairs by earned_template_library;
+# a standing frame says why: a template stays for good and a priced one needs a bonded seller)
+TEMPLATE_LIBRARY = """createWorkflowTemplate publishWorkflowTemplateVersion purchaseWorkflowTemplate forkWorkflowTemplate
+instantiateWorkflowTemplate""".split()
 
 
 def test_every_one_of_the_frames_41_has_its_reason():
-    assert len(NT261025X3_FRAME) == 41 and not set(NT261025X3_FRAME) & set(OPERATORS_V0641 + OPERATORS_SANDBOX_ONLY)
+    assert len(NT261025X3_FRAME) == 40 and not set(NT261025X3_FRAME) & set(OPERATORS_V0641 + OPERATORS_SANDBOX_ONLY)
     assert set(R.BY_DESIGN_REFUSAL) == {"theprotocol_" + t for t in NT261025X3_FRAME + OPERATORS_V0641
-                                         + OPERATORS_SANDBOX_ONLY + COMMONS_MONEY}
+                                         + OPERATORS_SANDBOX_ONLY + COMMONS_MONEY + TEMPLATE_LIBRARY}
     for tool, why in R.BY_DESIGN_REFUSAL.items():
         assert why and why[0].islower() and not why.endswith(".") and "—" not in why, tool
     assert R.declared("theprotocol_tegTreasuryIssue").startswith("minting is never automated")

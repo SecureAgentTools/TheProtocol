@@ -281,6 +281,8 @@ import { ref, computed, onMounted } from 'vue'
 import LocalCommand from './LocalCommand.vue'
 import { getMyLifecycle, type OperatorLifecycle } from '@/services/api/operator'
 import { apiClient } from '@/services/api/client'
+import { hasAdminFlag } from '@/composables/usePermissions'
+import { useAuthStore } from '@/stores/auth'
 
 const lifecycle = ref<OperatorLifecycle | null>(null)
 const loading = ref(true)
@@ -291,6 +293,7 @@ const restartMsg = ref<string>('')
 const restartOk = ref<boolean>(false)
 
 async function onSelfRestart() {
+  if (!hasAdminFlag(useAuthStore().user, 'federation')) return   // this registry's admin_federation route
   if (!confirm('Restart your registry? It will be briefly unavailable (~5-15s).')) return
   restarting.value = true
   restartMsg.value = ''
@@ -324,6 +327,7 @@ function openSelfLogs() {
 }
 
 async function fetchSelfLogs() {
+  if (!hasAdminFlag(useAuthStore().user, 'federation')) return
   logsLoading.value = true
   logsError.value = ''
   try {

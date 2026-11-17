@@ -46,24 +46,17 @@ def _run(coro):
         loop.close()
 
 
-class _Resp:
-    def __init__(self, code):
-        self.status_code = code
-        self.text = "ok" if code < 300 else "nope"
+# V0662 (item 16): a webhook send goes through the outbound guard, which needs a real client's connection layer
+from tests._doubles import RecordingWebhookClient  # noqa: E402
 
 
-class _Client:
-    def __init__(self, code=200):
-        self.code = code
-        self.received = []
-
-    async def post(self, url, **kw):
-        self.received.append(json.loads(kw["content"]))
-        return _Resp(self.code)
+class _Client(RecordingWebhookClient):
+    def record(self, entry):
+        self.received.append(json.loads(entry["content"]))
 
 
 def _hook(**kw):
-    d = dict(id="wh1", url="http://receiver.invalid/hook", secret="ab" * 32, failure_count=0, is_active=True,
+    d = dict(id="wh1", url="http://receiver.example.org/hook", secret="ab" * 32, failure_count=0, is_active=True,
              last_triggered_at=None, developer_id=7, events=["payment.received"])
     d.update(kw)
     return types.SimpleNamespace(**d)

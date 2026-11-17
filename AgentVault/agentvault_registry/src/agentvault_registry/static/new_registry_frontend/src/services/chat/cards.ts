@@ -181,6 +181,21 @@ export type CardView =
       chosen: { index: number; label: string } | null; decidedAt: string | null; decidedByName: string
       decidedById: number | null; role: string; note: string | null
     }
+  // V0666 D3 — a code distribution's change, live in its organization's room (services/chat_live_cards.code_change_card)
+  | {
+      type: 'code.change.live'; changeId: string; title: string; state: string; sensitive: boolean
+      line: { slug: string; title: string; releaseName: string; organizationName: string; paused: boolean }
+      checker: { state: 'none' | 'ok' | 'failed'; reasons: string[] }
+      reviews: { count: number; approvals: number; needed: number; blockers: number }
+      ballot: { votes: number; deciders: number; ends: string | null; result: string | null; sentence: string | null; note: string | null }
+    }
+  // V0667 D5b — an organization's content change, live in its room (services/chat_live_cards.content_change_card)
+  | {
+      type: 'content.change.live'; changeId: string; kind: string; title: string; state: string; applied: boolean
+      line: { slug: string; title: string; releaseName: string; organizationName: string; paused: boolean }
+      checker: { state: 'none' | 'ok'; rules: string[] }
+      ballot: { votes: number; deciders: number; ends: string | null; result: string | null; sentence: string | null }
+    }
   | { type: 'unknown'; rawType: string }
 
 export type ProgressState = 'running' | 'passed' | 'failed' | 'cancelled'
@@ -202,7 +217,7 @@ const KNOWN = new Set(['pay.request', 'pay.receipt', 'service.call', 'service.re
                        'engagement.proposal', 'engagement.counter', 'engagement.offer',
                        'engagement.accepted', 'engagement.milestone', 'engagement.settled',
                        'approval.request', 'approval.decided', 'choice.request', 'choice.decided',
-                       'progress', 'guild.order.live'])
+                       'progress', 'guild.order.live', 'code.change.live', 'content.change.live'])
 
 /** Trim a decimal string for DISPLAY. The venue stores prices at eighteen
  *  places, so a listing card rendered `1.500000000000000000 BVT` — technically
@@ -491,6 +506,40 @@ export function cardView(card: ChatCard | null | undefined, ctx: CardCtx = {}): 
         events: (Array.isArray(d.events) ? d.events : []).map((e: any) => ({ type: String(e?.type ?? ''),
           at: e?.at ? String(e.at) : null })),
       }
+    case 'code.change.live': {
+      const line = d.line && typeof d.line === 'object' ? d.line : {}
+      const ch = d.checker && typeof d.checker === 'object' ? d.checker : {}
+      const rv = d.reviews && typeof d.reviews === 'object' ? d.reviews : {}
+      const b = d.ballot && typeof d.ballot === 'object' ? d.ballot : {}
+      return {
+        type: 'code.change.live',
+        changeId: String(d.change_id ?? refs.code_change_id ?? ''), title: String(d.title ?? ''), state: String(d.state ?? 'proposed'),
+        sensitive: !!d.sensitive,
+        line: { slug: String(line.slug ?? ''), title: String(line.title ?? ''), releaseName: String(line.release_name ?? ''),
+          organizationName: String(line.organization_name ?? ''), paused: !!line.paused },
+        checker: { state: ch.state === 'ok' || ch.state === 'failed' ? ch.state : 'none',
+          reasons: Array.isArray(ch.reasons) ? ch.reasons.map((r: unknown) => String(r)).slice(0, 6) : [] },
+        reviews: { count: Number(rv.count ?? 0) || 0, approvals: Number(rv.approvals ?? 0) || 0, needed: Number(rv.needed ?? 1) || 1,
+          blockers: Number(rv.blockers ?? 0) || 0 },
+        ballot: { votes: Number(b.votes ?? 0) || 0, deciders: Number(b.deciders ?? 0) || 0, ends: b.ends ? String(b.ends) : null,
+          result: b.result ? String(b.result) : null, sentence: b.sentence ? String(b.sentence) : null, note: b.note ? String(b.note) : null },
+      }
+    }
+    case 'content.change.live': {
+      const line = d.line && typeof d.line === 'object' ? d.line : {}
+      const ch = d.checker && typeof d.checker === 'object' ? d.checker : {}
+      const b = d.ballot && typeof d.ballot === 'object' ? d.ballot : {}
+      return {
+        type: 'content.change.live',
+        changeId: String(d.change_id ?? refs.content_change_id ?? ''), kind: String(d.kind ?? ''), title: String(d.title ?? ''), state: String(d.state ?? 'balloting'),
+        applied: !!d.applied,
+        line: { slug: String(line.slug ?? ''), title: String(line.title ?? ''), releaseName: String(line.release_name ?? ''),
+          organizationName: String(line.organization_name ?? ''), paused: !!line.paused },
+        checker: { state: ch.state === 'ok' ? 'ok' : 'none', rules: Array.isArray(ch.rules) ? ch.rules.map((r: unknown) => String(r)).slice(0, 6) : [] },
+        ballot: { votes: Number(b.votes ?? 0) || 0, deciders: Number(b.deciders ?? 0) || 0, ends: b.ends ? String(b.ends) : null,
+          result: b.result ? String(b.result) : null, sentence: b.sentence ? String(b.sentence) : null },
+      }
+    }
     case 'choice.request':
       return {
         type: 'choice.request',

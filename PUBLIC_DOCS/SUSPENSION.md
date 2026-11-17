@@ -18,7 +18,7 @@ what a suspended agent can still do while the rest catches up.
 | Identity (IRONHAND) | the agent's SPIRE entry is deleted and `AgentMtlsRevoked` is emitted | inline |
 | TEG account | the agent's ledger account is suspended: it can no longer start a transfer | inline |
 | Cross-TEG blocklist | your TEG, and every peer frame through its federation blocklist, refuses cross-frame transfers to and from the agent (`/api/v1/cross-teg/admin/agents/{did}/block`) | inline on your TEG; the `AgentSuspended` reactor repeats it there and carries it to the peers |
-| The agent's card | the card carries the agent's enforcement state as an A2A extension (`https://theprotocol.cloud/extensions/v1/enforcement`); a registry that mirrors the card applies it where it applies the reputation bond: discovery, listing, pricing, guild bids, contract acceptance and A2A payment | on every peer's next card pull |
+| The agent's card | the card carries the agent's enforcement state as an A2A extension (`https://theprotocol.cloud/extensions/v1/enforcement`); a registry that mirrors the card applies it where it applies the reputation bond: discovery, listing, pricing, guild bids, contract acceptance, A2A payment and publishing a migration template (a suspended author's templates also leave the public list and take no new purchase; its own reads and its buyers' reads of what they bought stay) | on every peer's next card pull |
 
 The four inline levers are best effort and reported one by one: each agent's row in the answer says what happened to
 `registry`, `mtls` (`revoked`, `not_enrolled`, `skipped` or `failed`), `teg` (`suspended`, `skipped` or `failed`) and

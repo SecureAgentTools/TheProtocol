@@ -11,31 +11,15 @@ services:
       # every tier. The frontend toggles which tier is shown (default from the subdomain:
       # auditor.* → prod, sandbox-auditor.* → sandbox). Both subdomains proxy here.
       #   prod    = the live EU/ASIA cluster (arrives via AUDITOR_EXTRA_FRAMES_JSON)
-      #   legacy  = registry-a / frame-b / frame-c, retiring, operators off, still attested
+      #   legacy  = none since V0666 FA-2 (a tier is listed only while a frame of it is configured)
       #   sandbox = sbx-alpha / sbx-beta
-      # ── LEGACY frames (mode='legacy'; the env var names are unchanged) ──
-      # §LEGACYSTOP 2026-09-25: frame-b/frame-c are stopped, so their slots and networks are gone, and
-      # VENUE_REG_DSNS_JSON with them (its 13 venues were the operators stopped on 09-09). Frame A stays: registry-a stays up.
-      FRAME_A_EVENT_STORE_URL: http://agentvault_event_store:8200
-      EVENT_STORE_INTERNAL_KEY: ${EVENT_STORE_INTERNAL_KEY}  # §KEYROT 2026-09-05: the code default was a live literal; env-only now
-      FRAME_A_ES_DSN: ${FRAME_A_ES_DSN:-}
-      # §2026-06-14 — Frame-B re-denominated AVT → JDAY. config.py reads FRAME_B_CURRENCY
-      # (defaults AVT when unset); the Vue FE renders frame.currency dynamically → JDAY.
-      # FRAME_C (prod, BVT) WIRED 2026-06-05 §pass78b — the 3rd prod frame. ES reached
-      # over frame_c_network (added to networks below); DSN value in .env (FRAME_C_ES_DSN).
-      # Currency defaults to BVT in config.py:66; the frame appears once these are set.
-      # ── AGORA share registry (read-only registry-DB pool, 2026-06-17) ──
-      # The org-stock cap table lives in each frame's REGISTRY DB (not the ES).
-      # Read-only; unset → the Share Registry panel is simply absent for that frame.
-      # Values live in .env (FRAME_<X>_REG_DSN). Reachable: auditor is already on
-      # agentvault_main_network + frame_b_network + frame_c_network.
-      FRAME_A_REG_DSN: ${FRAME_A_REG_DSN:-}
-      # ── V6 currency attribution (read-only TEG-DB pool, 2026-06-19) ──
-      # cross_teg_transfers is the ONLY currency-aware money table (ES ledger is
-      # currency-blind). Read-only; unset → currency attribution omitted. Values in
-      # .env (FRAME_<X>_TEG_DSN). Reachable: the teg DBs sit on the same networks the
-      # auditor already joins (agentvault_main_network / frame_b_network / frame_c_network).
-      FRAME_A_TEG_DSN: ${FRAME_A_TEG_DSN:-}
+      # ── LEGACY frames: none since V0666 FA-2 (Frame A's retirement, approved in room seq 4404) ──
+      # §LEGACYSTOP 2026-09-25 took frame-b/frame-c. FRAME_A_ENABLED=false drops the frame-a slot (no fallback to
+      # EVENT_STORE_URL, no FRAME_A_* read even if set), and with it the legacy tier. Frame A's history and its signed
+      # attestation chain stay readable. FRAME_A_EVENT_STORE_URL, FRAME_A_ES_DSN, FRAME_A_REG_DSN, FRAME_A_TEG_DSN and
+      # EVENT_STORE_INTERNAL_KEY (Frame A's store key: EU and ASIA carry their own in frames/frames.json) are gone from here.
+      # Back: the anchor image and this file's bak, then FRAME_A_ENABLED unset (the card's rollback).
+      FRAME_A_ENABLED: "false"
       # ── SANDBOX frames (mode='sandbox') — sandbox A/B/C EventStores ──
       # §BATCH9 retired tier (2026-09-03), unset so the slot is skipped:  # SBX_FRAME_A_EVENT_STORE_URL: (retired)
       # §BATCH9 retired tier (2026-09-03), unset so the slot is skipped:  # SBX_FRAME_A_ES_DSN: (value dropped; git history has it)
@@ -60,7 +44,7 @@ services:
       SBX_FRAME_B_REG_DSN: ${SBX_FRAME_B_REG_DSN:-}
       SBX_FRAME_C_REG_DSN: ${SBX_FRAME_C_REG_DSN:-}
       # ── Common ──
-      REGISTRY_URL: http://agentvault_registry_a:8000
+      # REGISTRY_URL (Frame A's registry) dropped with FA-2: nothing in src/ reads it
       AGENT_NAME: The Auditor
       AUDIT_INTERVAL: "60"
       # §GLOBALSTD 2026-08-22: full-history transit-by-kind measured at 56-126s/frame —
@@ -69,7 +53,8 @@ services:
       TRANSIT_REFRESH_SEC: "21600"
       # §LEDGERGATE S6 (2026-10-12): 2.5.0 = I3 tells BEHIND from a breach through the TEG's balance journal, and the
       # TEG's own census of negative rows is a named check (the attestation format is unchanged).
-      AUDITOR_VERSION: "2.6.0-tpsa1"
+      # V0666 FA-2: 2.7.0 = Frame A is retired (FRAME_A_ENABLED=false) and the legacy tier with it; the format is unchanged.
+      AUDITOR_VERSION: "2.7.0-tpsa1"
       # Maintenance seeds on a fresh DB; runtime-togglable via the API. Both envs
       # are live now (CQRS cutover long done) → default off.
       MAINTENANCE_ACTIVE: "${MAINTENANCE_ACTIVE:-false}"

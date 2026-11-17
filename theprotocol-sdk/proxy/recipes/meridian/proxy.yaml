@@ -16,7 +16,7 @@ sources:
   oms:
     type: filedrop
     # settle_seconds: an export is read only once the file has stopped growing
-    config: {path: /data/oms-out, format: json, suffix: .json, id_field: intent_id, settle_seconds: 2}
+    config: {path: /data/oms-out, format: json, suffix: .json, id_field: intent_id, settle_seconds: 2, poll_seconds: 30}
 actions:
   attest:
     type: attestation

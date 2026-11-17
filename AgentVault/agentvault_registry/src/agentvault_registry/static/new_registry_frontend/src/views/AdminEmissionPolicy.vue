@@ -403,7 +403,7 @@ const peerTypeWord = (p?: string | null) =>
 .ep-det summary { cursor: pointer; }
 .ep-difftable { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 0.78rem; }
 .ep-difftable th, .ep-difftable td { padding: 3px 6px; border-bottom: 1px solid rgba(148, 163, 184, 0.12); text-align: left; font-weight: 400; }
-.ep-link { color: #7dd3fc; margin-left: 4px; }
+.ep-link { color: #7dd3fc; margin-left: 4px; text-decoration: underline; text-underline-offset: 2px; }
 @media (max-width: 640px) {
   .ep-page { padding: 16px; }
   .ep-field input, .ep-field select { min-width: 0; width: 100%; }

@@ -28,7 +28,8 @@ THE RULE
     network ranges through (10/8, 172.16/12, 192.168/16, fc00::/7, where a sandbox's containers live), and only
     where the registry's sandbox flag is set (the one the agent-card pull reads, agent_card_pullsync._is_sandbox_mode).
     Loopback, link-local, unspecified, multicast, the special-use names and every other non-public range stay
-    refused there too.
+    refused there too. A client built with allow_private=True (V0662: a frame's trust-bundle dial to a same-host peer,
+    where the frame opts in) lets the same private ranges through, and only those.
 
 Addresses an operator sets (the environment, admin peer rows) are not what this guards; they keep their own clients.
 
@@ -213,10 +214,12 @@ def sandbox_private_allowed() -> bool:
     return (os.getenv(SANDBOX_PRIVATE_ENV) or "").strip().lower() in _TRUE and _registry_in_sandbox()
 
 
-def _refusal_here(ip: _Address) -> Optional[str]:
-    """The rule, with the sandbox allowance applied: in a sandbox that allows it, a private address goes ahead."""
+def _refusal_here(ip: _Address, allow_private: bool = False) -> Optional[str]:
+    """The rule, with the allowances applied: in a sandbox that allows it, or for a client built with allow_private
+    (V0662: a frame's same-host peer where the frame opts in), a PRIVATE address goes ahead; every other class stays
+    refused."""
     reason = address_refusal(ip)
-    if reason == "private" and sandbox_private_allowed():
+    if reason == "private" and (allow_private or sandbox_private_allowed()):
         return None
     return reason
 
@@ -272,7 +275,7 @@ def _connect_form(ip: _Address) -> str:
     return str(ip)
 
 
-async def _decide(url: httpx.URL, timeout: Optional[float]) -> Destination:
+async def _decide(url: httpx.URL, timeout: Optional[float], allow_private: bool = False) -> Destination:
     scheme = (url.scheme or "").lower()
     try:
         host = url.raw_host.decode("ascii").lower()
@@ -285,7 +288,7 @@ async def _decide(url: httpx.URL, timeout: Optional[float]) -> Destination:
         return Destination(host, port, "malformed")
     literal = _as_address(host)
     if literal is not None:
-        reason = _refusal_here(literal)
+        reason = _refusal_here(literal, allow_private)
         return Destination(host, port, reason, () if reason else (str(literal),), True, True)
     name = host[:-1] if host.endswith(".") else host
     if not name:
@@ -296,7 +299,7 @@ async def _decide(url: httpx.URL, timeout: Optional[float]) -> Destination:
     if not found:
         return Destination(host, port, None)
     for ip in found:
-        reason = _refusal_here(ip)
+        reason = _refusal_here(ip, allow_private)
         if reason is not None:
             return Destination(host, port, reason, (), True, False)
     addresses: List[str] = []
@@ -308,14 +311,14 @@ async def _decide(url: httpx.URL, timeout: Optional[float]) -> Destination:
 
 
 async def inspect_destination(url: Union[str, httpx.URL], *,
-                              timeout: Optional[float] = RESOLVE_TIMEOUT_SEC) -> Destination:
+                              timeout: Optional[float] = RESOLVE_TIMEOUT_SEC, allow_private: bool = False) -> Destination:
     """What the guard would decide about `url`. The name is resolved; nothing is fetched, counted or logged. A lookup
     that does not answer within `timeout` raises TimeoutError (neither a refusal nor an empty answer)."""
     try:
         u = url if isinstance(url, httpx.URL) else httpx.URL(str(url))
     except Exception:
         return Destination("", 0, "malformed")
-    return await _decide(u, timeout)
+    return await _decide(u, timeout, allow_private)
 
 
 # --- the transport and the client --------------------------------------------------------------------------------
@@ -341,16 +344,20 @@ class GuardedTransport(httpx.AsyncBaseTransport):
 
     def __init__(self, site: str, *, inner: Optional[httpx.AsyncBaseTransport] = None, verify: Any = True,
                  cert: Any = None, trust_env: bool = True, limits: httpx.Limits = _DEFAULT_LIMITS,
-                 max_addresses: int = MAX_ADDRESSES_TRIED) -> None:
+                 max_addresses: int = MAX_ADDRESSES_TRIED, allow_private: bool = False) -> None:
         self.site = _site_name(site)
+        # V0662: a connection layer the guard is HANDED (a caller's long-lived client's transport) is the caller's to
+        # close; the guard closes only one it built
+        self._owns_inner = inner is None
         self._inner = inner if inner is not None else httpx.AsyncHTTPTransport(
             verify=client_cert_verify(verify, cert), cert=cert, trust_env=trust_env, limits=limits)
         self._max_addresses = max(1, int(max_addresses))
+        self._allow_private = bool(allow_private)
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         hop = "redirect" if request.extensions.get(HOP_EXTENSION) == "redirect" else "first"
         try:
-            dest = await _decide(request.url, _resolve_timeout(request))
+            dest = await _decide(request.url, _resolve_timeout(request), self._allow_private)
         except TimeoutError:
             raise httpx.ConnectTimeout("the destination's name did not resolve in time", request=request)
         if dest.refusal is not None:
@@ -375,7 +382,8 @@ class GuardedTransport(httpx.AsyncBaseTransport):
         raise failure  # type: ignore[misc]
 
     async def aclose(self) -> None:
-        await self._inner.aclose()
+        if self._owns_inner:
+            await self._inner.aclose()
 
 
 class GuardedClient(httpx.AsyncClient):
@@ -385,7 +393,7 @@ class GuardedClient(httpx.AsyncClient):
 
     def __init__(self, site: str, *, inner: Optional[httpx.AsyncBaseTransport] = None, verify: Any = True,
                  cert: Any = None, trust_env: bool = True, limits: httpx.Limits = _DEFAULT_LIMITS,
-                 **kwargs: Any) -> None:
+                 allow_private: bool = False, **kwargs: Any) -> None:
         for name in ("transport", "mounts", "proxy", "proxies", "app"):
             if name in kwargs:
                 raise TypeError(f"a guarded client takes no {name}=: every request goes through its guarded transport")
@@ -393,7 +401,8 @@ class GuardedClient(httpx.AsyncClient):
             raise TypeError("a guarded client speaks HTTP/1.1: one connection per request, never shared between names")
         if kwargs.pop("follow_redirects", False) or "max_redirects" in kwargs:
             raise ValueError(_NO_AUTOMATIC_REDIRECTS)
-        transport = GuardedTransport(site, inner=inner, verify=verify, cert=cert, trust_env=trust_env, limits=limits)
+        transport = GuardedTransport(site, inner=inner, verify=verify, cert=cert, trust_env=trust_env, limits=limits,
+                                     allow_private=allow_private)
         self.site = transport.site
         super().__init__(transport=transport, follow_redirects=False, **kwargs)
 

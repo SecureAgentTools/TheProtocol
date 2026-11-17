@@ -116,22 +116,22 @@ def _test_route(hook):
 
 
 def test_a_delivery_goes_to_the_address_its_check_approved_not_to_a_second_lookup(dns, wire):
-    dns.answers["rebind.example"] = [[PUBLIC], ["127.0.0.1"]]   # public when checked, internal when asked again
-    r, db = _test_route(_hook("https://rebind.example/h?x=1"))
+    dns.answers["rebind.example.org"] = [[PUBLIC], ["127.0.0.1"]]   # public when checked, internal when asked again
+    r, db = _test_route(_hook("https://rebind.example.org/h?x=1"))
     assert r.status_code == 200 and r.json()["success"] is True, r.text
     (sent,) = wire.seen
     assert sent["reached"] == PUBLIC, f"the delivery reached {sent['reached']}, an address nobody checked"
     assert sent["url"] == f"https://{PUBLIC}/h?x=1"
-    assert (sent["host"], sent["sni"], sent["connection"]) == ("rebind.example", "rebind.example", "close")
+    assert (sent["host"], sent["sni"], sent["connection"]) == ("rebind.example.org", "rebind.example.org", "close")
     assert sent["signature"], "the signed request is unchanged"
-    assert dns.asked == ["rebind.example"], "one lookup: the one that was checked"
+    assert dns.asked == ["rebind.example.org"], "one lookup: the one that was checked"
     assert db.added and db.added[0].response_status == 200
 
 
 def test_a_retry_goes_to_the_address_its_check_approved(dns, wire):
-    dns.answers["rebind.example"] = [[PUBLIC], ["10.9.8.7"]]
+    dns.answers["rebind.example.org"] = [[PUBLIC], ["10.9.8.7"]]
     svc = WebhookService()
-    hook = _hook("http://rebind.example:8080/hook")
+    hook = _hook("http://rebind.example.org:8080/hook")
     delivery = types.SimpleNamespace(id="d-1", event_type=EVENT, retry_count=0, delivered_at=None,
                                      payload={"id": "d-1", "event": EVENT, "data": {}, "timestamp": None,
                                               "agent_did": None},
@@ -140,29 +140,29 @@ def test_a_retry_goes_to_the_address_its_check_approved(dns, wire):
     asyncio.run(svc.retry_delivery(delivery, hook, _Db(hook)))
     (sent,) = wire.seen
     assert sent["reached"] == PUBLIC and sent["url"] == f"http://{PUBLIC}:8080/hook"
-    assert (sent["host"], sent["sni"]) == ("rebind.example:8080", None), "plain http carries no TLS server name"
+    assert (sent["host"], sent["sni"]) == ("rebind.example.org:8080", None), "plain http carries no TLS server name"
     assert delivery.response_status == 200
 
 
 def test_when_an_address_refuses_the_connection_the_next_checked_one_is_tried(dns, wire):
-    dns.answers["two.example"] = [[PUBLIC, PUBLIC_V6], ["127.0.0.1"]]
+    dns.answers["two.example.org"] = [[PUBLIC, PUBLIC_V6], ["127.0.0.1"]]
     wire.refuse.add(PUBLIC)
-    r, _ = _test_route(_hook("https://two.example/h"))
+    r, _ = _test_route(_hook("https://two.example.org/h"))
     assert r.status_code == 200 and r.json()["success"] is True, r.text
     (sent,) = wire.seen
     assert sent["reached"] == PUBLIC_V6 and sent["url"] == f"https://[{PUBLIC_V6}]/h"
-    assert sent["sni"] == "two.example" and dns.asked == ["two.example"]
+    assert sent["sni"] == "two.example.org" and dns.asked == ["two.example.org"]
 
 
 def test_a_name_with_any_internal_address_is_still_refused_and_nothing_is_sent(dns, wire):
-    dns.answers["mixed.example"] = [[PUBLIC_2, "192.168.1.9"]]
-    r, db = _test_route(_hook("https://mixed.example/h"))
+    dns.answers["mixed.example.org"] = [[PUBLIC_2, "192.168.1.9"]]
+    r, db = _test_route(_hook("https://mixed.example.org/h"))
     assert r.status_code == 200 and not r.json()["success"]
     assert wire.seen == [] and "refused" in (db.added[0].error_message or "")
 
 
 def test_a_host_that_resolves_to_nothing_is_a_failed_send_not_a_send_to_a_second_lookup(dns, wire):
-    r, db = _test_route(_hook("https://later.invalid/h"))
+    r, db = _test_route(_hook("https://later.example.org/h"))
     assert not r.json()["success"] and wire.seen == []
     assert "resolves to no address" in (db.added[0].error_message or "")
     assert db.added[0].next_retry_at is not None, "it is retried like any failed send"

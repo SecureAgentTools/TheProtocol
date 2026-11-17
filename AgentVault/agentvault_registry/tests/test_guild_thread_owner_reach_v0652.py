@@ -37,7 +37,8 @@ OID = "gwo_0123456789abcdef01234567"
 
 def _seed():
     db = sqlite_db(models.Developer, models.Agent, models.AgentCard, models.Conversation, models.ConversationParticipant,
-                   models.ChatMessage, models.ChatBlock, models.SupportTicket, models.SupportReviewGrant)
+                   models.ChatMessage, models.ChatBlock, models.SupportTicket, models.SupportReviewGrant,
+                   models.ChatReaction)
     s = db.sync
     import datetime as _dt
     s.connection().connection.dbapi_connection.create_function(

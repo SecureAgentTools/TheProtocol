@@ -53,3 +53,39 @@ describe('the IRONHAND theatre says what its identities read answered', () => {
     w.unmount()
   })
 })
+
+/**
+ * V0665 (the flake of V0664's proof, "window is not defined" under load): the theatre kicks three window resizes after it mounts (400, 1200 and 2500 ms) so its map measures
+ * the real height. A theatre left before they fire must not leave them behind: they fired into a window the test environment had already torn down. The three kicks are
+ * cleared with the poll and the ticker when the view unmounts, so nothing of the view runs after it is gone (what this pins, with fake timers: no timer is left, and no
+ * resize is dispatched after the unmount).
+ */
+describe('a theatre that is gone leaves no timer behind', () => {
+  it('unmounting before the resize kicks fire clears them, and nothing is dispatched afterwards', async () => {
+    vi.useFakeTimers()
+    try {
+      h.get.mockRejectedValue(failure())
+      const w = mount(IronhandTheatre, opts)
+      await vi.advanceTimersByTimeAsync(50)                                  // the first read lands, the poll, the ticker and the three kicks are set
+      expect(vi.getTimerCount()).toBeGreaterThanOrEqual(5)
+      const sent = vi.spyOn(window, 'dispatchEvent')
+      w.unmount()
+      expect(vi.getTimerCount()).toBe(0)                                     // the poll, the ticker and all three kicks are gone
+      await vi.advanceTimersByTimeAsync(10000)
+      expect(sent.mock.calls.filter(([e]) => (e as Event).type === 'resize')).toHaveLength(0)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('a theatre that stays does kick its resizes (the three, once each)', async () => {
+    vi.useFakeTimers()
+    try {
+      h.get.mockRejectedValue(failure())
+      const w = mount(IronhandTheatre, opts)
+      await vi.advanceTimersByTimeAsync(50)
+      const sent = vi.spyOn(window, 'dispatchEvent')
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(sent.mock.calls.filter(([e]) => (e as Event).type === 'resize')).toHaveLength(3)
+      w.unmount()
+    } finally { vi.useRealTimers() }
+  })
+})

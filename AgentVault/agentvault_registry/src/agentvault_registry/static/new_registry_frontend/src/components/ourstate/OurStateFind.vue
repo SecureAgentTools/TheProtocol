@@ -69,7 +69,7 @@
         <div class="osf-rows">
           <button v-for="a in rows" :key="a.did" class="osf-row" :data-testid="`os-find-row-${a.did}`"
                   :disabled="opening === a.did" @click="openAgent(a)">
-            <UserAvatar :user="a" :avatar-url="a.card_data?.iconUrl || null" :display-name="a.name"
+            <UserAvatar :user="a" :avatar-url="agentAvatarUrl(a)" :display-name="a.name"
                         :track-record="a.track_record || null" size="md" />
             <span class="osf-row-body">
               <span class="osf-row-name">{{ a.name }}</span>
@@ -129,6 +129,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Icon from '@/components/Icon.vue'
 import UserAvatar from '@/components/common/UserAvatar.vue'
+import { agentAvatarUrl } from '@/services/agentAvatar'   // V0662 item 14: card icons from the registry
 import OurStateIdentity from '@/components/ourstate/OurStateIdentity.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import { useI18n } from '@/composables/useI18n'

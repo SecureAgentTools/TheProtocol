@@ -66,7 +66,7 @@ logger = logging.getLogger(__name__)
 
 # Since 2026-10-02: the tag family from V0549 on is TheProtocolReleaseVNNNN (the earlier families stay on the images
 # that carry them). Both version parsers read only the trailing V(\d+) (release_channel, cloud_provisioner).
-BUNDLED_IMAGE_TAG = "TheProtocolReleaseV0661"
+BUNDLED_IMAGE_TAG = "TheProtocolReleaseV0668"
 
 
 def get_software_version() -> str:
@@ -331,7 +331,7 @@ def get_owner_spiffe_for_variant(variant: str) -> Optional[str]:
 # All new ones use tier="shadow_chancellor" (cosmetic, NOT SPIFFE-locked).
 # Order matches the picker UI grid (frontend reads this from the registry-card
 # editor's import of FLARE_ENCIRCLEMENT_VARIANTS via its own constant).
-FLARE_ENCIRCLEMENT_VARIANTS = frozenset({
+_OLD_FLARE_ENCIRCLEMENT_VARIANTS = frozenset({
     # Original 19 (§14-§20)
     "sauron", "goth", "obsidian", "void", "aurora", "phoenix", "crystal",
     "blackhole", "halloween", "inferno", "glacier", "matrix", "galaxy", "ink",
@@ -364,11 +364,43 @@ FLARE_ENCIRCLEMENT_OVERLAYS = frozenset({
 
 # Corner-badge variants (smaller catalog; mirrors agent flare_corner_variant).
 # §pass67 — extended with 4 new corner-readable variants from the registry set.
-FLARE_CORNER_VARIANTS = frozenset({
+_OLD_FLARE_CORNER_VARIANTS = frozenset({
     "sauron", "phoenix", "crystal", "matrix", "circuit",
     # §pass67 — new readable-at-16-22px badges
     "chancellery", "diamond-hands", "liberty", "bullion-vault",
 })
+
+
+# V0665 (the contributor track, room seq 4063/4070/4081): NEW rings, corner badges and titles that are EARNED, never bought and never
+# granted by hand (services/contributor_track is the one writer of their unlock records). They sit in the same catalogs so every card validator and
+# the federation export accept them; EARNED_ONLY names them so the shop never lists one and the equip routes ask for the unlock row. The OLD keys
+# above are untouched (tests/test_flare_catalog_pinned_v0665.py pins them exactly). A registry on an older version does not know a new key and
+# shows its default: acceptable.
+EARNED_ENCIRCLEMENTS = frozenset({
+    "lantern", "ember", "eye-of-the-senate", "event-horizon", "abyss", "supernova", "ouroboros", "merkle-ring", "lattice",
+    "quantum-halo", "watcher", "solar-flare", "singularity", "eclipse",
+})
+EARNED_CORNERS = frozenset({
+    "initiate", "architect-prime", "keystone", "founders-seal", "crown-of-the-commons", "gatekeeper", "ledger-seal", "quill",
+    "anvil", "lantern-key",
+})
+# the titles (a third kind, one equipped at a time)
+FLARE_TITLES = frozenset({
+    "first-light", "patchwright", "second-pair-of-eyes", "ballot-bearer", "exactly-once", "mutually-trusted", "keeper-of-delta-zero",
+    "senate-scribe", "bug-slayer", "architect-of-the-beast", "beast-tamer", "event-horizon", "the-eye-sees-all",
+    "founder-of-the-commons", "it-works-on-my-frame", "off-by-one",
+    # the four the art proposed beyond the design's sixteen (they ship: the maintainer was told they would unless he said no)
+    "dead-letter-whisperer", "rollback-ready", "quorum-maker", "clean-checkout",
+})
+FLARE_ENCIRCLEMENT_VARIANTS = _OLD_FLARE_ENCIRCLEMENT_VARIANTS | EARNED_ENCIRCLEMENTS
+FLARE_CORNER_VARIANTS = _OLD_FLARE_CORNER_VARIANTS | EARNED_CORNERS
+# (kind, key) of everything that is earned only: the shop never lists it, a customize call needs its unlock row
+EARNED_ONLY = (frozenset(("encirclement", k) for k in EARNED_ENCIRCLEMENTS) | frozenset(("corner", k) for k in EARNED_CORNERS)
+               | frozenset(("title", k) for k in FLARE_TITLES))
+
+
+def is_earned_only(kind: str, key: Optional[str]) -> bool:
+    return key is not None and (kind, key) in EARNED_ONLY
 
 
 def is_valid_encirclement_variant(v: Optional[str]) -> bool:
@@ -392,6 +424,11 @@ __all__ = [
     "FLARE_ENCIRCLEMENT_VARIANTS",
     "FLARE_ENCIRCLEMENT_OVERLAYS",
     "FLARE_CORNER_VARIANTS",
+    "EARNED_ENCIRCLEMENTS",
+    "EARNED_CORNERS",
+    "FLARE_TITLES",
+    "EARNED_ONLY",
+    "is_earned_only",
     "is_valid_encirclement_variant",
     "is_valid_encirclement_overlay",
     "is_valid_corner_variant",

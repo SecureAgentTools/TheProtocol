@@ -35,7 +35,7 @@ import tarfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 
@@ -138,34 +138,45 @@ async def _dial_checked(client: httpx.AsyncClient, method: str, url: str, allow_
     """(response, refusal): every hop https, and public unless allow_internal (or, with allow_private, public or
     RFC1918/ULA); at most _BUNDLE_MAX_REDIRECTS redirects.
 
-    A checked hop is dialled at the ADDRESS the check saw (_vetted_address), with the name kept in the Host header and
-    in SNI, so the connection goes where the check looked and not wherever the name answers a moment later. ⚠ This
-    client does not verify certificates on purpose (see _bundle_client: a bootstrapping frame may serve a self-signed
-    one and the SPIRE bundle, not the certificate, is the trust anchor), so the pin is what bounds where the bytes come
-    from here; SNI and Host only keep the request the same one the server would have answered by name."""
-    for _hop in range(_BUNDLE_MAX_REDIRECTS + 1):
-        parts = urlsplit(url)
-        if parts.scheme != "https" or not parts.hostname:
-            return None, "every hop must be an https URL"
-        dial, hop_headers, extensions = url, headers, None
-        if not allow_internal:
-            addr, why = await _vetted_address(parts.hostname, parts.port or 443, allow_private=allow_private)
-            if addr is None:
-                return None, why
-            name = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
-            netloc = f"[{addr}]" if ":" in addr else addr
-            if parts.port:
-                name, netloc = f"{name}:{parts.port}", f"{netloc}:{parts.port}"
-            dial = urlunsplit(("https", netloc, parts.path, parts.query, ""))
-            hop_headers = {**(headers or {}), "Host": name}
-            extensions = {"sni_hostname": parts.hostname}
-        r = await client.request(method, dial, headers=hop_headers, extensions=extensions)
-        location = r.headers.get("location")
-        if r.is_redirect and location:
-            url = urljoin(url, location)   # the LOGICAL url: a relative Location must not resolve against the address
-            continue
-        return r, None
-    return None, f"more than {_BUNDLE_MAX_REDIRECTS} redirects"
+    V0662, item 16: a hop that is not an administrator-named internal host goes through the one outbound guard
+    (core/outbound_guard, site frame_trust_bundle): it decides the destination, refuses a non-public one (with
+    allow_private, a private one passes: a same-host peer where the frame opts in), connects only to an address it
+    checked, keeps the name in the Host header and in SNI, and counts a refusal where every other outbound refusal is
+    counted. V0658 (l)'s own pin did the same here alone. ⚠ This client does not verify certificates on purpose (see
+    _bundle_client: a bootstrapping frame may serve a self-signed one and the SPIRE bundle, not the certificate, is the
+    trust anchor), so the pin is what bounds where the bytes come from. The guard uses `client`'s own connection layer
+    (verify off, the tests' transport) and leaves it open. An internal original a federation administrator named
+    (allow_internal) is an operator's address, outside the guard, and is dialled as named."""
+    from ..core.outbound_guard import OutboundRefused, guarded_client
+    guarded = None
+    try:
+        for _hop in range(_BUNDLE_MAX_REDIRECTS + 1):
+            parts = urlsplit(url)
+            if parts.scheme != "https" or not parts.hostname:
+                return None, "every hop must be an https URL"
+            if allow_internal:
+                r = await client.request(method, url, headers=headers)
+            else:
+                if guarded is None:
+                    guarded = guarded_client("frame_trust_bundle", inner=getattr(client, "_transport", None),
+                                             timeout=client.timeout, allow_private=allow_private)
+                try:
+                    r = await guarded.request(method, url, headers=headers)
+                except OutboundRefused:
+                    return None, "the bundle host is (or resolves to) an internal address"
+                except httpx.ConnectError as exc:
+                    if "resolves to no address" in str(exc):
+                        return None, "the bundle host does not resolve"
+                    raise
+            location = r.headers.get("location")
+            if r.is_redirect and location:
+                url = urljoin(url, location)   # the LOGICAL url: a relative Location must not resolve against the address
+                continue
+            return r, None
+        return None, f"more than {_BUNDLE_MAX_REDIRECTS} redirects"
+    finally:
+        if guarded is not None:
+            await guarded.aclose()
 
 @dataclass
 class BundleFreshness:

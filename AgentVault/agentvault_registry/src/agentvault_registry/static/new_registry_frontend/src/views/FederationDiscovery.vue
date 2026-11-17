@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { resolvePeerAsset } from '@/services/peerAssets'
+import { registryImageSrc } from '@/services/registryImage'   // V0663: outside images from the registry
 /**
  * Federation Discovery — flagship browse + filter + drill view for registry peers
  * §pass62 (2026-05-21) — Commander's request to make this BETTER than Agent Discovery.
@@ -35,6 +36,7 @@ import UserAvatar from '@/components/common/UserAvatar.vue'
 import PeerHoverPopover from '@/components/federation/PeerHoverPopover.vue'
 import LiveFederationFeed, { type FeedEvent } from '@/components/federation/LiveFederationFeed.vue'
 import PeerDetailDrawer from '@/components/federation/PeerDetailDrawer.vue'
+import IndexRegistries from '@/components/federation/IndexRegistries.vue'   // V0663 read path: the registries the index knows
 
 const { t, tp } = useI18n()
 
@@ -652,7 +654,7 @@ async function loadPublicUrls(): Promise<void> {
 function peerIcon(peer: FederatedPeer): string | undefined {
   const icon = peer.visual?.icon_url
   if (!icon) return undefined
-  if (/^https?:\/\//i.test(icon)) return icon
+  if (/^https?:\/\//i.test(icon)) return registryImageSrc(icon) ?? undefined   // V0663: from this registry
   if (peer.peer_type === 'local') return icon
   const pub = publicUrlByName.value[peer.name]
   return pub ? resolvePeerAsset(icon, pub) : undefined
@@ -1022,6 +1024,10 @@ onUnmounted(() => {
       />
     </div>
 
+    <!-- V0663, the Directory read path: the registries the federated index knows, each card verified by this
+         registry; a candidate points an admin with the federation flag to the invitation rail, nothing more -->
+    <IndexRegistries :can-invite="canFederation" />
+
     <!-- §pass62 Pass 5 — Full 6-tab shared drawer (Local Registry case included) -->
     <!-- §pass62.6 — pass peersById + localName so drawer derives tree-walk hop -->
     <PeerDetailDrawer
@@ -1035,6 +1041,7 @@ onUnmounted(() => {
     <!-- Hover popover (Teleported to body inside component) -->
     <PeerHoverPopover
       :peer="hoverPeer"
+      :icon-src="hoverPeer ? peerIcon(hoverPeer) : null"
       :px="hoverX"
       :py="hoverY"
       :visible="hoverVisible"

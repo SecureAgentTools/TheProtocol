@@ -2273,6 +2273,7 @@ def _require_admin(token: Optional[str]) -> Optional[JSONResponse]:
 
 @app.get("/health")
 async def health():
+    """The auditor's state and, per audited frame, its last verdict. A frame this auditor no longer audits is not listed (Frame A since V0666: FRAME_A_ENABLED=false), rather than shown as an error or unknown."""
     frames_status = {}
     for fid, r in latest_results.items():
         if not r:
@@ -2303,7 +2304,8 @@ async def health():
 @app.get("/api/auditor/modes")
 async def api_modes():
     """Available modes + the server's default (the frontend overrides the default
-    from the subdomain, but this is the fallback)."""
+    from the subdomain, but this is the fallback). A tier is listed only while one of its frames is audited, and only
+    such a tier is attested: the legacy tier ended with its last frame. A frame this auditor no longer audits is not listed (Frame A since V0666: FRAME_A_ENABLED=false), rather than shown as an error or unknown."""
     return {"modes": MODES, "default": DEFAULT_MODE, "attest": sorted(ATTEST_MODES & set(MODES)),
             # §MTLSHOPS (a): the slot shapes this auditor reads; a slot writer asks here before it writes one
             "slot_shapes": list(SLOT_SHAPES)}
@@ -2311,7 +2313,7 @@ async def api_modes():
 
 @app.get("/api/auditor/frames")
 async def api_frames(mode: Optional[str] = Query(default=None)):
-    """Return configured frames, optionally filtered by mode ('prod'|'sandbox'|'legacy')."""
+    """Return configured frames, optionally filtered by mode ('prod'|'sandbox'|'legacy'). A frame this auditor no longer audits is not listed (Frame A since V0666: FRAME_A_ENABLED=false), rather than shown as an error or unknown."""
     return [
         {"id": f["id"], "name": f["name"], "mode": f["mode"], "currency": f.get("currency", "AVT"),
          "public_only": bool(f.get("public_only")), "public_read": bool(f.get("public_read"))}
@@ -2322,6 +2324,8 @@ async def api_frames(mode: Optional[str] = Query(default=None)):
 
 @app.get("/api/auditor/latest")
 async def api_latest(mode: Optional[str] = Query(default=None)):
+    """The latest verdict per audited frame, optionally for one tier. A frame this auditor no longer audits is not listed (Frame A since V0666: FRAME_A_ENABLED=false), rather than shown as an error or unknown. Its stored record stays readable:
+    /api/auditor/history?frame=frame-a and its signed chain at /api/auditor/attestations?frame=frame-a."""
     if not latest_results:
         return JSONResponse({"message": "No audit results yet"}, status_code=404)
     if mode is None:

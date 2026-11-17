@@ -78,7 +78,7 @@
                to the plain path (A8/A9 caught it). -->
           <UserAvatar
             :user="it"
-            :avatar-url="it.card_data?.iconUrl || it.icon_url || null"
+            :avatar-url="agentAvatarUrl(it)"
             :display-name="it.name || null"
             :track-record="it.track_record || null"
             size="lg"
@@ -149,6 +149,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import Icon from '@/components/Icon.vue'
 import UserAvatar from '@/components/common/UserAvatar.vue'
+import { agentAvatarUrl } from '@/services/agentAvatar'   // V0662 item 14: card icons from the registry
 import { discoveryService } from '@/services/api/discovery'
 import { usePressHold } from '@/composables/usePressHold'
 import { useFocusTrap } from '@/composables/useFocusTrap'

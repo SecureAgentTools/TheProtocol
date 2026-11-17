@@ -1,0 +1,42 @@
+version: 1
+name: sql-to-postgres
+# system to system: no registry and no identity (nothing here calls TheProtocol)
+sources:
+  legacy:
+    type: sqlpoll
+    config:
+      engine: ${SOURCE_ENGINE}
+      path: ${SOURCE_PATH}              # sqlite reads this file; the other engines read host, database, user, password
+      host: ${SOURCE_HOST}
+      database: ${SOURCE_DATABASE}
+      user: ${SOURCE_USER}
+      password: ${SOURCE_PASSWORD}      # a reference (env:NAME or file:/path), never the password
+      table: ${SOURCE_TABLE}
+      cursor: id
+      poll_seconds: 0
+sinks:
+  crm:
+    type: sql_upsert
+    config:
+      engine: ${TARGET_ENGINE}
+      host: ${TARGET_HOST}
+      connect_args: {port: '${TARGET_PORT}'}
+      database: ${TARGET_DATABASE}
+      user: ${TARGET_USER}
+      password: ${TARGET_PASSWORD}
+      path: ${TARGET_PATH}
+      table: ${TARGET_TABLE}
+      key: [legacy_id]
+      on_conflict: update
+      preimage: true                    # each key's row before the load is kept: rollback puts it back
+mappings:
+  - name: customers
+    version: 1
+    from: legacy
+    to: crm
+    fields:
+      legacy_id: $.payload.id
+      full_name: {path: $.payload.name, trim: true}
+      email: {path: $.payload.email, required: false, trim: true, case: lower}
+      signed_up: {path: $.payload.signup_date, as: date, format: '%d.%m.%Y'}
+      status: {path: $.payload.status, trim: true, case: upper, map: {A: active, I: inactive, B: blocked}}

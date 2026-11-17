@@ -162,7 +162,6 @@ export function countWords(text: string): number {
  *  of them. Lower a ceiling when a file loses some; never raise one to let a new word in. */
 const SOURCE_CEILING: Record<string, number> = {
   'components/AgentDetailModal.vue': 2,
-  'components/ApiTesterDisplay.vue': 8,
   'components/GalacticMapCanvas.vue': 1,
   'components/bridge/BridgeAttention.vue': 1,
   'components/cockpit/PaneChannels.vue': 1,

@@ -762,7 +762,7 @@ async def create_webhook(
     auth: MCPAuthContext,
     url: str,
     events: List[str],
-    description: Optional[str] = None,
+    description: Optional[str] = None,   # D6-767: no longer advertised and never sent: a webhook stores no description
 ) -> Dict[str, Any]:
     """
     Register a new webhook subscription. Events fired on the listed event types will POST to url.
@@ -773,8 +773,6 @@ async def create_webhook(
     if not events or not isinstance(events, list):
         return {"error": "events must be a non-empty list of event type strings"}
     body: Dict[str, Any] = {"url": url, "events": events}
-    if description:
-        body["description"] = description
     return await _dev_request(auth, "POST", "/api/v1/webhooks", json_body=body)
 
 
@@ -790,7 +788,7 @@ async def update_webhook(
     webhook_id: str,
     url: Optional[str] = None,
     events: Optional[List[str]] = None,
-    description: Optional[str] = None,
+    description: Optional[str] = None,   # D6-767: no longer advertised and never sent: a webhook stores no description
     is_active: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Update fields on an existing webhook subscription. Only supplied fields change."""
@@ -801,8 +799,6 @@ async def update_webhook(
         body["url"] = url
     if events is not None:
         body["events"] = events
-    if description is not None:
-        body["description"] = description
     if is_active is not None:
         body["is_active"] = is_active
     if not body:
@@ -1422,6 +1418,16 @@ async def get_my_signing_keys(auth: MCPAuthContext) -> Dict[str, Any]:
 async def get_my_flare_status(auth: MCPAuthContext) -> Dict[str, Any]:
     """Get your full flare state (earned tier + unlocked sets + active selection). Used by fiat-onramp flare-gated features."""
     return await _dev_request(auth, "GET", "/api/v1/fiat/flare/status")
+
+
+async def get_my_contributor_track(auth: MCPAuthContext) -> Dict[str, Any]:
+    """Your progress on the contributor track: every item with its condition, progress (n of m), unlocked or not, your season wins and the title you wear."""
+    return await _dev_request(auth, "GET", "/api/v1/developers/me/contributor-track")
+
+
+async def equip_title(auth: MCPAuthContext, title_key: Optional[str] = None) -> Dict[str, Any]:
+    """Wear an unlocked contributor title under your name (title_key null takes it off); 403 with what unlocks it otherwise."""
+    return await _dev_request(auth, "PUT", "/api/v1/developers/me/flare/title", json_body={"title_key": title_key})
 
 
 async def get_my_fiat_purchases(auth: MCPAuthContext) -> Dict[str, Any]:
@@ -3122,8 +3128,7 @@ DEVELOPER_TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "type": "object",
             "properties": {
                 "url": {"type": "string", "description": "Receiver endpoint URL (must accept POST + signature header)"},
-                "events": {"type": "array", "items": {"type": "string"}, "description": "Event type list, e.g. ['agent.created', 'agent.updated']"},
-                "description": {"type": "string", "description": "Optional human-readable description"}
+                "events": {"type": "array", "items": {"type": "string"}, "description": "Event type list, e.g. ['agent.created', 'agent.updated']"}
             },
             "required": ["url", "events"]
         }
@@ -3142,7 +3147,6 @@ DEVELOPER_TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "webhook_id": {"type": "string"},
                 "url": {"type": "string"},
                 "events": {"type": "array", "items": {"type": "string"}},
-                "description": {"type": "string"},
                 "is_active": {"type": "boolean"}
             },
             "required": ["webhook_id"]
@@ -3662,6 +3666,16 @@ DEVELOPER_TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "name": "theprotocol_getMyFlareStatus",
         "description": "Get your full flare state (the tier reached + unlocked sets + active selection).",
         "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "theprotocol_getMyContributorTrack",
+        "description": "Your progress on the contributor track: every badge, ring and title with its condition, progress (n of m) and whether you have unlocked it, your season wins and the title you wear. Unlocked by governed-code work only; nothing is bought.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "theprotocol_equipTitle",
+        "description": "Wear an unlocked contributor title under your name (`title_key`, one at a time); `title_key` null takes it off. 403 with what unlocks it when you have not unlocked it.",
+        "inputSchema": {"type": "object", "properties": {"title_key": {"type": ["string", "null"], "maxLength": 64}}}
     },
     {
         "name": "theprotocol_getMyFiatPurchases",

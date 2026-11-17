@@ -1,0 +1,34 @@
+version: 1
+name: sql-to-rest
+# system to system: no registry and no identity (nothing here calls TheProtocol)
+sources:
+  legacy:
+    type: sqlpoll
+    config:
+      engine: ${SOURCE_ENGINE}
+      path: ${SOURCE_PATH}              # sqlite reads this file; the other engines read host, database, user, password
+      host: ${SOURCE_HOST}
+      database: ${SOURCE_DATABASE}
+      user: ${SOURCE_USER}
+      password: ${SOURCE_PASSWORD}      # a reference (env:NAME or file:/path), never the password
+      table: ${SOURCE_TABLE}
+      cursor: id
+      poll_seconds: 0
+sinks:
+  catalog:
+    type: rest
+    config:
+      url: ${PRODUCTS_URL}
+      method: POST
+      bearer: ${PRODUCTS_TOKEN}         # sent as Authorization: Bearer; the record key goes as Idempotency-Key
+mappings:
+  - name: products
+    version: 1
+    from: legacy
+    to: catalog
+    fields:
+      id: {path: $.payload.id, as: int}
+      sku: {path: $.payload.sku, trim: true, case: upper}
+      name: {path: $.payload.name, trim: true}
+      price: {path: $.payload.price_text, as: decimal, round: 2}
+      active: {path: $.payload.active, as: bool}

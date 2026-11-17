@@ -65,8 +65,7 @@ async def _agent(rig, label: str, tag: str, made: List[Tuple[str, str]]) -> Dict
 async def _hook(rig, label: str, hooks: List[Tuple[str, str]]) -> str:
     r, refused = await _call(rig, label, "createWebhook", {
         "url": f"https://{_TAG}-{uuid.uuid4().hex[:10]}.invalid/hook",
-        "events": ["delegation.received", "delegation.revoked"],
-        "description": "federation suite G4: a host that never resolves; the flow reads the dispatcher's record"})
+        "events": ["delegation.received", "delegation.revoked"]})
     if refused or not isinstance(r, dict) or not r.get("id"):
         raise PreconditionUnmet(f"createWebhook refused on {label}: {refused or str(r)[:160]}")
     hooks.append((label, r["id"]))

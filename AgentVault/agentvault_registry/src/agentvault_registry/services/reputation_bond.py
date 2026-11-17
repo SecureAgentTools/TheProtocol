@@ -59,7 +59,8 @@ logger = logging.getLogger(__name__)
 BOND_EXTENSION_URI = "https://theprotocol.cloud/extensions/v1/reputation-bond"
 BONDED = ("locked", "matured")
 MODES = ("off", "shadow", "enforce")
-GATE_SITES = ("discovery", "listing", "pricing", "guild_bid", "contract_accept", "a2a_payee")
+# V0664 (gwo_2dc9f93f): template_publish, a migration template made visible or priced (services/workflow_templates)
+GATE_SITES = ("discovery", "listing", "pricing", "guild_bid", "contract_accept", "a2a_payee", "template_publish")
 FUNDED_BY = ("self", "wallet", "treasury")
 
 try:  # metrics never break a money rail

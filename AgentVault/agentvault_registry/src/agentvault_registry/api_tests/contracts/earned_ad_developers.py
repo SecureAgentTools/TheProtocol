@@ -5,7 +5,9 @@ On V0635 each admin tool here passed on one refusal: 404 "Developer 999999 not f
 on a developer this run registered for it, through the admin bridge, with a read that shows the effect:
 
   verification   forceEmailVerify on an account the registration left unverified (is_verified afterwards); where
-                 the target verifies at registration there is nothing to verify, and the row says so
+                 the target verifies at registration (every sandbox), V0662 (gwo_fe22d7e8, his seq 3182: "an
+                 unverified account", made on the sandbox only) sets the run's own throwaway unverified through the
+                 target's database first, only where the target itself states "sandbox"; elsewhere the row says why
   flags          updateDeveloperAdminFlags with the one flag that grants nothing (agents_unlisted_by_default): on,
                  read, off again, read
   API keys       revokeDeveloperApiKeys: the developer's own key works before and is refused after
@@ -25,7 +27,7 @@ moves it to its second agent (moveFlare); revokeFiatFlare takes it back. Cosmeti
 
 Not here: refundFiatPurchase, replayFiatPurchase and resendFiatMagicLink (a fiat purchase exists only after a Stripe
 checkout and its webhook; the run makes none), tegTreasuryIssue (decision D9: no automated mint, so the tester
-never mints), simulationFundingPreview (it runs the former network's host script, which no current frame carries).
+never mints).
 """
 from __future__ import annotations
 
@@ -99,6 +101,43 @@ async def _works(rpc: Any, parse: Any, token: str) -> bool:
     return bool(ok)
 
 
+def _reserved_example_address(email: str) -> bool:
+    """An address on the reserved example.com domain or one of its subdomains (RFC 2606): the runner mints its
+    throwaways at `<name>@throwaway-pl.example.com` (test_flow_mcp_lifecycle._mint_throwaway_developer). V0666: this
+    asked for `@example.com` alone, so no pair ever set the runner's own developer unverified."""
+    domain = email.rpartition("@")[2].strip().lower() if "@" in email else ""
+    return domain == "example.com" or domain.endswith(".example.com")
+
+
+async def _unverified_own(rpc: Any, parse: Any, bag: Any, dev: Dict[str, Any], dev_id: int) -> Optional[str]:
+    """V0662 (gwo_fe22d7e8; his seq 3182 allows "an unverified account", made on the sandbox only): None once the run's
+    own throwaway developer reads unverified (as a registration that verifies by mail leaves it), else why not. Where
+    the registration left it verified (every sandbox: REQUIRE_EMAIL_VERIFICATION=false), the flag is cleared through
+    the target's own database, only where the target itself states "sandbox", and only on this developer (its id, its
+    reserved example.com address and the `mcp-throwaway-` name the runner gave it)."""
+    ok, d, code = await _dev_detail(bag, parse, dev_id)
+    if not ok:
+        return f"the run's own developer's detail could not be read (HTTP {code})"
+    if d.get("is_verified") is False:
+        return None
+    from agentvault_registry.api_tests.contracts.earned_agent_public import _db_write, _d, sandbox_stated
+    okc, body, codec = await rpc("theprotocol_getPublicRegistryConfig", {}, jwt=bag.developer_jwt, timeout=30)
+    staged, why = sandbox_stated(bool(okc), codec, _d(parse(body)) if okc else None)
+    if not staged:
+        return ("this target verifies an account when it registers, and an unverified one is made only where the "
+                f"target itself states 'sandbox': {why}")
+    email = str(dev.get("email") or "")
+    if not _reserved_example_address(email):
+        return "the run's own developer carries no reserved example.com address, so it is not set unverified"
+    n, why = await _db_write(bag, "UPDATE developers SET is_verified = false WHERE id = :id AND email = :email "
+                                  "AND name LIKE 'mcp-throwaway-%' AND is_verified = true",
+                             {"id": dev_id, "email": email})
+    if why or n != 1:
+        return f"the run's own developer could not be set unverified ({why or f'{n} rows changed'})"
+    ok, d, code = await _dev_detail(bag, parse, dev_id)
+    return None if ok and d.get("is_verified") is False else "the developer still reads verified after the write"
+
+
 async def lifecycle_earn_developer_admin(rpc: Any, parse: Any, bag: Any, outcomes: Dict[str, dict]) -> None:
     """The admin developer tools, each on a developer of this run's own (the module docstring)."""
     if getattr(bag, "rpc_admin", None) is None:
@@ -129,11 +168,15 @@ async def _developer_steps(rpc: Any, parse: Any, bag: Any, outcomes: Dict[str, d
 
     # ── verification ─────────────────────────────────────────────────────────────────────────────────────────────
     tool = "theprotocol_forceEmailVerify"
-    ok, ans = await effect(bag, parse, tool, {"developer_id": dev_id}, outcomes, check=_reads("status", "verified"))
-    if not ok and "already verified" in said(ans).lower():
-        effect_unmeasured(outcomes, tool, "this target verifies an account when it registers, so the run has no "
-                                          "unverified account of its own to verify")
-    await _detail_shows(bag, parse, outcomes, tool, dev_id, "is_verified", True)
+    why_not = await _unverified_own(rpc, parse, bag, dev, dev_id)
+    if why_not:
+        effect_unmeasured(outcomes, tool, why_not)
+    else:
+        ok, ans = await effect(bag, parse, tool, {"developer_id": dev_id}, outcomes,
+                               check=_reads("status", "verified"))
+        if not ok and "already verified" in said(ans).lower():
+            effect_unmeasured(outcomes, tool, "the run's own developer read verified when it was asked to verify it")
+        await _detail_shows(bag, parse, outcomes, tool, dev_id, "is_verified", True)
 
     # ── the one flag that grants nothing ─────────────────────────────────────────────────────────────────────────
     tool = "theprotocol_updateDeveloperAdminFlags"
@@ -344,6 +387,6 @@ async def _flare_steps(rpc: Any, parse: Any, bag: Any, outcomes: Dict[str, dict]
 
 
 LIFECYCLES: List[Dict[str, Any]] = [
-    {"name": "earn_developer_admin", "runner": lifecycle_earn_developer_admin},
+    {"name": "earn_developer_admin", "runner": lifecycle_earn_developer_admin, "needs": ("target_db",)},
     {"name": "earn_flare", "runner": lifecycle_earn_flare},
 ]

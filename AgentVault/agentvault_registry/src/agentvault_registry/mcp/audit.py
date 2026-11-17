@@ -132,6 +132,7 @@ _TIER_1_TOOLS = {
     "theprotocol_getAttestationSigningPubkey",
     # Sprint 6
     "theprotocol_getAchievementCatalog",
+    "theprotocol_getContributorTrack",
     "theprotocol_getAttestationHealth",
     "theprotocol_getCircuits",
     "theprotocol_getLockPayoutRuns",
@@ -414,6 +415,8 @@ _TIER_3_TOOLS = {
     "theprotocol_updateNotificationPrefs",
     "theprotocol_getMySigningKeys",
     "theprotocol_getMyFlareStatus",
+    "theprotocol_getMyContributorTrack",
+    "theprotocol_equipTitle",
     "theprotocol_getMyFiatPurchases",
     "theprotocol_getMy2FAStatus",
     # Sprint 10 (Tier 3 — 15 new: 13 CI/CD mutations + 2 re-tiered)
@@ -847,6 +850,30 @@ _TIER_2_TOOLS.update({
 _TIER_2_TOOLS.update({
     "theprotocol_setMyAgentStatus",
     "theprotocol_getOrganizationPresence",
+})
+
+# V0664 "Migrate a system", M4 (2026-11-14) — the workflow (migration) template library (mcp/tools_workflow_templates.py)
+_TIER_1_TOOLS.update({
+    "theprotocol_listWorkflowTemplates",
+    "theprotocol_getWorkflowTemplate",
+})
+# V0666 D1 (2026-11-15) — an organization's code distributions (mcp/tools_code_distributions.py; not AGORA payouts)
+_TIER_2_TOOLS.update({
+    "theprotocol_proposeCodeDistributionChange",
+    "theprotocol_voteCodeDistributionChange",
+})
+_TIER_3_TOOLS.update({
+    "theprotocol_getCodeDistribution",
+    "theprotocol_listOrganizationCodeDistributions",
+})
+_TIER_2_TOOLS.update({
+    "theprotocol_getWorkflowTemplateVersion",
+    "theprotocol_purchaseWorkflowTemplate",
+    "theprotocol_forkWorkflowTemplate",
+    "theprotocol_instantiateWorkflowTemplate",
+    "theprotocol_createWorkflowTemplate",
+    "theprotocol_publishWorkflowTemplateVersion",
+    "theprotocol_listMyWorkflowTemplates",
 })
 
 # §MEMBERSHIP (2026-10-02) — membership and the commons (mcp/tools_commons.py); the six admin tools are on the admin

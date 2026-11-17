@@ -18,7 +18,7 @@
   Required admin flag: admin_support.
 -->
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { apiClient } from '@/services/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { useUIStore } from '@/stores/ui'
@@ -47,6 +47,10 @@ interface Broadcast {
   send_email: boolean
   email_sent_at: string | null
   ws_recipients: number
+  // V0664: readable by visitors without a sign-in; only a broadcast to everyone (no organization, no one developer) can be
+  public?: boolean
+  target_org_id?: string | null
+  target_developer_id?: number | null
 }
 
 interface BroadcastStats {
@@ -94,7 +98,7 @@ const selectedBroadcast = ref<Broadcast | null>(null)
 const selectedStats = ref<BroadcastStats | null>(null)
 const loadingStats = ref(false)
 const drawerEditMode = ref(false)
-const editForm = ref({ title: '', body: '', broadcast_type: 'info' as Broadcast['broadcast_type'] })
+const editForm = ref({ title: '', body: '', broadcast_type: 'info' as Broadcast['broadcast_type'], public: false })
 
 // Compose modal
 const composeOpen = ref(false)
@@ -109,7 +113,11 @@ const composeForm = ref({
   // Pasted org id is sent to the server as target_org_id; backend enforces
   // visibility via /notifications/unread + WS predicate.
   target_org_id: '',
+  // V0664: public = visitors without an account can read it (only for a broadcast to everyone)
+  public: false,
 })
+// an announcement aimed at an organization cannot be public: the choice goes with the audience
+watch(() => composeForm.value.target_org_id, (org) => { if (org.trim()) composeForm.value.public = false })
 const composeSending = ref(false)
 const composeError = ref<string>('')
 
@@ -209,6 +217,7 @@ async function submitCompose() {
       send_email: composeForm.value.send_email,
       skip_self: composeForm.value.skip_self,
       target_org_id: composeForm.value.target_org_id.trim() || null,
+      public: composeForm.value.public && !composeForm.value.target_org_id.trim(),
     })
     // §FESUITE (lifecycle 87): an org-scoped send reaches the organization's members, not every live connection on the
     // frame, so it does not claim the frame's connection count as its reach
@@ -217,7 +226,7 @@ async function submitCompose() {
       ? tp('adminBroadcastsView.toasts.broadcastSentOrgBody', '"{title}" sent to the organization\'s members', { title: composeForm.value.title })
       : t('adminBroadcastsView.toasts.broadcastSentBody', { title: composeForm.value.title, count: overview.value?.ws_connections_now ?? '?' }))
     composeOpen.value = false
-    composeForm.value = { title: '', body: '', broadcast_type: 'info', send_email: false, skip_self: true, target_org_id: '' }
+    composeForm.value = { title: '', body: '', broadcast_type: 'info', send_email: false, skip_self: true, target_org_id: '', public: false }
     await Promise.all([loadList(), loadOverview()])
   } catch (e: any) {
     composeError.value = e?.response?.data?.detail || e?.message || t('adminBroadcastsView.errors.sendFailed')
@@ -227,7 +236,7 @@ async function submitCompose() {
 }
 
 function openCompose() {
-  composeForm.value = { title: '', body: '', broadcast_type: 'info', send_email: false, skip_self: true, target_org_id: '' }
+  composeForm.value = { title: '', body: '', broadcast_type: 'info', send_email: false, skip_self: true, target_org_id: '', public: false }
   composeError.value = ''
   composeOpen.value = true
 }
@@ -291,6 +300,7 @@ function startEdit() {
     title: selectedBroadcast.value.title,
     body: selectedBroadcast.value.body,
     broadcast_type: selectedBroadcast.value.broadcast_type,
+    public: !!selectedBroadcast.value.public,
   }
   drawerEditMode.value = true
 }
@@ -308,6 +318,7 @@ function copyAsNew() {
     send_email: false,
     skip_self: true,
     target_org_id: '',
+    public: false,   // a copy starts private: marking a broadcast public is its own choice
   }
   closeDrawer()
   composeOpen.value = true
@@ -322,6 +333,7 @@ async function saveEdit() {
         title: editForm.value.title,
         body: editForm.value.body,
         broadcast_type: editForm.value.broadcast_type,
+        public: editForm.value.public,
       },
     )
     // patch local state
@@ -619,6 +631,7 @@ function bodyPreview(body: string, max = 120) {
             <span v-if="!b.is_active" class="adb-status-pill adb-status-retracted">
               <Icon name="mdi:archive-outline" />{{ t('adminBroadcastsView.row.retractedPill') }}
             </span>
+            <span v-if="b.public" class="adb-meta-pill" data-testid="adb-public-pill">{{ t('adminBroadcastsView.row.publicPill', 'Public') }}</span>
             <span v-if="b.send_email" class="adb-meta-pill" :title="b.email_sent_at ? t('adminBroadcastsView.row.emailedAt', { time: formatAbs(b.email_sent_at) }) : t('adminBroadcastsView.row.emailQueued')">
               <Icon name="mdi:email-fast" />{{ t('adminBroadcastsView.row.emailedPill') }}
             </span>
@@ -750,6 +763,25 @@ function bodyPreview(body: string, max = 120) {
                 <strong>{{ t('adminBroadcastsView.compose.skipSelfLabel') }}</strong>
                 <span class="adb-checkbox-hint">
                   {{ t('adminBroadcastsView.compose.skipSelfHint') }}
+                </span>
+              </span>
+            </label>
+          </div>
+          <!-- V0664: an announcement visitors can read without an account (only for a broadcast to everyone) -->
+          <div class="adb-field">
+            <label class="adb-checkbox-row">
+              <input
+                v-model="composeForm.public"
+                type="checkbox"
+                data-testid="adb-public"
+                :disabled="composeSending || !!composeForm.target_org_id.trim()"
+              />
+              <span class="adb-checkbox-text">
+                <strong>{{ t('adminBroadcastsView.compose.publicLabel', 'Make it public') }}</strong>
+                <span class="adb-checkbox-hint" data-testid="adb-public-hint">
+                  {{ composeForm.target_org_id.trim()
+                    ? t('adminBroadcastsView.compose.publicOrgHint', 'A public announcement goes to everyone: clear the organization to make it public.')
+                    : t('adminBroadcastsView.compose.publicHint', 'Anyone can read it on the Announcements page, without an account. Off unless you choose it.') }}
                 </span>
               </span>
             </label>
@@ -899,6 +931,20 @@ function bodyPreview(body: string, max = 120) {
                     {{ typeLabel(t) }}
                   </button>
                 </div>
+              </div>
+              <div class="adb-field">
+                <label class="adb-checkbox-row">
+                  <input
+                    v-model="editForm.public"
+                    type="checkbox"
+                    data-testid="adb-edit-public"
+                    :disabled="!!selectedBroadcast.target_org_id || selectedBroadcast.target_developer_id != null"
+                  />
+                  <span class="adb-checkbox-text">
+                    <strong>{{ t('adminBroadcastsView.compose.publicLabel', 'Make it public') }}</strong>
+                    <span class="adb-checkbox-hint">{{ t('adminBroadcastsView.compose.publicHint', 'Anyone can read it on the Announcements page, without an account. Off unless you choose it.') }}</span>
+                  </span>
+                </label>
               </div>
               <div class="adb-edit-actions">
                 <button class="adb-btn adb-btn-ghost" @click="drawerEditMode = false">{{ t('adminBroadcastsView.compose.cancelBtn') }}</button>

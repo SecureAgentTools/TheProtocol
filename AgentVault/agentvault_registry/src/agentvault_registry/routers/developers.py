@@ -555,6 +555,10 @@ async def list_developer_agents(
     # NULL on the agent side means "no per-agent override" — FE consumes the
     # raw value and decides which to render with the dev's variant.
     dev_corner_variant_fallback = getattr(current_developer, "flare_corner_variant", None)
+    # V0666: an EARNED badge the developer wears is theirs; a bought-corner bearer does not inherit it (the column is shared by the bought and the earned)
+    from agentvault_registry.core.registry_identity import EARNED_CORNERS as _EARNED_CORNERS
+    if dev_corner_variant_fallback in _EARNED_CORNERS:
+        dev_corner_variant_fallback = None
 
     # §MARKSURFACES (2026-09-10) — the ledger-earned mark for this page, in ONE grouped
     # pass over both guild books (no N+1). This is what makes the header agent switcher
@@ -1764,7 +1768,10 @@ _PREF_KEYS = {"pocket.watchlist", "pocket.price_alerts", "pocket.assistant",
               "cockpit.layouts",
               # §DASHARRANGE (2026-09-02) — the dashboard's ONE layout (panes + sizes), separate
               # from the desk's named layouts on purpose: one board per person, no name to collide.
-              "cockpit.dashboard"}
+              "cockpit.dashboard",
+              # V0662 sidebar: the paths a person pinned at the top of the console's sidebar ({"paths": [...]}).
+              # What they see first, never what anything may do.
+              "console.nav_pins"}
 _PREF_MAX_BYTES = 16 * 1024
 
 

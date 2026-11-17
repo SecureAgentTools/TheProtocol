@@ -47,7 +47,6 @@ def _tool(name, required=None):
     "theprotocol_rotateRegistrySigningKey",
     "theprotocol_startSimulation",
     "theprotocol_stopSimulation",
-    "theprotocol_fundSimulationAgents",
     "theprotocol_issueFrameBSimulation",
     "theprotocol_crossRegTransferTest",
     "theprotocol_cloudOperatorSelfRestart",

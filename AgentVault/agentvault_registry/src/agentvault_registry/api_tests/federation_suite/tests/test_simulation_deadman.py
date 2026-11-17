@@ -1,8 +1,8 @@
-"""Simulation deadman + funding preview tests (§pass73.3.11 Batch 51).
+"""Simulation deadman tests (§pass73.3.11 Batch 51).
 
-3 read-only tests probing the simulation deadman watchdog + funding
-preview + topology view. Deadman fires if simulation resource usage
-exceeds thresholds.
+Read-only tests probing the simulation deadman watchdog and the topology view. Deadman fires if simulation resource
+usage exceeds thresholds. (The funding preview's reachability test went with the route in V0663: the route ran the
+retired network's host script, gwo_be8899e9eb589224813ec90a.)
 """
 from __future__ import annotations
 
@@ -62,47 +62,6 @@ async def test_simulation_deadman(rig: FederationTestRig) -> AssertionResult:
     return await rig.assert_within(
         budget_sec=15.0, predicate=predicate,
         description="simulation deadman envelope + thresholds reachable",
-        capture_state=lambda: state,
-    )
-
-
-@federation_test(
-    name="simulation_funding_preview_reachable",
-    category="simulation_deadman",
-    budget_sec=15.0,
-    severity="low",
-    requires=["sandbox-A-admin"],
-    tags=["simulation", "funding-preview"],
-)
-async def test_simulation_funding_preview(
-    rig: FederationTestRig,
-) -> AssertionResult:
-    """simulationFundingPreview endpoint is reachable (may return error
-    text when no simulation is running — still validates the endpoint
-    surface)."""
-    state: dict = {}
-
-    async def predicate():
-        try:
-            r = await rig.mcp("sandbox-A-admin").call("simulationFundingPreview")
-            # Returns "Error: " when no sim running — accept silent/text
-            if _is_silent_or_error(r):
-                state["silent"] = True
-                return True
-            if isinstance(r, dict):
-                state["keys"] = sorted(r.keys())[:6]
-                return True
-            elif isinstance(r, str):
-                state["text"] = r[:60]
-                return True
-            return False
-        except Exception as e:
-            state["error"] = repr(e)
-            return False
-
-    return await rig.assert_within(
-        budget_sec=15.0, predicate=predicate,
-        description="simulation funding preview endpoint reachable",
         capture_state=lambda: state,
     )
 

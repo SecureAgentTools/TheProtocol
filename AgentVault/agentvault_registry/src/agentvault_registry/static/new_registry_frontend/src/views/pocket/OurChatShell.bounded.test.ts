@@ -74,3 +74,76 @@ describe('a thread on a phone is bounded, so the pinned panel stays in view', ()
     expect(wide.find('[data-testid="ocs-root"]').attributes('style') || '').toContain('height: calc(100vh - 83px)')
   })
 })
+
+describe('V0662: the thread stays above a phone\'s keyboard (the maintainer\'s seq 3212: the composer moved up)', () => {
+  const realMatchMedia = window.matchMedia
+  const realVv = Object.getOwnPropertyDescriptor(window, 'visualViewport')
+  let vv: any
+  beforeEach(() => {
+    h.route = reactive({ params: { id: 'room1' }, query: {} })
+    ;(window as any).matchMedia = (q: string) => ({ matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} })
+    Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true })
+    const listeners: Record<string, Array<() => void>> = {}
+    vv = { height: 800, offsetTop: 0, addEventListener: (e: string, f: () => void) => { (listeners[e] ||= []).push(f) },
+      removeEventListener: (e: string, f: () => void) => { listeners[e] = (listeners[e] || []).filter((x) => x !== f) },
+      fire: (e: string) => (listeners[e] || []).forEach((f) => f()), listeners }
+    Object.defineProperty(window, 'visualViewport', { value: vv, configurable: true })
+  })
+  afterEach(() => {
+    ;(window as any).matchMedia = realMatchMedia
+    if (realVv) Object.defineProperty(window, 'visualViewport', realVv); else delete (window as any).visualViewport
+    document.body.innerHTML = ''
+  })
+  const style = (w: any) => w.find('[data-testid="ocs-root"]').attributes('style') || ''
+
+  it('with no keyboard the bound is what it was: no visible-area variable', async () => {
+    const w = mountIn('83px')
+    await flushPromises()
+    expect(style(w)).toContain('--ocs-offset: 83px')
+    expect(style(w)).not.toContain('--ocs-vh')
+  })
+  it('with a keyboard open it is the visible area, and the bar\'s bottom space is not kept', async () => {
+    const w = mountIn('83px')
+    await flushPromises()
+    vv.height = 480
+    vv.fire('resize')
+    await flushPromises()
+    expect(style(w)).toContain('--ocs-vh: 480px')
+    expect(style(w)).toContain('--ocs-offset: 0px')                  // the shell\'s own top in this document is 0; the 83 px is gone
+    expect(style(w)).not.toContain('83px')
+  })
+  it('goes back when the keyboard closes', async () => {
+    const w = mountIn('83px')
+    await flushPromises()
+    vv.height = 480
+    vv.fire('resize')
+    await flushPromises()
+    vv.height = 800
+    vv.fire('resize')
+    await flushPromises()
+    expect(style(w)).toContain('--ocs-offset: 83px')
+    expect(style(w)).not.toContain('--ocs-vh')
+  })
+  it('follows the page when the browser scrolled it to the caret', async () => {
+    const w = mountIn('83px')
+    await flushPromises()
+    vv.height = 480; vv.offsetTop = 60
+    vv.fire('scroll')
+    await flushPromises()
+    expect(style(w)).toContain('--ocs-vh: 540px')
+  })
+  it('a browser with no visual viewport keeps the old bound (control)', async () => {
+    delete (window as any).visualViewport
+    const w = mountIn('83px')
+    await flushPromises()
+    expect(style(w)).toContain('--ocs-offset: 83px')
+  })
+  it('stops listening when it goes', async () => {
+    const w = mountIn('83px')
+    await flushPromises()
+    expect(vv.listeners.resize.length).toBe(1)
+    w.unmount()
+    expect(vv.listeners.resize.length).toBe(0)
+    expect(vv.listeners.scroll.length).toBe(0)
+  })
+})

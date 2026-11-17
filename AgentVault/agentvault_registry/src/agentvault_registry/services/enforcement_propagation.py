@@ -34,7 +34,8 @@ logger = logging.getLogger(__name__)
 ENFORCEMENT_EXTENSION_URI = "https://theprotocol.cloud/extensions/v1/enforcement"
 MODES = ("off", "shadow", "enforce")
 ENFORCED = ("suspended", "revoked")
-GATE_SITES = ("discovery", "listing", "pricing", "guild_bid", "contract_accept", "a2a_payee")
+# V0664 (gwo_2dc9f93f, session-lead seq 4002): template_publish, as the bond gate: a suspended author publishes nothing
+GATE_SITES = ("discovery", "listing", "pricing", "guild_bid", "contract_accept", "a2a_payee", "template_publish")
 TOMBSTONE_WINDOW_DAYS = 30
 
 try:  # the counter is optional (tests import the module without a registry)

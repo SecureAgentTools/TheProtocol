@@ -72,8 +72,7 @@ async def test_webhook_fanout_records(rig: FederationTestRig) -> AssertionResult
     try:
         for _ in range(_HOOKS):
             r, refused = await _call(rig, "createWebhook", {
-                "url": f"https://fedsuite-whfan-{uuid.uuid4().hex[:10]}.invalid/hook", "events": ["agent.deleted"],
-                "description": "federation suite: webhook fan-out records (.invalid host)"})
+                "url": f"https://fedsuite-whfan-{uuid.uuid4().hex[:10]}.invalid/hook", "events": ["agent.deleted"]})
             if refused or not isinstance(r, dict) or not r.get("id"):
                 raise PreconditionUnmet(f"createWebhook refused: {refused or str(r)[:160]}")
             hooks.append(r["id"])

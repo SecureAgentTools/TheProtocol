@@ -22,6 +22,9 @@ const iconName = computed(() => props.name || props.icon || '')
 
 // Icon mappings
 const icons: Record<string, string> = {
+  // V0662: a paperclip of our own, drawn here: a hairline (1.25 stroke, round caps) on the 24 grid and tilted, not the filled
+  // stock glyph. It sits under an mdi: key so the names gate (Icon.names.test.ts) covers it like the rest.
+  'mdi:paperclip': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><g transform="rotate(38 12 12)"><path d="M15.5 8.5V16a3.5 3.5 0 0 1-7 0V6.5a2.5 2.5 0 0 1 5 0V15a1.5 1.5 0 0 1-3 0V8.5"/></g></svg>`,
   // ── §MARKCOLLAR (2026-08-16) — seven names the sidebar referenced that were
   // NOT in this map. Icon.vue renders `icons[name] || ''`, so an unmapped name
   // is a SILENT blank: no warning, no fallback glyph, just a nav row with a
@@ -176,6 +179,10 @@ const icons: Record<string, string> = {
   'mdi:book': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M18,22A2,2 0 0,0 20,20V4C20,2.89 19.1,2 18,2H12V9L9.5,7.5L7,9V2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18Z"/></svg>`,
   'mdi:help-circle': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M15.07,11.25L14.17,12.17C13.45,12.89 13,13.5 13,15H11V14.5C11,13.39 11.45,12.39 12.17,11.67L13.41,10.41C13.78,10.05 14,9.55 14,9C14,7.89 13.1,7 12,7A2,2 0 0,0 10,9H8A4,4 0 0,1 12,5A4,4 0 0,1 16,9C16,9.88 15.64,10.67 15.07,11.25M13,19H11V17H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12C22,6.47 17.5,2 12,2Z"/></svg>`,
   'mdi:logout': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M16,17V14H9V10H16V7L21,12L16,17M14,2A2,2 0 0,1 16,4V6H14V4H5V20H14V18H16V20A2,2 0 0,1 14,22H5A2,2 0 0,1 3,20V4A2,2 0 0,1 5,2H14Z"/></svg>`,
+  // V0662 sidebar: the pin toggles and the visitor's sign-in line
+  'mdi:pin': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12Z"/></svg>`,
+  'mdi:pin-outline': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M16,12V4H17V2H7V4H8V12L6,14V16H11.2V22H12.8V16H18V14L16,12M8.8,14L10,12.8V4H14V12.8L15.2,14H8.8Z"/></svg>`,
+  'mdi:login': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M11,7L9.6,8.4L12.2,11H2V13H12.2L9.6,15.6L11,17L16,12L11,7M20,19H12V21H20A2,2 0 0,0 22,19V5A2,2 0 0,0 20,3H12V5H20V19Z"/></svg>`,
   // CI/CD Icons
   'git-branch': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M21,5C19.89,4.65 18.67,4.5 17.5,4.5C15.55,4.5 13.45,4.9 12,6C10.55,4.9 8.45,4.5 6.5,4.5C5.33,4.5 4.11,4.65 3,5C2.25,5.25 1.6,5.55 1,6V20.6C1,20.85 1.25,21.1 1.5,21.1C1.6,21.1 1.65,21.05 1.75,21.05C2.75,20.65 3.85,20.5 5,20.5C6.95,20.5 9.05,20.9 10.5,22C11.95,20.9 14.05,20.5 16,20.5C17.15,20.5 18.25,20.65 19.25,21.05C19.35,21.05 19.4,21.1 19.5,21.1C19.75,21.1 20,20.85 20,20.6V6C19.4,5.55 18.75,5.25 18,5V19C17,18.9 16,18.9 15,19V5C14,4.9 13,4.9 12,5V19C11,18.9 10,18.9 9,19V5C8,4.9 7,4.9 6,5V19C5,18.9 4,18.9 3,19V5C2.25,5.25 1.6,5.55 1,6V20.6C1,20.85 1.25,21.1 1.5,21.1C1.6,21.1 1.65,21.05 1.75,21.05C2.75,20.65 3.85,20.5 5,20.5C6.95,20.5 9.05,20.9 10.5,22C11.95,20.9 14.05,20.5 16,20.5C17.15,20.5 18.25,20.65 19.25,21.05C19.35,21.05 19.4,21.1 19.5,21.1C19.75,21.1 20,20.85 20,20.6V6C19.4,5.55 18.75,5.25 18,5M21,5C22.1,5.35 23,5.85 23,6.5V20.6C23,21.95 21.95,23 20.6,23C20.5,23 20.35,23 20.25,22.95C19.15,22.55 17.85,22.5 16.5,22.5C14.55,22.5 12.45,22.9 11,24C9.55,22.9 7.45,22.5 5.5,22.5C4.15,22.5 2.85,22.55 1.75,22.95C1.65,23 1.5,23 1.4,23C0.05,23 -1,21.95 -1,20.6V6.5C-1,5.85 -0.1,5.35 1,5"/></svg>`,
   'layers': `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12,16L19.36,10.27L21,9L12,2L3,9L4.63,10.27M12,18.54L4.62,12.81L3,14.07L12,21.07L21,14.07L19.37,12.8L12,18.54Z"/></svg>`,

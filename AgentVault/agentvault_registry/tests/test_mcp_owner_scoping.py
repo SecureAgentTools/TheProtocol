@@ -100,7 +100,7 @@ class FakeRegistry:
         if name == "createWebhook":
             self.n += 1
             wid = f"wh-{self.n}"
-            self.webhooks[wid] = {"id": wid, "url": args["url"], "description": args["description"], "deliveries": [],
+            self.webhooks[wid] = {"id": wid, "url": args["url"], "description": args.get("description"), "deliveries": [],
                                   "events": list(args["events"]), "is_active": True, "owner": jwt,
                                   "secret": "whsec_" + "s" * 32}
             return _ok({k: v for k, v in self.webhooks[wid].items() if k != "owner"})

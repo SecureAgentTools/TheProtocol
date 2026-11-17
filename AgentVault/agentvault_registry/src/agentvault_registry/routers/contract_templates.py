@@ -178,14 +178,64 @@ async def _load_tpl(db: AsyncSession, tid: str) -> dict:
     return dict(row)
 
 
+_BUY_FIRST = "This template is purchase-priced — buy it first (POST …/purchase)"
+
+
+def _developer_id(actor: dict) -> Optional[int]:
+    return getattr(actor.get("developer"), "id", None) if actor.get("kind") == "developer" else None
+
+
+async def _developer_agent_may_see(db: AsyncSession, t: dict, dev: int) -> bool:
+    """V0664 (gwo_7cd9be62cb545b15e4f6f8f4): a developer reads a private or org template only through an agent it owns
+    that may read it: the owner agent, or (org visibility) an agent of the template's organization."""
+    org = str(t.get("source_org_id") or "") if t["visibility"] == "org" else ""
+    params: Dict[str, Any] = {"dev": dev, "owner": t["owner_agent_did"]}
+    which = "did=:owner"
+    if org:
+        which += " OR organization_id=:org"
+        params["org"] = org
+    rows = (await db.execute(text(
+        f"SELECT did, organization_id FROM agents WHERE creator_developer_id=:dev AND ({which}) LIMIT 5"),
+        params)).mappings().all()
+    return any(r["did"] == t["owner_agent_did"] or (org and str(r.get("organization_id") or "") == org) for r in rows)
+
+
+async def _holds_paid_template(db: AsyncSession, t: dict, actor: dict) -> bool:
+    """V0664: the owner or a buyer of a purchase-priced template (a developer: through an agent it owns). What a
+    purchase-priced template sells is its versions' terms, so they go to these and no one else."""
+    dev = _developer_id(actor)
+    if dev is not None:
+        owners = (await db.execute(text(
+            "SELECT did, organization_id FROM agents WHERE creator_developer_id=:dev AND did=:owner"),
+            {"dev": dev, "owner": t["owner_agent_did"]})).mappings().all()
+        if any(r["did"] == t["owner_agent_did"] for r in owners):
+            return True
+        return (await db.execute(text(
+            "SELECT p.id FROM contract_template_purchases p JOIN agents a ON a.did = p.buyer_did "
+            "WHERE p.template_id=:t AND a.creator_developer_id=:dev LIMIT 1"),
+            {"t": t["id"], "dev": dev})).first() is not None
+    did = actor.get("agent_did")
+    if not did:
+        return False
+    if did == t["owner_agent_did"]:
+        return True
+    return (await db.execute(text(
+        "SELECT id FROM contract_template_purchases WHERE template_id=:t AND buyer_did=:b"),
+        {"t": t["id"], "b": did})).first() is not None
+
+
 async def _actor_may_see(db: AsyncSession, t: dict, actor: dict, *, listing: bool) -> bool:
     vis = t["visibility"]
     if vis == "public":
         return True
     if vis == "unlisted":
         return not listing            # reachable by id, never listed
+    dev = _developer_id(actor)
+    if dev is not None:
+        # V0664: a developer token reads a private or org template only through an agent it owns that may read it
+        return await _developer_agent_may_see(db, t, dev)
     if actor.get("kind") == "developer":
-        return True                   # X34 posture: dev JWT = full read
+        return False
     did = actor.get("agent_did")
     if did == t["owner_agent_did"]:
         return True
@@ -268,7 +318,12 @@ async def list_templates(q: Optional[str] = None, contract_type: Optional[str] =
         where = "owner_agent_did = :me"
         params["me"] = actor["agent_did"]
     elif actor.get("kind") == "developer":
-        where = "visibility IN ('public','org','unlisted','private')" if mine else "visibility = 'public'"
+        # V0664: a developer's "mine" is the templates of the agents it owns, whatever their visibility
+        if mine:
+            where = "owner_agent_did IN (SELECT did FROM agents WHERE creator_developer_id = :dev)"
+            params["dev"] = _developer_id(actor) if _developer_id(actor) is not None else -1
+        else:
+            where = "visibility = 'public'"
     else:
         did = actor.get("agent_did")
         org = None
@@ -328,6 +383,8 @@ async def get_template_version(tid: str, n: int,
     t = await _load_tpl(db, tid)
     if not await _actor_may_see(db, t, actor, listing=False):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Not visible to you")
+    if t["pricing_model"] == "purchase" and not await _holds_paid_template(db, t, actor):
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, detail=_BUY_FIRST + ", then read its terms")
     v = (await db.execute(text(
         "SELECT * FROM contract_template_versions WHERE template_id=:t AND version=:v"),
         {"t": tid, "v": n})).mappings().first()
@@ -500,6 +557,14 @@ async def fork_template(tid: str, body: ForkIn,
     actor = {"kind": "agent", "agent_did": agent.did}
     if not await _actor_may_see(db, t, actor, listing=False):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Not visible to you")
+    if t["pricing_model"] == "purchase" and not await _holds_paid_template(db, t, actor):
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, detail=_BUY_FIRST + ", then fork it")
+    # V0664 (session-lead, room seq 3785): a fork starts free, so a royalty-priced template forks only for its owner;
+    # carrying a royalty through forks can come later
+    if t["pricing_model"] == "royalty" and agent.did != t["owner_agent_did"]:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            detail="This template is royalty-priced: it pays its author a royalty on each settled "
+                                   "contract, so use it as it is (only its owner forks it)")
     src = None
     if t.get("current_version_id"):
         src = (await db.execute(text(
@@ -613,8 +678,7 @@ async def instantiate_template(tid: str, body: InstantiateIn, request: Request,
             {"t": tid, "b": agent.did})).first()
         if not bought:
             raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED,
-                                detail="This template is purchase-priced — buy it first "
-                                       "(POST …/purchase), then instantiate freely")
+                                detail=_BUY_FIRST + ", then instantiate freely")
         price_paid = Decimal(str(bought[0]))
     total = Decimal(str(body.total_amount if body.total_amount is not None
                         else (v.get("suggested_amount") or 0))).quantize(_Q)

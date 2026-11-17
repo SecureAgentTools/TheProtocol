@@ -143,6 +143,10 @@ async def test_the_thread_read_names_a_remote_sender_and_the_thread_it_is_with(m
     monkeypatch.setattr(cs, "household_keys", _mine)
     monkeypatch.setattr(cs, "display_names", _names)
     monkeypatch.setattr(cs, "thread_hosting", _hosting)
+
+    async def _no_reactions(db, conv_id, ids, keys):          # V0662: a page also reads its reaction words; this test is about names
+        return {}
+    monkeypatch.setattr(cs, "reaction_summaries", _no_reactions)
     out = await cs.list_messages(_Db(), "c-m", cs.Actor("developer", developer_id=11, display_name="Straits Assay Desk"))
     assert [m["sender_name"] for m in out["messages"]] == ["Scrivener of Brussels", "Straits Assay"]
     assert f"rem:{SCRIVENER}" in asked

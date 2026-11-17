@@ -36,6 +36,8 @@ export interface RegistryConfig {
   /** §BAFIN (2026-10-01) — can a staking position be opened here (STAKING_ENABLED)? False hides every staking door.
    *  Absent (an older registry) reads as on, so only a registry that says false loses the surfaces. */
   staking_enabled?: boolean
+  /** V0666 the games switch (GAMES_ENABLED): false hides every game door; a registry that does not say keeps them. */
+  games_enabled?: boolean
   /** §BAFIN — is a staking rate published and paid here (STAKING_REWARDS_ENABLED)? False hides every rate,
    *  projected reward and reward tab; positions may still be opened for governance weight. */
   staking_rewards_enabled?: boolean
@@ -92,6 +94,12 @@ export interface RegistryConfig {
   /** §FESUITE — the contract template library runs here (CONTRACT_TEMPLATES_ENABLED; its routes answer 503 where off).
    *  Absent reads as on (asks as before). */
   contract_templates_enabled?: boolean
+  /** V0664 M5 — the workflow template library (WORKFLOW_TEMPLATES_ENABLED: migration templates, buy, fork) is on here. Absent
+   *  (an older registry) reads as off: the Migrate pages are not offered where the registry does not say so. */
+  workflow_templates_enabled?: boolean
+  /** V0666 D2 — an organization's code distributions (release lines, CODE_DISTRIBUTIONS_ENABLED) run here. Absent (an older registry) reads as off:
+   *  the Contributions area and its inbox are not offered where the registry does not say so. */
+  code_distributions_enabled?: boolean
   /** §FESUITE — the sandbox registries this registry's /sandbox/{a,b} proxy reaches (an empty list: none, the proxy
    *  answers 503). Absent (an older registry) means unknown: ask as before. */
   sandbox_proxy?: string[]
@@ -215,6 +223,8 @@ export function useRegistryConfig() {
     liabilityOn: computed(() => cfg.value.liability_mode !== 'off'),
     /** the contract template library runs here (false only where the registry says so) */
     contractTemplatesOn: computed(() => cfg.value.contract_templates_enabled !== false),
+    workflowTemplatesEnabled: computed(() => cfg.value.workflow_templates_enabled === true),
+    codeDistributionsEnabled: computed(() => cfg.value.code_distributions_enabled === true),
     /** which sandbox registries the proxy reaches: undefined while unknown (an older registry), [] for none */
     sandboxProxy: computed(() => (Array.isArray(cfg.value.sandbox_proxy) ? cfg.value.sandbox_proxy : undefined)),
     load: loadRegistryConfig,

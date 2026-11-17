@@ -63,6 +63,8 @@ class _DetailDb:
             return SimpleNamespace(first=lambda: None)
         if "FROM guild_bids" in sql or "FROM guild_order_events" in sql:
             return SimpleNamespace(mappings=lambda: SimpleNamespace(all=lambda: []))
+        if "FROM agent_cards WHERE lower(agent_did) = ANY" in sql:      # V0662: the detail names its parties
+            return SimpleNamespace(all=lambda: [])
         raise AssertionError(f"unexpected statement: {sql[:100]}")
 
 

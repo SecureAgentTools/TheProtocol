@@ -34,7 +34,6 @@ CEILING: Dict[str, FrozenSet[str]] = {
     "federation_compliance_per_peer_lookup": frozenset({'no_drifts'}),
     "public_operator_applications_listing": frozenset({'silent'}),
     "relay_status_envelope": frozenset({'silent'}),
-    "simulation_funding_preview_reachable": frozenset({'silent'}),
     "trust_score_for_picked_agent": frozenset({'silent'}),
 }
 CENSUS = "the V0649 pair proof's census"

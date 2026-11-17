@@ -196,6 +196,7 @@ import { apiClient } from '@/services/api/client'
 import { currentOwnCurrency } from '@/composables/useFrameManifest'
 import GalacticMap from '@/views/GalacticMap.vue'
 import UserAvatar from '@/components/common/UserAvatar.vue'
+import { agentAvatarUrl } from '@/services/agentAvatar'   // V0662 item 14: card icons from the registry
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import GlitchOverlay from '@/components/GlitchOverlay.vue'
 import { getCanaryIronhandStatus, getCanaryIronhandEvents } from '@/services/api/canaryIronhand'
@@ -332,6 +333,7 @@ function selectIdentity(a: any) {
 const toast = ref(''); const toastKind = ref('ok')
 let timer: any = null
 let tickTimer: any = null
+let resizeTimers: any[] = []   // the three resize kicks below: cleared with the others on unmount (a timer that outlives its view fires into a torn-down window)
 // ── Cut 3 state ──
 const glitch = ref(0)                 // GlitchOverlay intensity 0..1 (revoke / failure drama)
 const logFilter = ref<'all' | 'mtls' | 'probe' | 'err'>('all')
@@ -524,7 +526,7 @@ function animateRoute(nodePath: string[], agentProfile: any, meta: { name: strin
   if (seq.length < 1) { showToast('Route path unresolved on this map view (' + nodePath.join('→') + ')', 'warn'); return }
   if (seq.length === 1) seq.push(seq[0])  // local / same-node transfer → pulse the node, no travel
   orb.name = meta.name; orb.spiffeShort = shortSpiffe(meta.spiffe)
-  orb.agent = agentProfile || {}; orb.avatarUrl = agentProfile?.card_data?.iconUrl || agentProfile?.card_data?.icon_url || null
+  orb.agent = agentProfile || {}; orb.avatarUrl = agentAvatarUrl(agentProfile)
   orb.visible = true; orb.pulse = false; orbTrail.value = []
   pushLog('IDENTITY', `<b>${esc(meta.name)}</b> enters the federation — SPIFFE ${esc(shortSpiffe(meta.spiffe))}`, 'probe')
   const SEG_MS = 2200, stamped = new Array(seq.length).fill(false), start = performance.now()
@@ -634,9 +636,9 @@ onMounted(async () => {
   tickTimer = setInterval(tick, 1000)   // SVID TTL countdowns + activity sparkline
   // The embedded GalacticMapCanvas measures its container only on mount/window-resize;
   // kick a few resizes after the grid settles so it picks up the real (non-zero) height.
-  for (const d of [400, 1200, 2500]) setTimeout(() => window.dispatchEvent(new Event('resize')), d)
+  resizeTimers = [400, 1200, 2500].map((d) => setTimeout(() => window.dispatchEvent(new Event('resize')), d))
 })
-onUnmounted(() => { if (timer) clearInterval(timer); if (tickTimer) clearInterval(tickTimer); if (rafId) cancelAnimationFrame(rafId) })
+onUnmounted(() => { if (timer) clearInterval(timer); if (tickTimer) clearInterval(tickTimer); if (rafId) cancelAnimationFrame(rafId); resizeTimers.forEach(clearTimeout); resizeTimers = [] })
 </script>
 
 <style scoped>

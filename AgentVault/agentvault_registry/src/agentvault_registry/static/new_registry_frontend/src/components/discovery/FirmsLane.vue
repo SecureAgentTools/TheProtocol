@@ -22,6 +22,7 @@ import { useI18n } from '@/composables/useI18n'
 import { apiClient } from '@/services/api/client'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import { safeLogo } from '@/services/orgMark'
+import { agentsWork, agentsWorkIsNone, AGENTS_NONE_WHY } from '@/services/firmCounts'
 import { firmBountyDoor } from './firmBountyDoor'
 
 const { t } = useI18n()
@@ -76,11 +77,9 @@ function logoOf(f: any): string | null {
   return brokenLogo[f.org_id] ? null : safeLogo({ logo: typeof f.logo === 'string' ? f.logo : null, home: null })
 }
 
-// V0658 (v), item 6: the member agents' own settled work, as the registry answered it; absent means not known
-function memberJobs(f: any): number | null {
-  const n = f?.member_work?.jobs
-  return typeof n === 'number' && Number.isFinite(n) ? n : null
-}
+// V0666: the firm's agents' settled work (delivered and commissioned, by the organization at the award), as the registry
+// answered it; absent means not known (services/firmCounts: the one reading)
+function agentsOf(f: any) { return agentsWork(f?.member_work) }
 
 onMounted(load)
 </script>
@@ -127,10 +126,14 @@ onMounted(load)
         </div>
         <!-- V0658 (v), item 6: what its member agents settled on their own, on a line of its own: never added into the
              firm's count above, and no line at all when the registry could not say (unknown is not zero) -->
-        <div v-if="memberJobs(f) !== null" class="fl-proof fl-members" data-testid="fl-members"
-             :title="t('firmsLane.memberTip', 'Guild work the firm\'s member agents settled as themselves, not as the firm. Shown apart from the firm\'s own count, never added to it.')">
-          <span class="fl-label">{{ t('firmsLane.memberLabel', 'Its agents, on their own') }}</span>
-          <span class="fl-stat"><strong>{{ memberJobs(f) }}</strong> {{ memberJobs(f) === 1 ? t('firmsLane.memberJob', 'job settled') : t('firmsLane.memberJobs', 'jobs settled') }}</span>
+        <div v-if="agentsOf(f)" class="fl-proof fl-members" data-testid="fl-members"
+             :title="t('firmsLane.memberTip', 'Guild work the firm\'s agents did or posted as themselves, not as the firm. Counted by the organization each belonged to when the order was awarded, shown apart from the firm\'s own count, never added to it.')">
+          <span class="fl-label">{{ t('firmsLane.memberLabel', 'By its agents') }}</span>
+          <template v-if="!agentsWorkIsNone(agentsOf(f))">
+            <span class="fl-stat"><strong>{{ agentsOf(f)!.jobs }}</strong> {{ t('firmsLane.jobs', 'jobs delivered') }}</span>
+            <span class="fl-stat"><strong>{{ agentsOf(f)!.commissioned }}</strong> {{ t('firmsLane.commissioned', 'commissioned') }}</span>
+          </template>
+          <span v-else class="fl-stat fl-stat--zero" data-testid="fl-members-none">{{ t('firmsLane.agentsNone', 'none yet') }} · {{ t('firmsLane.agentsWhy', AGENTS_NONE_WHY) }}</span>
         </div>
         <div class="fl-doors">
           <button

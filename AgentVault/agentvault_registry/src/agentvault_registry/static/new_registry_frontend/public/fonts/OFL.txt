@@ -3,6 +3,7 @@ The fonts in this directory (their files carry these lines in their own name tab
 Inter: Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter).
 IBM Plex Sans and IBM Plex Mono: Copyright 2017, 2019 IBM Corp. (https://github.com/IBM/plex),
 with Reserved Font Name "Plex".
+IBM Plex Serif Light (latin, for the Senate Scribe plate): Copyright 2020 IBM Corp. All rights reserved. (the font file's own name table; the licence it names is the SIL Open Font License below).
 Orbitron: Copyright 2018 The Orbitron Project Authors (https://github.com/theleagueof/orbitron),
 with Reserved Font Name "Orbitron".
 

@@ -8,6 +8,7 @@
  * backend reports `is_sandbox=false`.
  */
 import { apiClient } from './client'
+import type { CoverageAnswer } from '@/services/mcpTester/coverage'
 
 export interface McpTesterSummary {
   tool_count: number
@@ -161,6 +162,12 @@ export const mcpTesterApi = {
   // §MCPTEST30 (V0541): `target` and `is_sandbox` are this console's own posture (absent from a backend before V0541)
   async listFlows(): Promise<{ flows: { flow_name: string; label: string }[]; default: string; target?: string; is_sandbox?: boolean }> {
     const { data } = await apiClient.get('/admin/mcp-tester/flows')
+    return data
+  },
+
+  /** V0663: per tool, per target, from the latest run the tester holds (services/mcpTester/coverage). */
+  async coverage(): Promise<CoverageAnswer> {
+    const { data } = await apiClient.get('/admin/mcp-tester/coverage')
     return data
   },
 

@@ -19,17 +19,7 @@ const RAW = import.meta.glob('../content/compliance/*.md', {
   eager: true,
 }) as Record<string, string>
 
-interface DocMeta { slug: string; file: string; title: string; sub: string }
-const DOCS: DocMeta[] = [
-  { slug: 'iso-42001-alignment', file: 'ISO_42001_Alignment.md', title: 'ISO 42001 Alignment', sub: 'Master document: clause-by-clause mapping of the AI management system' },
-  { slug: 'risk-assessment-framework', file: 'Risk_Assessment_Framework.md', title: 'Risk Assessment Framework', sub: 'AI and operational risk register with likelihood×impact scoring and mitigations' },
-  { slug: 'incident-response-procedures', file: 'Incident_Response_Procedures.md', title: 'Incident Response Procedures', sub: 'P1–P4 classification, detection, response and communication' },
-  { slug: 'data-protection-policy', file: 'Data_Protection_Policy.md', title: 'Data Protection Policy', sub: 'GDPR alignment, data classification and breach notification' },
-  { slug: 'change-management-policy', file: 'Change_Management_Policy.md', title: 'Change Management Policy', sub: 'Change categories, testing requirements and rollback procedures' },
-  { slug: 'compliance-audit-procedures', file: 'Compliance_Audit_Procedures.md', title: 'Compliance Audit Procedures', sub: 'Continuous-to-quarterly audit schedule and self-assessment checklist' },
-  { slug: 'ai-system-lifecycle', file: 'AI_System_Lifecycle.md', title: 'AI System Lifecycle', sub: 'Per-component purpose, design, limitations, bias, oversight and decommission' },
-  { slug: 'jurisdiction-profiles', file: 'Jurisdiction_Profiles.md', title: 'Jurisdiction Profiles', sub: 'Operator-declared, enforced and publicly attested feature scope per deployment' },
-]
+import { COMPLIANCE_DOCS as DOCS, type DocMeta } from '@/content/complianceDocs'
 
 const md = new MarkdownIt({ html: false, linkify: true, typographer: true }).use(anchor, {
   permalink: anchor.permalink.headerLink(),

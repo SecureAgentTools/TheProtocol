@@ -1,0 +1,182 @@
+{
+ "schema": "theprotocol.proxy.recipes/v1",
+ "recipes": [
+  {
+   "id": "bazaar",
+   "name": "BAZAAR",
+   "summary": "inventory, and fulfilment only on a received payment",
+   "legacy": "The shop posts inventory changes, HMAC-signed with `SHOP_HMAC`, to `/in/shop`; the warehouse system takes fulfilment releases on its API.",
+   "on_theprotocol": "Each inventory change becomes a `bazaar.inventory_level` attestation. TheProtocol's own `payment.received` webhook (signed by the registry) is forwarded to the WMS with the payer, the amount and the ledger transaction: the WMS fulfils only what has been paid, and a payment that never settles never reaches it.",
+   "needs": "An agent with the `attestor` role; a webhook for `payment.received` registered in the console (Developer, Webhooks) pointing at the proxy's `/in/theprotocol`, its secret as `TP_WEBHOOK_SECRET`, and the shop agent's DID in the `paid-release` mapping's `when` (the owner's webhook carries the income of every agent the owner has); `SHOP_HMAC`, `WMS_HMAC`, and the WMS endpoint in the sink's `url`. Credentials come from the agent's starter files (`.env`, `.env.secret`) by reference; none is written in the spec.",
+   "commands": [
+    "tp-proxy validate proxy.yaml",
+    "tp-proxy run proxy.yaml --dry-run            # what it would send, sending nothing (Ctrl-C to stop: a receiver never finishes, so --once does not end here)",
+    "tp-proxy run proxy.yaml                        # for real"
+   ],
+   "try_it": "`python fake/mock_wms.py --listen 127.0.0.1:8721` is a WMS; `python fake/fake_shop.py http://127.0.0.1:8711/in/shop --count 4` posts four inventory changes. Then:",
+   "check": "The WMS's file (`wms-received.jsonl`) holds one release per payment received.",
+   "proxy_yaml": "# BAZAAR (the marketplace blueprint): the shop's inventory changes become signed attestations on TheProtocol, and the\n# warehouse (WMS) is told to fulfil only when a buyer's payment has arrived: TheProtocol's own payment.received webhook,\n# signed by the registry, is forwarded to the WMS with the payer, the amount and the ledger transaction, and the WMS\n# matches it to its open order. A payment that never settles never reaches the WMS.\n#\n# The shop side: POST /in/shop, HMAC-signed with SHOP_HMAC (fake/fake_shop.py). TheProtocol's side: register this\n# proxy's /in/theprotocol as a webhook for payment.received in the console (Developer, Webhooks) and give its secret as\n# TP_WEBHOOK_SECRET. The WMS side: the sink's url, checking X-Signature-256 with WMS_HMAC (fake/mock_wms.py).\nversion: 1\nname: bazaar-shop\nregistry: https://api.theprotocol.cloud\nidentity:\n  agent_did: env:AGENT_DID\n  client_id: env:CLIENT_ID\n  client_secret: env:CLIENT_SECRET\nstate: /data/bazaar-state.db\nsources:\n  shop:\n    type: webhook\n    config: {listen: \"0.0.0.0:8711\", path: /in/shop, id_field: event_id, secret: env:SHOP_HMAC}\n  theprotocol:\n    type: theprotocol_events\n    config: {listen: \"0.0.0.0:8712\", path: /in/theprotocol, secret: env:TP_WEBHOOK_SECRET, events: [payment.received]}\nactions:\n  attest:\n    type: attestation\n    config: {attestation_type: bazaar.inventory_level}\n    limits: {per_minute: 300}\nsinks:\n  wms:\n    type: webhook\n    # your warehouse system's fulfilment endpoint (a URL, written here; its signing secret by reference)\n    config: {url: \"https://wms.example.com/api/v1/fulfilment-releases\", secret: env:WMS_HMAC, timeout_s: 15}\nmappings:\n  - name: inventory\n    version: 1\n    from: shop\n    to: attest\n    when: {path: $.payload.kind, equals: inventory}\n    fields:\n      sku: $.payload.sku\n      on_hand: $.payload.on_hand\n      warehouse: $.payload.warehouse\n      at: $.payload.at\n  - name: paid-release\n    version: 1\n    from: theprotocol\n    to: wms\n    # the owner's webhook carries the income of every agent the owner has: release goods for the shop's own (its DID)\n    when: {path: $.payload.agent_did, equals: \"did:theprotocol:your-shop-agent\"}\n    fields:\n      seller_agent: $.payload.agent_did\n      payer: $.payload.from_did\n      amount: $.payload.amount\n      currency: $.payload.currency\n      ledger_tx: $.payload.ledger_txid\nretry: {first_s: 2, max_s: 300, attempts: 8}\nservice: {listen: \"127.0.0.1:9108\"}\n",
+   "table": {
+    "legacy_system": "shop and warehouse",
+    "source": "webhook, TheProtocol's events",
+    "on_theprotocol": "attestation",
+    "out": "fulfilment releases to the WMS, only once paid"
+   }
+  },
+  {
+   "id": "dynamo",
+   "name": "DYNAMO",
+   "summary": "meter readings over MQTT",
+   "legacy": "Smart meters publish JSON readings (`seq`, `kwh`, `voltage`, `at`) to `meters/<meter>/reading` on the plant's broker (QoS 1).",
+   "on_theprotocol": "Each reading becomes a `dynamo.meter_reading` attestation, the meter taken from the topic; a redelivered message is kept once (the meter's `seq` is the id).",
+   "needs": "An agent with the `attestor` role; the broker's address, and in production its CA and a client certificate (`tls`). Install the `proxy-mqtt` extra. Credentials come from the agent's starter files (`.env`, `.env.secret`) by reference; none is written in the spec.",
+   "commands": [
+    "tp-proxy validate proxy.yaml",
+    "tp-proxy run proxy.yaml --dry-run            # what it would send, sending nothing (Ctrl-C to stop: a receiver never finishes, so --once does not end here)",
+    "tp-proxy run proxy.yaml                        # for real"
+   ],
+   "try_it": "`docker run -d -p 1883:1883 eclipse-mosquitto:2 mosquitto -c /mosquitto-no-auth.conf` is a broker; `python fake/fake_meters.py --meters 3 --readings 4` publishes twelve readings. Then:",
+   "check": "`tp-proxy status` shows the readings sent; the attestations are on the agent's record.",
+   "proxy_yaml": "# DYNAMO (the energy blueprint): smart meters publish their readings to the plant's MQTT broker; every reading becomes\n# a signed attestation on TheProtocol (the meter is the topic's second level, meters/<meter>/reading), kept exactly once\n# however often the broker redelivers it (QoS 1, a persistent session, the meter's own sequence number as the id).\n#\n# The meter side: JSON {\"seq\", \"kwh\", \"voltage\", \"at\"} on meters/<meter>/reading (fake/fake_meters.py publishes such\n# readings). Production brokers use TLS with a client certificate: uncomment tls and name the files.\nversion: 1\nname: dynamo-meters\nregistry: https://api.theprotocol.cloud\nidentity:\n  agent_did: env:AGENT_DID\n  client_id: env:CLIENT_ID\n  client_secret: env:CLIENT_SECRET\nstate: /data/dynamo-state.db\nsources:\n  meters:\n    type: mqtt\n    config:\n      host: broker.plant.local\n      port: 1883\n      client_id: tp-proxy-dynamo-meters      # the broker keeps this source's session under this name\n      topics: [{filter: \"meters/+/reading\", qos: 1}]\n      id_field: $.seq                        # each meter's own reading number\n      # tls: {ca_file: /etc/tp-proxy/plant-ca.crt, cert_file: /etc/tp-proxy/meters.crt, private_key: file:/etc/tp-proxy/meters.key}\nactions:\n  attest:\n    type: attestation\n    config: {attestation_type: dynamo.meter_reading}\n    limits: {per_minute: 600}\nsinks: {}\nmappings:\n  - name: reading\n    version: 1\n    from: meters\n    to: attest\n    fields:\n      meter: $.payload.levels.1\n      reading: $.payload.data.seq\n      kwh: $.payload.data.kwh\n      voltage: {path: $.payload.data.voltage, default: null}\n      at: $.payload.data.at\nretry: {first_s: 2, max_s: 300, attempts: 8}\nservice: {listen: \"127.0.0.1:9108\"}\n",
+   "table": {
+    "legacy_system": "smart meters",
+    "source": "MQTT",
+    "on_theprotocol": "attestation",
+    "out": ""
+   }
+  },
+  {
+   "id": "hansa",
+   "name": "HANSA",
+   "summary": "gate-out events to attestations, the ERP receives the chain",
+   "legacy": "The terminal operating system posts each gate event, HMAC-signed with `GATE_HMAC`, to `/in/gate`.",
+   "on_theprotocol": "Each gate-OUT becomes a `hansa.gate_out` attestation, and the ERP's API receives one signed POST per event, the record's key as its `Idempotency-Key`.",
+   "needs": "An agent with the `attestor` role; `GATE_HMAC` shared with the TOS, `ERP_HMAC` with the ERP; the ERP's endpoint written in the sink's `url`. Credentials come from the agent's starter files (`.env`, `.env.secret`) by reference; none is written in the spec.",
+   "commands": [
+    "tp-proxy validate proxy.yaml",
+    "tp-proxy run proxy.yaml --dry-run            # what it would send, sending nothing (Ctrl-C to stop: a receiver never finishes, so --once does not end here)",
+    "tp-proxy run proxy.yaml                        # for real"
+   ],
+   "try_it": "`python fake/mock_erp.py --listen 127.0.0.1:8720` is an ERP that checks the signature and keeps each event once; `python fake/fake_tos.py http://127.0.0.1:8711/in/gate --count 6` posts six events (two gate-INs, not attested). Then:",
+   "check": "The ERP's file (`erp-received.jsonl`) holds each gate-out once; the attestations are on the agent's record.",
+   "proxy_yaml": "# HANSA (the port-logistics blueprint): the terminal operating system (TOS) posts each gate event, HMAC-signed, to the\n# proxy; every gate-OUT becomes a signed attestation on TheProtocol, and the ERP receives the chain on its API: one\n# signed POST per event, the record's key as its Idempotency-Key, so the ERP keeps each event once.\n#\n# The TOS side: POST /in/gate with X-Signature-256: sha256=<hex HMAC of the body> (fake/fake_tos.py does it). The ERP\n# side: the sink's url, checking X-Signature-256 with ERP_HMAC (fake/mock_erp.py is such an ERP).\nversion: 1\nname: hansa-gate\nregistry: https://api.theprotocol.cloud\nidentity:\n  agent_did: env:AGENT_DID\n  client_id: env:CLIENT_ID\n  client_secret: env:CLIENT_SECRET\nstate: /data/hansa-state.db\nsources:\n  tos:\n    type: webhook\n    config: {listen: \"0.0.0.0:8711\", path: /in/gate, id_field: event_id, secret: env:GATE_HMAC}\nactions:\n  attest:\n    type: attestation\n    config: {attestation_type: hansa.gate_out}\n    limits: {per_minute: 300}\nsinks:\n  erp:\n    type: webhook\n    # your ERP's endpoint for gate events (a URL, written here; its signing secret by reference)\n    config: {url: \"https://erp.example.com/api/v1/gate-events\", secret: env:ERP_HMAC, timeout_s: 15}\n    limits: {per_minute: 300}\nmappings:\n  - name: gate-out\n    version: 1\n    from: tos\n    to: attest\n    when: {path: $.payload.status, equals: OUT}\n    fields:\n      container: $.payload.container_id\n      gate: $.payload.gate\n      truck: $.payload.truck_plate\n      at: $.payload.timestamp\n      seal: {path: $.payload.seal, default: null}\n      terminal: HAM-CTA\n  - name: gate-out-to-erp\n    version: 1\n    from: tos\n    to: erp\n    when: {path: $.payload.status, equals: OUT}\n    fields:\n      container: $.payload.container_id\n      gate: $.payload.gate\n      at: $.payload.timestamp\nretry: {first_s: 2, max_s: 300, attempts: 8}\nbreaker: {refusals: 5, failures: 10, cooldown_s: 30}\nservice: {listen: \"127.0.0.1:9108\"}\n",
+   "table": {
+    "legacy_system": "terminal operating system",
+    "source": "webhook",
+    "on_theprotocol": "attestation",
+    "out": "the ERP's API"
+   }
+  },
+  {
+   "id": "keystone",
+   "name": "KEYSTONE",
+   "summary": "a passed test run as a milestone's evidence",
+   "legacy": "The site's sensor logger exports each test run as a CSV to an SFTP server (`/exports`, a `.done` marker once complete): measurement rows, then an acceptance row (passed) or a rejection row (failed) naming the contract and its milestone.",
+   "on_theprotocol": "A passed run's acceptance row is delivered as that milestone's evidence, by the contractor's agent (`milestone_evidence`), so the client releases the milestone payment on a measurement. A failed run delivers nothing.",
+   "needs": "A contract (contracts v2) whose provider is the proxy's agent; the SFTP account's key and the server's host key (`known_hosts`). Install the `proxy-sftp` extra. Credentials come from the agent's starter files (`.env`, `.env.secret`) by reference; none is written in the spec.",
+   "commands": [
+    "tp-proxy validate proxy.yaml",
+    "tp-proxy run proxy.yaml --dry-run --once     # what it would send, sending nothing",
+    "tp-proxy run proxy.yaml                        # for real"
+   ],
+   "try_it": "`python fake/fake_logger.py /exports --contract <id> --milestone 0 --strength 41.5` writes a passed run (35 MPa is the limit; `--strength 30` writes a failed one). Then:",
+   "check": "The contract shows the milestone delivered, its deliverable carrying the run; a failed run delivers nothing; each file read is moved into `done/` on the server. The source polls every `poll_seconds` (60): for a one-off run (`--once`) set `poll_seconds: 0`, or `--once` never ends; the server account needs write access to the export folder for the move (without it the file stays, is named in the log, and is not read twice).",
+   "proxy_yaml": "# KEYSTONE (the construction blueprint): the site's sensor logger exports each test run as a CSV to an SFTP server; the\n# run's acceptance row (the measured result against its limit, for one contract milestone) is delivered as that\n# milestone's evidence on TheProtocol, by the contractor's agent, so the client releases the milestone payment on a\n# measurement rather than an e-mail. The measurement rows of the run stay in the export; only the acceptance row is\n# evidence, and only a passed run has one (a failed run's last row is a rejection).\n#\n# The logger side: runs-<run>.csv in /exports on the SFTP server, each with a .done marker once complete\n# (fake/fake_logger.py writes such runs). The contract and its milestone are named in the export's acceptance row.\nversion: 1\nname: keystone-sensors\nregistry: https://api.theprotocol.cloud\nidentity:\n  agent_did: env:AGENT_DID\n  client_id: env:CLIENT_ID\n  client_secret: env:CLIENT_SECRET\nstate: /data/keystone-state.db\nsources:\n  logger:\n    type: sftp\n    config:\n      host: sftp.site.local\n      port: 22\n      username: tp-proxy\n      private_key: file:/run/secrets/sftp_key\n      known_hosts: /run/secrets/sftp_known_hosts\n      path: /exports\n      suffix: .csv\n      require_marker: .done          # a run is read only once the logger has written its .done marker\n      id_field: row_id\nactions:\n  deliver:\n    type: milestone_evidence\n    config: {}                       # the contract and the milestone come from the acceptance row\n    limits: {per_minute: 30}\nsinks: {}\nmappings:\n  - name: acceptance\n    version: 1\n    from: logger\n    to: deliver\n    when: {path: $.payload.data.kind, equals: acceptance}\n    fields:\n      contract_id: $.payload.data.contract_id\n      seq: $.payload.data.milestone\n      test: $.payload.data.test\n      result: $.payload.data.result\n      measured: $.payload.data.value\n      limit: $.payload.data.limit\n      unit: $.payload.data.unit\n      run: $.payload.data.run_id\n      at: $.payload.data.at\nretry: {first_s: 5, max_s: 600, attempts: 8}\nservice: {listen: \"127.0.0.1:9108\"}\n",
+   "table": {
+    "legacy_system": "site sensor logger",
+    "source": "SFTP",
+    "on_theprotocol": "milestone evidence",
+    "out": ""
+   }
+  },
+  {
+   "id": "lyceum",
+   "name": "LYCEUM",
+   "summary": "awarded credentials from the student-record export",
+   "legacy": "The student-record system exports the credentials it has awarded as a CSV (`award_id`, a pseudonymous `holder_pseudonym`, `credential`, `eqf_level`, `ects`, `awarded_on`, `status`) into `/data/sis-out`.",
+   "on_theprotocol": "Each AWARDED row becomes a `lyceum.credential_awarded` attestation a verifier can check without asking the school. A REVOKED row is left out: revocation is a deliberate act in the console.",
+   "needs": "An agent with the `attestor` role. The export names no student by name or birth date. Credentials come from the agent's starter files (`.env`, `.env.secret`) by reference; none is written in the spec.",
+   "commands": [
+    "tp-proxy validate proxy.yaml",
+    "tp-proxy run proxy.yaml --dry-run            # what it would send, sending nothing (Ctrl-C to stop: the folder is watched, so --once does not end here)",
+    "tp-proxy run proxy.yaml                        # for real"
+   ],
+   "try_it": "`python fake/fake_sis.py ./sis-out --count 5` writes one export (its last row REVOKED). Then:",
+   "check": "The attestations are on the agent's record, one per awarded row. A file is read once it has not changed for `settle_seconds` (2): a `--once` run started while the export is still being written passes over it, and the next run reads it. The export folder is listed again every 30 seconds (`poll_seconds: 30`), so a file dropped while the proxy runs is read too; without it the source lists the folder once and finishes, which is what a `--once` run is. For a `--once` try, set `poll_seconds: 0` in the spec for that run.",
+   "proxy_yaml": "# LYCEUM (the education blueprint): the student-record system exports the credentials it has awarded as a CSV; each\n# awarded credential becomes a signed attestation on TheProtocol that a verifier can check later without asking the\n# school. A withdrawn award in the same export (status REVOKED) is left out: revocation is a deliberate act in the\n# console, never a side effect of an export.\n#\n# The student-record side: credentials-<date>.csv with the header line the fake writes (fake/fake_sis.py) into\n# /data/sis-out. The holder is named by a pseudonymous id, never by name or birth date.\nversion: 1\nname: lyceum-credentials\nregistry: https://api.theprotocol.cloud\nidentity:\n  agent_did: env:AGENT_DID\n  client_id: env:CLIENT_ID\n  client_secret: env:CLIENT_SECRET\nstate: /data/lyceum-state.db\nsources:\n  sis:\n    type: filedrop\n    config: {path: /data/sis-out, suffix: .csv, id_field: award_id, settle_seconds: 2, poll_seconds: 30}\nactions:\n  issue:\n    type: attestation\n    config: {attestation_type: lyceum.credential_awarded}\n    limits: {per_minute: 120}\nsinks: {}\nmappings:\n  - name: credential\n    version: 1\n    from: sis\n    to: issue\n    when: {path: $.payload.data.status, equals: AWARDED}\n    fields:\n      award: $.payload.data.award_id\n      holder: $.payload.data.holder_pseudonym\n      credential: $.payload.data.credential\n      level: $.payload.data.eqf_level\n      ects: $.payload.data.ects\n      awarded_on: $.payload.data.awarded_on\n      institution: LYCEUM-DEMO\nretry: {first_s: 2, max_s: 300, attempts: 8}\nservice: {listen: \"127.0.0.1:9108\"}\n",
+   "table": {
+    "legacy_system": "student records",
+    "source": "file drop (CSV)",
+    "on_theprotocol": "attestation",
+    "out": ""
+   }
+  },
+  {
+   "id": "meridian",
+   "name": "MERIDIAN",
+   "summary": "order intents in, signed evidence to the ERP folder",
+   "legacy": "The order-management system exports its order intents as JSON arrays into a folder (`/data/oms-out`).",
+   "on_theprotocol": "Each RELEASED intent becomes a `meridian.order_intent` attestation; the ERP's import folder (`/data/erp-in`) receives the hash-chained evidence of every intent, its manifest signed by the proxy's key.",
+   "needs": "An agent holding the `attestor` role (the attestation's `reputation.signal`), and an evidence signing key (`tp-proxy keygen /run/secrets/evidence.pem`). Credentials come from the agent's starter files (`.env`, `.env.secret`) by reference; none is written in the spec.",
+   "commands": [
+    "tp-proxy validate proxy.yaml",
+    "tp-proxy run proxy.yaml --dry-run            # what it would send, sending nothing (Ctrl-C to stop: the folder is watched, so --once does not end here)",
+    "tp-proxy run proxy.yaml                        # for real"
+   ],
+   "try_it": "`python fake/fake_oms.py ./oms-out --batch 1 --count 5` writes one export (one HELD intent among them, not attested). Then:",
+   "check": "`tp-proxy verify /data/erp-in --key <public key>` checks the ERP's copy offline (`tp-proxy keygen` printed the public key); a changed line or another signer fails it with exit code 1 and names the line. A file is read once it has not changed for `settle_seconds` (2): a `--once` run started while the export is still being written passes over it, and the next run reads it. The export folder is listed again every 30 seconds (`poll_seconds: 30`), so a file dropped while the proxy runs is read too; without it the source lists the folder once and finishes, which is what a `--once` run is. For a `--once` try, set `poll_seconds: 0` in the spec for that run.",
+   "proxy_yaml": "# MERIDIAN (the industrial-procurement blueprint): the order-management system drops its order intents as JSON files;\n# each intent becomes a signed attestation on TheProtocol, and the ERP's import folder receives the hash-chained,\n# signed evidence of every intent the proxy carried (checked offline with tp-proxy verify).\n#\n# The OMS side: an export job writes intents-<batch>.json (a JSON array) into /data/oms-out; the fake in fake/ does\n# the same. The ERP side reads /data/erp-in. Credentials come from the agent's starter files, never this file.\nversion: 1\nname: meridian-oms\nregistry: https://api.theprotocol.cloud\nidentity:\n  agent_did: env:AGENT_DID\n  client_id: env:CLIENT_ID\n  client_secret: env:CLIENT_SECRET\nstate: /data/meridian-state.db\nsources:\n  oms:\n    type: filedrop\n    # settle_seconds: an export is read only once the file has stopped growing\n    config: {path: /data/oms-out, format: json, suffix: .json, id_field: intent_id, settle_seconds: 2, poll_seconds: 30}\nactions:\n  attest:\n    type: attestation\n    config: {attestation_type: meridian.order_intent}\n    limits: {per_minute: 120}\nsinks:\n  erp:\n    type: evidence\n    config: {dir: /data/erp-in, signing_key: file:/run/secrets/evidence.pem}\nmappings:\n  - name: intent\n    version: 1\n    from: oms\n    to: attest\n    when: {path: $.payload.data.status, equals: RELEASED}\n    fields:\n      intent: $.payload.data.intent_id\n      order: $.payload.data.order_no\n      buyer: $.payload.data.buyer\n      sku: $.payload.data.sku\n      quantity: $.payload.data.qty\n      released_at: $.payload.data.released_at\n  - name: intent-evidence\n    version: 1\n    from: oms\n    to: erp\n    when: {path: $.payload.data.status, equals: RELEASED}\n    fields:\n      intent: $.payload.data.intent_id\n      order: $.payload.data.order_no\n      sku: $.payload.data.sku\n      quantity: $.payload.data.qty\nretry: {first_s: 2, max_s: 300, attempts: 8}\nservice: {listen: \"127.0.0.1:9108\"}\n",
+   "table": {
+    "legacy_system": "order management",
+    "source": "file drop (JSON)",
+    "on_theprotocol": "attestation",
+    "out": "signed evidence to the ERP folder"
+   }
+  },
+  {
+   "id": "scrivener",
+   "name": "SCRIVENER",
+   "summary": "matter events in, the DMS's evidence out",
+   "legacy": "The practice-management system posts each matter event (opened, a filing with the filed document's SHA-256, a deadline met, closed), HMAC-signed with `PMS_HMAC`, to `/in/matters`.",
+   "on_theprotocol": "Each event becomes a `scrivener.matter_event` attestation, and the document-management system's import folder receives the signed, hash-chained history of the matter: a court or an auditor checks it offline.",
+   "needs": "An agent with the `attestor` role; an evidence signing key; `PMS_HMAC`. To mirror the evidence to an SFTP server, set the evidence sink's `mirror` (the `proxy-sftp` extra). Credentials come from the agent's starter files (`.env`, `.env.secret`) by reference; none is written in the spec.",
+   "commands": [
+    "tp-proxy validate proxy.yaml",
+    "tp-proxy run proxy.yaml --dry-run            # what it would send, sending nothing (Ctrl-C to stop: a receiver never finishes, so --once does not end here)",
+    "tp-proxy run proxy.yaml                        # for real"
+   ],
+   "try_it": "`python fake/fake_pms.py http://127.0.0.1:8711/in/matters --matter M-2026-0042` posts one matter's four events. Then:",
+   "check": "`tp-proxy verify /data/dms-import --key <public key>` names any changed, removed or moved line.",
+   "proxy_yaml": "# SCRIVENER (the legal-services blueprint): the practice-management system posts each matter event (opened, a filing\n# made, a deadline met, closed) to the proxy; every event becomes a signed attestation on TheProtocol, and the document\n# management system's import folder receives the hash-chained, signed evidence of the matter's history, checked offline\n# with tp-proxy verify (a court or an auditor needs no network and no trust in the firm's own systems).\n#\n# The practice-management side: POST /in/matters, HMAC-signed with PMS_HMAC (fake/fake_pms.py). The DMS side reads\n# /data/dms-import; mirror it to an SFTP server with the evidence sink's mirror setting (the proxy-sftp extra).\nversion: 1\nname: scrivener-matters\nregistry: https://api.theprotocol.cloud\nidentity:\n  agent_did: env:AGENT_DID\n  client_id: env:CLIENT_ID\n  client_secret: env:CLIENT_SECRET\nstate: /data/scrivener-state.db\nsources:\n  pms:\n    type: webhook\n    config: {listen: \"0.0.0.0:8711\", path: /in/matters, id_field: event_id, secret: env:PMS_HMAC}\nactions:\n  attest:\n    type: attestation\n    config: {attestation_type: scrivener.matter_event}\n    limits: {per_minute: 120}\nsinks:\n  dms:\n    type: evidence\n    config: {dir: /data/dms-import, signing_key: file:/run/secrets/evidence.pem}\nmappings:\n  - name: matter-event\n    version: 1\n    from: pms\n    to: attest\n    fields:\n      matter: $.payload.matter_id\n      event: $.payload.type\n      document: {path: $.payload.document_sha256, default: null}\n      by: $.payload.fee_earner\n      at: $.payload.at\n  - name: matter-evidence\n    version: 1\n    from: pms\n    to: dms\n    fields:\n      matter: $.payload.matter_id\n      event: $.payload.type\n      document: {path: $.payload.document_sha256, default: null}\n      at: $.payload.at\nretry: {first_s: 2, max_s: 300, attempts: 8}\nservice: {listen: \"127.0.0.1:9108\"}\n",
+   "table": {
+    "legacy_system": "practice management",
+    "source": "webhook",
+    "on_theprotocol": "attestation",
+    "out": "signed evidence to the DMS"
+   }
+  },
+  {
+   "id": "trunk",
+   "name": "TRUNK",
+   "summary": "per-event settlement of interconnect records",
+   "legacy": "The mediation system rates each interconnect event into its settlement table (`settlement_events`, cursor `event_seq`): the partner carrier's agent, the minutes and the charge.",
+   "on_theprotocol": "Each RATED event is settled as it happens, a payment to the partner's agent under the operator's Cockpit mandate, never above the action's `max_amount` or `per_day`, nor the mandate's limits; finance gets a CSV journal (or ISO 20022 camt.053) of what settled, booked from the registry's own `payment.settled` notice (each line names its settlement), so a payment the proxy refused or the registry held back has no line. A DISPUTED event is neither paid nor booked.",
+   "needs": "A Cockpit mandate (`a2a.pay`) issued by the operator's owner, named in `mandate:`; a webhook in the console (Developer, Webhooks) for `payment.settled` to this proxy's receiver (`/in/theprotocol`, its secret as `TP_WEBHOOK_SECRET`), and the proxy agent's DID in the `book-settled` mapping's `when` (the owner's webhook carries every payment of the owner's agents); the agent's IRONKEY spend cap at or under it; the payee agents bonded where the registry enforces the bond. SQLite needs no extra; PostgreSQL, MySQL and SQL Server take the `proxy-sql` extras. Credentials come from the agent's starter files (`.env`, `.env.secret`) by reference; none is written in the spec.",
+   "commands": [
+    "tp-proxy validate proxy.yaml",
+    "tp-proxy run proxy.yaml --dry-run            # what it would send, sending nothing (Ctrl-C to stop: a receiver never finishes, so --once does not end here)",
+    "tp-proxy run proxy.yaml                        # for real"
+   ],
+   "try_it": "`python fake/fake_mediation.py ./mediation.db --partner-did <the partner's agent> --count 5` rates five events (one DISPUTED). Then:",
+   "check": "Each payment's settlement is on both agents' records; the journal holds one debit per settled payment, its text the settlement's transaction id; a refused one is in `tp-proxy dead` and not in the journal; the ledgers' supply delta stays 0.",
+   "proxy_yaml": "# TRUNK (the telecom blueprint): the mediation system rates each interconnect event and writes it to its settlement\n# table; every rated event is settled on TheProtocol as it happens, a payment to the partner carrier's agent under the\n# operator's Cockpit mandate (nothing is paid without one, and never above the action's max_amount or the mandate's\n# limits), and finance gets a CSV journal (or camt.053, for systems that read account statements) of what SETTLED: each\n# line comes from TheProtocol's own payment.settled notice (the registry's webhook) and names its settlement, so a\n# payment refused or held back (over max_amount, outside the mandate) has no line. An event the mediation system\n# disputes (status DISPUTED) is neither paid nor booked.\n#\n# The mediation side: the table settlement_events, its cursor column event_seq (fake/fake_mediation.py writes such\n# rows into an SQLite file; PostgreSQL, MySQL and SQL Server work the same with the proxy-sql extras). The mandate: the\n# operator's owner issues it in the console (Cockpit, a2a.pay) and names it here; the agent's IRONKEY spend cap must\n# sit at or under it, or the payment action does not start.\nversion: 1\nname: trunk-settlement\nregistry: https://api.theprotocol.cloud\nidentity:\n  agent_did: env:AGENT_DID\n  client_id: env:CLIENT_ID\n  client_secret: env:CLIENT_SECRET\nstate: /data/trunk-state.db\nsources:\n  mediation:\n    type: sqlpoll\n    config: {engine: sqlite, path: /data/mediation.db, table: settlement_events, cursor: event_seq, poll_seconds: 5}\n  theprotocol:\n    # the registry's webhook (console: Developer, Webhooks; event payment.settled) for the journal: it books what\n    # settled, never what was only rated (a payment refused or held back has no line)\n    type: theprotocol_events\n    config: {listen: \"0.0.0.0:8712\", path: /in/theprotocol, secret: env:TP_WEBHOOK_SECRET, events: [payment.settled]}\nactions:\n  settle:\n    type: payment\n    # your mandate's id (lm_...), from the console; max_amount: the most one event may settle\n    config: {mandate: lm_yourmandate, max_amount: 25, per_day: 2000}\n    limits: {per_minute: 120}\nsinks:\n  finance:\n    type: journal\n    config: {dir: /data/finance-journal, format: csv, account: {id: TRUNK-INTERCONNECT, currency: ECU}}\nmappings:\n  - name: settle-event\n    version: 1\n    from: mediation\n    to: settle\n    when: {path: $.payload.status, equals: RATED}\n    fields:\n      payee: $.payload.partner_agent_did\n      amount: $.payload.charge\n      event: $.payload.event_id\n      partner: $.payload.partner_code\n      minutes: $.payload.minutes\n  - name: book-settled\n    version: 1\n    from: theprotocol\n    to: finance\n    # the owner's webhook carries every payment of the owner's agents: book this proxy's agent's own (its DID here)\n    when: {path: $.payload.caller_did, equals: \"did:theprotocol:your-proxy-agent\"}\n    fields:\n      amount: $.payload.amount\n      direction: debit\n      currency: $.payload.currency\n      counterparty: $.payload.target_agent_did\n      text: $.payload.settlement_tx_id\nretry: {first_s: 5, max_s: 600, attempts: 8}\nbreaker: {refusals: 3, failures: 10, cooldown_s: 60}\nservice: {listen: \"127.0.0.1:9108\"}\n",
+   "table": {
+    "legacy_system": "mediation",
+    "source": "SQL poll",
+    "on_theprotocol": "payment under a mandate",
+    "out": "the finance journal"
+   }
+  }
+ ],
+ "generated_by": "scripts/distribution/gen_proxy_catalog.py --write"
+}

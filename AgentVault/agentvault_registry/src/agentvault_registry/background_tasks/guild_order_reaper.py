@@ -268,10 +268,17 @@ async def _sweep_abandoned_submitted(db) -> int:
     (mirrors the awarded-past-ETA policy: never auto-paid, surfaced for admin_resolve). Moves no money."""
     days = int(os.getenv("GUILD_SUBMITTED_TIMEOUT_DAYS", "7"))
     swept = 0
+    # V0663 governed code: a code change still in review or ballot outlasts these days by design; it is not
+    # abandoned. V0666 (gwo_b4ab7b9b): nor is a failed one, whose bounty the code-change sweep returns or holds for the
+    # bootstrap go (services/code_changes.SWEEP_OWNED_STATES, constants, not input)
+    from agentvault_registry.services.code_changes import SWEEP_OWNED_STATES as _CC_OWNED
+    _cc_states = ", ".join(f"'{s}'" for s in _CC_OWNED)
     rows = (await db.execute(text(
         "SELECT id, poster_did, worker_did FROM guild_work_orders "
         "WHERE status='submitted' AND submitted_at IS NOT NULL "
-        "AND submitted_at <= now() - (:d * interval '1 day') LIMIT 20"
+        "AND submitted_at <= now() - (:d * interval '1 day') "
+        "AND NOT EXISTS (SELECT 1 FROM code_changes c WHERE c.order_id = guild_work_orders.id "
+        f"AND c.state IN ({_cc_states})) LIMIT 20"
     ), {"d": days})).mappings().all()
     for o in rows:
         try:
@@ -337,6 +344,22 @@ async def remind_deadlines() -> int:
     return told
 
 
+async def close_code_changes() -> int:
+    """V0663 governed code slice 2: a code change's money follows its record (services/code_changes.sweep_ended): a
+    failed ballot returns its bounty here, never in a read, and a merge whose settle did not happen is tried again.
+    The Guild moves the money (its settle and return helpers). Errors are logged; the reaper goes on."""
+    try:
+        from agentvault_registry.services import code_authority as _ca
+        if not _ca.is_governing():
+            return 0           # V0666: code is governed on one registry; elsewhere the rail is read-only and there is no sweep (no WARNING a cycle for a refused write)
+        from agentvault_registry.services import code_changes as _cc
+        async with AsyncSessionLocal() as db:
+            return await _cc.sweep_ended(_cc.store_for(db))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[GUILD-REAPER] code-change sweep skipped: %s", exc)
+        return 0
+
+
 async def _loop():
     global _stop
     from .leader import try_acquire_leadership
@@ -350,6 +373,9 @@ async def _loop():
                     swept = await _sweep_once()
                     _ctx.note(swept=swept)
                 await remind_deadlines()   # V0652 (af)
+                closed = await close_code_changes()   # V0663 governed code slice 2
+                if closed:
+                    logger.info("[GUILD-REAPER] closed the money of %s code change(s)", closed)
                 if swept:
                     logger.info("[GUILD-REAPER] processed %s stale order(s)", swept)
         except Exception as exc:  # noqa: BLE001

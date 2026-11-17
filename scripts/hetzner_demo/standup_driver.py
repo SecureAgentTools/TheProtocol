@@ -2275,7 +2275,7 @@ def enable_vhosts(args):
         os.symlink(src, dst)
     if subprocess.run(["nginx", "-t"], capture_output=True).returncode != 0:
         die("nginx -t failed after enabling vhosts (symlinks left for inspection)")
-    subprocess.run(["systemctl", "reload", "nginx"], check=True)
+    subprocess.run(["nginx", "-s", "reload"], check=True)   # the binary, not the unit: the edge runs in a container (nginx is its shim)
     log("vhosts enabled + nginx reloaded")
 
 

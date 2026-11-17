@@ -186,6 +186,18 @@
       </div>
     </section>
 
+    <!-- V0667 D8: an organization's own release line -->
+    <section class="bp-lines">
+      <span class="bp-sec-label">{{ t('blueprintsView.lines.label', 'Your own line') }}</span>
+      <h2 class="bp-h2">{{ t('blueprintsView.lines.title', 'A release line of your own, on top of ours') }}</h2>
+      <p class="bp-lead bp-lead--tight">
+        {{ t('blueprintsView.lines.body', 'An organization can run its own release line: its members propose changes to the console and its documentation, its deciders vote, and what passes is recorded as the organization\'s own. The line never leaves our release: every change still goes through our signed checker, an independent review and our veto, and a line can be paused by the platform. Changes to an organization\'s own content, such as its migration kits, its settings, its console texts and its branding, take the same ballot and apply without a release.') }}
+      </p>
+      <div class="bp-mgmt-links">
+        <router-link to="/docs/40" class="bp-mgmt-link">{{ t('blueprintsView.lines.more', 'How a release line works') }}</router-link>
+      </div>
+    </section>
+
     <!-- Proof band: the rails are live right now -->
     <section class="bp-proof svc-scope">
       <span class="bp-sec-label">{{ t('blueprintsView.proof.label', 'Not a mockup') }}</span>
@@ -512,6 +524,7 @@ const relayDeclined = computed(() =>
 .bp-safety { margin-bottom: 3rem; padding-top: 3rem; border-top: 1px solid rgba(var(--flow-rgb), 0.12); }
 
 .bp-mgmt { margin-bottom: 3rem; padding: 1.6rem 1.7rem; border: 1px solid rgba(var(--flow-rgb), 0.16); border-left: 3px solid rgba(var(--flow-rgb), 0.5); border-radius: 13px; background: rgba(var(--flow-rgb), 0.025); }
+.bp-lines { margin-bottom: 3rem; padding: 1.6rem 1.7rem; border: 1px solid rgba(var(--flow-rgb), 0.16); border-left: 3px solid rgba(var(--flow-rgb), 0.5); border-radius: 13px; background: rgba(var(--flow-rgb), 0.025); }
 .bp-mgmt-links { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
 .bp-mgmt-link { font-family: var(--bp-mono); font-size: 0.68rem; font-weight: 700; color: rgba(var(--flow-rgb), 0.95); border: 1px solid rgba(var(--flow-rgb), 0.3); border-radius: 20px; padding: 0.32rem 0.75rem; text-decoration: none; }
 .bp-mgmt-link:hover { background: rgba(var(--flow-rgb), 0.08); }

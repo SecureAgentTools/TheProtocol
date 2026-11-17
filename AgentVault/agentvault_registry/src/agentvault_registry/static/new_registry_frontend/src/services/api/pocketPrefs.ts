@@ -10,7 +10,7 @@
 import apiClient from './client'
 import { authService } from '@/services/auth'
 
-export type PrefKey = 'pocket.watchlist' | 'pocket.price_alerts' | 'pocket.assistant'
+export type PrefKey = 'pocket.watchlist' | 'pocket.price_alerts' | 'pocket.assistant' | 'console.nav_pins'
 
 const LS_PREFIX = 'tp_pref_'
 

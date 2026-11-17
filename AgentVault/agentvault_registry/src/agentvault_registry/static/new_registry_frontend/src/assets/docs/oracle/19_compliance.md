@@ -28,7 +28,7 @@ flowchart LR
     subgraph Controls["Mapped platform controls"]
         S1["In-house algorithms,<br/>no third-party AI service<br/>(component list below)"]:::ctrl
         S2["Supply invariant audit<br/>delta 0.0, every 60 s<br/>(chapter 07)"]:::ctrl
-        S3["SPIRE identities and mTLS,<br/>OPA in shadow<br/>(chapter 08)"]:::ctrl
+        S3["SPIRE identities and mTLS,<br/>OPA on the permission checks<br/>(chapter 08)"]:::ctrl
         S4["Append-only event store,<br/>replayable"]:::ctrl
         S5["Incident response<br/>procedure<br/>(below)"]:::ctrl
         S6["Versioned policy, changed<br/>by vote or by an admin,<br/>published on the signed card<br/>(chapter 06)"]:::ctrl
@@ -87,7 +87,7 @@ It is the property a reviewer can check with the least trust in the operator.
 
 ## RBAC: Admin Role Granularity
 
-Authority is not a single admin switch. The registry decides in Python ([chapter 08](/docs/08#authorization-python-first-auditable)); OPA evaluates the same decisions in shadow on the production frames, compared and counted but not enforced.
+Authority is not a single admin switch. The registry decides in Python ([chapter 08](/docs/08#authorization-python-first-auditable)); on the production frames OPA also decides the sign-in and permission checks since 16 November 2026 (a request passes only when both allow), and evaluates the invariants beside them, compared and counted but not yet decisive.
 
 | Who | Holds | Notes |
 |---|---|---|
@@ -213,6 +213,8 @@ Each class of change has its own path and its own record:
 | Federation peers | an admin with `admin_federation` (a quarantine with `admin_enforcement`) | `RegistryFederated` (a peer admitted), `PeerRegistryDeactivated`, `FederationLicenseSuspended`, `FederationLicenseReinstated`, `RegistryQuarantined` |
 
 The registry card is signed, public (`/.well-known/registry-card.json`) and fetched by the registry's peers, so a change of version, hash or software is visible from outside without the operator's cooperation.
+
+**Planned: OPA as the backstop of code changes.** Members may now propose and vote on changes to the console's code ([chapter 06](/docs/06)). Rego invariants are planned for every security- and control-critical area, so that with OPA enforcing, no such change could alter behaviour in those areas, whatever its code does: the policies, and the code that asks OPA, are forbidden to every code change by name, and a policy changes only on the platform maintainer's approval card ([chapter 06](/docs/06)). This is planned, not done. Since 16 November 2026 OPA enforces the sign-in and permission checks on the production frames and their operators ([chapter 08](/docs/08)): a request passes there only when both the Python check and OPA allow it, and if OPA does not answer, the Python check alone decides. The Rego invariants beside them are evaluated but not yet decisive.
 
 ## Risk Assessment Framework
 

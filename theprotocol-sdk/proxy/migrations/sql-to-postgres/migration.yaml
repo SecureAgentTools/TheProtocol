@@ -1,0 +1,38 @@
+schema: theprotocol.migration/v1
+name: sql-to-postgres
+title: Customers from an old SQL table to PostgreSQL
+summary: One customers table to public.customers, upserted by the old id; dd.mm.yyyy dates, status codes and padded names cleaned on the way
+from: {kind: sql, engines: [postgresql, mysql, sqlserver, sqlite], what: a customers table}
+to: {kind: sql, engines: [postgresql], what: public.customers}
+parameters:
+  SOURCE_ENGINE: {description: the old database's engine, default: sqlite, enum: [postgresql, mysql, sqlserver, sqlite]}
+  SOURCE_PATH: {description: 'sqlite only: the old database file', default: legacy.db}
+  SOURCE_HOST: {description: the old database server (all but sqlite), default: localhost}
+  SOURCE_DATABASE: {description: the old database (all but sqlite), default: legacy}
+  SOURCE_USER: {description: a login that may only read the customers table, default: tp_readonly}
+  SOURCE_PASSWORD: {description: 'its password, as a reference such as env:LEGACY_DB_PASSWORD', secret: true}
+  SOURCE_TABLE: {description: the old table, default: customers}
+  TARGET_ENGINE: {description: 'postgresql; sqlite writes a local file instead, to rehearse', default: postgresql, enum: [postgresql, sqlite]}
+  TARGET_HOST: {description: the new database server, default: localhost}
+  TARGET_PORT: {description: its port, default: '5432'}
+  TARGET_DATABASE: {description: the new database, default: app}
+  TARGET_USER: {description: a login limited to the target table, default: tp_migrate}
+  TARGET_PASSWORD: {description: 'its password, as a reference such as env:TARGET_DB_PASSWORD', secret: true}
+  TARGET_PATH: {description: 'TARGET_ENGINE sqlite only: the rehearsal file', default: target.db}
+  TARGET_TABLE: {description: the new table, default: public.customers}
+load:
+  mappings: [customers]
+  batch_rows: 1000
+reconcile:
+  - mapping: customers
+    source: {key: [id], fields: [name, signup_date, status]}
+    target: {key: [legacy_id], fields: [full_name, signed_up, status]}
+    pairs: {name: full_name, signup_date: signed_up, status: status}
+sample:
+  legacy: {file: sample/customers.jsonl, format: jsonl}
+cutover:
+  checklist: [Stop writes to the old system, Load again (only changes move), Reconcile again, Point the readers at the new system]
+rollback: auto
+workflow:
+  - {key: dry-run, role: migration.runner, acceptance: a dry-run report whose verdict is pass, budget_share: 40}
+  - {key: reconcile, role: migration.reconciler, input_from: dry-run, acceptance: a reconcile report whose verdict is pass, budget_share: 60}

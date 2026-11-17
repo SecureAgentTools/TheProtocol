@@ -36,11 +36,11 @@ from agentvault_registry.routers import frame_invitations as fi
 from agentvault_registry.services import frame_trust_manager as ftm
 
 NOW = datetime.datetime(2026, 10, 31, 6, 0, tzinfo=datetime.timezone.utc)
-DNS = {"sbx-a.example.invalid": ["172.18.0.1"], "loop.example.invalid": ["127.0.0.1"],
-       "meta.example.invalid": ["169.254.169.254"], "cgnat.example.invalid": ["100.64.0.1"],
-       "mixed.example.invalid": ["172.18.0.1", "127.0.0.1"], "public.example.invalid": ["1.1.1.1"]}
+DNS = {"sbx-a.example.example.org": ["172.18.0.1"], "loop.example.example.org": ["127.0.0.1"],
+       "meta.example.example.org": ["169.254.169.254"], "cgnat.example.example.org": ["100.64.0.1"],
+       "mixed.example.example.org": ["172.18.0.1", "127.0.0.1"], "public.example.example.org": ["1.1.1.1"]}
 ENVS = ("REGISTRY_ENVIRONMENT", "FRAME_POSTURE", "FRAME_INVITATIONS_SAME_HOST_PEERS", "FRAME_INVITATIONS_PEER_CA_FILE")
-BUNDLE = "https://sbx-a.example.invalid:8444/"
+BUNDLE = "https://sbx-a.example.example.org:8444/"
 
 def _asked(request):
     """The name the request is FOR. V0658 (l), code-scanning #357: a checked hop is dialled at the address the
@@ -51,7 +51,7 @@ def _asked(request):
 # V0658 (l), code-scanning #357: a checked hop is dialled at the address the check saw, with the name kept in the
 # Host header and in SNI (test_bundle_dial_pinned_address.py proves the name survives), so what the transport
 # records is the ADDRESS and no longer the name.
-DIALLED = f"https://{DNS['sbx-a.example.invalid'][0]}:8444/"
+DIALLED = f"https://{DNS['sbx-a.example.example.org'][0]}:8444/"
 PRIVATE_CALLER = {"X-Forwarded-For": "172.18.0.5"}
 CA_CN = "same host edge test root"
 REFUSED_POSTURES = [
@@ -73,6 +73,18 @@ def clean(monkeypatch):
             raise OSError("no such host")
         return DNS[host]
     monkeypatch.setattr(ftm, "_resolve", resolve)
+
+    # V0662 (item 16): the dial goes through the outbound guard, which looks a name up with socket.getaddrinfo; the
+    # same table answers there (the guard refuses a special-use name such as .invalid before any lookup, so the names
+    # are ordinary ones)
+    import socket
+
+    def getaddrinfo(host, port, *a, **k):
+        if host not in DNS:
+            raise socket.gaierror(socket.EAI_NONAME, "no such host")
+        return [((socket.AF_INET6, socket.SOCK_STREAM, 6, "", (x, port, 0, 0)) if ":" in x
+                 else (socket.AF_INET, socket.SOCK_STREAM, 6, "", (x, port))) for x in DNS[host]]
+    monkeypatch.setattr(socket, "getaddrinfo", getaddrinfo)
 
 
 def _env(monkeypatch, **kv):
@@ -134,10 +146,10 @@ def test_the_lane_opens_on_a_frame_born_sandbox_with_the_opt_in(env):
 async def test_the_private_allowance_is_checked_on_every_hop(monkeypatch):
     # BASE: _dial_checked takes no allow_private
     def handler(request):
-        if _asked(request) == "sbx-a.example.invalid" and request.url.path == "/hop-meta":
-            return httpx.Response(302, headers={"location": "https://meta.example.invalid/latest/"})
-        if _asked(request) == "sbx-a.example.invalid" and request.url.path == "/hop-loop":
-            return httpx.Response(302, headers={"location": "https://loop.example.invalid/"})
+        if _asked(request) == "sbx-a.example.example.org" and request.url.path == "/hop-meta":
+            return httpx.Response(302, headers={"location": "https://meta.example.example.org/latest/"})
+        if _asked(request) == "sbx-a.example.example.org" and request.url.path == "/hop-loop":
+            return httpx.Response(302, headers={"location": "https://loop.example.example.org/"})
         return httpx.Response(200)
     seen = _transport(monkeypatch, handler)
     async with ftm._bundle_client(5) as client:
@@ -145,11 +157,11 @@ async def test_the_private_allowance_is_checked_on_every_hop(monkeypatch):
         assert refusal is None and r.status_code == 200 and seen == [DIALLED]
         for path in ("/hop-meta", "/hop-loop"):
             seen.clear()
-            r, refusal = await ftm._dial_checked(client, "GET", f"https://sbx-a.example.invalid:8444{path}", False,
+            r, refusal = await ftm._dial_checked(client, "GET", f"https://sbx-a.example.example.org:8444{path}", False,
                                                  allow_private=True)
-            assert r is None and refusal and seen == [f"https://{DNS['sbx-a.example.invalid'][0]}:8444{path}"]  # refused at the hop
+            assert r is None and refusal and seen == [f"https://{DNS['sbx-a.example.example.org'][0]}:8444{path}"]  # refused at the hop
         seen.clear()
-        r, refusal = await ftm._dial_checked(client, "GET", "https://mixed.example.invalid/", False, allow_private=True)
+        r, refusal = await ftm._dial_checked(client, "GET", "https://mixed.example.example.org/", False, allow_private=True)
         assert r is None and refusal and seen == []
         r, refusal = await ftm._dial_checked(client, "GET", BUNDLE, False)          # without it: refused as before
         assert r is None and refusal and seen == []
@@ -194,12 +206,12 @@ def _route(monkeypatch):
 
 
 def _invite(bundle=BUNDLE):
-    return {"trust_domain": "sbx-a.example.invalid", "bundle_endpoint_url": bundle,
-            "federation_endpoint_url": "https://sbx-a.example.invalid:8443/", "name": "sandbox a",
-            "contact_email": "nobody@example.invalid", "initiator_nonce": "ab" * 16}
+    return {"trust_domain": "sbx-a.example.example.org", "bundle_endpoint_url": bundle,
+            "federation_endpoint_url": "https://sbx-a.example.example.org:8443/", "name": "sandbox a",
+            "contact_email": "nobody@example.example.org", "initiator_nonce": "ab" * 16}
 
 
-def _assert_generic_refusal(r, seen, host="sbx-a.example.invalid"):
+def _assert_generic_refusal(r, seen, host="sbx-a.example.example.org"):
     assert r.status_code == 422, r.text[:300]
     assert "public https address" in r.text
     assert host not in r.text and "internal" not in r.text            # no oracle: neither the host nor the why
@@ -254,8 +266,8 @@ def test_control_the_opt_in_never_serves_a_caller_off_the_private_network(monkey
     _assert_generic_refusal(http.post("/api/v1/federation/frame-invitations", json=_invite(), headers=headers), seen)
 
 
-@pytest.mark.parametrize("host", ["loop.example.invalid", "meta.example.invalid", "cgnat.example.invalid",
-                                  "mixed.example.invalid"])
+@pytest.mark.parametrize("host", ["loop.example.example.org", "meta.example.example.org", "cgnat.example.example.org",
+                                  "mixed.example.example.org"])
 def test_control_the_opt_in_never_reaches_loopback_link_local_or_cgnat(monkeypatch, host):
     # control: passes on both trees
     _honored(monkeypatch)
@@ -339,9 +351,9 @@ class _OutboundSession:
 
 
 def _admin_app(monkeypatch, session):
-    for k, v in {"SPIRE_TRUST_DOMAIN": "sbx-b.example.invalid",
-                 "FRAME_LOCAL_BUNDLE_ENDPOINT_URL": "https://sbx-b.example.invalid:8444/",
-                 "FRAME_LOCAL_FEDERATION_ENDPOINT_URL": "https://sbx-b.example.invalid:8443",
+    for k, v in {"SPIRE_TRUST_DOMAIN": "sbx-b.example.example.org",
+                 "FRAME_LOCAL_BUNDLE_ENDPOINT_URL": "https://sbx-b.example.example.org:8444/",
+                 "FRAME_LOCAL_FEDERATION_ENDPOINT_URL": "https://sbx-b.example.example.org:8443",
                  "REGISTRY_NAME": "Sandbox B"}.items():
         monkeypatch.setenv(k, v)
 
@@ -352,7 +364,7 @@ def _admin_app(monkeypatch, session):
     app.dependency_overrides[get_db] = _db
     app.dependency_overrides[require_mainframe_only] = lambda: None
     app.dependency_overrides[security.get_current_developer] = lambda: types.SimpleNamespace(
-        id=7, email="ops@example.invalid", is_admin=False, must_change_password=False, admin_federation=True)
+        id=7, email="ops@example.example.org", is_admin=False, must_change_password=False, admin_federation=True)
 
     async def _no_event(*a, **kw):
         return None
@@ -366,7 +378,7 @@ def _admin_app(monkeypatch, session):
 def _outbound(monkeypatch):
     http = _admin_app(monkeypatch, _OutboundSession())
     r = http.post("/api/v1/admin/federation/frame-invitations/outbound",
-                  json={"target_registry_url": "https://sbx-a.example.invalid", "contact_email": "ops@example.invalid"})
+                  json={"target_registry_url": "https://sbx-a.example.example.org", "contact_email": "ops@example.example.org"})
     assert r.status_code == 201, r.text[:300]
     (_url, kw), = _Client.calls
     return kw.get("verify")
@@ -398,11 +410,11 @@ def test_the_finalize_public_leg_follows_the_same_rule(monkeypatch, tmp_path):
     # BASE: the public leg verifies against the public roots only
     import agentvault_registry.identity.svid_client as sc
     monkeypatch.setattr(sc, "get_client_cert_config", lambda target_url="": None, raising=False)
-    inv = types.SimpleNamespace(id="inv-1", initiator_federation_endpoint_url="https://sbx-a.example.invalid:8443")
+    inv = types.SimpleNamespace(id="inv-1", initiator_federation_endpoint_url="https://sbx-a.example.example.org:8443")
     assert fi._finalize_targets(inv)[0][2] == {"verify": True}                    # the opt-in off
     _honored(monkeypatch, FRAME_INVITATIONS_PEER_CA_FILE=_ca_file(tmp_path))
     (leg, url, kw), = fi._finalize_targets(inv)
-    assert leg == "public" and url.startswith("https://sbx-a.example.invalid/") and _trusts_the_edge_ca(kw["verify"])
+    assert leg == "public" and url.startswith("https://sbx-a.example.example.org/") and _trusts_the_edge_ca(kw["verify"])
 
 
 @pytest.mark.parametrize("env,state", [({}, "off"),

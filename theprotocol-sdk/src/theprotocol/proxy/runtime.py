@@ -19,6 +19,7 @@ import json
 import logging
 import random
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Deque, Dict, List, Mapping, Optional, Tuple
@@ -220,7 +221,7 @@ class Proxy:
     def __init__(self, spec: Spec, *, dry_run: bool = False, transport: Optional[httpx.AsyncBaseTransport] = None,
                  clock: Callable[[], float] = time.time, report: Optional[Callable[[Dict[str, Any]], None]] = None,
                  identity: Optional[Identity] = None, logger: Optional[logging.Logger] = None,
-                 service: Optional[bool] = None, poll_s: float = 1.0):
+                 service: Optional[bool] = None, poll_s: float = 1.0, report_every_s: Optional[float] = None):
         self.spec, self.dry_run, self._clock, self._report = spec, dry_run, clock, report
         self.log = logger or log
         self.poll_s = poll_s
@@ -229,6 +230,12 @@ class Proxy:
         svc = spec.service or {}
         self.service_enabled = (svc.get("enabled", True) if service is None else service)
         self.listen = svc.get("listen") or DEFAULT_LISTEN
+        # V0664 (C2): the status report, opt-in: `service.report_every_s` (the argument is for tests and tools)
+        self.report_every_s = float(report_every_s if report_every_s is not None else (svc.get("report_every_s") or 0))
+        self._started_at: Optional[float] = None
+        self._last_read: Dict[str, float] = {}
+        self._report_task: Optional[asyncio.Task] = None
+        self._report_warned_at: Optional[float] = None
         state_path = spec.state_path
         if dry_run:
             self.outbox = Outbox(":memory:")
@@ -241,10 +248,14 @@ class Proxy:
         mtls_dir = None
         if mtls.get("enabled"):
             mtls_dir = str(Path(spec.base or ".") / (mtls.get("dir") or "certs"))
-        self.identity = identity or Identity(
+        # V0664: a spec with no identity (system to system: sources to writer sinks; the spec refuses one that needs it)
+        # runs with no Identity and no registry client: nothing in it calls TheProtocol, and a sink that tried would be
+        # told the context has no registry
+        self.identity: Optional[Identity] = identity or (Identity(
             spec.registry, spec.value(ident["agent_did"]), spec.value(ident["client_id"]),
-            spec.value(ident["client_secret"]), mtls_dir=mtls_dir, transport=transport, clock=clock)
-        self.client = RegistryClient(self.identity, transport=transport)
+            spec.value(ident["client_secret"]), mtls_dir=mtls_dir, transport=transport, clock=clock) if ident else None)
+        self.client: Optional[RegistryClient] = (RegistryClient(self.identity, transport=transport)
+                                                 if self.identity is not None else None)
         self.mappings: Dict[str, MappingSpec] = {m.name: m for m in spec.mappings}
         self._by_source: Dict[str, List[MappingSpec]] = collections.defaultdict(list)
         for m in spec.mappings:
@@ -281,7 +292,8 @@ class Proxy:
     def _context(self, kind: str, name: str) -> CoreContext:
         scope = f"{kind}:{name}"
         state = OverlayState(self._base, scope) if self.dry_run else PluginState(self.outbox, scope)
-        return CoreContext(proxy_name=self.spec.name, agent_did=str(self.spec.value(self.spec.identity["agent_did"])),
+        did = self.spec.identity.get("agent_did")
+        return CoreContext(proxy_name=self.spec.name, agent_did=str(self.spec.value(did)) if did else "",
                            registry_url=self.spec.registry, dry_run=self.dry_run,
                            logger=self.log.getChild(f"{kind}.{name}"), state=state, secret=self.spec.secret,
                            client=None if kind == "source" else self.client, kind=kind, name=name)
@@ -438,7 +450,7 @@ class Proxy:
         self._started = True
         for name, p in list(self.sources.items()) + list(self.targets.items()):
             await p.start()
-        if not self.dry_run:
+        if not self.dry_run and self.identity is not None:
             try:
                 await self.identity.token()
             except IdentityError as e:
@@ -451,6 +463,9 @@ class Proxy:
         if self.service_enabled:
             from .service import start_service
             self._service = await start_service(self, self.listen)
+        self._started_at = self._clock()
+        if self.report_every_s > 0 and not self.dry_run and self.client is not None:
+            self._report_task = asyncio.ensure_future(self._report_loop())
 
     async def _run_source(self, name: str, src: Source) -> None:
         delay = 1.0
@@ -460,6 +475,7 @@ class Proxy:
                     if self._stopping:
                         return
                     await self.ingest(name, rec)
+                    self._last_read[name] = self._clock()
                     if not self.dry_run:
                         await src.committed(rec)       # only once the row is on disk
                     delay = 1.0
@@ -519,6 +535,12 @@ class Proxy:
             return
         self._stopped = True
         self._stopping = True
+        if self._report_task is not None:
+            self._report_task.cancel()
+            try:
+                await self._report_task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001 - a report that failed is not why a proxy stops
+                pass
         for t in self._tasks:
             t.cancel()
         for t in self._tasks:
@@ -538,7 +560,8 @@ class Proxy:
         if self._service is not None:
             await self._service.cleanup()
             self._service = None
-        await self.client.aclose()
+        if self.client is not None:
+            await self.client.aclose()
         self._started = False
 
     def close(self) -> None:
@@ -546,18 +569,71 @@ class Proxy:
         if self._base is not None:
             self._base.close()
 
+    # ── the status report (V0664, C2) ───────────────────────────────────────────────
+
+    def report(self) -> Dict[str, Any]:
+        """What a proxy tells its registry about itself: its name, the SDK's version, how long it has run, and for each
+        mapping and source a few counts and flags. NAMES AND COUNTS ONLY: never a record, a config value, a secret, or the
+        text of an error (a breaker is reported by the name of its state, never by its reason)."""
+        from .. import __version__
+        sw = self.outbox.switches()
+        by = self.outbox.counts_by_mapping()
+        now = self._clock()
+
+        def breaker(name: str) -> Optional[str]:
+            st = sw.get(f"breaker:{name}")
+            return str(st.get("state")) if isinstance(st, dict) and st.get("state") else None
+
+        def stamp(t: Optional[float]) -> Optional[str]:
+            return (datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if t is not None else None)
+        return {
+            "name": self.spec.name, "sdk_version": __version__,
+            "uptime_s": int(max(0.0, now - self._started_at)) if self._started_at is not None else 0,
+            "mappings": {m: {"pending": int(by.get(m, {}).get("pending", 0)), "done": int(by.get(m, {}).get("done", 0)),
+                             "dead": int(by.get(m, {}).get("dead", 0)), "paused": bool(sw.get(f"pause:{m}")),
+                             "breaker": breaker(m)} for m in self.mappings},
+            "sources": {n: {"finished": n in self.finished_sources, "last_read_at": stamp(self._last_read.get(n))}
+                        for n in self.sources},
+        }
+
+    async def _post_report(self) -> None:
+        assert self.client is not None
+        try:
+            r = await self.client.call("POST", "/api/v1/agents/me/proxy-status", json=self.report(),
+                                       idempotency_key=f"tpstatus-{uuid.uuid4().hex}")
+            problem = None if r.status_code < 300 else f"HTTP {r.status_code}"
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001 - a status report never stops a proxy
+            problem = type(e).__name__
+        if problem is None:
+            self._report_warned_at = None
+            return
+        now = self._clock()
+        if self._report_warned_at is None or now - self._report_warned_at >= 3600:
+            self._report_warned_at = now
+            self._note(logging.WARNING, f"the status report was not taken ({problem}); it is tried again every "
+                                        f"{int(self.report_every_s)} s and said again here after an hour")
+
+    async def _report_loop(self) -> None:
+        while not self._stopping:
+            await self._post_report()
+            await asyncio.sleep(self.report_every_s)
+
     # ── what status, health and metrics read ─────────────────────────────────────────────────────────────────────
 
     def status(self) -> Dict[str, Any]:
         sw = self.outbox.switches()
         by = self.outbox.counts_by_mapping()
         return {
-            "name": self.spec.name, "agent_did": self.identity.agent_did, "registry": self.spec.registry,
+            "name": self.spec.name, "agent_did": self.identity.agent_did if self.identity else None,
+            "registry": self.spec.registry or None,
             "dry_run": self.dry_run, "paused": bool(sw.get("pause")),
             "outbox": self.outbox.counts(), "mappings": {
                 m: {**by.get(m, {"pending": 0, "done": 0, "dead": 0}),
                     "paused": bool(sw.get(f"pause:{m}")), "breaker": sw.get(f"breaker:{m}")}
                 for m in self.mappings},
-            "identity": {"tokens_issued": self.identity.issued, "last_error": self.identity.last_error,
-                         "mtls": bool(self.identity.mtls_dir), "svid": bool(self.identity.client_cert())},
+            "identity": ({"tokens_issued": self.identity.issued, "last_error": self.identity.last_error,
+                          "mtls": bool(self.identity.mtls_dir), "svid": bool(self.identity.client_cert())}
+                         if self.identity is not None else None),
         }

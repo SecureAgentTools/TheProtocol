@@ -4,7 +4,10 @@ Why it exists: the driver's ports came from FRAME_TEST_PORT_* with fixed default
 frames stood up without hand-picked ports collide, and the admin UI's runner has no human to pick them.
 
 A port is TAKEN when any of these holds it:
-  * a listening TCP socket on the host (`ss -Hltn`);
+  * a TCP socket on the host holding it as its LOCAL port in ANY state (`ss -Hatn`): a listener, and also the source port
+    of an established connection, since this host's ephemeral range is 1024-65535 (§PAIRPORTS, 2026-11-16: three pairs
+    failed on "failed to bind host port 127.0.0.1:8552" while edge-nginx held 8552 as the source port of a keepalive
+    connection and nothing listened there);
   * a host binding of ANY container, running or stopped (`docker inspect` HostConfig.PortBindings): a stopped frame
     takes its ports back the moment it starts;
   * a port recorded in any stack dir's run meta (`hetzner-demo-run.json`: "ports" and "port_push").
@@ -53,6 +56,20 @@ def host_listeners() -> Set[int]:
     return taken
 
 
+def host_local_ports() -> Set[int]:
+    """Every TCP port the host holds as a LOCAL port, in any state (listening, established, time-wait): a bind of that
+    port fails while any of them lives. The remote side's port is someone else's and is not counted."""
+    out = subprocess.run(["ss", "-Hatn"], capture_output=True, text=True).stdout
+    taken: Set[int] = set()
+    for line in out.splitlines():
+        fields = line.split()
+        if len(fields) >= 4:
+            m = re.search(r":(\d+)$", fields[3])
+            if m:
+                taken.add(int(m.group(1)))
+    return taken
+
+
 def container_bindings() -> Set[int]:
     ids = subprocess.run(["docker", "ps", "-aq"], capture_output=True, text=True).stdout.split()
     taken: Set[int] = set()
@@ -87,7 +104,7 @@ def recorded_stack_ports(stack_root: str = STACK_ROOT) -> Set[int]:
 
 
 def taken_ports(stack_root: str = STACK_ROOT) -> Set[int]:
-    return host_listeners() | container_bindings() | recorded_stack_ports(stack_root)
+    return host_listeners() | host_local_ports() | container_bindings() | recorded_stack_ports(stack_root)
 
 
 def allocate(taken: Iterable[int], bases: Iterable[int] = BASES) -> Dict[str, int]:

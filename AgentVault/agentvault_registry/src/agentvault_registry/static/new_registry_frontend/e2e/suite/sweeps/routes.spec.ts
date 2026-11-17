@@ -34,7 +34,19 @@ async function sweep(page: Page, steps: Steps, capture: Capture, a11y: (p: Page,
   for (const r of all.filter((x) => audienceOf(x) === audience && NOT_DRIVEN[x.path])) {
     steps.notMeasured(`page${r.path}`, tier, `not opened headless: ${NOT_DRIVEN[r.path]}`)
   }
-  for (const r of mine.filter((x) => !NOT_DRIVEN[x.path])) {
+  // V0666 the games switch: where this registry says games_enabled false, a game view lands on its games-off page by
+  // design, so its row measures nothing: NOT MEASURED, never a pass and never a failure. A config that cannot be read, or
+  // that does not say, keeps the games on (the console's own rule, services/games/gamesSwitch.ts).
+  const gamesOff = await page.evaluate(async () => {
+    try { const r = await fetch('/api/v1/public/registry-config'); return r.ok ? (await r.json())?.games_enabled === false : false } catch { return false }
+  })
+  const gameRoute = (x: RouteInfo) => x.meta.closedWhenRegistryFlagFalse === 'games_enabled'
+  if (gamesOff) {
+    for (const r of mine.filter((x) => gameRoute(x) && !NOT_DRIVEN[x.path])) {
+      steps.notMeasured(`page${r.path}`, tier, 'the games are off on this registry (games_enabled false): the view lands on its games-off page by design')
+    }
+  }
+  for (const r of mine.filter((x) => !NOT_DRIVEN[x.path] && !(gamesOff && gameRoute(x)))) {
     for (const e of EXPECTED_REFUSALS.filter((x) => x.route.test(r.path))) capture.allow(e.call, e.status, e.reason)
     await steps.check(`page${r.path}`, tier, async () => {
       const cp = capture.checkpoint()

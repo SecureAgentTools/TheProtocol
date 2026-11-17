@@ -11,7 +11,7 @@ Four components form the core:
 - **SPIRE** issues short-lived cryptographic workload identities (SVIDs).
 - **SPIFFE** is the open standard for those identities (`spiffe://<trust_domain>/...`).
 - **mTLS through nginx terminators** encrypts service-to-service traffic and verifies the caller's certificate chain; the app behind the terminator reads the forwarded certificate and decides which identity it is.
-- **OPA** holds declarative Rego policies beside the Python checks. The production frames and their cloud operators run it in shadow mode: OPA's answer is recorded beside the Python one, and Python decides.
+- **OPA** holds declarative Rego policies beside the Python checks. Since 16 November 2026 the production frames and their cloud operators run it in enforce mode: OPA enforces the sign-in and permission checks (a request passes only when both the Python check and OPA allow it; if OPA does not answer, the Python check alone decides), and its invariants are evaluated beside them but not yet decisive. A frame built from the template runs it in shadow.
 
 This chapter shows how they fit together, then covers the credentials people use (passwords, two-factor authentication, JWTs and API keys), rate limits, the read-only switch and the audit trail.
 
@@ -285,7 +285,7 @@ The registry's TLS helper (`es_ssl_helper.py`) builds one SSL context that trust
 from ..es_ssl_helper import get_httpx_verify
 
 def _get_teg_client() -> httpx.AsyncClient:
-    ...  # rebuilds the client when the SVID file's mtime changes
+    ...  # rebuilds the client when the SVID, its key or the bundle changes
     _teg_http_client = httpx.AsyncClient(
         limits=httpx.Limits(max_connections=200, max_keepalive_connections=50),
         timeout=httpx.Timeout(10.0, connect=5.0),

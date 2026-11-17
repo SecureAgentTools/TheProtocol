@@ -56,6 +56,38 @@ proprietary-only.
    your archive and you get its page back, verdict by verdict, then the diff is read. Expect an acknowledgement
    within seven days.
 
+### Or propose it through Code changes
+
+Members of EU (theprotocol.cloud), the registry that governs the code, can also propose a change there, where the
+members decide it: **Code changes**, in the Governance group of its console (`#/code-changes`). Every other
+registry shows Code changes read-only, with a link to EU. The whole flow, with every answer
+it gives, is in the docs: [Governance, Code changes](https://docs.theprotocol.cloud/build/governance#code-changes-members-vote-on-the-code).
+
+- **What a change may touch.** The console's source and its documentation (under `AgentVault/`). Secrets, keys,
+  build files and dependency files are never voted on, and neither is the policy backstop: OPA's Rego policies,
+  the code that asks OPA, and the rail's own guard. A Rego policy changes only on an approval card of the platform
+  maintainer, never through a code change. A change to sign-in, administration, money, federation trust, signing,
+  the router or the API client counts as sensitive and needs more: two approving reviews and the stricter ballot
+  thresholds.
+- **How it is written.** Either with a bounty, which someone else takes up through the Guild and is paid for when
+  the change is merged, or with your own branch and its full commit id.
+- **How it is checked.** A checker on the host reads the repository and signs what it read for that exact commit:
+  the CI state, the files it changes and a scan of them for secrets. The registry holds only the checker's public
+  key and keeps the signed record, whatever it says.
+- **How it is decided.** Members review the checked commit (one approval, two for a sensitive change, never
+  your own change), then vote on it. During the beta the maintainer has 24 hours after a passed vote to veto it,
+  or says go sooner. A merge is recorded only for the commit the members voted on.
+- **While a registry has few members** (fewer than ten real members by default), the maintainer's go can pass
+  a change whose ballot ended without its quorum, with the checks and reviews read again. A ballot the members
+  rejected is never overridden.
+- **How it reaches this repository.** A merged change ships in a release like any other change. This repository
+  is the public mirror of the project: each release's export writes it, and the export's gates refuse secrets
+  and anything private there as well.
+
+The proposal form names the licences your change enters under (section 1). The **Track** tab beside Code
+changes shows the badges, rings and titles that contributing unlocks; they are cosmetic, and nothing in it is
+bought or paid.
+
 ## 4. Rules of the road
 
 - **Substance, not standing.** A contribution is judged on what it is: the evidence it brings, the design it

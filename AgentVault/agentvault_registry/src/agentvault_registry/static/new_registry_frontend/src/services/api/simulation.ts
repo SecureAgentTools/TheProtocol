@@ -81,12 +81,6 @@ export interface SimStartParams {
   clerk_anchored?: boolean
 }
 
-export interface FundParams {
-  target_balance: number
-  only_depleted: boolean
-  depleted_threshold: number
-}
-
 // ── Telemetry / safety types (2026-05-31) ──────────────────────────────────
 export interface SimHealthSnapshot {
   ts?: string
@@ -179,21 +173,6 @@ export const simulationApi = {
 
   async getAgents(): Promise<{ registries: RegistryGroup[], total_agents: number, total_funded: number, total_balance: number }> {
     const { data } = await apiClient.get('/admin/simulation/agents')
-    return data
-  },
-
-  async fundAgents(params: FundParams): Promise<any> {
-    const { data } = await apiClient.post('/admin/simulation/fund', params)
-    return data
-  },
-
-  async fundingPreview(params: FundParams): Promise<any> {
-    const { data } = await apiClient.post('/admin/simulation/funding-preview', params)
-    return data
-  },
-
-  async getFundStatus(): Promise<{ lines: { type: string, message: string }[], total: number }> {
-    const { data } = await apiClient.get('/admin/simulation/fund-status')
     return data
   },
 

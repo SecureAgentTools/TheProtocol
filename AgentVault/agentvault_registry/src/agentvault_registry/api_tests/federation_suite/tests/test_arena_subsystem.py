@@ -8,8 +8,17 @@ from __future__ import annotations
 
 from agentvault_registry.api_tests.federation_suite.decorator import federation_test
 from agentvault_registry.api_tests.federation_suite.rig import (
-    FederationTestRig, AssertionResult,
+    FederationTestRig, AssertionResult, PreconditionUnmet, games_off, target_switches,
 )
+
+
+async def _require_games_on(rig) -> None:
+    """V0666 the games switch: where either frame's registry-config says games_enabled false, no game tool answers there
+    (the switch refuses it by name), so the row is NOT MEASURED (skip code games_off), never a pass and never a failure."""
+    off = [label for label in ("sandbox-A", "sandbox-B") if games_off(await target_switches(rig, label))]
+    if off:
+        raise PreconditionUnmet(f"games_off: the games are off on {', '.join(off)} (GAMES_ENABLED=false, its "
+                                "registry-config says so): no game tool answers there")
 
 
 def _is_silent_or_error(r):
@@ -34,6 +43,7 @@ def _is_silent_or_error(r):
 async def test_arena_matches_listed(rig: FederationTestRig) -> AssertionResult:
     """listArenaMatches returns match list on each mainframe (possibly
     empty on Frame-B; sandbox-A typically has RoboWars matches active)."""
+    await _require_games_on(rig)
     state: dict = {}
 
     async def predicate():
@@ -80,6 +90,7 @@ async def test_arena_leaderboard(rig: FederationTestRig) -> AssertionResult:
     Probes multiple known game types — at least one MUST return a
     valid envelope (RoboWars is the canonical primary).
     """
+    await _require_games_on(rig)
     state: dict = {"by_type": {}}
 
     async def predicate():
@@ -124,6 +135,7 @@ async def test_arena_leaderboard(rig: FederationTestRig) -> AssertionResult:
 async def test_arena_health(rig: FederationTestRig) -> AssertionResult:
     """listArenaMatches returning a list (not an error) implies the
     arena subsystem service is reachable. Two-frame parity probe."""
+    await _require_games_on(rig)
     state: dict = {}
 
     async def predicate():

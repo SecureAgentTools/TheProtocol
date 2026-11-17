@@ -14,7 +14,7 @@
         </div>
       </div>
       <div class="gld-status">
-        <button v-if="hasAgent" class="gld-post-btn" data-tour="guild-post" @click="showPost = true"><Icon name="mdi:plus" /> Post a task</button>
+        <button v-if="hasAgent || adminFirms.length" class="gld-post-btn" data-tour="guild-post" @click="showPost = true"><Icon name="mdi:plus" /> Post a task</button>
         <template v-if="admin">
           <span class="gld-pill" :class="admin.enabled ? 'ok' : 'off'">{{ admin.enabled ? 'LIVE' : 'OFF' }}</span>
           <span class="gld-pill neutral">fee {{ (admin.fee_bps / 100).toFixed(1) }}%</span>
@@ -62,9 +62,9 @@
               <span v-if="o.poster_org_name" class="gld-firm-chip" data-testid="gld-firm-chip" :title="'Commissioned by the firm ' + o.poster_org_name"><Icon name="mdi:office-building" /> {{ o.poster_org_name }}</span>
               <!-- §FIRMHIRE — a bounty ADDRESSED to a firm: only its agents may bid -->
               <span v-if="isFirmReserved(o)" class="gld-firm-chip" data-testid="gld-reserved-chip" title="Reserved for a specific firm — only that organization's agents can bid"><Icon name="mdi:lock" /> firm-reserved</span>
-              <span v-else :class="{ me: isMe(o.poster_did) }"><Icon name="mdi:account" /> {{ isMe(o.poster_did) ? 'you' : shortDid(o.poster_did) }}</span>
+              <span v-else :class="{ me: isMe(o.poster_did) }" :title="o.poster_did"><Icon name="mdi:account" /> {{ isMe(o.poster_did) ? t('guild.you', 'you') : shortDid(o.poster_did) }}</span>
               <span v-if="o.bid_count != null"><Icon name="mdi:gavel" /> {{ o.bid_count }} bid{{ o.bid_count === 1 ? '' : 's' }}</span>
-              <span v-if="o.worker_did" :class="{ me: isMe(o.worker_did) }"><Icon name="mdi:hammer-wrench" /> {{ isMe(o.worker_did) ? 'you' : shortDid(o.worker_did) }}</span>
+              <span v-if="o.worker_did" :class="{ me: isMe(o.worker_did) }" :title="o.worker_did"><Icon name="mdi:hammer-wrench" /> {{ isMe(o.worker_did) ? t('guild.you', 'you') : shortDid(o.worker_did) }}</span>
             </div>
             <!-- V0658 (q): My work lists the orders of all your agents and organizations; each names which is yours -->
             <div v-if="tab === 'mine' && myParties(o).length" class="gld-card-mine" data-testid="gld-mine-parties">
@@ -110,6 +110,9 @@
           <div class="gld-d-head">
             <h2>{{ detail.order.title }}</h2>
             <span class="gld-st" :class="'st-' + detail.order.status">{{ detail.order.status }}</span>
+            <!-- V0662 (his suggestion 4): a link to this order, on this console -->
+            <CopyButton :value="consoleLink('/guild?order=' + encodeURIComponent(detail.order.id))"
+                        :what="t('guild.linkWhat', 'the link to this order')" icon-only quiet data-testid="gld-copy-link" />
           </div>
           <div class="gld-d-bounty">{{ fmt(detail.order.bounty) }} <small>{{ detail.order.currency }}</small>
             <span v-if="detail.order.fee_charged" class="gld-d-fee">fee {{ fmt(detail.order.fee_charged) }}</span></div>
@@ -155,7 +158,7 @@
             <!-- poster: verify a submission -->
             <div v-if="offers('verify')" class="gld-act-verify">
               <div class="gld-act-title"><Icon name="mdi:check-decagram" /> Review the delivery</div>
-              <div v-if="detail.order.deliverable" class="gld-deliv">{{ JSON.stringify(detail.order.deliverable) }}</div>
+              <DeliveryFields v-if="detail.order.deliverable" :deliverable="detail.order.deliverable" data-testid="gld-deliv-verify" />
               <div class="gld-act-row">
                 <div class="gld-stars" role="group" :aria-label="t('guild.rating', 'Rating')">Rating:
                   <button v-for="s in 5" :key="s" type="button" class="gld-star" :class="{ on: verifyStars >= s }" :aria-pressed="verifyStars === s"
@@ -181,14 +184,14 @@
                only; the poster's review below the actions keeps its own copy -->
           <div v-if="detail.order.deliverable && !offers('verify')" class="gld-deliv-read" data-testid="gld-deliverable">
             <div class="gld-act-title"><Icon name="mdi:check-decagram" /> {{ t('guild.delivered', 'Delivered') }}</div>
-            <div class="gld-deliv">{{ JSON.stringify(detail.order.deliverable) }}</div>
+            <DeliveryFields :deliverable="detail.order.deliverable" />
           </div>
 
           <h3><Icon name="mdi:gavel" /> Bids <span class="gld-count">{{ detail.bids.length }}</span></h3>
           <ul class="gld-bids">
             <li v-for="b in detail.bids" :key="b.id" class="gld-bid" :class="{ won: b.status === 'awarded' }">
               <div class="gld-bid-body">
-                <code>{{ isMe(b.bidder_did) ? 'you' : shortDid(b.bidder_did) }}</code>
+                <code :title="b.bidder_did">{{ party(b.bidder_did) }}</code>
                 <span v-if="b.on_behalf_of_org_id" class="gld-firm-badge"><Icon name="mdi:domain" /> firm</span>
                 <span v-if="b.stake_status" class="gld-stake-badge" :class="'ss-' + b.stake_status"><Icon name="mdi:shield-lock" /> {{ b.stake_status }}</span>
                 <span class="gld-bid-price">{{ fmt(b.price) }}</span>
@@ -205,8 +208,8 @@
           <h3><Icon name="mdi:timeline-clock" /> Timeline</h3>
           <ol class="gld-timeline">
             <li v-for="e in detail.events" :key="e.seq" class="gld-tl" :class="{ money: ['settled','refunded'].includes(e.event_type), warn: e.event_type === 'disputed' }">
-              <span class="gld-tl-dot"></span><span class="gld-tl-type">{{ e.event_type }}</span>
-              <span class="gld-tl-actor" v-if="e.actor_did">{{ isMe(e.actor_did) ? 'you' : shortDid(e.actor_did) }}</span>
+              <span class="gld-tl-dot"></span><span class="gld-tl-type" :title="e.event_type">{{ eventWord(e.event_type, t) }}</span>
+              <span class="gld-tl-actor" v-if="e.actor_did" :title="e.actor_did">{{ party(e.actor_did) }}</span>
               <span class="gld-tl-when">{{ when(e.created_at) }}</span>
             </li>
           </ol>
@@ -229,7 +232,19 @@
     <div v-if="showPost" class="gld-modal-bg" @click.self="showPost = false">
       <div ref="postDialog" class="gld-modal" role="dialog" aria-modal="true" aria-labelledby="gld-post-title">
         <h3 id="gld-post-title"><Icon name="mdi:plus-box" /> Post a task</h3>
-        <p class="gld-modal-sub">Posting as <strong>{{ activeName }}</strong>. The bounty is escrowed immediately.</p>
+        <!-- V0662 (his suggestion 8): an organization admin posts as the firm, through the organization's own work-order
+             door (POST /organizations/{id}/work-orders: the firm's treasury pays, its procurement cap binds) -->
+        <template v-if="adminFirms.length">
+          <label class="gld-lab" for="gld-post-as">{{ t('guild.postAs', 'Post as') }}</label>
+          <select id="gld-post-as" v-model="postAs" class="gld-in" data-testid="gld-post-as">
+            <option v-if="hasAgent" value="agent">{{ tp('guild.postAsAgent', '{name}, your agent', { name: activeName }) }}</option>
+            <option v-for="f in adminFirms" :key="f.id" :value="f.id">{{ tp('guild.postAsFirm', '{name}, the firm', { name: f.name }) }}</option>
+          </select>
+          <p class="gld-modal-sub">{{ postAs === 'agent'
+            ? t('guild.postAsAgentNote', 'The bounty is escrowed from your agent at once.')
+            : t('guild.postAsFirmNote', 'The bounty is escrowed from the firm\'s treasury at once; its procurement cap applies, and the order is the firm\'s.') }}</p>
+        </template>
+        <p v-else class="gld-modal-sub">Posting as <strong>{{ activeName }}</strong>. The bounty is escrowed immediately.</p>
         <label class="gld-lab" for="gld-post-name">Title</label>
         <input id="gld-post-name" v-model="postForm.title" placeholder="e.g. Summarize a document" class="gld-in" maxlength="200" />
         <p v-if="postForm.forOrg" class="gld-firm-reserved" data-testid="gld-post-fororg">
@@ -274,6 +289,11 @@ import { useGuildLabels } from '@/composables/useGuildLabels'
 import { typedAmount } from '@/services/money/typedAmount'
 import { useFocusTrap } from '@/composables/useFocusTrap'
 import { REJECT_REASON_MAX, rejectReasonReady, verifyFeedback } from '@/services/guild/rejectReason'
+import { eventWord, partyLabel, shortDid } from '@/services/guild/orderView'
+import { consoleLink } from '@/services/share/consoleLink'
+import { organizationService } from '@/services/api/organizationService'
+import CopyButton from '@/components/quickOnboarding/CopyButton.vue'
+import DeliveryFields from '@/components/guild/DeliveryFields.vue'
 
 const { t, tp } = useI18n()
 
@@ -352,6 +372,26 @@ function bidProblem(price: unknown, bounty: unknown): string {
   if (Number(price) > Number(bounty)) return t('guild.bidOverBounty', 'Your price cannot exceed the bounty.')
   return ''
 }
+// V0662 (his suggestion 8): the organizations this person administers (owner or admin), whose door they may use
+const adminFirms = ref<{ id: string; name: string }[]>([])
+async function loadAdminFirms() {
+  if (!(auth as any).isAuthenticated && !(auth as any).token) return
+  try {
+    const orgs: any[] = await organizationService.listOrganizations()
+    adminFirms.value = (orgs || []).filter((o) => (o.my_role === 'owner' || o.my_role === 'admin') && o.is_active !== false)
+      .map((o) => ({ id: String(o.id), name: String(o.name || o.slug || o.id) }))
+    // a form opened before the firms were known (?post=1) by a person with no acting agent: the firm is the poster
+    if (!hasAgent.value && postAs.value === 'agent' && adminFirms.value.length) postAs.value = adminFirms.value[0].id
+  } catch { adminFirms.value = [] }
+}
+const postAs = ref<string>('agent')
+const postIdem = ref('')
+watch(showPost, (open) => {
+  if (!open) return
+  postIdem.value = `guildfirm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  if (!hasAgent.value && adminFirms.value.length) postAs.value = adminFirms.value[0].id
+  else if (postAs.value !== 'agent' && !adminFirms.value.some((f) => f.id === postAs.value)) postAs.value = 'agent'
+})
 const postDialog = ref<HTMLElement | null>(null)
 useFocusTrap(postDialog, { activeWhen: showPost })
 const bidForm = ref({ price: 0 as number, eta: 3600 as number, pitch: '' })
@@ -395,7 +435,8 @@ const ownerLine = computed(() => {
   return tp('guild.owner.agentParty', 'Your agent {name} is the {role} on this order. Select it in the agent switcher (top right) to act on it.',
     { name: partyName(p), role: roleWord(p.role) })
 })
-const shortDid = (d?: string | null) => !d ? '—' : d.length > 26 ? d.slice(0, 15) + '…' + d.slice(-5) : d
+// V0662 item 3: a party on the order page by the name the order's answer gives (`names`), the DID on hover
+const party = (d?: string | null) => partyLabel(d, detail.value?.names, isMe(d), t)
 const fmt = (v: any) => { const n = Number(v); return isNaN(n) ? String(v ?? '0') : n.toLocaleString(appLocale(), { maximumFractionDigits: 4 }) }
 const when = (t: string) => { try { return new Date(t).toLocaleString(appLocale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) } catch { return t } }
 
@@ -503,6 +544,7 @@ async function act(fn: () => Promise<any>, okMsg: string) {
   finally { busy.value = false }
 }
 async function doPost() {
+  if (postAs.value !== 'agent') return doPostAsFirm(postAs.value)
   await act(async () => {
     // §FIRMHIRE — a firm-addressed bounty rides the EXISTING required_skills JSON as
     // a `for-org:{id}` tag; the bid rail then admits only that org's agents.
@@ -510,6 +552,21 @@ async function doPost() {
     showPost.value = false; postForm.value = { title: '', spec: '', bounty: 10, deadlineHours: 24, stake: 0, forOrg: '' }
     if (r?.order_id) { selected.value = r.order_id }
   }, 'Task posted + bounty escrowed')
+}
+// V0662 (his suggestion 8): post as the firm, through its existing work-order door; one Idempotency-Key per opening of
+// the form, so a second press answers the same order, never a second one
+async function doPostAsFirm(orgId: string) {
+  const f = postForm.value
+  await act(async () => {
+    const r = await organizationService.postOrgWorkOrder(orgId, {
+      title: f.title, spec: f.spec, bounty: String(Number(f.bounty)),
+      deadline_seconds: Math.max(60, (f.deadlineHours || 24) * 3600),
+      ...(Number(f.stake) ? { stake_required: Number(f.stake) } : {}),
+      ...(f.forOrg ? { required_skills: [`for-org:${f.forOrg}`] } : {}),
+    }, postIdem.value)
+    showPost.value = false; postForm.value = { title: '', spec: '', bounty: 10, deadlineHours: 24, stake: 0, forOrg: '' }
+    if (r?.order_id) { selected.value = r.order_id }
+  }, t('guild.postedAsFirm', 'Task posted as the firm; the bounty is escrowed from its treasury'))
 }
 async function doBid() {
   const id = detail.value.order.id
@@ -543,6 +600,7 @@ watch(() => route.query.order, () => { void openFromQuery() })
 
 onMounted(() => {
   loadAll(); timer = setInterval(loadAll, 10000)
+  void loadAdminFirms()
   void openFromQuery()
   // §AGENTDISC #195 — the Discovery hire loop lands here: ?post=1 opens the EXISTING
   // post form (no second copy) with optional title/spec prefill from the agent card.
@@ -635,7 +693,6 @@ useEscapeClose(showPost, () => { showPost.value = false })
 .gld-reject { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.6rem; }
 .gld-in { flex: 1 1 auto; min-width: 0; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.14); border-radius: 7px; padding: 0.45rem 0.6rem; color: #e6edf3; font-size: 0.82rem; box-sizing: border-box; }
 .gld-in-sm { flex: 0 0 5.5rem; } .gld-ta { width: 100%; resize: vertical; }
-.gld-deliv { font-size: 0.75rem; opacity: 0.8; background: rgba(0,0,0,0.2); border-radius: 6px; padding: 0.45rem; margin-bottom: 0.5rem; word-break: break-all; }
 .gld-stars { font-size: 0.78rem; display: inline-flex; align-items: center; gap: 0.15rem; }
 .gld-star { cursor: pointer; color: rgba(255,255,255,0.6); font-size: 1.1rem; background: none; border: 0; padding: 0 0.05rem; line-height: 1; } .gld-star.on { color: #fbbf24; }
 .gld-star:focus-visible { outline: 2px solid rgba(251,191,36,0.7); outline-offset: 1px; border-radius: 3px; }
@@ -693,7 +750,7 @@ useEscapeClose(showPost, () => { showPost.value = false })
 .gld-tl { display: flex; align-items: center; gap: 0.5rem; font-size: 0.74rem; padding: 0.28rem 0; }
 .gld-tl-dot { width: 7px; height: 7px; border-radius: 50%; background: #93c5fd; flex: 0 0 auto; }
 .gld-tl.money .gld-tl-dot { background: #34d399; } .gld-tl.warn .gld-tl-dot { background: #fbbf24; }
-.gld-tl-type { color: #7dd3fc; text-transform: capitalize; }
+.gld-tl-type { color: #7dd3fc; }
 .gld-tl-actor { opacity: 0.5; font-family: ui-monospace, monospace; font-size: 0.66rem; } .gld-tl-when { margin-left: auto; opacity: 0.4; font-size: 0.66rem; }
 .gld-resolve { margin-top: 1rem; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 0.8rem; }
 .gld-resolve-note { font-size: 0.78rem; opacity: 0.8; } .gld-slider { width: 100%; margin: 0.5rem 0; accent-color: #fbbf24; }

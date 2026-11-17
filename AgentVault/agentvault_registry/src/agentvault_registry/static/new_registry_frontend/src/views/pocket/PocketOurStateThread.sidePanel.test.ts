@@ -211,4 +211,32 @@ describe('the side panel beside the column, on the console', () => {
     expect(h.presence).not.toHaveBeenCalled()
     w.unmount()
   })
+
+  /* V0662 (the batch's item 11): the session board sits in the side panel, for the room's operators only */
+  it('the room\'s operator sees the session board in the side panel, read from the registry', async () => {
+    paneW = SIDE_PANEL_MIN_PX + 200
+    const p: any = page('org', [text('m1', 1)])
+    p.room = { ...p.room, my_is_operator: true }
+    h.chat.getMessages = vi.fn().mockResolvedValue(p)
+    h.chat.listApprovals = vi.fn().mockResolvedValue({ items: [], can_decide: true, presence: 'off' })
+    h.chat.agentStatus = vi.fn().mockResolvedValue({ sessions: [{ key: 'agt:did:l', name: 'session-lead', state: 'active', wake_mode: 'listen',
+      wakes_24h: 4, last_wake_at: null, reported_at: null, age_s: 10 }] })
+    const w = mount(PocketOurStateThread, opts)
+    await flushPromises(); await flushPromises()
+    expect(h.chat.agentStatus).toHaveBeenCalledWith('dev-tok', 'room1')
+    expect(w.find('[data-testid="ost-agent-status"]').text()).toContain('session-lead')
+    expect(w.find('[data-testid="ost-agent-status"]').text()).toContain('4 wakes in 24 h')
+  })
+  it('a member who is not an operator never asks for it and sees no section', async () => {
+    paneW = SIDE_PANEL_MIN_PX + 200
+    const p: any = page('org', [text('m1', 1)])
+    p.room = { ...p.room, my_is_operator: false }
+    h.chat.getMessages = vi.fn().mockResolvedValue(p)
+    h.chat.listApprovals = vi.fn().mockResolvedValue({ items: [], can_decide: false, presence: 'off' })
+    h.chat.agentStatus = vi.fn().mockResolvedValue({ sessions: [] })
+    const w = mount(PocketOurStateThread, opts)
+    await flushPromises(); await flushPromises()
+    expect(h.chat.agentStatus).not.toHaveBeenCalled()
+    expect(w.find('[data-testid="ost-agent-status"]').exists()).toBe(false)
+  })
 })

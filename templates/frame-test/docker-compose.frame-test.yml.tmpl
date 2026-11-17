@@ -20,6 +20,14 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 
+# V0667 (order gwo_4d55fcc1535962f55866740c): the registry and the TEG keep 5 x 50 MB, WRITTEN here (never left to a host's daemon default): V0666's console proof lost the
+# award 500's traceback to the 10m x 3 above. Contract rule R44 pins it; everything else in the frame keeps the small anchor.
+x-logging-keep: &keep-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
 # D12 (2026-09-05): this compose carries TOPOLOGY ONLY. Every value under an
 # `environment:` block is `${FT_...}`, read from the frame's own env file
 # (rendered from templates/frame-test/frame-test.env.tmpl, passed as --env-file).
@@ -937,7 +945,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
-    logging: *default-logging
+    logging: *keep-logging
 
   # ═══════════════════════════════════════════════════════════════════════
   # REGISTRY
@@ -1054,6 +1062,7 @@ services:
       COCKPIT_DESK_ENABLED: ${FT_REG_COCKPIT_DESK_ENABLED}
       CONTRACTS_V2_ENABLED: ${FT_REG_CONTRACTS_V2_ENABLED}
       CONTRACT_TEMPLATES_ENABLED: ${FT_REG_CONTRACT_TEMPLATES_ENABLED}
+      WORKFLOW_TEMPLATES_ENABLED: ${FT_REG_WORKFLOW_TEMPLATES_ENABLED}
       GUILD_ENABLED: ${FT_REG_GUILD_ENABLED}
       GUILD_MINTS_CONTRACTS: ${FT_REG_GUILD_MINTS_CONTRACTS}
       AGENT_SPAWN_ENABLED: ${FT_REG_AGENT_SPAWN_ENABLED}
@@ -1077,6 +1086,15 @@ services:
       OPA_ENABLED: ${FT_REG_OPA_ENABLED}
       OPA_ENFORCE: ${FT_REG_OPA_ENFORCE}
       OPA_URL: ${FT_REG_OPA_URL}
+      # V0668 (kit beta.38): the V0662-V0668 feature switches, values in the env template (contract rule R44)
+      CODE_CHANGES_GOVERNING_REGISTRY: ${FT_REG_CODE_CHANGES_GOVERNING_REGISTRY}
+      CODE_DISTRIBUTIONS_ENABLED: ${FT_REG_CODE_DISTRIBUTIONS_ENABLED}
+      REPO_ACCOUNTS_ENABLED: ${FT_REG_REPO_ACCOUNTS_ENABLED}
+      GOVERNANCE_MEMBER_BOND_REQUIRED: ${FT_REG_GOVERNANCE_MEMBER_BOND_REQUIRED}
+      GOVERNANCE_MEMBER_MIN_BOND_AGE_DAYS: ${FT_REG_GOVERNANCE_MEMBER_MIN_BOND_AGE_DAYS}
+      CODE_PASSPORT_CARD_MAX_AGE_SECONDS: ${FT_REG_CODE_PASSPORT_CARD_MAX_AGE_SECONDS}
+      CODE_PASSPORT_STANDING_INTERVAL: ${FT_REG_CODE_PASSPORT_STANDING_INTERVAL}
+      GAMES_ENABLED: ${FT_REG_GAMES_ENABLED}
       # §BATCH6 — cross-frame FX is federation state, filled at federation time (runbook §9): all six are env-carried, none inline
       FX_ENABLED: ${FT_REG_FX_ENABLED}
       FX_RATE_MODE: ${FT_REG_FX_RATE_MODE}
@@ -1297,7 +1315,7 @@ services:
       timeout: 5s
       retries: 3
       start_period: 45s
-    logging: *default-logging
+    logging: *keep-logging
 
   # ════════════════════════════════════════════════════════════════
   # POCKET PUSH — ntfy sidecar (added 2026-08-01)

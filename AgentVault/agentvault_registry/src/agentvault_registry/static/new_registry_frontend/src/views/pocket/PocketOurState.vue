@@ -22,6 +22,10 @@
                 :title="t('ourstate.list.requestsUnread', 'Your requests could not be read just now.')">—</span>
           <span v-else-if="requestCount > 0" class="os-lane-badge" data-testid="os-req-count">{{ requestCount }}</span>
         </button>
+        <!-- V0663: archived rooms: out of the lists and the cap, their history readable here -->
+        <button role="tab" class="os-lane" :class="{ on: lane === 'archived' }"
+                :aria-selected="lane === 'archived'" data-testid="os-lane-archived"
+                @click="switchLane('archived')">{{ t('ourstate.list.archived', 'Archived') }}</button>
       </div>
       <!-- V0652 (ak): your chat settings, from the list too (inventory item 13: the console reached them nowhere) -->
       <button type="button" class="os-you" data-testid="os-you-settings"
@@ -120,6 +124,10 @@
           </span>
           <span class="os-row-meta">
             <span class="os-row-time">{{ timeAgo(c.last_message_at) }}</span>
+            <!-- V0663 (order 418): an @ apart from the count: a mention of YOU waits in this room (by name; @all is not one) -->
+            <span v-if="showAtMark(c.unread_mentions)" class="os-at" data-testid="os-at"
+                  :title="t('ourstate.mentions.atTitle', 'Someone mentioned you here')"
+                  :aria-label="t('ourstate.mentions.atTitle', 'Someone mentioned you here')">@</span>
             <span v-if="c.unread > 0" class="os-unread" data-testid="os-unread">{{ c.unread }}</span>
             <Icon v-if="c.muted" name="mdi:bell-off" class="os-muted" />
           </span>
@@ -204,7 +212,7 @@
         <div class="os-cast" data-tour="ourchat-cast">
           <button v-for="a in cast" :key="a.did" class="os-cast-row" :data-testid="`os-cast-${a.did}`"
                   @click="startServiceThread(a)">
-            <UserAvatar :user="a" :avatar-url="a.card_data?.iconUrl || null" :display-name="a.name"
+            <UserAvatar :user="a" :avatar-url="agentAvatarUrl(a)" :display-name="a.name"
                         :track-record="a.track_record || null" size="md" />
             <span class="os-cast-body">
               <span class="os-cast-name">{{ a.name }}</span>
@@ -215,6 +223,9 @@
             <Icon name="mdi:chat" class="os-cast-go" />
           </button>
         </div>
+      </div>
+      <div v-if="!loading && !rows.length && lane === 'archived'" class="os-empty" data-testid="os-archived-empty">
+        <p class="os-empty-line">{{ t('ourstate.list.noArchived', 'No archived rooms. An archived room keeps its history and leaves your lists and your cap of 20 rooms.') }}</p>
       </div>
       <div v-if="!loading && !rows.length && lane === 'requests'" class="os-empty">
         <p class="os-empty-line">{{ t('ourstate.list.noRequests', 'No requests. A first message from a stranger lands here, defused, until you accept.') }}</p>
@@ -232,6 +243,7 @@
 
 <script setup lang="ts">
 import { identityKind, identityPid } from '@/services/chat/counterparty'
+import { showAtMark } from '@/services/chat/mentions'
 import { readAccessToken } from '@/services/accessToken'
 import { ref, computed, watch, onMounted, inject } from 'vue'
 import { OURCHAT_LIST_FOLD } from '@/services/chat/listFold'
@@ -239,6 +251,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useOurChatBase } from '@/composables/useOurChatBase'
 import Icon from '@/components/Icon.vue'
 import UserAvatar from '@/components/common/UserAvatar.vue'
+import { agentAvatarUrl } from '@/services/agentAvatar'   // V0662 item 14: card icons from the registry
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import OurStateIdentity from '@/components/ourstate/OurStateIdentity.vue'
 import OrgRoomAvatar from '@/components/ourstate/OrgRoomAvatar.vue'
@@ -281,7 +294,7 @@ function openProtocolFeed() {
   else router.push('/settings?tab=notifications')
 }
 
-const lane = ref<'active' | 'requests'>('active')
+const lane = ref<'active' | 'requests' | 'archived'>('active')
 const rows = ref<any[]>([])
 const nextCursor = ref<string | null>(null)
 // §FESUITE V0578: a failed requests read hid the Requests badge (it read as none waiting) and a failed read of the
@@ -357,7 +370,7 @@ async function load(reset: boolean) {
       const rq = await chatApi.listConversations(token.value, 'requests').catch(() => null)
       if (rq) { requestCount.value = (rq.conversations || []).length; requestsRead = true }
       else if (!requestsRead) requestCount.value = null
-    } else {
+    } else if (lane.value === 'requests') {
       requestCount.value = rows.value.length
       requestsRead = true
     }
@@ -400,7 +413,7 @@ async function loadCast() {
   } catch { cast.value = []; castFailed.value = true }
 }
 
-function switchLane(l: 'active' | 'requests') { lane.value = l; rows.value = []; void load(true) }
+function switchLane(l: 'active' | 'requests' | 'archived') { lane.value = l; rows.value = []; void load(true) }
 
 /* §CHATCOHERE D6 — three presentations stood side by side on one screen:
    "2.0 BVT", "0.7 AVT" and the bare word "paid". A price is only usable if it
@@ -585,6 +598,7 @@ onMounted(async () => {
 .os-row-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .os-row-time { font-size: .72rem; opacity: .55; font-variant-numeric: tabular-nums; }
 .os-unread { background: var(--primary-color, #4fd8c4); color: #06211d; border-radius: 999px; min-width: 20px; padding: 1px 6px; font-size: .72rem; font-weight: 700; text-align: center; }
+.os-at { display: inline-flex; align-items: center; justify-content: center; min-width: 1.15rem; height: 1.15rem; padding: 0 4px; border-radius: 999px; font-size: .72rem; font-weight: 800; background: var(--accent-color, #f5a524); color: #1a1a1a; margin-right: 4px; }  /* V0663 (order 418) */
 .os-unread--unknown { background: transparent; color: var(--text-secondary, #9aa4b2); border: 1px solid var(--border-color, rgba(255,255,255,.18)); }
 .os-muted { opacity: .4; width: 14px; height: 14px; }
 .os-protocol .os-proto-icon { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--border-color, rgba(128,128,128,.3)); }

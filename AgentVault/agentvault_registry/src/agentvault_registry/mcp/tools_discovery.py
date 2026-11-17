@@ -636,6 +636,11 @@ async def _public_get(path: str, params: Optional[Dict[str, Any]] = None, op_nam
         return {"error": format_tool_exception(e)}
 
 
+async def get_contributor_track() -> Dict[str, Any]:
+    """The contributor track: every badge, ring and title, its tier, what unlocks it and why it cannot be unlocked yet. No developer data. Public, no auth."""
+    return await _public_get("/api/v1/public/contributor-track", op_name="getContributorTrack")
+
+
 async def get_achievement_catalog() -> Dict[str, Any]:
     """List the achievement catalog (badges, names, descriptions, payouts in units). Returns {achievements:[], total}. Public, no auth."""
     return await _public_get("/api/v1/achievements/catalog", op_name="getAchievementCatalog")
@@ -1619,6 +1624,11 @@ DISCOVERY_TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "inputSchema": {"type": "object", "properties": {}}
     },
     # ─── §pass70 Sprint 6 (Tier 1) ────────────────────────────────────────
+    {
+        "name": "theprotocol_getContributorTrack",
+        "description": "The contributor track: every corner badge, ring and title, its tier, the one sentence that unlocks it, and why it cannot be unlocked yet where that is so. Unlocked by governed-code work only. No developer data. Public, no auth.",
+        "inputSchema": {"type": "object", "properties": {}}
+    },
     {
         "name": "theprotocol_getAchievementCatalog",
         "description": "List the achievement catalog: every enabled badge with its name, description and payout in the frame's units (`payout_avt`). Public, no auth.",

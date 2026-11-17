@@ -1,0 +1,16 @@
+<!doctype html>
+<!-- V0665 art: the contributor track's review gallery, served ALONE by the dev server (npm run dev, then /flare-art.html). It is not
+     an entry of the production build (vite builds index.html only), so it is not in dist. The same view is the admin route #/admin/flare-art. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Contributor track art (review)</title>
+    <link href="/static/fonts/fonts.css" rel="stylesheet" />
+    <link href="/static/fonts/fonts-extra.css" rel="stylesheet" />
+  </head>
+  <body class="theme-neural" style="background:#05080c;margin:0">
+    <div id="app"></div>
+    <script type="module" src="/src/flareArtMain.ts"></script>
+  </body>
+</html>

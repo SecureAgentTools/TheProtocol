@@ -74,6 +74,9 @@ class Developer(Base):
     # build_signed_devcard 403s → their agents cannot Passport-trade. Default
     # False = consent flows from the agent-initiated participation itself (D24).
     dev_card_passport_opt_out: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa.false(), nullable=False)
+    # V0667 the developer passport (migration 0235): when this developer pressed "Take part" on the governing registry; NULL: never, or
+    # taken back. Nothing is relayed or disclosed for code governance without it (services/code_passport).
+    code_passport_consent_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     
     # --- ADDED: 2FA/TOTP Support Fields ---
     totp_secret: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment='Encrypted TOTP secret for 2FA (Fernet token when TWO_FACTOR_ENCRYPTION_KEY is set; mig 0110 widened 64→255)')
@@ -260,6 +263,10 @@ class Developer(Base):
         String(20), nullable=True
     )
     # --- END FLARE CORNER VARIANT ---
+
+    # V0665 the contributor track: the equipped title's key (NULL = none; one at a time, shown under the name). Equipped through
+    # PUT /developers/me/flare/title, only if the developer holds its unlock row. Migration 0230.
+    flare_title: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
     # --- FLARE CELEBRATION SEEN (one-shot upgrade modal ack, 2026-05-12 §15) ---
     # NULL + flare_tier='shadow_chancellor' → frontend shows the celebration
@@ -3644,6 +3651,9 @@ class AdminBroadcast(Base):
     # Migration 0179: a notice for ONE developer. No foreign key on purpose (see the migration): NULL means
     # everyone, so a SET NULL on delete would publish a private notice to the whole registry.
     target_developer_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # Migration 0227 (V0664): an announcement an admin marked PUBLIC is readable by visitors without a sign-in
+    # (GET /api/v1/public/announcements). Default FALSE; only an untargeted broadcast may carry it; never copied to a peer.
+    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.false())
 
     creator: Mapped['Developer'] = relationship('Developer', foreign_keys=[created_by])
     reads: Mapped[List['DeveloperNotificationRead']] = relationship(
@@ -6089,6 +6099,10 @@ class GuildWorkOrder(Base):
     # treasury_agent_did. NULL payee_did ⇒ pay worker_did (individual).
     payee_did: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     payee_org_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    # V0666 (mig 0231): the organization each agent belonged to when the order was awarded; written by the award statement,
+    # read by the Firms counts of a firm's own agents (an agent that leaves later keeps its past work counted there).
+    worker_org_at_award: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    poster_org_at_award: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     # STAKED WORK (mig 0116): optional collateral the poster requires bidders to lock.
     stake_required: Mapped[Optional[float]] = mapped_column(Numeric(30, 10), nullable=True)
     # CROSS-REGISTRY (mig 0117): the awarded worker's home peer registry. NULL ⇒ local worker.
@@ -6567,6 +6581,9 @@ class Conversation(Base):
     # only on kind='support'. The ticket stays the authority: chat displays it,
     # the support rail decides it.
     support_ticket_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # V0663: an archived room leaves the lists and its owner's cap; its history stays readable, nobody posts (mig 0221)
+    archived_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -6601,6 +6618,13 @@ class ConversationParticipant(Base):
     can_post: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=sa.true())
     # V0654 (aq), migration 0209: listen | on-call | off: what of the room wakes this member (chat_service.WAKE_MODES)
     wake_mode: Mapped[str] = mapped_column(String(8), nullable=False, default="listen", server_default="listen")
+    # V0662 (OurChat lane), migration 0218: an explicit GUEST SEAT in an organization's room (services/chat_guests.py). Only
+    # a seat in THIS room: it never makes the holder a member of the organization, and a live membership is never derived
+    # from it. It is a flag beside the role, not a role, so a member who is also a guest keeps the seat when the membership
+    # ends (the live org table decides the role, the flag decides whether a seat remains).
+    guest_seat: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=sa.false())
+    guest_invited_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    guest_invited_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     joined_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -6660,6 +6684,8 @@ class ChatMessage(Base):
         Index("ix_chat_msg_mentioned", "conversation_id", "seq", postgresql_where=sa.text("mentions IS NOT NULL")),
         Index("ix_chat_msg_card_updated", "conversation_id", "card_updated_at",
               postgresql_where=sa.text("card_updated_at IS NOT NULL")),
+        Index("ix_chat_msg_edited", "conversation_id", "edited_at", postgresql_where=sa.text("edited_at IS NOT NULL")),
+        Index("ix_chat_msg_deleted", "conversation_id", "deleted_at", postgresql_where=sa.text("deleted_at IS NOT NULL")),
     )
 
 
@@ -6681,6 +6707,82 @@ class ChatCardUpdate(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (UniqueConstraint("message_id", "rev", name="uq_chat_card_update_rev"),)
+
+
+class ChatMessageEdit(Base):
+    """V0662 (OurChat lane) (mig 0215): one change of a text message, with the body AS IT STOOD BEFORE it: the original
+    is kept for the record. kind 'edit' or 'delete'; rev counts the changes of one message from 1. It goes with its
+    message (a thread's timer erases it with the message)."""
+    __tablename__ = "chat_message_edits"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    message_id: Mapped[str] = mapped_column(String(36), ForeignKey("chat_messages.id", ondelete="CASCADE"), nullable=False)
+    conversation_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    rev: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String(8), nullable=False)
+    body_before: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_ptype: Mapped[str] = mapped_column(String(12), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("message_id", "rev", name="uq_chat_message_edit_rev"),)
+
+
+class ChatReaction(Base):
+    """V0662 (OurChat lane) (mig 0216): one reaction word (services/chat_reactions.py::VOCAB) one principal put on one
+    message. UNIQUE per (message, principal, word): putting it on twice is one row. It goes with its message."""
+    __tablename__ = "chat_reactions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    message_id: Mapped[str] = mapped_column(String(36), ForeignKey("chat_messages.id", ondelete="CASCADE"), nullable=False)
+    conversation_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    word: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_ptype: Mapped[str] = mapped_column(String(12), nullable=False)
+    actor_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("message_id", "actor_ptype", "actor_id", "word", name="uq_chat_reaction"),)
+
+
+class ChatPin(Base):
+    """V0662 (OurChat lane) (mig 0217): a message pinned in its thread (services/chat_pins.py). One row per (thread, message);
+    it goes with its message and its thread."""
+    __tablename__ = "chat_pins"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    conversation_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    message_id: Mapped[str] = mapped_column(String(36), ForeignKey("chat_messages.id", ondelete="CASCADE"), nullable=False)
+    pinned_by_ptype: Mapped[str] = mapped_column(String(12), nullable=False)
+    pinned_by_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("conversation_id", "message_id", name="uq_chat_pin"),)
+
+
+class ChatAgentStatus(Base):
+    """V0662 (OurChat lane) (mig 0219): what the room's desk last reported about one session (an agent) of an organization's room:
+    its state, wake mode, last wake and wakes in 24 hours (services/chat_agent_status.py). One row per (room, member)."""
+    __tablename__ = "chat_agent_status"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    conversation_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    member_key: Mapped[str] = mapped_column(String(320), nullable=False)
+    name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    state: Mapped[str] = mapped_column(String(12), nullable=False)
+    wake_mode: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+    last_wake_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    wakes_24h: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    reported_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reported_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    __table_args__ = (UniqueConstraint("conversation_id", "member_key", name="uq_chat_agent_status"),)
 
 
 class ChatBoardRevision(Base):
@@ -6721,8 +6823,19 @@ class ChatFederationOutbox(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False)
 
+    # V0663 (mig 0222): a row carries a message (event_id NULL) or an event about one; each kind has its own unique key
+    event_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    # V0664 (mig 0226): an admin dropped this row (services/chat_delivery.drop_row): it is never due again and never holds
+    # its thread; the row and the message stay
+    dropped_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    dropped_by: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    drop_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     __table_args__ = (
-        UniqueConstraint("conversation_id", "seq", "peer_base_url", name="uq_chat_fed_outbox_target"),
+        Index("uq_chat_fed_outbox_message", "conversation_id", "seq", "peer_base_url", unique=True,
+              postgresql_where=text("event_id IS NULL"), sqlite_where=text("event_id IS NULL")),
+        Index("uq_chat_fed_outbox_event", "event_id", "peer_base_url", unique=True,
+              postgresql_where=text("event_id IS NOT NULL"), sqlite_where=text("event_id IS NOT NULL")),
         Index("ix_chat_fed_outbox_due", "delivered_at", "next_attempt_at"),
     )
 
@@ -7210,3 +7323,401 @@ class CommonsAward(Base):
         UniqueConstraint("season_id", "submission_id", name="uq_commons_award_submission"),
         sa.Index("ix_commons_awards_recipient", "season_id", "recipient_did"),
     )
+
+
+class CodeChange(Base):
+    """V0663 governed code (services/code_changes): a change proposed, checked, reviewed, voted on and merged. A
+    bounty's Guild order is order_id (the order carries no kind of its own: this record sits beside it)."""
+    __tablename__ = "code_changes"
+    __table_args__ = (
+        # V0666 D3: the state a room last saw is a change's state (alembic 0232_code_change_room)
+        sa.CheckConstraint("announce_state IS NULL OR announce_state IN ('proposed', 'accepted', 'balloting', 'passed', "
+                           "'failed', 'vetoed', 'merged', 'withdrawn', 'upstreaming', 'upstream')",
+                           name="ck_code_changes_announce_state"),
+        # V0667 D4: a line's change goes upstream once (alembic 0237_code_change_upstream)
+        sa.UniqueConstraint("upstream_of", name="uq_code_changes_upstream_of"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    repository: Mapped[str] = mapped_column(String(120), nullable=False)
+    paths: Mapped[List[str]] = mapped_column(PG_JSONB, nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    problem: Mapped[str] = mapped_column(Text, nullable=False)
+    mode: Mapped[str] = mapped_column(String(10), nullable=False)
+    branch: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    commit: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    order_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    proposer_did: Mapped[str] = mapped_column(String(200), nullable=False)
+    proposer_developer_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    sensitive: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="proposed", index=True)
+    acceptance: Mapped[Optional[Dict[str, Any]]] = mapped_column(PG_JSONB, nullable=True)
+    proposal_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    passed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    veto: Mapped[Optional[Dict[str, Any]]] = mapped_column(PG_JSONB, nullable=True)
+    go: Mapped[Optional[Dict[str, Any]]] = mapped_column(PG_JSONB, nullable=True)
+    merged: Mapped[Optional[Dict[str, Any]]] = mapped_column(PG_JSONB, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # V0666 D1 (services/code_distributions): a change proposed into an organization's release line. NULL = the main line.
+    code_distribution_id: Mapped[Optional[str]] = mapped_column(
+        String(40), sa.ForeignKey("code_distributions.id", ondelete="RESTRICT"), nullable=True, index=True)
+    # the distribution's own ballot: its rule as at the ballot's open (quorum, pass rule, deciding team), its end, and
+    # its result written once at close (the deciders at close, FOR, AGAINST, counted, quorum met, passed, the sentence)
+    ballot_rule: Mapped[Optional[Dict[str, Any]]] = mapped_column(PG_JSONB, nullable=True)
+    ballot_ends: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    ballot_result: Mapped[Optional[Dict[str, Any]]] = mapped_column(PG_JSONB, nullable=True)
+    # the organization owner's go and veto inside its distribution (the platform maintainer's stay in go / veto)
+    org_go: Mapped[Optional[Dict[str, Any]]] = mapped_column(PG_JSONB, nullable=True)
+    # V0666 D3 (services/code_change_card): the organization's room a line's change is announced in, the message of its
+    # live card there, and the state that room last saw (a state line is posted when it changes)
+    # the foreign key is NAMED as alembic/versions/0232_code_change_room.py names it, so a database built from the models
+    # and one built by the migrations carry the same key and the migration's downgrade drops it on both
+    announce_conversation_id: Mapped[Optional[str]] = mapped_column(
+        String(36), sa.ForeignKey("conversations.id", ondelete="SET NULL", name="fk_code_changes_announce_conversation_id"),
+        nullable=True)
+    announce_message_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    announce_state: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    # V0667 D4 (services/code_changes.propose_upstream): on the main-line change that carries a line's merged change upstream, the line change it
+    # carries (a foreign key NAMED as alembic 0237 names it; RESTRICT: the history it names stays) and its provenance as it stood when proposed;
+    # on the line's own copy, the change that landed it upstream and when
+    upstream_of: Mapped[Optional[str]] = mapped_column(
+        String(40), sa.ForeignKey("code_changes.id", ondelete="RESTRICT", name="fk_code_changes_upstream_of"), nullable=True)
+    provenance: Mapped[Optional[Dict[str, Any]]] = mapped_column(PG_JSONB, nullable=True)
+    upstream_since: Mapped[Optional[Dict[str, Any]]] = mapped_column(PG_JSONB, nullable=True)
+
+
+class CodeDistribution(Base):
+    """V0666 D1: an organization's release line on top of our release (an organization's code distribution, never an AGORA
+    payout): `<base_release>_<slug>`. Its changes are decided by its deciders (services/code_distributions.deciders), not
+    by the frame's members; everything still passes our checker, our pause and the platform maintainer's veto."""
+    __tablename__ = "code_distributions"
+    __table_args__ = (
+        sa.CheckConstraint("slug ~ '^[a-z][a-z0-9-]{1,39}$'", name="ck_code_distributions_slug"),
+        sa.CheckConstraint("base_release ~ '^V[0-9]{4}$'", name="ck_code_distributions_base_release"),
+        sa.CheckConstraint("quorum_percent BETWEEN 50 AND 100", name="ck_code_distributions_quorum"),
+        sa.CheckConstraint("pass_rule IN ('simple')", name="ck_code_distributions_pass_rule"),
+        sa.CheckConstraint("state IN ('active', 'paused')", name="ck_code_distributions_state"),
+        sa.CheckConstraint("state = 'active' OR (paused_reason IS NOT NULL AND paused_by_developer_id IS NOT NULL)",
+                           name="ck_code_distributions_paused_says_why"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String, sa.ForeignKey("organizations.id", ondelete="RESTRICT"),
+                                                 nullable=False, index=True)
+    slug: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    base_release: Mapped[str] = mapped_column(String(8), nullable=False)
+    open_paths: Mapped[List[str]] = mapped_column(PG_JSONB, nullable=False)
+    decider_team_id: Mapped[Optional[str]] = mapped_column(String, sa.ForeignKey("teams.id", ondelete="RESTRICT"),
+                                                           nullable=True)
+    quorum_percent: Mapped[int] = mapped_column(Integer, nullable=False, default=50, server_default="50")
+    pass_rule: Mapped[str] = mapped_column(String(12), nullable=False, default="simple", server_default="simple")
+    state: Mapped[str] = mapped_column(String(10), nullable=False, default="active", server_default="active")
+    paused_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    paused_by_developer_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    paused_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_developer_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CodeDistributionVote(Base):
+    """V0666 D1: one decider's vote on one distribution change (one per developer, never changed, as a main-line vote)."""
+    __tablename__ = "code_distribution_votes"
+
+    code_change_id: Mapped[str] = mapped_column(String(40), sa.ForeignKey("code_changes.id", ondelete="CASCADE"),
+                                                primary_key=True)
+    developer_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    vote: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    agent_did: Mapped[str] = mapped_column(String(200), nullable=False)
+    cast_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ContentChange(Base):
+    """V0667 D5 (services/content_changes): an organization's own CONTENT changed on its line (the fast lane): a migration kit or proxy spec in its
+    library, one of its policy values, a console text, its branding. Checked by our checker before the ballot, decided by the line's deciders, applied to
+    the organization's own space on the governing registry after the ballot, with its before and after kept and one step to undo it."""
+    __tablename__ = "content_changes"
+    __table_args__ = (
+        sa.CheckConstraint("kind IN ('kit', 'proxy_spec', 'policy_value', 'console_text', 'branding', 'compliance_pack')", name="ck_content_changes_kind"),
+        sa.CheckConstraint("state IN ('balloting', 'failed', 'apply_failed', 'applied', 'undone', 'withdrawn')", name="ck_content_changes_state"),
+        sa.CheckConstraint("announce_state IS NULL OR announce_state IN ('balloting', 'failed', 'apply_failed', 'applied', 'undone', 'withdrawn')",
+                           name="ck_content_changes_announce_state"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    code_distribution_id: Mapped[str] = mapped_column(
+        String(40), sa.ForeignKey("code_distributions.id", ondelete="RESTRICT"), nullable=False, index=True)
+    organization_id: Mapped[str] = mapped_column(String, sa.ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    target: Mapped[str] = mapped_column(String(200), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    problem: Mapped[str] = mapped_column(Text, nullable=False)
+    content: Mapped[Dict[str, Any]] = mapped_column(PG_JSONB, nullable=False)
+    checker: Mapped[Dict[str, Any]] = mapped_column(PG_JSONB, nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False, default="balloting", index=True)
+    proposer_did: Mapped[str] = mapped_column(String(200), nullable=False)
+    proposer_developer_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    ballot_rule: Mapped[Dict[str, Any]] = mapped_column(PG_JSONB, nullable=False)
+    ballot_ends: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ballot_result: Mapped[Optional[Dict[str, Any]]] = mapped_column(PG_JSONB, nullable=True)
+    before: Mapped[Optional[Dict[str, Any]]] = mapped_column(PG_JSONB, nullable=True)
+    after: Mapped[Optional[Dict[str, Any]]] = mapped_column(PG_JSONB, nullable=True)
+    applied_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    apply_error: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    undone: Mapped[Optional[Dict[str, Any]]] = mapped_column(PG_JSONB, nullable=True)
+    # V0667 D5b (services/content_change_card): the organization's room a content change is announced in, the message of its live card there, and the state
+    # that room last saw (a state line is posted when it changes). The foreign key is NAMED as alembic/versions/0236_content_changes.py names it.
+    announce_conversation_id: Mapped[Optional[str]] = mapped_column(
+        String(36), sa.ForeignKey("conversations.id", ondelete="SET NULL", name="fk_content_changes_announce_conversation_id"), nullable=True)
+    announce_message_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    announce_state: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ContentChangeVote(Base):
+    """V0667 D5: one decider's vote on one content change (one per developer, never changed)."""
+    __tablename__ = "content_change_votes"
+
+    content_change_id: Mapped[str] = mapped_column(String(40), sa.ForeignKey("content_changes.id", ondelete="CASCADE"), primary_key=True)
+    developer_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    vote: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    agent_did: Mapped[str] = mapped_column(String(200), nullable=False)
+    cast_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CosmeticUnlock(Base):
+    """V0665 the contributor track: one earned cosmetic (a corner badge, a ring or a title) of one developer. Written ONLY by
+    services/contributor_track (a test greps the tree for a second writer); unique per developer and item; never sold, never granted by an
+    admin route, never transferred."""
+    __tablename__ = "cosmetic_unlocks"
+    __table_args__ = (sa.UniqueConstraint("developer_id", "kind", "item_key", name="uq_cosmetic_unlock"),
+                      sa.CheckConstraint("kind IN ('corner', 'encirclement', 'overlay', 'title')", name="ck_cosmetic_unlocks_kind"))
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    developer_id: Mapped[int] = mapped_column(Integer, sa.ForeignKey("developers.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    item_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    tier: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    unlocked_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False)
+
+
+class CodeContributor(Base):
+    """V0667 the developer passport (migration 0235), on the GOVERNING registry: the person behind acts relayed from another registry, one
+    row per (home registry, home developer id). No password, no sign-in: authority is re-derived from the home's signed card on every act.
+    In the code-change rail's developer columns a contributor is the negative of this id (services/code_passport.contributor_key)."""
+    __tablename__ = "code_contributors"
+    __table_args__ = (sa.UniqueConstraint("home_registry", "home_developer_id", name="uq_code_contributor_home"),
+                      sa.CheckConstraint("standing IN ('active', 'paused', 'closed')", name="ck_code_contributors_standing"),
+                      sa.CheckConstraint("(standing <> 'active') = (paused_at IS NOT NULL)", name="ck_code_contributors_paused_at"))
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    home_registry: Mapped[str] = mapped_column(String(120), nullable=False)
+    home_developer_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    display_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    agent_did: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    # active; paused while the home says they are not in good standing; closed once the home deleted them (never restored)
+    standing: Mapped[str] = mapped_column(String(16), nullable=False, server_default="active")
+    paused_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)   # since when not active
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_act_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CodeContributorUnlock(Base):
+    """V0667: the contributor track's unlocks of a contributor from another registry (cosmetic_unlocks references developers). Written ONLY
+    by services/contributor_track.DbTrackStore, as cosmetic_unlocks is."""
+    __tablename__ = "code_contributor_unlocks"
+    __table_args__ = (sa.UniqueConstraint("contributor_id", "kind", "item_key", name="uq_code_contributor_unlock"),
+                      sa.CheckConstraint("kind IN ('corner', 'encirclement', 'overlay', 'title')", name="ck_code_contributor_unlocks_kind"))
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    contributor_id: Mapped[int] = mapped_column(Integer, sa.ForeignKey("code_contributors.id", ondelete="CASCADE"), nullable=False,
+                                                index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    item_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    tier: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    unlocked_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False)
+
+
+class ContributorRepoAccount(Base):
+    """V0667 the passport, phase 4: a contributor's account on the public code host, linked through their home's press (the governing
+    registry holds the code host token). The same rules and checks as RepoAccount (services/repo_accounts routes a contributor's key
+    here), plus the Terms version accepted at the press (a member's acceptance is a legal_acceptances row; a contributor has none here)."""
+    __tablename__ = "contributor_repo_accounts"
+    __table_args__ = (
+        sa.CheckConstraint("username ~ '^[a-z0-9][a-z0-9-]{1,37}[a-z0-9]$'", name="ck_contributor_repo_accounts_username"),
+        sa.CheckConstraint("state IN ('active', 'paused', 'closed')", name="ck_contributor_repo_accounts_state"),
+        sa.CheckConstraint("state <> 'paused' OR paused_before IS NOT NULL", name="ck_contributor_repo_accounts_paused_records"),
+    )
+
+    contributor_id: Mapped[int] = mapped_column(Integer, sa.ForeignKey("code_contributors.id", ondelete="RESTRICT"), primary_key=True)
+    username: Mapped[str] = mapped_column(String(39), nullable=False, unique=True)
+    host_user_id: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(10), nullable=False, default="active", server_default="active")
+    paused_before: Mapped[Optional[dict]] = mapped_column(PG_JSONB(none_as_null=True), nullable=True)
+    terms_version: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    terms_accepted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ContributorRepoAccountOp(Base):
+    """V0667 the passport, phase 4: one leg of a contributor's standing on the code host (pause, restore, close), queued when the
+    governing registry moves their standing (services/code_passport) and drained by background_tasks/repo_account_worker."""
+    __tablename__ = "contributor_repo_account_ops"
+    __table_args__ = (
+        sa.CheckConstraint("op IN ('pause', 'restore', 'close')", name="ck_contributor_repo_account_ops_op"),
+        sa.CheckConstraint("status IN ('pending', 'done')", name="ck_contributor_repo_account_ops_status"),
+        sa.CheckConstraint("attempts >= 0", name="ck_contributor_repo_account_ops_attempts"),
+        sa.CheckConstraint("status <> 'done' OR done_at IS NOT NULL", name="ck_contributor_repo_account_ops_done_at"),
+        sa.Index("ix_contributor_repo_account_ops_pending", "status", "contributor_id", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    contributor_id: Mapped[int] = mapped_column(Integer, sa.ForeignKey("contributor_repo_accounts.contributor_id", ondelete="RESTRICT"),
+                                                nullable=False)
+    op: Mapped[str] = mapped_column(String(10), nullable=False)
+    cause: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending", server_default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_error: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    last_attempt_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_attempt_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    done_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DevCardDisclosure(Base):
+    """The DevCard's disclosure ledger (migration 0089 created it in SQL; this model mirrors that table exactly so the schema has one
+    description): who was disclosed, through which agent, to whom and for what purpose (exchange_participation, code_governance)."""
+    __tablename__ = "dev_card_disclosures"
+    __table_args__ = (sa.Index("ix_dev_card_disclosures_dev", "developer_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(sa.BigInteger, primary_key=True, autoincrement=True)
+    developer_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    agent_did: Mapped[str] = mapped_column(String(120), nullable=False)
+    requested_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(64), nullable=False, server_default="exchange_participation")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CodeChangeReview(Base):
+    """V0663 governed code: one reviewer's word on one commit of a code change (the latest word counts)."""
+    __tablename__ = "code_change_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code_change_id: Mapped[str] = mapped_column(String(40), sa.ForeignKey("code_changes.id", ondelete="CASCADE"),
+                                                nullable=False, index=True)
+    reviewer_developer_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    verdict: Mapped[str] = mapped_column(String(10), nullable=False)
+    commit: Mapped[str] = mapped_column(String(64), nullable=False)
+    findings: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class RepoAccount(Base):
+    """V0666: a developer's account on the public code host (code.theprotocol.cloud), made only on the developer's own request
+    (services/repo_accounts; DESIGN_2026-11-16_PUBLIC_FORGEJO.md). One per developer, one developer per account. `paused_before`
+    is the record a suspension wrote of what it found; reinstatement writes back exactly that."""
+    __tablename__ = "repo_accounts"
+    __table_args__ = (
+        sa.CheckConstraint("username ~ '^[a-z0-9][a-z0-9-]{1,37}[a-z0-9]$'", name="ck_repo_accounts_username"),
+        sa.CheckConstraint("state IN ('active', 'paused', 'closed')", name="ck_repo_accounts_state"),
+        sa.CheckConstraint("state <> 'paused' OR paused_before IS NOT NULL", name="ck_repo_accounts_paused_records"),
+    )
+
+    developer_id: Mapped[int] = mapped_column(Integer, sa.ForeignKey("developers.id", ondelete="RESTRICT"), primary_key=True)
+    username: Mapped[str] = mapped_column(String(39), nullable=False, unique=True)
+    host_user_id: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(10), nullable=False, default="active", server_default="active")
+    # none_as_null: Python None must be SQL NULL here, or the CHECK below (a pause keeps its record) reads JSON null as a record
+    paused_before: Mapped[Optional[dict]] = mapped_column(PG_JSONB(none_as_null=True), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class RepoAccountOp(Base):
+    """V0666: one leg of a developer's standing on the code host (pause on suspension, restore on reinstatement, close on
+    deletion), written in the same transaction as the act it follows and drained by background_tasks/repo_account_worker."""
+    __tablename__ = "repo_account_ops"
+    __table_args__ = (
+        sa.CheckConstraint("op IN ('pause', 'restore', 'close')", name="ck_repo_account_ops_op"),
+        sa.CheckConstraint("status IN ('pending', 'done')", name="ck_repo_account_ops_status"),
+        sa.CheckConstraint("attempts >= 0", name="ck_repo_account_ops_attempts"),
+        sa.CheckConstraint("status <> 'done' OR done_at IS NOT NULL", name="ck_repo_account_ops_done_at"),
+        sa.Index("ix_repo_account_ops_pending", "status", "developer_id", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    developer_id: Mapped[int] = mapped_column(Integer, sa.ForeignKey("repo_accounts.developer_id", ondelete="RESTRICT"),
+                                              nullable=False)
+    op: Mapped[str] = mapped_column(String(10), nullable=False)
+    cause: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending", server_default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_error: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    last_attempt_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_attempt_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    done_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DistributionRelease(Base):
+    """V0667 D6 part 3 (services/distribution_releases, migration 0238): one BUILD of an organization's line, as our release pipeline reports
+    it (built, refused or failed), then published with the release key's signed index or withdrawn. At most one row per name is published.
+    The index answers only the registries it names, proven by their mTLS trust domain and their frame licence, read live."""
+    __tablename__ = "distribution_releases"
+    __table_args__ = (
+        sa.CheckConstraint("state IN ('built', 'refused', 'failed', 'published', 'withdrawn')", name="ck_distribution_releases_state"),
+        sa.CheckConstraint("name ~ '^V[0-9]{4}_[a-z][a-z0-9-]{1,39}$'", name="ck_distribution_releases_name"),
+        sa.CheckConstraint("state NOT IN ('published', 'withdrawn') OR (index IS NOT NULL AND registries IS NOT NULL AND published_at IS NOT NULL)",
+                           name="ck_distribution_releases_published_has_index"),
+        Index("ix_distribution_releases_name", "name"),
+        Index("uq_distribution_releases_published", "name", unique=True, postgresql_where=sa.text("state = 'published'")),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    code_distribution_id: Mapped[str] = mapped_column(String(40), sa.ForeignKey("code_distributions.id", ondelete="RESTRICT"), nullable=False)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    release: Mapped[str] = mapped_column(String(8), nullable=False)
+    tag: Mapped[str] = mapped_column(String(80), nullable=False)
+    base_commit: Mapped[str] = mapped_column(String(64), nullable=False)
+    base_tree: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    head: Mapped[str] = mapped_column(String(64), nullable=False)
+    head_tree: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    changes: Mapped[List[Dict[str, Any]]] = mapped_column(PG_JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    protected: Mapped[Dict[str, Any]] = mapped_column(PG_JSONB, nullable=False)
+    carry: Mapped[Dict[str, Any]] = mapped_column(PG_JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    image_id: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    build_rc: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    built_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    index: Mapped[Optional[Dict[str, Any]]] = mapped_column(PG_JSONB, nullable=True)
+    image_digests: Mapped[Optional[Dict[str, Any]]] = mapped_column(PG_JSONB, nullable=True)
+    registries: Mapped[Optional[List[Dict[str, Any]]]] = mapped_column(PG_JSONB, nullable=True)
+    publish_word: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    published_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    published_by_developer_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("developers.id", ondelete="SET NULL"), nullable=True)
+    withdrawn_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    withdrawn_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    recorded_by_developer_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("developers.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DistributionPullGrant(Base):
+    """V0667 D6 part 3: a short-lived pull credential the index route gave a listed registry (the secret's hash only). The token server grants
+    pull on distributions/<tag>/* to it alone, re-reading the registry's licence and the line's listing at every token."""
+    __tablename__ = "distribution_pull_grants"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    release_id: Mapped[str] = mapped_column(String(36), ForeignKey("distribution_releases.id", ondelete="CASCADE"), nullable=False, index=True)
+    registry_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    trust_domain: Mapped[str] = mapped_column(String(255), nullable=False)
+    licence_id: Mapped[str] = mapped_column(String(36), ForeignKey("federation_licenses.id", ondelete="CASCADE"), nullable=False)
+    secret_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

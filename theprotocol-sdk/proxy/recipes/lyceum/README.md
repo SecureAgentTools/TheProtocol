@@ -14,8 +14,8 @@ none is written in the spec.
 
 ```
 tp-proxy validate proxy.yaml
-tp-proxy run proxy.yaml --dry-run --once     # what it would send, sending nothing
+tp-proxy run proxy.yaml --dry-run            # what it would send, sending nothing (Ctrl-C to stop: the folder is watched, so --once does not end here)
 tp-proxy run proxy.yaml                        # for real
 ```
 
-**Check it.** The attestations are on the agent's record, one per awarded row. A file is read once it has not changed for `settle_seconds` (2): a `--once` run started while the export is still being written passes over it, and the next run reads it.
+**Check it.** The attestations are on the agent's record, one per awarded row. A file is read once it has not changed for `settle_seconds` (2): a `--once` run started while the export is still being written passes over it, and the next run reads it. The export folder is listed again every 30 seconds (`poll_seconds: 30`), so a file dropped while the proxy runs is read too; without it the source lists the folder once and finishes, which is what a `--once` run is. For a `--once` try, set `poll_seconds: 0` in the spec for that run.

@@ -1,6 +1,8 @@
 """
 Admin simulation management endpoints — EigenTrust Command Center backend.
-Start/stop simulations, fetch agent balances across federation, bulk fund agents.
+Start/stop simulations, fetch agent balances across federation, issue units on the simulation's frames.
+(V0664, gwo_40f159d2a945a7070df20933: bulk funding through the retired host script, POST /fund and GET /fund-status, is
+gone, as its preview went in V0663.)
 """
 import asyncio
 import json
@@ -215,12 +217,6 @@ class SimStartRequest(BaseModel):
     spawn_frames: str = Field("C", pattern=r"^[ABCabc](,[ABCabc])*$")
     xreg_only: bool = False
     clerk_anchored: bool = False
-
-
-class FundRequest(BaseModel):
-    target_balance: float = 10000
-    only_depleted: bool = False
-    depleted_threshold: float = 100
 
 
 # --- Helpers ---
@@ -1008,35 +1004,6 @@ async def get_simulation_agents():
     }
 
 
-@router.post("/fund")
-async def fund_simulation_agents(req: FundRequest):
-    """Top up sim agents on their home registries via host-network container."""
-    args = ["--target", str(req.target_balance)]
-    if req.only_depleted:
-        args.extend(["--depleted-only", "--depleted-threshold", str(req.depleted_threshold)])
-
-    result = await _run_host_script("sim_fund_agents.py", args, timeout_sec=600)
-    if "error" in result and "funded_count" not in result:
-        raise HTTPException(500, detail=result.get("error", "Funding failed"))
-
-    # Invalidate balance cache
-    _agent_cache["ts"] = 0
-
-    return result
-
-
-@router.post("/funding-preview")
-async def funding_preview(req: FundRequest):
-    """Preview funding: calculate needed amounts without transferring."""
-    args = ["--preview", "--target", str(req.target_balance)]
-    if req.only_depleted:
-        args.extend(["--depleted-only", "--depleted-threshold", str(req.depleted_threshold)])
-
-    result = await _run_host_script("sim_fund_agents.py", args, timeout_sec=120)
-    return result
-
-
-
 # §EXCISION — these two mint proxies used to hardcode the Commander's email and
 # password. That is a code defect, not an excisable asset: the literal sat in
 # src/ (and its .pyc) on every registry image, so dropping the scripts/ payload
@@ -1120,32 +1087,6 @@ async def mint_frame_c(request: Request):
         if resp.status_code != 200:
             raise HTTPException(resp.status_code, detail=resp.json().get("detail", "Issuance failed on Frame C"))
         return resp.json()
-
-
-@router.get("/fund-status")
-async def get_fund_status():
-    """Get real-time funding progress from the progress log file."""
-    import os
-    # Helper container writes to /work (=/opt/theprotocol/stack/Agentvault2 on host)
-    # Registry reads via /host-stack mount to same host path.
-    progress_file = "/host-stack/Agentvault2/.sim_fund_progress.jsonl"
-    if not os.path.exists(progress_file):
-        return {"lines": [], "total": 0}
-    try:
-        with open(progress_file) as f:
-            lines = []
-            for line in f:
-                line = line.strip()
-                if line:
-                    try:
-                        lines.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        pass
-        return {"lines": lines, "total": len(lines)}
-    except Exception:
-        return {"lines": [], "total": 0}
-
-
 
 
 @router.get("/topology")

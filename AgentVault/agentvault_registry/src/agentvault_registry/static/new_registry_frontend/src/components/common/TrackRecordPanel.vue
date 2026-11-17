@@ -73,8 +73,10 @@
           <span :class="data.liveness.live_24h ? 'trp-ok' : ''">
             {{ data.liveness.live_24h ? t('trackRecord.live24h', 'active in the last 24h') : t('trackRecord.idle', 'idle') }}
           </span>
-          <span v-if="data.liveness.probe" :class="data.liveness.probe === 'healthy' ? 'trp-ok' : 'trp-late'">
-            &middot; {{ t('trackRecord.probe', 'endpoint probe') }}: {{ data.liveness.probe }}
+          <!-- V0662 item 7: no live service declared, apart from a service not answering (services/trackRecord/serviceLine) -->
+          <span v-if="service" data-testid="trp-service" :data-service="service.kind" :title="service.title || undefined"
+                :class="service.kind === 'up' ? 'trp-ok' : service.kind === 'down' ? 'trp-late' : ''">
+            &middot; {{ service.text }}
           </span>
           <span v-if="data.liveness.last_seen" class="trp-mono">
             &middot; {{ t('trackRecord.lastSeen', 'last seen') }} {{ shortDate(data.liveness.last_seen) }}
@@ -209,6 +211,7 @@ import { useI18n } from '@/composables/useI18n'
 import { contractsV2Api } from '@/services/api/contractsV2'
 import { failedForWantOfAnAnswer } from '@/services/api/peerDirect'
 import { useEngageDoors } from '@/composables/useEngageDoors'
+import { serviceLine } from '@/services/trackRecord/serviceLine'
 import {
   fetchTrackRecord, fetchReceipt, sha256DigestOf, verifyCredentialEd25519,
   type TrackRecordResponse, type TrackRecordRow,
@@ -350,6 +353,7 @@ function hireViaGuild() {
 /** §HIRECOHERE — the doors come from the shared composable so this panel and the agent
  *  modal cannot disagree about what is open. */
 const didRef = computed(() => props.did)
+const service = computed(() => serviceLine(data.value?.liveness ?? null, t))
 const ctasOn = computed(() => !!props.showCtas)
 const { doors, draft: offerDraft } = useEngageDoors(didRef, ctasOn)
 const offerOpen = ref(false)

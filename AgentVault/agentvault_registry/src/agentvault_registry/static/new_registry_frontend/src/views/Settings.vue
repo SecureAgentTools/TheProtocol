@@ -42,6 +42,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useUIStore } from '@/stores/ui'
 import { apiClient } from '@/services/api/client'
 import Icon from '@/components/Icon.vue'
+import WornTitle from '@/components/contributor/WornTitle.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import { searchPlaces, PLACE_QUERY_MIN } from '@/services/api/geocode'
 import MultiFrameConsole from '@/components/settings/MultiFrameConsole.vue'
@@ -182,6 +183,7 @@ const profileForm = ref({
 const profileReadOnly = ref({
   name: '',
   email: '',
+  flare_title: '',   // V0665 the contributor title worn (drawn under the email, on the profile card)
   is_verified: false,
   is_admin: false,
   created_at: '',
@@ -292,6 +294,7 @@ async function loadProfile() {
       profileReadOnly.value = {
         name: d.name || '',
         email: d.email || '',
+        flare_title: d.flare_title || '',
         is_verified: d.is_verified ?? false,
         is_admin: d.is_admin ?? false,
         created_at: d.created_at || '',
@@ -1069,6 +1072,7 @@ async function loadInviteVisibility() {
               <UserAvatar
                 :user="authStore.user"
                 :avatar-url="profileForm.avatar_url || null"
+                direct
                 :display-name="profileForm.display_name || profileReadOnly.name || profileReadOnly.email"
                 :initials="avatarInitials"
                 :granted-at="authStore.user?.flare_granted_at || null"
@@ -1076,6 +1080,7 @@ async function loadInviteVisibility() {
               />
               <h2 class="st-identity-name">{{ profileForm.display_name || profileReadOnly.name || '—' }}</h2>
               <p class="st-identity-email">{{ profileReadOnly.email }}</p>
+              <WornTitle :title="profileReadOnly.flare_title" :flare-tier="authStore.user?.flare_tier" size="card" class="st-identity-title" data-testid="settings-title" />
               <div class="st-identity-badges">
                 <span v-if="profileReadOnly.is_admin" class="st-role-badge st-role-admin">Admin</span>
                 <span v-if="profileReadOnly.is_verified" class="st-role-badge st-role-verified"><Icon name="mdi:check-decagram" /> Verified</span>
@@ -2257,6 +2262,7 @@ async function loadInviteVisibility() {
   font-weight: 700;
   letter-spacing: -0.01em;
 }
+.st-identity-title { margin: 2px 0 8px; }
 .st-identity-email {
   margin: 0;
   color: var(--st-text-muted);

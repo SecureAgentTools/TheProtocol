@@ -31,6 +31,10 @@ against the plugin's own config_schema.
 
 A mapping goes from a source to an action (inbound: the legacy system's record becomes a call on TheProtocol) or to a
 sink (outbound: a source of TheProtocol's events, delivered to a legacy system); actions and sinks share one namespace.
+
+`registry` and `identity` are needed only by what calls TheProtocol: an action, or a `theprotocol_events` source. A spec
+that moves records from one system to another (V0664 migrate: sources to writer sinks) may leave both out; a spec that
+needs them and lacks them is refused, naming the action or source that needs them.
 """
 from __future__ import annotations
 
@@ -45,6 +49,8 @@ from .plugins import PluginError, load
 
 SPEC_VERSION = 1
 REF = re.compile(r"^(env|file):(.+)$")
+# the source types that read TheProtocol itself (they need the proxy's identity, as every action does)
+TP_SOURCES = frozenset({"theprotocol_events"})
 # a key whose NAME ends in a secret word holds a credential (client_secret, password, access_token, api_key); a key
 # that only mentions one (token_url, secret_field) does not
 SECRET_KEY = re.compile(r"(?:^|[_-])(?:secret|password|passwd|passphrase|token|api[_-]?key|private[_-]?key|credentials?)s?$",
@@ -66,7 +72,7 @@ _PLUGIN_SECTION = {
 CORE_SCHEMA: Dict[str, Any] = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
-    "required": ["version", "name", "registry", "identity"],
+    "required": ["version", "name"],   # registry and identity: only when something calls TheProtocol (parse)
     "additionalProperties": False,
     "properties": {
         "version": {"const": SPEC_VERSION},
@@ -108,7 +114,9 @@ CORE_SCHEMA: Dict[str, Any] = {
             "cooldown_s": {"type": "number", "exclusiveMinimum": 0}}},
         "service": {"type": "object", "additionalProperties": False, "properties": {
             "enabled": {"type": "boolean"},
-            "listen": {"type": "string", "pattern": r"^[^:]*:\d+$"}}},
+            "listen": {"type": "string", "pattern": r"^[^:]*:\d+$"},
+            # V0664 (C2): post the proxy's status (names and counts) to its registry every this many seconds; absent = off
+            "report_every_s": {"type": "number", "minimum": 10}}},
     },
 }
 
@@ -311,6 +319,18 @@ def parse(doc: Any, *, base: Optional[Path] = None, check_plugins: bool = True) 
     if problems:
         raise SpecError(problems)
     problems.extend(literal_secrets(doc.get("identity") or {}, declared=("client_secret",), prefix="identity."))
+    needs = [f"actions.{n} ({sec.get('type')})" for n, sec in (doc.get("actions") or {}).items()]
+    needs += [f"sources.{n} ({sec.get('type')})" for n, sec in (doc.get("sources") or {}).items()
+              if sec.get("type") in TP_SOURCES]
+    for part in ("registry", "identity"):
+        if needs and not doc.get(part):
+            problems.append(f"spec.{part}: {', '.join(needs)} {'calls' if len(needs) == 1 else 'call'} TheProtocol and "
+                            f"{'needs' if len(needs) == 1 else 'need'} the proxy's {part}")
+    if (doc.get("service") or {}).get("report_every_s") is not None:
+        for part in ("registry", "identity"):
+            if not doc.get(part):
+                problems.append(f"spec.service.report_every_s: a proxy reports its status as its own agent, so it needs the "
+                                f"proxy's {part}")
     groups: Dict[str, Dict[str, PluginSpec]] = {}
     for kind, section in (("source", "sources"), ("action", "actions"), ("sink", "sinks")):
         groups[kind] = {}
@@ -343,12 +363,15 @@ def parse(doc: Any, *, base: Optional[Path] = None, check_plugins: bool = True) 
             problems.append(f"{where}.from: no source called {m['from']!r}")
         if m["to"] not in groups["action"] and m["to"] not in groups["sink"]:
             problems.append(f"{where}.to: no action or sink called {m['to']!r}")
+        # V0664: a value node (a transform on a field) is checked here, not at the first record
+        from .mapping import check_fields
+        problems.extend(f"{where}.fields.{p} (mapping {m['name']!r})" for p in check_fields(dict(m["fields"]), ""))
         mappings.append(MappingSpec(m["name"], int(m["version"]), m["from"], m["to"], dict(m["fields"]),
                                     dict(m["when"]) if m.get("when") else None,
                                     "sink" if m["to"] in groups["sink"] else "action"))
     if problems:
         raise SpecError(problems)
-    return Spec(name=doc["name"], registry=doc["registry"].rstrip("/"), identity=dict(doc["identity"]),
+    return Spec(name=doc["name"], registry=str(doc.get("registry") or "").rstrip("/"), identity=dict(doc.get("identity") or {}),
                 state=doc.get("state") or f"{doc['name']}.proxy.db", sources=groups["source"],
                 actions=groups["action"], sinks=groups["sink"], mappings=mappings, retry=dict(doc.get("retry") or {}),
                 breaker=dict(doc.get("breaker") or {}), service=dict(doc.get("service") or {}), base=base)

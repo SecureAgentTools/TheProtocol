@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "theprotocol-sdk"
-version = "0.8.0"
+version = "0.11.0"
 description = "Build sovereign AI agents with DID identity on TheProtocol. Speaks the A2A protocol (v1.0) natively, with bridges for Google A2A, ANP, and MCP. Works with Vertex AI, AWS AgentCore, LangGraph, CrewAI."
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -84,6 +84,35 @@ Documentation = "https://docs.theprotocol.cloud"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/theprotocol"]
+
+# V0665: the three starter kits (tp-proxy migrate new --from-starter) ship inside the package. proxy/migrations/ is the ONE source: the wheel is built with
+# them copied in, so a copy that differs from the source cannot exist (tests/test_proxy_migrate_from_starter.py builds the wheel and compares byte for byte).
+# The files are named ONE BY ONE, not as three folders: a folder is copied whole, so a starter that was dry-run in place (its .migrate/ state folder)
+# would ride into a wheel built from that tree. A new file in a kit must be added here: the wheel test fails, naming it, until it is. (The folder's own
+# README and make_samples.py stay in the repo.) `git ls-files proxy/migrations/<kit>` is the list.
+[tool.hatch.build.targets.wheel.force-include]
+"proxy/migrations/csv-to-postgres/README.md" = "theprotocol/proxy/migrate/starter_kits/csv-to-postgres/README.md"
+"proxy/migrations/csv-to-postgres/fake/make_export.py" = "theprotocol/proxy/migrate/starter_kits/csv-to-postgres/fake/make_export.py"
+"proxy/migrations/csv-to-postgres/fake/make_target.py" = "theprotocol/proxy/migrate/starter_kits/csv-to-postgres/fake/make_target.py"
+"proxy/migrations/csv-to-postgres/fake/target_postgresql.sql" = "theprotocol/proxy/migrate/starter_kits/csv-to-postgres/fake/target_postgresql.sql"
+"proxy/migrations/csv-to-postgres/fake/target_sqlite.sql" = "theprotocol/proxy/migrate/starter_kits/csv-to-postgres/fake/target_sqlite.sql"
+"proxy/migrations/csv-to-postgres/migration.yaml" = "theprotocol/proxy/migrate/starter_kits/csv-to-postgres/migration.yaml"
+"proxy/migrations/csv-to-postgres/proxy.yaml" = "theprotocol/proxy/migrate/starter_kits/csv-to-postgres/proxy.yaml"
+"proxy/migrations/csv-to-postgres/sample/orders.csv" = "theprotocol/proxy/migrate/starter_kits/csv-to-postgres/sample/orders.csv"
+"proxy/migrations/sql-to-postgres/README.md" = "theprotocol/proxy/migrate/starter_kits/sql-to-postgres/README.md"
+"proxy/migrations/sql-to-postgres/fake/make_legacy.py" = "theprotocol/proxy/migrate/starter_kits/sql-to-postgres/fake/make_legacy.py"
+"proxy/migrations/sql-to-postgres/fake/make_target.py" = "theprotocol/proxy/migrate/starter_kits/sql-to-postgres/fake/make_target.py"
+"proxy/migrations/sql-to-postgres/fake/target_postgresql.sql" = "theprotocol/proxy/migrate/starter_kits/sql-to-postgres/fake/target_postgresql.sql"
+"proxy/migrations/sql-to-postgres/fake/target_sqlite.sql" = "theprotocol/proxy/migrate/starter_kits/sql-to-postgres/fake/target_sqlite.sql"
+"proxy/migrations/sql-to-postgres/migration.yaml" = "theprotocol/proxy/migrate/starter_kits/sql-to-postgres/migration.yaml"
+"proxy/migrations/sql-to-postgres/proxy.yaml" = "theprotocol/proxy/migrate/starter_kits/sql-to-postgres/proxy.yaml"
+"proxy/migrations/sql-to-postgres/sample/customers.jsonl" = "theprotocol/proxy/migrate/starter_kits/sql-to-postgres/sample/customers.jsonl"
+"proxy/migrations/sql-to-rest/README.md" = "theprotocol/proxy/migrate/starter_kits/sql-to-rest/README.md"
+"proxy/migrations/sql-to-rest/fake/make_legacy.py" = "theprotocol/proxy/migrate/starter_kits/sql-to-rest/fake/make_legacy.py"
+"proxy/migrations/sql-to-rest/fake/products_api.py" = "theprotocol/proxy/migrate/starter_kits/sql-to-rest/fake/products_api.py"
+"proxy/migrations/sql-to-rest/migration.yaml" = "theprotocol/proxy/migrate/starter_kits/sql-to-rest/migration.yaml"
+"proxy/migrations/sql-to-rest/proxy.yaml" = "theprotocol/proxy/migrate/starter_kits/sql-to-rest/proxy.yaml"
+"proxy/migrations/sql-to-rest/sample/products.jsonl" = "theprotocol/proxy/migrate/starter_kits/sql-to-rest/sample/products.jsonl"
 
 # Published-artifact provenance lives in dist_release/ for our own records; a
 # source distribution has no business shipping PREVIOUS releases' binaries.

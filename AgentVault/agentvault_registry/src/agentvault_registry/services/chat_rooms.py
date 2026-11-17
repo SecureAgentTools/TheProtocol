@@ -30,8 +30,13 @@ MAX_ROOMS_PER_OWNER = 20          # rooms one principal owns on this registry
 TITLE_MAX = 160
 OPERATOR_ROLES = ("owner", "moderator")
 ROOM_ACTIONS = ("invite", "mute", "unmute", "remove", "ban", "accept", "moderator", "unmoderator", "rule", "topic",
-                "title")
+                "title", "archive", "unarchive")
 SEATED = ("active", "pending")
+
+
+def _now():
+    import datetime
+    return datetime.datetime.now(datetime.timezone.utc)
 
 
 def room_address(conv: Conversation) -> str:
@@ -102,6 +107,15 @@ async def _post_system(db: AsyncSession, conv: Conversation, actor: cs.Actor, ac
 
 
 # ── opening a room ────────────────────────────────────────────────────────────────────────────────────────────────
+async def open_rooms_owned(db: AsyncSession, created_by_ptype: str, created_by_id: str) -> int:
+    """The rooms one principal owns here that count against its cap: hosted here and not archived (an archived room leaves
+    the cap, its history kept)."""
+    return int((await db.execute(select(func.count()).select_from(Conversation).where(
+        Conversation.kind == "room", Conversation.host_registry.is_(None), Conversation.archived_at.is_(None),
+        Conversation.created_by_ptype == created_by_ptype,
+        Conversation.created_by_id == created_by_id))).scalar() or 0)
+
+
 async def create_room(db: AsyncSession, actor: cs.Actor, title: str, topic: Optional[str] = None,
                       join_rule: str = DEFAULT_JOIN_RULE) -> Conversation:
     """A room hosted here, owned by `actor` (a developer or an agent; session-lead, seq 2201)."""
@@ -112,12 +126,10 @@ async def create_room(db: AsyncSession, actor: cs.Actor, title: str, topic: Opti
         raise cs.ChatError(422, f"a room needs a title of 1 to {TITLE_MAX} characters")
     if join_rule not in JOIN_RULES:
         raise cs.ChatError(422, f"join_rule is one of {', '.join(JOIN_RULES)}")
-    owned = int((await db.execute(select(func.count()).select_from(Conversation).where(
-        Conversation.kind == "room", Conversation.host_registry.is_(None),
-        Conversation.created_by_ptype == actor.ptype,
-        Conversation.created_by_id == str(actor.sender_id)))).scalar() or 0)
+    owned = await open_rooms_owned(db, actor.ptype, str(actor.sender_id))
     if owned >= MAX_ROOMS_PER_OWNER:
-        raise cs.ChatError(409, f"you own {owned} rooms here, the most one owner may ({MAX_ROOMS_PER_OWNER})")
+        raise cs.ChatError(409, f"you own {owned} open rooms here, the most one owner may ({MAX_ROOMS_PER_OWNER}); "
+                                "archive one you no longer use")
     conv = Conversation(kind="room", title=title, topic=((topic or "").strip()[:200] or None), join_rule=join_rule,
                         created_by_ptype=actor.ptype, created_by_id=str(actor.sender_id))
     db.add(conv)
@@ -358,10 +370,50 @@ async def room_action(db: AsyncSession, conversation_id: str, actor: cs.Actor, a
         if not t or len(t) > TITLE_MAX:
             raise cs.ChatError(422, f"a room needs a title of 1 to {TITLE_MAX} characters")
         conv.title = t
+    elif action == "archive":
+        if conv.archived_at is not None:
+            raise cs.ChatError(409, "this room is already archived")
+        conv.archived_at, conv.archived_by = _now(), actor.key
+        await _publish_room(db, conv, "archive")
+    elif action == "unarchive":
+        if conv.archived_at is None:
+            raise cs.ChatError(409, "this room is not archived")
+        if await open_rooms_owned(db, conv.created_by_ptype, str(conv.created_by_id)) >= MAX_ROOMS_PER_OWNER:
+            raise cs.ChatError(409, f"its owner already has {MAX_ROOMS_PER_OWNER} open rooms here, the most one owner may; "
+                                    "archive another first")
+        conv.archived_at, conv.archived_by = None, None
+        await _publish_room(db, conv, "unarchive")
     msg = await _post_system(db, conv, actor, my_row, action, target_name, value)
     return {"ok": True, "action": action, "seq": int(msg.seq), "system_message": cs.serialize_message(msg),
             "target": target_key, "target_state": getattr(target, "state", None),
-            "target_can_post": getattr(target, "can_post", None), "join_rule": conv.join_rule}
+            "target_can_post": getattr(target, "can_post", None), "join_rule": conv.join_rule,
+            "archived": conv.archived_at is not None}
+
+
+async def _publish_room(db: AsyncSession, conv: Conversation, action: str) -> None:
+    """V0663: tell the registries that have a member in this room (services/chat_fed_events): they follow an archive, an
+    unarchive and a close. Queued in the act's own transaction."""
+    from agentvault_registry.services import chat_fed_events as fev
+    await fev.publish(db, conv, {"type": "room", "action": action, "at": _now().isoformat()})
+
+
+async def close_room(db: AsyncSession, conversation_id: str, actor: cs.Actor) -> Dict[str, Any]:
+    """Close a room nobody has spoken in: the room, its seats and its system rows are removed. By its owner or a moderator,
+    on a room this registry hosts. A room with any message from a person or an agent is archived instead (archive keeps the
+    history; close would destroy it). The copies on other registries are not reached: they keep a mirror of an empty room."""
+    from agentvault_registry.models import ChatMessage
+    conv = await _hosted_room(db, conversation_id)
+    my_row = await cs._my_row(db, conv.id, actor)
+    if my_row is None or my_row.state != "active" or my_row.role not in OPERATOR_ROLES:
+        raise cs.ChatError(403, "closing a room needs the room's owner or a moderator")
+    spoken = int((await db.execute(select(func.count()).select_from(ChatMessage).where(
+        ChatMessage.conversation_id == conv.id, ChatMessage.kind != "system"))).scalar() or 0)
+    if spoken:
+        raise cs.ChatError(409, "this room has messages: archive it instead, which keeps its history")
+    await _publish_room(db, conv, "close")           # the registries that mirror it drop the empty room too
+    await db.delete(conv)
+    await db.commit()
+    return {"ok": True, "closed": conversation_id}
 
 
 async def _invite(db: AsyncSession, conv: Conversation, key: Optional[str]) -> ConversationParticipant:
@@ -428,15 +480,17 @@ async def room_info(db: AsyncSession, actor: cs.Actor, conversation_id: str) -> 
                         "state": p.state, "can_post": bool(p.can_post)})
     head = {"room_ref": conv.remote_ref or conv.id, "conversation_id": conv.id, "title": conv.title,
             "topic": conv.topic, "join_rule": conv.join_rule, "hosted_here": hosted,
+            "archived": getattr(conv, "archived_at", None) is not None,
             "address": room_address(conv) if hosted else str(conv.created_by_id or ""),
             "host_registry": None if hosted else conv.host_registry}
     return {**head, "my_state": me.state, "my_role": me.role, "my_can_post": bool(me.can_post),
             "i_moderate": operator, "members": members, "member_count": sum(1 for m in members if m["state"] == "active")}
 
 
-async def relay_gate(db: AsyncSession, conv: Conversation, part: ConversationParticipant) -> None:
+async def relay_gate(db: AsyncSession, conv: Conversation, part: ConversationParticipant, *, change: bool = False) -> None:
     """The host's checks before a remote member's relayed message takes a seq in a room: seated and active, not muted,
-    not banned. (A dm keeps its own checks; this runs for rooms only.)"""
+    not banned, and the room not archived (V0663 recut: an archived room takes nothing from another frame; `change` names a
+    relayed edit, take-back, reaction or pin, which has its own sentence). (A dm keeps its own checks; this runs for rooms only.)"""
     if conv.kind != "room":
         return
     if await _banned(db, conv.id, str(part.remote_key or "")):
@@ -447,3 +501,5 @@ async def relay_gate(db: AsyncSession, conv: Conversation, part: ConversationPar
         raise cs.ChatError(409, "you are no longer in this room")
     if not bool(part.can_post):
         raise cs.ChatError(403, "a room operator muted you here; you can read, not post")
+    if getattr(conv, "archived_at", None) is not None:
+        raise cs.ChatError(409, cs.ARCHIVED_CHANGE if change else cs.ARCHIVED_POST)

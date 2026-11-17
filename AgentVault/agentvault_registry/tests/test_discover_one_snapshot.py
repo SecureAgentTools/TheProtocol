@@ -119,7 +119,8 @@ def test_an_empty_page_reads_the_facets_and_the_tags_on_its_own():
     db = _Db([])
     out = _call(db, offset=1_000_000)
     assert [k for k, _ in db.card_statements] == ["page", "facets", "tags"]
-    assert out["total"] == 0 and out["facets"]["total"] == 7 and out["facets"]["tags"] == [{"name": "fallback-tag", "count": 3}]
+    # V0663 recut (gwo_9c2f8be8a69c8fb97fc5c517): a page past the end answers the population, not 0
+    assert out["total"] == 7 and out["facets"]["total"] == 7 and out["facets"]["tags"] == [{"name": "fallback-tag", "count": 3}]
 
 
 def test_json_list_reads_lists_strings_and_nothing_else():

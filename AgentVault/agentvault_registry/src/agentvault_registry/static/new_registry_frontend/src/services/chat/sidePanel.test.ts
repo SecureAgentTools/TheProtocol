@@ -52,7 +52,7 @@ describe("each section's fold, kept per person on this device", () => {
   beforeEach(() => { localStorage.clear() })
 
   it('every section opens until its person folds it, except the board: it starts folded to its first line', () => {
-    expect(sidePanelOpen('developer:6')).toEqual({ approvals: true, board: false, live: true, present: true })
+    expect(sidePanelOpen('developer:6')).toEqual({ approvals: true, board: false, live: true, present: true, agentstatus: true, mentions: true })
   })
 
   it('V0657 (h): the board opens on demand and stays open for that person', () => {
@@ -65,10 +65,10 @@ describe("each section's fold, kept per person on this device", () => {
 
   it('V0657 (h): a v1 state carries its other folds over, and its board (open by default there) starts folded once', () => {
     localStorage.setItem('ourchat.side.v1.developer:6', JSON.stringify({ approvals: true, board: true, live: false, present: false }))
-    expect(sidePanelOpen('developer:6')).toEqual({ approvals: true, board: false, live: false, present: false })
+    expect(sidePanelOpen('developer:6')).toEqual({ approvals: true, board: false, live: false, present: false, agentstatus: true, mentions: true })
     saveSidePanelOpen('developer:6', { ...sidePanelOpen('developer:6'), board: true })
     expect(localStorage.getItem('ourchat.side.v2.developer:6')).toContain('"board":true')
-    expect(sidePanelOpen('developer:6')).toEqual({ approvals: true, board: true, live: false, present: false })
+    expect(sidePanelOpen('developer:6')).toEqual({ approvals: true, board: true, live: false, present: false, agentstatus: true, mentions: true })
   })
 
   it('a fold is kept and read back, for that person only', () => {
@@ -80,7 +80,7 @@ describe("each section's fold, kept per person on this device", () => {
 
   it('a value nobody can read is no state: every section open, the board folded', () => {
     localStorage.setItem('ourchat.side.v2.developer:6', '{not json')
-    expect(sidePanelOpen('developer:6')).toEqual({ approvals: true, board: false, live: true, present: true })
+    expect(sidePanelOpen('developer:6')).toEqual({ approvals: true, board: false, live: true, present: true, agentstatus: true, mentions: true })
     localStorage.setItem('ourchat.side.v1.developer:6', '"a string"')
     expect(sidePanelOpen('developer:6').present).toBe(true)
   })

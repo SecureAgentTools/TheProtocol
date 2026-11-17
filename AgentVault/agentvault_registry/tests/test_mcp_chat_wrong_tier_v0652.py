@@ -22,7 +22,8 @@ from agentvault_registry import mcp as mcp_pkg
 from agentvault_registry.api_tests.contracts.mcp_contracts import auto_tier_rejections, get_contract
 from agentvault_registry.mcp import server
 
-DUAL = {"theprotocol_listConversations", "theprotocol_syncChat", "theprotocol_getChatUnreadCount"}
+DUAL = {"theprotocol_listConversations", "theprotocol_syncChat", "theprotocol_getChatUnreadCount",
+        "theprotocol_listMyWorkflowTemplates"}   # V0664: GET /workflow-templates/mine serves an agent or a developer
 DEVELOPER_ONLY = {"theprotocol_listWaitingChatApprovals"}   # agents never decide approvals: the route answers 403
 
 

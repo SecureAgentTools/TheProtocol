@@ -190,7 +190,7 @@ GET /api/v1/reputation-bond/config
    "maturity": {"min_transactions": 10, "min_age_days": 30, "min_trust_percentile": 50,
                 "min_rated_peers": 3, "releases_percent": 60, "min_ranked_population": 10},
    "extension_uri": "https://theprotocol.cloud/extensions/v1/reputation-bond",
-   "sites": ["discovery", "listing", "pricing", "guild_bid", "contract_accept", "a2a_payee"],
+   "sites": ["discovery", "listing", "pricing", "guild_bid", "contract_accept", "a2a_payee", "template_publish"],
    "registry": "EU"}
 ```
 

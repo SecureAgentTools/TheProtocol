@@ -46,7 +46,7 @@
           <NeuralIcon name="refresh" :size="18" class="arch-icon inline-block" />
           <div class="arch-body">
             <span class="arch-label">Seeding</span>
-            <span class="arch-value">Dev + agent tokens auto-bootstrapped via <code>get_sandbox_tokens()</code>, cached in Redis DB 2</span>
+            <span class="arch-value">Developer and agent access keys created at start by <code>get_sandbox_tokens()</code>, cached in Redis DB 2</span>
           </div>
         </div>
         <div class="arch-cell">
@@ -62,14 +62,14 @@
     <!-- Authentication Configuration -->
     <div class="auth-section glass-card hover-lift">
       <div class="section-header">
-        <h3 class="section-title">
+        <h2 class="section-title">
           <NeuralIcon name="lock" :size="24" class="inline-block" />
           Authentication Configuration
-        </h3>
+        </h2>
       </div>
       <div class="auth-grid">
         <div class="auth-field glass-inner">
-          <label class="field-label">Developer Token</label>
+          <label class="field-label">Developer access key</label>
           <div class="token-display">
             <code class="token-value" :class="{ 'has-value': developerToken }">{{ developerToken ? (devTokenRevealed ? developerToken : maskToken(developerToken)) : '—' }}</code>
             <div class="token-actions">
@@ -77,7 +77,8 @@
                 v-if="developerToken"
                 @click="devTokenRevealed = !devTokenRevealed"
                 class="token-action-btn glass-button-mini"
-                :title="devTokenRevealed ? 'Hide token' : 'Reveal token'"
+                :title="devTokenRevealed ? 'Hide access key' : 'Reveal access key'"
+                :aria-label="devTokenRevealed ? 'Hide developer access key' : 'Reveal developer access key'"
               >
                 <NeuralIcon :name="devTokenRevealed ? 'hide' : 'view'" :size="14" class="inline-block" />
               </button>
@@ -86,6 +87,7 @@
                 @click="copyToken(developerToken, 'dev')"
                 class="token-action-btn glass-button-mini"
                 :title="devTokenCopied ? 'Copied!' : 'Copy to clipboard'"
+                :aria-label="devTokenCopied ? 'Copied' : 'Copy developer access key'"
               >
                 <NeuralIcon :name="devTokenCopied ? 'check-circle' : 'copy'" :size="14" class="inline-block" />
               </button>
@@ -96,7 +98,7 @@
           </div>
         </div>
         <div class="auth-field glass-inner">
-          <label class="field-label">Agent Token{{ agentStatus }}</label>
+          <label class="field-label">Agent access key{{ agentStatus }}</label>
           <div class="token-display">
             <code class="token-value" :class="{ 'has-value': agentToken }">{{ agentToken ? (agentTokenRevealed ? agentToken : maskToken(agentToken)) : '—' }}</code>
             <div class="token-actions">
@@ -104,7 +106,8 @@
                 v-if="agentToken"
                 @click="agentTokenRevealed = !agentTokenRevealed"
                 class="token-action-btn glass-button-mini"
-                :title="agentTokenRevealed ? 'Hide token' : 'Reveal token'"
+                :title="agentTokenRevealed ? 'Hide access key' : 'Reveal access key'"
+                :aria-label="agentTokenRevealed ? 'Hide agent access key' : 'Reveal agent access key'"
               >
                 <NeuralIcon :name="agentTokenRevealed ? 'hide' : 'view'" :size="14" class="inline-block" />
               </button>
@@ -113,6 +116,7 @@
                 @click="copyToken(agentToken, 'agent')"
                 class="token-action-btn glass-button-mini"
                 :title="agentTokenCopied ? 'Copied!' : 'Copy to clipboard'"
+                :aria-label="agentTokenCopied ? 'Copied' : 'Copy agent access key'"
               >
                 <NeuralIcon :name="agentTokenCopied ? 'check-circle' : 'copy'" :size="14" class="inline-block" />
               </button>
@@ -148,10 +152,10 @@
 
     <!-- Category Grid -->
     <div class="categories-section">
-      <h3 class="section-title glass-text">
+      <h2 class="section-title glass-text">
         <NeuralIcon name="folder" :size="24" class="inline-block mr-2" />
         Test Categories
-      </h3>
+      </h2>
       <div class="category-grid">
         <div
           v-for="group in visualCategories"
@@ -164,7 +168,7 @@
             <NeuralIcon :name="getGroupIcon(group.name)" :size="48" />
             <div class="icon-glow"></div>
           </div>
-          <h4 class="category-name">{{ group.name }}</h4>
+          <h3 class="category-name">{{ group.name }}</h3>
           <p class="category-description">{{ group.description }}</p>
           <div class="category-stats">
             <span class="stat-badge glass-badge">
@@ -179,10 +183,10 @@
     <transition name="slide-fade">
       <div v-if="selectedVisualGroup" class="endpoints-section glass-card">
         <div class="endpoints-header">
-          <h3 class="endpoints-title">
+          <h2 class="endpoints-title">
             <NeuralIcon :name="getGroupIcon(selectedVisualGroup.name)" :size="24" class="inline-block mr-2" />
             {{ selectedVisualGroup.name }}
-          </h3>
+          </h2>
           <button
             @click="testVisualCategory"
             class="test-category-button glass-button"
@@ -216,6 +220,8 @@
                 @click="$emit('test-endpoint', endpoint)"
                 class="test-button glass-button-small"
                 :disabled="endpoint.testing"
+                :aria-label="`Test ${endpoint.method} ${endpoint.path}`"
+                :title="`Test ${endpoint.method} ${endpoint.path}`"
               >
                 <NeuralIcon :name="getTestIconName(endpoint)" :size="18" class="inline-block" />
               </button>
@@ -279,10 +285,10 @@
     <!-- Summary Dashboard -->
     <transition name="fade">
       <div v-if="hasAnyResults" class="summary-section glass-card">
-        <h3 class="summary-title glass-text">
+        <h2 class="summary-title glass-text">
           <NeuralIcon name="chart" :size="24" class="inline-block mr-2" />
           Test Summary
-        </h3>
+        </h2>
         <div class="summary-grid">
           <div class="summary-card glass-inner">
             <NeuralIcon name="clipboard" :size="32" class="mb-2" />
@@ -429,7 +435,7 @@ const GROUP_DEFS: GroupDef[] = [
     icon: 'globe',
     rule: /^(federation|frame_|consul_federation|exchange_federation|ourchat_federation|internal_federation|registry_card|registry_health|cloud_operators|operator_)/,
     categories: ['federation_peers', 'federation_public', 'federation_query', 'federation_sync', 'federation_disputes', 'federation_topology', 'frame_invitations', 'oauth_federation', 'token_bridge'],
-    description: 'Registry federation, cross-frame invitations, token bridge and OAuth'
+    description: 'Registry federation, cross-frame invitations, the unit bridge and OAuth'
   },
   {
     name: 'Contracts & Disputes',

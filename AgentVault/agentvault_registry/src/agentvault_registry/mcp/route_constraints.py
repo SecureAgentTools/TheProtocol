@@ -122,7 +122,6 @@ ROUTE_CONSTRAINTS: Dict[str, Dict[str, Dict[str, Any]]] = {
         'version': {"maxLength": 64, "minLength": 1},
     },
     'theprotocol_createWebhook': {
-        'description': {"maxLength": 500},
         'url': {"maxLength": 500},
     },
     'theprotocol_decideChatApproval': {
@@ -374,7 +373,6 @@ ROUTE_CONSTRAINTS: Dict[str, Dict[str, Dict[str, Any]]] = {
         'website': {"maxLength": 500},
     },
     'theprotocol_updateWebhook': {
-        'description': {"maxLength": 500},
         'url': {"maxLength": 500},
     },
     'theprotocol_verify2FA': {

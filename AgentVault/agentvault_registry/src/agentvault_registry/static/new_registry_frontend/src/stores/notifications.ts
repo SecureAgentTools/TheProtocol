@@ -51,6 +51,7 @@ import { defineStore } from 'pinia'
 import { authService } from '@/services/auth'
 import { createBackoffRetry } from '@/services/backoffRetry'
 import { useLogger } from '@/composables/useLogger'
+import type { BellMention } from '@/services/chat/mentions'   // V0663 (order 418)
 
 const log = useLogger('notifications')
 
@@ -198,6 +199,13 @@ export const useNotificationStore = defineStore('notifications', () => {
    *  broadcasts" only after a read said so: the list hydrated from localStorage is the last answer, not this one. */
   const lastReadAt = ref(0)
   const feedFailed = ref(false)
+  // V0663 (order 418): the bell's Mentions group, read on its own (GET /chat/mentions: you by name, unread, across your
+  // rooms), so a busy feed cannot push a mention out of the newest fifty. total null: the count could not be taken.
+  const mentionItems = ref<BellMention[]>([])
+  const mentionTotal = ref<number | null>(0)
+  const mentionsFailed = ref(false)
+  const mentionsMarking = ref(false)
+  const mentionsMarkFailed = ref(false)
   /** §FESUITE (2026-10-09): an unread read that got no answer (or a 5xx: a registry restarting) is read again on its own,
    *  backing off, until one answers. It was read only on the layout's mount, a socket reconnect or a press, so a console
    *  opened while the registry could not answer said "BROADCASTS COULD NOT BE READ // PRESS TO TRY AGAIN" for the rest
@@ -210,6 +218,50 @@ export const useNotificationStore = defineStore('notifications', () => {
   const criticalItems = computed(() =>
     items.value.filter(i => i.broadcast_type === 'critical')
   )
+
+  async function fetchMentions() {
+    const token = authService.getAccessToken()
+    if (!token) return
+    try {
+      const res = await fetch('/api/v1/chat/mentions?limit=20', { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) { mentionsFailed.value = res.status !== 404 && res.status !== 403; return }
+      const body = await res.json()
+      mentionsFailed.value = body?.available === false
+      mentionItems.value = Array.isArray(body?.mentions) ? body.mentions : []
+      mentionTotal.value = typeof body?.total === 'number' ? body.total : null
+    } catch (e) {
+      log.warn('fetchMentions failed', e)
+      mentionsFailed.value = true
+    }
+  }
+
+  /** V0664 (his report, seq 4032): the Mentions group can be cleared. Every room that holds a mention is marked read at the newest mention
+   *  shown (the thread's own read route, one call per room: a read mark is a floor, so the older ones go with it), then the group is read
+   *  again, and so on while the registry has more (it shows 20 at a time), at most six rounds. A room whose mark could not be moved
+   *  says so (mentionsMarkFailed) and keeps what the registry still holds. */
+  async function markMentionsRead() {
+    const token = authService.getAccessToken()
+    if (!token || mentionsMarking.value || !mentionItems.value.length) return
+    mentionsMarking.value = true
+    mentionsMarkFailed.value = false
+    try {
+      for (let round = 0; round < 6 && mentionItems.value.length; round++) {
+        const upTo = new Map<string, number>()
+        for (const m of mentionItems.value) {
+          const id = String(m.conversation_id)
+          upTo.set(id, Math.max(upTo.get(id) || 0, Number(m.seq) || 0))
+        }
+        const done = await Promise.all([...upTo].map(([id, seq]) =>
+          fetch(`/api/v1/chat/conversations/${encodeURIComponent(id)}/read`, {
+            method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ seq }),
+          }).then((r) => r.ok).catch((e) => { log.warn('markMentionsRead failed', e); return false })))
+        await fetchMentions()                  // the registry's own answer decides what is left
+        if (done.some((ok) => !ok)) { mentionsMarkFailed.value = true; break }
+      }
+    } finally {
+      mentionsMarking.value = false
+    }
+  }
 
   async function fetchFeed() {
     const token = authService.getAccessToken()
@@ -238,6 +290,19 @@ export const useNotificationStore = defineStore('notifications', () => {
     } catch (e) {
       log.warn('markFeedRead failed', e)
     }
+  }
+
+  /** V0663: one kind of the bell read at once: the entries leave the feed now, the registry is told for each (the same call
+   *  as one entry's, bounded by the feed's own size), and a failed one is logged and comes back with the next read. */
+  async function markFeedReadMany(ids: number[]) {
+    const set = new Set(ids)
+    if (!set.size) return
+    feed.value = feed.value.filter(e => !set.has(e.id))
+    const token = authService.getAccessToken()
+    if (!token) return
+    await Promise.allSettled([...set].map(id =>
+      fetch(`/api/v1/notifications/feed/${id}/read`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+        .catch(e => { log.warn('markFeedReadMany failed', e) })))
   }
 
   async function markAllFeedRead() {
@@ -474,6 +539,9 @@ export const useNotificationStore = defineStore('notifications', () => {
     unreadRetry.cancel()
     items.value = []
     feed.value = []
+    mentionItems.value = []
+    mentionTotal.value = 0
+    mentionsFailed.value = false
     toasts.value = []
     loading.value = false
     unreadFailed.value = false
@@ -487,7 +555,15 @@ export const useNotificationStore = defineStore('notifications', () => {
     items,
     feed,
     fetchFeed,
+    mentionItems,
+    mentionTotal,
+    mentionsFailed,
+    mentionsMarking,
+    mentionsMarkFailed,
+    markMentionsRead,
+    fetchMentions,
     markFeedRead,
+    markFeedReadMany,
     markAllFeedRead,
     toasts,
     loading,

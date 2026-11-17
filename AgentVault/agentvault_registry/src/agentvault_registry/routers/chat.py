@@ -19,7 +19,7 @@ import datetime
 import functools
 import logging
 import os
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import httpx
 from fastapi import (APIRouter, Depends, File, HTTPException, Query, Request,
@@ -60,6 +60,8 @@ def chat_errors(fn):
         try:
             return await fn(*args, **kwargs)
         except cs.ChatError as e:
+            if e.retry_after_s:
+                raise HTTPException(status_code=e.status_code, detail=e.detail, headers={"Retry-After": str(int(e.retry_after_s))})
             raise HTTPException(status_code=e.status_code, detail=e.detail)
     return wrapper
 
@@ -141,6 +143,11 @@ class BoardEditors(BaseModel):
 class CardUpdate(BaseModel):
     """V0652 (aa): the card's new state (the whole card, its type unchanged)."""
     card: Dict[str, Any]
+
+
+class MessageEdit(BaseModel):
+    """V0662: the new text of a message its sender is changing (the whole text, not a patch)."""
+    body: str
 
 
 class MuteBody(BaseModel):
@@ -314,6 +321,9 @@ async def _relay_resident_send(db: AsyncSession, conv, my_row, actor: cs.Actor, 
         raise cs.ChatError(501, "cross-registry chat is not enabled on this registry")
     if actor.ptype not in ("developer", "agent"):
         raise cs.ChatError(409, "only a developer or an agent can write in a cross-registry thread")
+    if getattr(conv, "archived_at", None) is not None:
+        # V0663 recut: the mirror's own copy shows the room archived: refused here with the host's sentence, nothing relayed
+        raise cs.ChatError(409, cs.ARCHIVED_POST)
     state = getattr(my_row, "state", "active")
     if state == "left":
         raise cs.ChatError(409, "you have left this conversation")
@@ -414,7 +424,7 @@ async def create_conversation(
 @router.get("/conversations")
 @chat_errors
 async def list_conversations(
-    state: Literal["active", "requests"] = Query("active"),
+    state: Literal["active", "requests", "archived"] = Query("active"),
     cursor: Optional[str] = Query(None),
     limit: int = Query(30, ge=1, le=cs.LIST_MAX),
     actor_dict: dict = Depends(get_current_actor_for_read_or_key),
@@ -665,6 +675,213 @@ async def update_card(
         except Exception:  # noqa: BLE001 — the update is committed and delivered; its notice is a courtesy
             logger.warning("[CHAT] the verdict notice of card %s was not sent", message_id, exc_info=True)
     return {"message": msg, "changed": changed}
+
+
+@router.put("/conversations/{conversation_id}/messages/{message_id}")
+@chat_errors
+async def edit_message(
+    conversation_id: str,
+    message_id: str,
+    req: MessageEdit,
+    actor_dict: dict = Depends(get_current_actor_for_read),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change the text of a message you wrote, for CHAT_EDIT_WINDOW_S (15 minutes) after it was posted. The message keeps
+    its place and is marked edited; the text it had is kept and every member of the thread can read it
+    (GET .../history). A card, a mirrored message and a thread another registry reaches are not changed. An edit wakes
+    no one: a name added by an edit is not notified.
+
+    \f
+    V0662 (OurChat lane), order gwo_173e400022a85073f908044b (services.chat_service.edit_message; the rules:
+    services.chat_edits). Answers `{message, changed}`; a body equal to the current one answers `changed: false` and
+    writes no revision. Members hear `chat.message_edited` (the same fan-out as a card update: no notice, no push)."""
+    actor = cs.actor_from_auth(actor_dict)
+    if not await cs._rate_gate(f"msg:{actor.key}", cs.RL_MSG_LIMIT, cs.RL_MSG_WINDOW_S):
+        raise cs.ChatError(429, "message rate limit reached — slow down")
+    editor = await _named_sender(db, actor)
+    msg, conv, changed = await cs.edit_message(db, conversation_id, message_id, editor, req.body)
+    if changed and conv is not None:
+        await cs.deliver_card_update(db, conv, msg, editor, event="chat.message_edited")
+    return {"message": msg, "changed": changed}
+
+
+@router.delete("/conversations/{conversation_id}/messages/{message_id}")
+@chat_errors
+async def delete_message(
+    conversation_id: str,
+    message_id: str,
+    actor_dict: dict = Depends(get_current_actor_for_read),
+    db: AsyncSession = Depends(get_db),
+):
+    """Take back a message you wrote, for CHAT_EDIT_WINDOW_S after it was posted: the thread shows its tombstone and the
+    text it had is kept for the record (readable through the history route). The same limits as an edit.
+
+    \f
+    V0662 (OurChat lane) (services.chat_service.delete_message). Answers `{message}`, the tombstone; members hear
+    `chat.message_deleted`."""
+    actor = cs.actor_from_auth(actor_dict)
+    if not await cs._rate_gate(f"msg:{actor.key}", cs.RL_MSG_LIMIT, cs.RL_MSG_WINDOW_S):
+        raise cs.ChatError(429, "message rate limit reached — slow down")
+    editor = await _named_sender(db, actor)
+    msg, conv = await cs.delete_message(db, conversation_id, message_id, editor)
+    await cs.deliver_card_update(db, conv, msg, editor, event="chat.message_deleted")
+    return {"message": msg}
+
+
+@router.put("/conversations/{conversation_id}/messages/{message_id}/reactions/{word}")
+@chat_errors
+async def add_reaction(
+    conversation_id: str,
+    message_id: str,
+    word: str,
+    actor_dict: dict = Depends(get_current_actor_for_read),
+    db: AsyncSession = Depends(get_db),
+):
+    """Put a reaction word on a message (ack, agree, thanks, done, question, look): once per person and word, idempotent.
+    Answers `{message_id, seq, reactions: [{key, count, mine}], added}`. A reaction wakes no one: no notice, no push, no
+    sync wake; the thread's members see the count change (`chat.message_reaction`).
+
+    \f
+    V0662 (OurChat lane) (services.chat_service.add_reaction; the words: services.chat_reactions). JWT only, like an
+    edit: a key does not react. A thread another registry reaches is refused until the federation carries it."""
+    actor = cs.actor_from_auth(actor_dict)
+    if not await cs._rate_gate(f"react:{actor.key}", 120, 60):
+        raise cs.ChatError(429, "reaction rate limit reached — slow down")
+    reactor = await _named_sender(db, actor)
+    out, conv, added = await cs.add_reaction(db, conversation_id, message_id, reactor, word)
+    if added:
+        await _tell_reaction(db, conv, out, reactor, word)
+    return {**out, "added": added}
+
+
+@router.delete("/conversations/{conversation_id}/messages/{message_id}/reactions/{word}")
+@chat_errors
+async def remove_reaction(
+    conversation_id: str,
+    message_id: str,
+    word: str,
+    actor_dict: dict = Depends(get_current_actor_for_read),
+    db: AsyncSession = Depends(get_db),
+):
+    """Take your reaction word off a message (your own or your agents'). Answers `{message_id, seq, reactions, removed}`.
+
+    \f
+    V0662 (OurChat lane) (services.chat_service.remove_reaction)."""
+    actor = cs.actor_from_auth(actor_dict)
+    if not await cs._rate_gate(f"react:{actor.key}", 120, 60):
+        raise cs.ChatError(429, "reaction rate limit reached — slow down")
+    reactor = await _named_sender(db, actor)
+    out, conv, removed = await cs.remove_reaction(db, conversation_id, message_id, reactor, word)
+    if removed:
+        await _tell_reaction(db, conv, out, reactor, word)
+    return {**out, "removed": removed}
+
+
+async def _tell_reaction(db: AsyncSession, conv, out: dict, reactor, word: str) -> None:
+    """The thread's other members see the counts change: the same fan-out as a card update, no sync wake. The envelope
+    carries the counts (no `mine`: that is each reader's) and who changed them, so a reader can tell whether it was theirs."""
+    msg = {"id": out["message_id"], "conversation_id": conv.id, "seq": out["seq"], "word": word,
+           "reactions": [{"key": r["key"], "count": r["count"]} for r in out["reactions"]],
+           "by": {"ptype": reactor.ptype, "id": reactor.sender_id}}
+    await cs.deliver_card_update(db, conv, msg, reactor, event="chat.message_reaction", wake=False)
+
+
+@router.get("/conversations/{conversation_id}/search")
+@chat_errors
+async def search_messages(
+    conversation_id: str,
+    q: str = Query(..., min_length=1, max_length=200, description="the words to find (2 to 100 characters), case ignored"),
+    limit: int = Query(20, ge=1, le=cs.SEARCH_LIMIT_MAX),
+    before_seq: Optional[int] = Query(None, ge=1, description="continue below this seq (the previous page's next_before_seq)"),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """Find text lines in one thread: newest first, a page at a time. Only what you may read there (your own floor, no line
+    taken back, text lines only); a card or a file is not searched.
+
+    \f
+    V0662 (OurChat lane) (services.chat_service.search_messages). A READ route: a key may use it, as it reads a thread."""
+    actor = cs.actor_from_auth(actor_dict)
+    return await cs.search_messages(db, conversation_id, actor, q, limit, before_seq)
+
+
+@router.get("/conversations/{conversation_id}/pins")
+@chat_errors
+async def list_pins(
+    conversation_id: str,
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """The thread's pinned messages, newest pin first, each with its message, who pinned it and when. Also `can_pin` (may
+    you pin here) and `max`.
+
+    \f
+    V0662 (OurChat lane) (services.chat_service.list_pins; the rules: services.chat_pins). A READ route: a key may use it."""
+    actor = cs.actor_from_auth(actor_dict)
+    return await cs.list_pins(db, conversation_id, actor)
+
+
+@router.put("/conversations/{conversation_id}/messages/{message_id}/pin")
+@chat_errors
+async def pin_message(
+    conversation_id: str,
+    message_id: str,
+    actor_dict: dict = Depends(get_current_actor_for_read),
+    db: AsyncSession = Depends(get_db),
+):
+    """Pin a message in its thread (idempotent). In a direct or group thread any member who can post; in an organization
+    room its owners and admins; in a room its owner and moderators. At most 10 per thread. Answers `{message_id, pinned,
+    count, added}`; the thread hears `chat.pins_changed` (no notice, no push, no sync wake).
+
+    \f
+    V0662 (OurChat lane) (services.chat_service.pin_message). JWT only, like an edit; a thread another registry reaches is
+    refused until the federation carries it."""
+    actor = cs.actor_from_auth(actor_dict)
+    if not await cs._rate_gate(f"pin:{actor.key}", 60, 60):
+        raise cs.ChatError(429, "pin rate limit reached — slow down")
+    pinner = await _named_sender(db, actor)
+    out, conv, added = await cs.pin_message(db, conversation_id, message_id, pinner)
+    if added:
+        await cs.deliver_card_update(db, conv, {"id": out["message_id"], "conversation_id": conv.id, "pinned": True,
+                                                "count": out["count"]}, pinner, event="chat.pins_changed", wake=False)
+    return {**out, "added": added}
+
+
+@router.delete("/conversations/{conversation_id}/messages/{message_id}/pin")
+@chat_errors
+async def unpin_message(
+    conversation_id: str,
+    message_id: str,
+    actor_dict: dict = Depends(get_current_actor_for_read),
+    db: AsyncSession = Depends(get_db),
+):
+    """Take a message's pin off. The same people who may pin. Answers `{message_id, pinned, count, removed}`.
+
+    \f
+    V0662 (OurChat lane) (services.chat_service.unpin_message)."""
+    actor = cs.actor_from_auth(actor_dict)
+    if not await cs._rate_gate(f"pin:{actor.key}", 60, 60):
+        raise cs.ChatError(429, "pin rate limit reached — slow down")
+    pinner = await _named_sender(db, actor)
+    out, conv, removed = await cs.unpin_message(db, conversation_id, message_id, pinner)
+    if removed:
+        await cs.deliver_card_update(db, conv, {"id": out["message_id"], "conversation_id": conv.id, "pinned": False,
+                                                "count": out["count"]}, pinner, event="chat.pins_changed", wake=False)
+    return {**out, "removed": removed}
+
+
+@router.get("/conversations/{conversation_id}/messages/{message_id}/history")
+@chat_errors
+async def message_history(
+    conversation_id: str,
+    message_id: str,
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """The earlier texts of a message, oldest first: when it changed, who, and the text it had before. A member of the
+    thread reads it; a taken-back message's last text is here too."""
+    actor = cs.actor_from_auth(actor_dict)
+    return await cs.message_history(db, conversation_id, message_id, actor)
 
 
 @router.get("/conversations/{conversation_id}/messages/{message_id}/card/history")
@@ -1233,6 +1450,25 @@ async def unread_count(
     return await cs.unread_total(db, actor)
 
 
+@router.get("/mentions")
+@chat_errors
+async def unread_mentions(
+    limit: int = Query(20, ge=1, le=50),
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    The newest unread messages that name you (your name, handle or DID; never @all or @everyone) across your rooms, with
+    the total. The bell's Mentions group reads this: it leaves the group when you read the line, and a busy feed cannot
+    push it out.
+
+    \f
+    V0663 (order 418). A LITERAL under a router that also owns `/conversations/{id}`; declared above every `{param}` sibling.
+    """
+    actor = cs.actor_from_auth(actor_dict)
+    return await cs.unread_mention_items(db, actor, limit=limit)
+
+
 # ---------------------------------------------------------------------------
 # §OURSTATE-2 — org rooms (the chat as the org's admin panel)
 # ---------------------------------------------------------------------------
@@ -1293,7 +1529,7 @@ class RoomCreate(BaseModel):
 class RoomMemberAct(BaseModel):
     """V0659 (f): one operator act in a room this registry hosts. `member` is the key the host knows the member by:
     dev:<id>, agt:<did> or a remote address (id@https://their.registry); `value` carries a rule, a topic or a title."""
-    action: str = Field(..., pattern="^(mute|unmute|remove|ban|accept|moderator|unmoderator|rule|topic|title)$")
+    action: str = Field(..., pattern="^(mute|unmute|remove|ban|accept|moderator|unmoderator|rule|topic|title|archive|unarchive)$")
     member: Optional[str] = Field(None, max_length=320)
     value: Optional[str] = Field(None, max_length=200)
 
@@ -1367,6 +1603,17 @@ async def room_member_act(conversation_id: str, req: RoomMemberAct,
     return result
 
 
+@router.post("/rooms/{conversation_id}/close")
+@chat_errors
+async def room_close(conversation_id: str, actor_dict: dict = Depends(get_current_actor_for_read),
+                     db: AsyncSession = Depends(get_db)):
+    """V0663: close a room hosted here that nobody has spoken in (its owner or a moderator). A room with messages is
+    archived instead (POST /rooms/{id}/act with action=archive), which keeps its history and takes it out of the lists and
+    its owner's cap of 20 rooms."""
+    from ..services import chat_rooms as rooms
+    return await rooms.close_room(db, conversation_id, cs.actor_from_auth(actor_dict))
+
+
 @router.post("/conversations/{conversation_id}/room")
 @chat_errors
 async def room_op(
@@ -1418,6 +1665,105 @@ class WakeModeSet(BaseModel):
     member: Optional[str] = Field(None, max_length=320,
                                   description="The member's key (dev:<id> or agt:<did>, as the member sheet gives it); "
                                               "none for your own")
+
+
+class GuestSeat(BaseModel):
+    """V0662: the one principal a guest seat is for: a developer by id or an agent by its DID."""
+    developer_id: Optional[int] = None
+    agent_did: Optional[str] = Field(None, max_length=255)
+
+
+@router.post("/conversations/{conversation_id}/guests", status_code=201)
+@chat_errors
+async def seat_guest(
+    conversation_id: str,
+    req: GuestSeat,
+    actor_dict: dict = Depends(get_current_actor_for_read),
+    db: AsyncSession = Depends(get_db),
+):
+    """Seat one named principal as a GUEST of an organization's room: the organization's owners and admins only. A guest reads
+    and posts in this one room and gains nothing else of the organization (no organization data, no work-order door, no other
+    room, no admin sheet). They are shown as a guest in the member sheet and may leave at any time.
+
+    \f
+    V0662 (OurChat lane), order gwo_0fda63bcceb5718a54990b74 (services.chat_service.seat_guest; the rules and the §ORGLEAK
+    reasoning: services.chat_guests; migration 0218). JWT only: a key does not seat people."""
+    from ..services.admin_audit import log_chat_action
+    actor = cs.actor_from_auth(actor_dict)
+    seated, conv = await cs.seat_guest(db, conversation_id, actor, developer_id=req.developer_id, agent_did=req.agent_did)
+    try:
+        await log_chat_action(db, action="chat.guest_seated", actor_type=actor.ptype, actor_id=str(actor.sender_id),
+                              target_type="chat_participant", target_id=str(seated["key"])[:255],
+                              details={"conversation_id": conv.id})
+    except Exception:  # noqa: BLE001 — the audit line must not undo a seat that is committed
+        logger.warning("[CHAT] the audit line of a guest seat in %s was not written", conv.id, exc_info=True)
+    return {"guest": seated}
+
+
+@router.delete("/conversations/{conversation_id}/guests/{member_key:path}")
+@chat_errors
+async def remove_guest(
+    conversation_id: str,
+    member_key: str,
+    actor_dict: dict = Depends(get_current_actor_for_read),
+    db: AsyncSession = Depends(get_db),
+):
+    """End a guest's seat (the organization's owners and admins, at any time). The key is the member sheet's (`dev:<id>` or
+    `agt:<did>`). A guest who is also a live member of the organization stays a member.
+
+    \f
+    V0662 (OurChat lane) (services.chat_service.remove_guest). A guest leaves on their own with POST .../leave."""
+    from ..services.admin_audit import log_chat_action
+    actor = cs.actor_from_auth(actor_dict)
+    out, conv = await cs.remove_guest(db, conversation_id, actor, member_key)
+    try:
+        await log_chat_action(db, action="chat.guest_removed", actor_type=actor.ptype, actor_id=str(actor.sender_id),
+                              target_type="chat_participant", target_id=str(out["key"])[:255],
+                              details={"conversation_id": conv.id})
+    except Exception:  # noqa: BLE001
+        logger.warning("[CHAT] the audit line of a guest removal in %s was not written", conv.id, exc_info=True)
+    return out
+
+
+class AgentStatusReport(BaseModel):
+    """V0662: the desk's report: one entry per session of the room."""
+    entries: List[Dict[str, Any]] = Field(..., max_length=60)
+
+
+@router.put("/conversations/{conversation_id}/agent-status")
+@chat_errors
+async def report_agent_status(
+    conversation_id: str,
+    req: AgentStatusReport,
+    actor_dict: dict = Depends(get_current_actor_for_read),
+    db: AsyncSession = Depends(get_db),
+):
+    """The room's desk reports its sessions (state active | paused | unreachable, wake mode, last wake, wakes in 24 hours), about
+    every 60 seconds. Only the organization's owners and admins, or an agent of one, write it; an entry for a member the room does
+    not hold is skipped, an invalid entry is refused by name. Answers `{kept, skipped, refused}`.
+
+    \f
+    V0662 (OurChat lane), the batch's item 11, order gwo_6b2cbdf6e982d1662161e802 (services.chat_service.report_agent_status;
+    the rules: services.chat_agent_status; migration 0219). JWT only."""
+    actor = cs.actor_from_auth(actor_dict)
+    return await cs.report_agent_status(db, conversation_id, actor, req.entries)
+
+
+@router.get("/conversations/{conversation_id}/agent-status")
+@chat_errors
+async def read_agent_status(
+    conversation_id: str,
+    actor_dict: dict = Depends(get_current_actor_for_read_or_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """Agent status in an organization's room: each session's state as it reads now (`unknown` when the desk has not refreshed
+    it for 5 minutes), wake mode, last wake and wakes in 24 hours, the busiest first. The organization's owners and admins only.
+
+    \f
+    V0662 (OurChat lane) (services.chat_service.read_agent_status). A READ route, as every chat read: a developer's key reads it as the developer
+    does, and the same organization-role gate applies."""
+    actor = cs.actor_from_auth(actor_dict)
+    return await cs.read_agent_status(db, conversation_id, actor)
 
 
 @router.put("/conversations/{conversation_id}/wake")
@@ -2312,10 +2658,10 @@ async def federation_status(
     enabled = fed.federation_enabled()
     peers = await fed.peer_base_urls(db) if enabled else {}
     pending = (await db.execute(__import__("sqlalchemy").text(
-        "SELECT count(*) FROM chat_federation_outbox WHERE delivered_at IS NULL"))).scalar_one()
+        "SELECT count(*) FROM chat_federation_outbox WHERE delivered_at IS NULL AND dropped_at IS NULL"))).scalar_one()
     stuck = (await db.execute(__import__("sqlalchemy").text(
         "SELECT count(*) FROM chat_federation_outbox "
-        "WHERE delivered_at IS NULL AND attempts >= :m"), {"m": fed.MAX_ATTEMPTS})).scalar_one()
+        "WHERE delivered_at IS NULL AND dropped_at IS NULL AND attempts >= :m"), {"m": fed.MAX_ATTEMPTS})).scalar_one()
     return {"enabled": enabled, "host_base_url": fed.self_base_url(),
             "peers": sorted(peers.keys()), "pending": int(pending),
             "given_up": int(stuck), "worker": await outbox_stats(),

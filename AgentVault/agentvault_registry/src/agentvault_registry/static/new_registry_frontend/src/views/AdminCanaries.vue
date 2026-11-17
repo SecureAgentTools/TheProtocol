@@ -862,7 +862,7 @@ const toggleLogCollapsed = () => {
           {{ t('adminCanariesView.clear') }}
         </button>
       </div>
-      <div class="cn-failures-list">
+      <div class="cn-failures-list" tabindex="0" role="region" aria-label="Recent failures">
         <div v-for="f in visibleFailures" :key="f.test_id" class="cn-failure-row">
           <code class="cn-failure-time">{{ f.fired_at ? dayjs(f.fired_at).format('HH:mm:ss') : '—' }}</code>
           <code class="cn-failure-test">{{ f.test_id.slice(0, 40) }}…</code>
@@ -878,6 +878,7 @@ const toggleLogCollapsed = () => {
       <span>{{ t('adminCanariesView.noPathsForFilter', { backend: backendFilter }) }}</span>
     </div>
     <div v-else class="cn-cards" data-testid="cn-paths-grid">
+      <h2 class="sr-only">Canary paths</h2>
       <!-- §CANARYUNIFY pass 4 — ONE grid. Local paths (executed here) and
            federated paths (scheduled here, executed on another home) used to be
            two separate panels with two different visual languages; they are the

@@ -169,7 +169,7 @@ export interface TrackRecordResponse {
   summary: TrackRecordSummary
   recent: TrackRecordRow[]
   /** §AGENTDISC #197 — registry-observed liveness; null for federated mirrors */
-  liveness?: { probe: string | null; last_seen: string | null; live_24h: boolean } | null
+  liveness?: { probe: string | null; last_seen: string | null; live_24h: boolean; service_declared?: boolean } | null
   credential_pubkey: { pubkey_b64?: string; pubkey_id?: string; alg?: string }
   attested_by: { registry: string | null; url: string | null }
   receipt_kind: string

@@ -1,5 +1,5 @@
 <template>
-  <div class="bp-root" @pointermove="onRailPointer" @pointerleave="railTip = null">
+  <div ref="rootEl" class="bp-root" @pointermove="onRailPointer" @pointerleave="railTip = null">
     <div class="bp-wrap">
       <!-- Breadcrumb -->
       <nav class="bpd-crumb" :aria-label="t('blueprintsView.crumb', 'Industry Blueprints')">
@@ -31,13 +31,19 @@
             <span class="bpd-label">{{ t('blueprintsView.deep.planLabel', 'The adoption path') }}</span>
             <h2 class="bpd-h2">{{ t('blueprintsView.deep.planTitle', 'Four phases, each ending on proof') }}</h2>
             <div class="bpd-phases">
-              <article v-for="(p, i) in deep.plan" :key="p.name" class="bpd-phase">
+              <!-- V0662 (his suggestion 4): each step has its own address (#/blueprints/<id>?step=<n>) and a button that copies
+                   it; a link followed brings the step into view and marks it -->
+              <article v-for="(p, i) in deep.plan" :key="p.name" :id="'bp-step-' + i" class="bpd-phase"
+                       :class="{ 'bpd-phase--target': targetStep === i }" :aria-current="targetStep === i ? 'step' : undefined">
                 <div class="bpd-phase-head">
                   <span class="bpd-phase-no">{{ i }}</span>
-                  <div>
+                  <div class="bpd-phase-titles">
                     <span class="bpd-phase-name">{{ p.name }}</span>
                     <span class="bpd-phase-headline">{{ p.headline }}</span>
                   </div>
+                  <CopyButton v-if="bp" class="bpd-phase-copy" :value="consoleLink(`/blueprints/${bp.id}?step=${i}`)"
+                              :what="tp('blueprintsView.deep.stepLinkWhat', 'the link to step {n}', { n: i })" icon-only quiet
+                              :data-testid="'bpd-copy-step-' + i" />
                 </div>
                 <dl class="bpd-phase-rows">
                   <div><dt>{{ t('blueprintsView.deep.runs', 'Runs') }}</dt><dd>{{ p.runs }}</dd></div>
@@ -52,7 +58,7 @@
 
           <details v-if="deep.sequence" class="bpd-wiring" @toggle="onSequenceToggle">
             <summary>{{ deep.sequenceTitle || t('blueprintsView.deep.seq', 'The settlement path, as messages') }}</summary>
-            <div class="bpd-wiring-body">
+            <div class="bpd-wiring-body" tabindex="0" role="region" :aria-label="deep.sequenceTitle || t('blueprintsView.deep.seq', 'The settlement path, as messages')">
               <pre :class="`bp-mermaid bpd-mermaid-${bp.id}`">{{ deep.sequence }}</pre>
             </div>
           </details>
@@ -60,7 +66,7 @@
           <section v-if="deep.sizing?.length" class="bpd-sec">
             <span class="bpd-label">{{ t('blueprintsView.deep.sizingLabel', 'Sizing truth') }}</span>
             <h2 class="bpd-h2">{{ t('blueprintsView.deep.sizingTitle', 'What you actually run') }}</h2>
-            <div class="bpd-tablewrap">
+            <div class="bpd-tablewrap" tabindex="0" role="region" :aria-label="t('blueprintsView.deep.sizingTitle', 'What you actually run')">
               <table class="bpd-table">
                 <thead><tr><th>{{ t('blueprintsView.deep.level', 'Level') }}</th><th>{{ t('blueprintsView.deep.what', 'What it means') }}</th><th>{{ t('blueprintsView.deep.containers', 'Containers') }}</th></tr></thead>
                 <tbody>
@@ -112,6 +118,8 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from '@/composables/useI18n'
 import BlueprintSection from '@/components/blueprints/BlueprintSection.vue'
+import CopyButton from '@/components/quickOnboarding/CopyButton.vue'
+import { consoleLink } from '@/services/share/consoleLink'
 import ArchLoom from '@/components/blueprints/ArchLoom.vue'
 import { BLUEPRINTS } from '@/data/blueprints'
 import { ARCH_LOADERS } from '@/data/blueprints/arch'
@@ -120,7 +128,21 @@ import type { Blueprint, BlueprintDeep, Rail } from '@/data/blueprints/types'
 
 const route = useRoute()
 const router = useRouter()
-const { t } = useI18n()
+const { t, tp } = useI18n()
+
+// V0662 (his suggestion 4): the step a followed link names (?step=<n>), brought into view and marked once the plan is
+// on the page, on arrival and when the step changes on an open page (vue-router keeps the view on a query-only change)
+const targetStep = computed<number | null>(() => {
+  const n = Number(route.query.step)
+  return typeof route.query.step === 'string' && Number.isInteger(n) && n >= 0 ? n : null
+})
+const rootEl = ref<HTMLElement | null>(null)
+async function showTargetStep() {
+  if (targetStep.value === null || !deep.value) return
+  await nextTick()
+  rootEl.value?.querySelector(`#bp-step-${targetStep.value}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+watch(targetStep, () => { void showTargetStep() })
 
 const byRank = [...BLUEPRINTS].sort((a, b) => a.rank - b.rank)
 const bp = ref<Blueprint | null>(null)
@@ -161,6 +183,7 @@ async function resolve(id: string) {
     }
   }
   window.scrollTo({ top: 0 })
+  void showTargetStep()
 }
 
 watch(() => route.params.id, (id) => { if (typeof id === 'string') resolve(id) }, { immediate: true })
@@ -252,6 +275,8 @@ export default { name: 'BlueprintDetailView' }
 
 /* Sizing table */
 .bpd-tablewrap { overflow-x: auto; }
+/* V0662 item 12: a scroll container takes the keyboard (axe scrollable-region-focusable); show where the focus is */
+.bpd-tablewrap:focus-visible, .bpd-wiring-body:focus-visible { outline: 2px solid rgba(var(--flow-rgb, 0, 210, 210), 0.85); outline-offset: 2px; border-radius: 6px; }
 .bpd-table { width: 100%; border-collapse: collapse; }
 .bpd-table th { font-family: var(--bp-mono); font-size: 0.62rem; font-weight: 800; letter-spacing: 0.1em; color: var(--bp-faint); text-align: left; text-transform: uppercase; padding: 0.5rem 0.8rem; border-bottom: 1px solid rgba(var(--flow-rgb), 0.2); }
 .bpd-table td { font-size: 0.78rem; color: var(--bp-ink-soft); padding: 0.6rem 0.8rem; border-bottom: 1px solid rgba(var(--flow-rgb), 0.08); line-height: 1.55; }
@@ -282,4 +307,8 @@ export default { name: 'BlueprintDetailView' }
   .bpd-nav { grid-template-columns: 1fr; justify-items: start; }
   .bpd-nav-link--next { justify-self: start; text-align: left; }
 }
+/* V0662: a step a link names, and its copy button */
+.bpd-phase-titles { flex: 1 1 auto; min-width: 0; }
+.bpd-phase-copy { margin-left: auto; }
+.bpd-phase--target { border-color: rgba(var(--flow-rgb), 0.6); box-shadow: 0 0 0 1px rgba(var(--flow-rgb), 0.35); }
 </style>

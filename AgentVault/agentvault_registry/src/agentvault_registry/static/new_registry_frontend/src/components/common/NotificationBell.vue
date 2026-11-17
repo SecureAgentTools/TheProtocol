@@ -3,13 +3,23 @@ import Icon from '@/components/Icon.vue'
 import ReadFailedNotice from '@/components/common/ReadFailedNotice.vue'
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useAlive } from '@/composables/useAlive'
+import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notifications'
 import type { BroadcastItem, FeedItem } from '@/stores/notifications'
 import { useRouter } from 'vue-router'
 import { useViewport } from '@/composables/useViewport'
 import { desktopRoute } from '@/services/notificationDoors'
+import { bellTarget, splitMentions, supersededByGroup, type BellMention } from '@/services/chat/mentions'
+import { groupFeed, loadMuted, quietLine, saveMuted, toggleMuted, type BellGroup } from '@/services/notifications/bellGroups'
 
 const store = useNotificationStore()
+/* the viewer's own names: a mention of them is drawn stronger in the group (a bell mounted without a session has none) */
+const myNames = computed<string[]>(() => {
+  try {
+    const u: any = (useAuthStore() as any).user || {}
+    return [u.username, u.name, u.display_name, u.handle].filter((x) => typeof x === 'string' && x.length > 0)
+  } catch { return [] }
+})
 const router = useRouter()
 const viewport = useViewport()
 const open = ref(false)
@@ -90,6 +100,7 @@ function handleOpenBellEvent(e?: Event) {
 const alive = useAlive()
 onMounted(async () => {
   await store.fetchUnread()
+  void store.fetchMentions()   // V0663 (order 418): the Mentions group reads on its own
   if (!alive()) return
   document.addEventListener('click', handleOutsideClick)
   window.addEventListener('resize', closeIfOpen)
@@ -118,10 +129,28 @@ function handleOutsideClick(e: MouseEvent) {
   }
 }
 
+/* V0663 (order 418): the Mentions group (you by name, unread), and the feed without the notices it already shows */
+const mentionRooms = computed(() => new Set(store.mentionItems.map((m) => String(m.conversation_id).toLowerCase())))
+const feedShown = computed(() => store.feed.filter((e) => !supersededByGroup(e, mentionRooms.value)))
+/* V0663: the account's feed grouped by kind; a muted kind is one quiet line that still counts what it holds (this device only) */
+const mutedKinds = ref<Set<string>>(loadMuted())
+const grouped = computed(() => groupFeed(feedShown.value, mutedKinds.value))
+function setMuted(kind: string, on: boolean) {
+  mutedKinds.value = toggleMuted(mutedKinds.value, kind, on)
+  saveMuted(mutedKinds.value)
+}
+function markKindRead(g: BellGroup) { void store.markFeedReadMany(g.entries.map((e) => e.id)) }
+function mentionWho(m: BellMention): string { return [m.sender, m.title].filter(Boolean).join(' · ') }
+function openMention(m: BellMention) {
+  open.value = false
+  router.push(bellTarget(m)).catch(() => {})
+}
+
 async function toggle() {
   if (modalItem.value) return // Don't toggle dropdown when modal is open
   if (!open.value) {
     void store.fetchFeed()
+    void store.fetchMentions()
     await nextTick()
     if (btnRef.value && !viewport.isSmallPhone.value) {
       const rect = btnRef.value.getBoundingClientRect()
@@ -277,26 +306,67 @@ function isSafeCtaUrl(url: string | null | undefined): boolean {
             />
           </div>
 
-          <!-- §FESUITE — the per-developer in-app feed, above the broadcasts (it was shown on Pocket only) -->
-          <div v-if="store.feed.length" class="nb-feed" data-testid="nb-feed">
-            <div class="nb-section">YOUR ACCOUNT</div>
-            <div v-for="e in store.feed" :key="'feed-' + e.id" class="nb-feed-item" :data-feed-id="e.id" :data-type="e.type_key">
-              <button type="button" class="nb-feed-open" @click="openFeed(e)">
-                <span class="nb-item-title">{{ e.title }}</span>
-                <span class="nb-item-preview">{{ e.body }}</span>
-                <span class="nb-item-age">{{ relativeTime(e.created_at || '') }}</span>
-              </button>
-              <button type="button" class="nb-feed-read" :aria-label="`Mark read: ${e.title}`" @click="store.markFeedRead(e.id)">
-                <Icon name="mdi:check" />
+          <!-- V0663 (order 418): MENTIONS, its own group above everything: you by name, unread, read on its own so a busy
+               feed cannot push one out; a line leaves it when you read it in the room -->
+          <div v-if="store.mentionItems.length || store.mentionsFailed" class="nb-feed nb-mentions" data-testid="nb-mentions">
+            <div class="nb-section nb-group-head">
+              <span>MENTIONS<span v-if="store.mentionTotal" class="nb-mention-total" data-testid="nb-mentions-total"> · {{ store.mentionTotal }}</span></span>
+              <button v-if="store.mentionItems.length" type="button" class="nb-link" data-testid="nb-mentions-markall" :disabled="store.mentionsMarking" @click="store.markMentionsRead()">Mark all read</button>
+            </div>
+            <p v-if="store.mentionsMarkFailed" class="nb-mention-failed" role="status" data-testid="nb-mentions-mark-failed">Could not mark them read just now. Try again.</p>
+            <p v-if="store.mentionsFailed" class="nb-mention-failed" role="status" data-testid="nb-mentions-failed">
+              Mentions of you could not be read just now.
+              <button type="button" class="nb-feed-read" @click="store.fetchMentions()">Try again</button></p>
+            <div v-for="m in store.mentionItems" :key="'mention-' + m.id" class="nb-feed-item" :data-mention-id="m.id">
+              <button type="button" class="nb-feed-open" :data-testid="'nb-mention-' + m.seq" @click="openMention(m)">
+                <span class="nb-item-title">{{ mentionWho(m) }}</span>
+                <span class="nb-item-preview"><template v-for="(p, i) in splitMentions(m.preview || '', myNames)" :key="i"><span v-if="p.at" class="nb-at" :class="{ 'nb-at-me': p.me }">{{ p.text }}</span><template v-else>{{ p.text }}</template></template></span>
+                <span class="nb-item-age">{{ relativeTime(m.created_at || '') }}</span>
               </button>
             </div>
           </div>
 
+          <!-- §FESUITE — the per-developer in-app feed, above the broadcasts (it was shown on Pocket only) -->
+          <div v-if="grouped.groups.length" class="nb-feed" data-testid="nb-feed">
+            <div class="nb-section nb-group-head">
+              <span>YOUR ACCOUNT</span>
+              <button type="button" class="nb-link" data-testid="nb-feed-read-all" @click="store.markAllFeedRead()">Mark all read</button>
+            </div>
+            <section v-for="g in grouped.groups" :key="g.kind" class="nb-group" :data-testid="'nb-group-' + g.kind">
+              <div class="nb-group-title">
+                <span class="nb-group-name">{{ g.label }} · {{ g.entries.length }}</span>
+                <span class="nb-group-actions">
+                  <button type="button" class="nb-link" :data-testid="'nb-group-read-' + g.kind" @click="markKindRead(g)">Mark read</button>
+                  <button v-if="g.canMute" type="button" class="nb-link" :data-testid="'nb-group-mute-' + g.kind" @click="setMuted(g.kind, true)">Mute</button>
+                </span>
+              </div>
+              <div v-for="e in g.entries" :key="'feed-' + e.id" class="nb-feed-item" :data-feed-id="e.id" :data-type="e.type_key">
+                <button type="button" class="nb-feed-open" @click="openFeed(e)">
+                  <span class="nb-item-title">{{ e.title }}</span>
+                  <span class="nb-item-preview">{{ e.body }}</span>
+                  <span class="nb-item-age">{{ relativeTime(e.created_at || '') }}</span>
+                </button>
+                <button type="button" class="nb-feed-read" :aria-label="`Mark read: ${e.title}`" @click="store.markFeedRead(e.id)">
+                  <Icon name="mdi:check" />
+                </button>
+              </div>
+            </section>
+          </div>
+          <!-- V0663: muted kinds, one quiet line that still counts what they hold; one press shows a kind again. Muting hides a
+               kind in this bell only: push and mail follow Settings > Notifications. -->
+          <p v-if="grouped.quiet.count" class="nb-quiet" data-testid="nb-quiet">
+            <span data-testid="nb-quiet-count">{{ quietLine(grouped.quiet.count) }}</span>
+            <template v-for="q in grouped.quiet.kinds" :key="q.kind">
+              · {{ q.label }} {{ q.count }}
+              <button type="button" class="nb-link" :data-testid="'nb-unmute-' + q.kind" @click="setMuted(q.kind, false)">Show</button>
+            </template>
+          </p>
+
           <!-- §FESUITE (2026-10-05): "All clear." only over reads that answered; a failed one says so, with Try again -->
-          <div v-if="(store.unreadFailed || store.feedFailed) && store.items.length === 0 && store.feed.length === 0" class="nb-empty" data-testid="nb-read-failed">
+          <div v-if="(store.unreadFailed || store.feedFailed) && store.items.length === 0 && store.feed.length === 0 && !store.mentionItems.length" class="nb-empty" data-testid="nb-read-failed">
             <ReadFailedNotice dense :retry="store.fetchUnread" />
           </div>
-          <div v-else-if="store.items.length === 0 && store.feed.length === 0" class="nb-empty">
+          <div v-else-if="store.items.length === 0 && store.feed.length === 0 && !store.mentionItems.length && !store.mentionsFailed" class="nb-empty">
             <span>All clear.</span>
           </div>
           <div v-else-if="store.items.length && filteredItems.length === 0" class="nb-empty">
@@ -380,6 +450,16 @@ function isSafeCtaUrl(url: string | null | undefined): boolean {
 <style scoped>
 /* §FESUITE — the in-app feed section */
 .nb-section { padding: 8px 14px 4px; font-size: 10px; letter-spacing: 0.14em; color: var(--nc-text-muted, #8f9399); font-weight: 700; }
+.nb-mention-total { font-weight: 500; letter-spacing: 0; }
+.nb-at { color: var(--nc-primary, #4fd8c4); font-weight: 500; }
+.nb-at-me { padding: 0 3px; border-radius: 3px; background: rgba(79, 216, 196, 0.2); font-weight: 600; }
+.nb-mention-failed { margin: 0; padding: 4px 14px; font-size: 12px; color: var(--nc-text-muted, #8f9399); }   /* V0663 */
+.nb-group-head { display: flex; align-items: center; justify-content: space-between; }
+.nb-group-title { display: flex; align-items: center; justify-content: space-between; padding: 6px 14px 2px; font-size: 11px; font-weight: 700; color: var(--nc-text, #d6d9de); }
+.nb-group-name { letter-spacing: 0.04em; }
+.nb-group-actions { display: inline-flex; gap: 10px; }
+.nb-link { background: none; border: none; padding: 0; color: var(--nc-text-muted, #8f9399); font-size: 11px; cursor: pointer; text-decoration: underline; }
+.nb-quiet { margin: 0; padding: 4px 14px 8px; font-size: 11px; color: var(--nc-text-muted, #8f9399); }   /* V0663: grouped bell */
 .nb-feed { border-bottom: 1px solid rgba(255, 255, 255, 0.06); padding-bottom: 4px; }
 .nb-feed-item { display: flex; align-items: stretch; gap: 4px; padding: 0 8px 0 0; }
 .nb-feed-open { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; text-align: left; background: none; border: none;

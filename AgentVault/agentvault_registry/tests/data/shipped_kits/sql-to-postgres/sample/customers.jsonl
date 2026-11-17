@@ -1,0 +1,480 @@
+{"id": 1, "name": "Customer 0001", "email": "customer0001@example.invalid", "signup_date": "03.04.2023", "status": "B"}
+{"id": 2, "name": "Customer 0002", "email": "customer0002@example.invalid", "signup_date": "16.09.2017", "status": "I"}
+{"id": 3, "name": "Customer 0003", "email": "customer0003@example.invalid", "signup_date": "01.08.2018", "status": "I"}
+{"id": 4, "name": "Customer 0004", "email": "customer0004@example.invalid", "signup_date": "24.03.2015", "status": " i"}
+{"id": 5, "name": "Customer 0005", "email": "customer0005@example.invalid", "signup_date": "14.10.2023", "status": "I"}
+{"id": 6, "name": "Customer 0006", "email": "customer0006@example.invalid", "signup_date": "13.12.2019", "status": "A"}
+{"id": 7, "name": "  Customer 0007 ", "email": "customer0007@example.invalid", "signup_date": "08.08.2017", "status": "a"}
+{"id": 8, "name": "Customer 0008", "email": "customer0008@example.invalid", "signup_date": "17.10.2018", "status": "A"}
+{"id": 9, "name": "Customer 0009", "email": "customer0009@example.invalid", "signup_date": "28.04.2021", "status": "I"}
+{"id": 10, "name": "Customer 0010", "email": "customer0010@example.invalid", "signup_date": "10.12.2016", "status": "a"}
+{"id": 11, "name": "Customer 0011", "email": "customer0011@example.invalid", "signup_date": "06.10.2020", "status": " i"}
+{"id": 12, "name": "Customer 0012", "email": "customer0012@example.invalid", "signup_date": "06.08.2021", "status": "a"}
+{"id": 13, "name": "Customer 0013", "email": "customer0013@example.invalid", "signup_date": "21.03.2024", "status": "A"}
+{"id": 14, "name": "  Customer 0014 ", "email": "customer0014@example.invalid", "signup_date": "28.04.2017", "status": "A"}
+{"id": 15, "name": "Customer 0015", "email": "customer0015@example.invalid", "signup_date": "12.09.2017", "status": "a"}
+{"id": 16, "name": "Customer 0016", "email": "customer0016@example.invalid", "signup_date": "11.11.2017", "status": " i"}
+{"id": 17, "name": "Customer 0017", "email": "customer0017@example.invalid", "signup_date": "26.08.2019", "status": "A"}
+{"id": 18, "name": "Customer 0018", "email": "customer0018@example.invalid", "signup_date": "05.07.2019", "status": " i"}
+{"id": 19, "name": "Customer 0019", "email": "customer0019@example.invalid", "signup_date": "05.04.2017", "status": "A"}
+{"id": 20, "name": "Customer 0020", "email": "customer0020@example.invalid", "signup_date": "05.07.2022", "status": "B"}
+{"id": 21, "name": "  Customer 0021 ", "email": "customer0021@example.invalid", "signup_date": "14.06.2021", "status": "B"}
+{"id": 22, "name": "Customer 0022", "email": "customer0022@example.invalid", "signup_date": "28.03.2020", "status": "B"}
+{"id": 23, "name": "Customer 0023", "email": "customer0023@example.invalid", "signup_date": "12.10.2020", "status": " i"}
+{"id": 24, "name": "Customer 0024", "email": "customer0024@example.invalid", "signup_date": "17.04.2022", "status": "I"}
+{"id": 25, "name": "Customer 0025", "email": "customer0025@example.invalid", "signup_date": "05.06.2022", "status": " i"}
+{"id": 26, "name": "Customer 0026", "email": "customer0026@example.invalid", "signup_date": "04.12.2023", "status": "a"}
+{"id": 27, "name": "Customer 0027", "email": "customer0027@example.invalid", "signup_date": "24.08.2018", "status": " i"}
+{"id": 28, "name": "  Customer 0028 ", "email": "customer0028@example.invalid", "signup_date": "15.09.2020", "status": "A"}
+{"id": 29, "name": "Customer 0029", "email": "customer0029@example.invalid", "signup_date": "07.10.2024", "status": "I"}
+{"id": 30, "name": "Customer 0030", "email": "customer0030@example.invalid", "signup_date": "15.10.2018", "status": "a"}
+{"id": 31, "name": "Customer 0031", "email": "customer0031@example.invalid", "signup_date": "01.12.2021", "status": "A"}
+{"id": 32, "name": "Customer 0032", "email": "customer0032@example.invalid", "signup_date": "07.07.2021", "status": "A"}
+{"id": 33, "name": "Customer 0033", "email": "customer0033@example.invalid", "signup_date": "17.05.2023", "status": " i"}
+{"id": 34, "name": "Customer 0034", "email": "customer0034@example.invalid", "signup_date": "12.06.2017", "status": " i"}
+{"id": 35, "name": "  Customer 0035 ", "email": "customer0035@example.invalid", "signup_date": "01.02.2021", "status": " i"}
+{"id": 36, "name": "Customer 0036", "email": "customer0036@example.invalid", "signup_date": "06.11.2022", "status": "I"}
+{"id": 37, "name": "Customer 0037", "email": "customer0037@example.invalid", "signup_date": "31.02.2021", "status": "I"}
+{"id": 38, "name": "Customer 0038", "email": "customer0038@example.invalid", "signup_date": "28.03.2023", "status": "A"}
+{"id": 39, "name": "Customer 0039", "email": "customer0039@example.invalid", "signup_date": "24.03.2023", "status": "B"}
+{"id": 40, "name": "Customer 0040", "email": "customer0040@example.invalid", "signup_date": "28.12.2019", "status": "a"}
+{"id": 41, "name": "Customer 0041", "email": "customer0041@example.invalid", "signup_date": "25.05.2022", "status": "A"}
+{"id": 42, "name": "  Customer 0042 ", "email": "customer0042@example.invalid", "signup_date": "21.01.2015", "status": "A"}
+{"id": 43, "name": "Customer 0043", "email": "customer0043@example.invalid", "signup_date": "12.02.2022", "status": "A"}
+{"id": 44, "name": "Customer 0044", "email": "customer0044@example.invalid", "signup_date": "05.01.2017", "status": " i"}
+{"id": 45, "name": "Customer 0045", "email": "customer0045@example.invalid", "signup_date": "28.05.2015", "status": " i"}
+{"id": 46, "name": "Customer 0046", "email": "customer0046@example.invalid", "signup_date": "25.02.2022", "status": "I"}
+{"id": 47, "name": "Customer 0047", "email": "customer0047@example.invalid", "signup_date": "10.11.2022", "status": "a"}
+{"id": 48, "name": "Customer 0048", "email": "customer0048@example.invalid", "signup_date": "10.09.2024", "status": "A"}
+{"id": 49, "name": "  Customer 0049 ", "email": "customer0049@example.invalid", "signup_date": "14.04.2020", "status": "A"}
+{"id": 50, "name": "Customer 0050", "email": "customer0050@example.invalid", "signup_date": "12.12.2015", "status": "a"}
+{"id": 51, "name": "Customer 0051", "email": "customer0051@example.invalid", "signup_date": "10.11.2023", "status": "a"}
+{"id": 52, "name": "Customer 0052", "email": "customer0052@example.invalid", "signup_date": "22.01.2024", "status": "B"}
+{"id": 53, "name": "Customer 0053", "email": "customer0053@example.invalid", "signup_date": "09.05.2017", "status": " i"}
+{"id": 54, "name": "Customer 0054", "email": "customer0054@example.invalid", "signup_date": "06.03.2021", "status": "A"}
+{"id": 55, "name": "Customer 0055", "email": "customer0055@example.invalid", "signup_date": "20.05.2018", "status": "a"}
+{"id": 56, "name": "  Customer 0056 ", "email": "customer0056@example.invalid", "signup_date": "04.07.2015", "status": "a"}
+{"id": 57, "name": "Customer 0057", "email": "customer0057@example.invalid", "signup_date": "01.10.2019", "status": "A"}
+{"id": 58, "name": "Customer 0058", "email": "customer0058@example.invalid", "signup_date": "10.01.2019", "status": "X"}
+{"id": 59, "name": "Customer 0059", "email": "customer0059@example.invalid", "signup_date": "14.09.2015", "status": " i"}
+{"id": 60, "name": "Customer 0060", "email": "customer0060@example.invalid", "signup_date": "06.10.2015", "status": "A"}
+{"id": 61, "name": "Customer 0061", "email": "customer0061@example.invalid", "signup_date": "28.06.2021", "status": "A"}
+{"id": 62, "name": "Customer 0062", "email": "customer0062@example.invalid", "signup_date": "10.05.2021", "status": "a"}
+{"id": 63, "name": "  Customer 0063 ", "email": "customer0063@example.invalid", "signup_date": "25.10.2024", "status": "I"}
+{"id": 64, "name": "Customer 0064", "email": "customer0064@example.invalid", "signup_date": "28.06.2017", "status": "A"}
+{"id": 65, "name": "Customer 0065", "email": "customer0065@example.invalid", "signup_date": "16.09.2023", "status": " i"}
+{"id": 66, "name": "Customer 0066", "email": "customer0066@example.invalid", "signup_date": "21.08.2021", "status": "B"}
+{"id": 67, "name": "Customer 0067", "email": "customer0067@example.invalid", "signup_date": "06.08.2021", "status": " i"}
+{"id": 68, "name": "Customer 0068", "email": "customer0068@example.invalid", "signup_date": "14.02.2017", "status": "A"}
+{"id": 69, "name": "Customer 0069", "email": "customer0069@example.invalid", "signup_date": "27.11.2024", "status": "a"}
+{"id": 70, "name": "  Customer 0070 ", "email": "customer0070@example.invalid", "signup_date": "06.08.2021", "status": "a"}
+{"id": 71, "name": "Customer 0071", "email": "customer0071@example.invalid", "signup_date": "01.10.2015", "status": "B"}
+{"id": 72, "name": "Customer 0072", "email": "customer0072@example.invalid", "signup_date": "03.08.2018", "status": "I"}
+{"id": 73, "name": "Customer 0073", "email": "customer0073@example.invalid", "signup_date": "03.10.2020", "status": "A"}
+{"id": 74, "name": "Customer 0074", "email": "customer0074@example.invalid", "signup_date": "12.01.2018", "status": "A"}
+{"id": 75, "name": "Customer 0075", "email": "customer0075@example.invalid", "signup_date": "16.02.2018", "status": "B"}
+{"id": 76, "name": "Customer 0076", "email": "customer0076@example.invalid", "signup_date": "10.02.2019", "status": "a"}
+{"id": 77, "name": "  Customer 0077 ", "email": "customer0077@example.invalid", "signup_date": "09.05.2017", "status": " i"}
+{"id": 78, "name": "Customer 0078", "email": "customer0078@example.invalid", "signup_date": "13.02.2016", "status": "I"}
+{"id": 79, "name": "Customer 0079", "email": "customer0079@example.invalid", "signup_date": "15.02.2015", "status": "I"}
+{"id": 80, "name": "Customer 0080", "email": "customer0080@example.invalid", "signup_date": "24.05.2020", "status": "a"}
+{"id": 81, "name": "Customer 0081", "email": "customer0081@example.invalid", "signup_date": "26.02.2022", "status": "A"}
+{"id": 82, "name": "Customer 0082", "email": "customer0082@example.invalid", "signup_date": "24.07.2019", "status": "B"}
+{"id": 83, "name": "Customer 0083", "email": "customer0083@example.invalid", "signup_date": "16.09.2022", "status": "A"}
+{"id": 84, "name": "  Customer 0084 ", "email": "customer0084@example.invalid", "signup_date": "06.05.2015", "status": " i"}
+{"id": 85, "name": "Customer 0085", "email": "customer0085@example.invalid", "signup_date": "08.02.2016", "status": " i"}
+{"id": 86, "name": "Customer 0086", "email": "customer0086@example.invalid", "signup_date": "03.05.2016", "status": "B"}
+{"id": 87, "name": "Customer 0087", "email": "customer0087@example.invalid", "signup_date": "25.07.2017", "status": " i"}
+{"id": 88, "name": "Customer 0088", "email": "customer0088@example.invalid", "signup_date": "03.04.2021", "status": "A"}
+{"id": 89, "name": "Customer 0089", "email": "customer0089@example.invalid", "signup_date": "03.09.2024", "status": "I"}
+{"id": 90, "name": "Customer 0090", "email": "customer0090@example.invalid", "signup_date": "17.09.2021", "status": " i"}
+{"id": 91, "name": "  Customer 0091 ", "email": "customer0091@example.invalid", "signup_date": "10.02.2015", "status": "A"}
+{"id": 92, "name": "Customer 0092", "email": "customer0092@example.invalid", "signup_date": "10.02.2022", "status": "A"}
+{"id": 93, "name": "Customer 0093", "email": "customer0093@example.invalid", "signup_date": "15.02.2021", "status": "A"}
+{"id": 94, "name": "Customer 0094", "email": "customer0094@example.invalid", "signup_date": "15.08.2020", "status": "B"}
+{"id": 95, "name": "Customer 0095", "email": "customer0095@example.invalid", "signup_date": "11.11.2018", "status": " i"}
+{"id": 96, "name": "Customer 0096", "email": "customer0096@example.invalid", "signup_date": "16.03.2024", "status": "A"}
+{"id": 97, "name": "Customer 0097", "email": "customer0097@example.invalid", "signup_date": "20.11.2017", "status": "B"}
+{"id": 98, "name": "  Customer 0098 ", "email": "customer0098@example.invalid", "signup_date": "08.09.2020", "status": "I"}
+{"id": 99, "name": "Customer 0099", "email": "customer0099@example.invalid", "signup_date": "24.12.2020", "status": "a"}
+{"id": 100, "name": "Customer 0100", "email": "customer0100@example.invalid", "signup_date": "24.08.2019", "status": "a"}
+{"id": 101, "name": "Customer 0101", "email": "customer0101@example.invalid", "signup_date": "10.04.2024", "status": "a"}
+{"id": 102, "name": "Customer 0102", "email": "customer0102@example.invalid", "signup_date": "23.06.2021", "status": "a"}
+{"id": 103, "name": "Customer 0103", "email": "customer0103@example.invalid", "signup_date": "21.07.2018", "status": "A"}
+{"id": 104, "name": "Customer 0104", "email": "customer0104@example.invalid", "signup_date": "04.09.2017", "status": "A"}
+{"id": 105, "name": "  Customer 0105 ", "email": "customer0105@example.invalid", "signup_date": "12.08.2021", "status": "A"}
+{"id": 106, "name": "Customer 0106", "email": "customer0106@example.invalid", "signup_date": "03.10.2016", "status": " i"}
+{"id": 107, "name": "Customer 0107", "email": "customer0107@example.invalid", "signup_date": "27.01.2019", "status": "A"}
+{"id": 108, "name": "Customer 0108", "email": "customer0108@example.invalid", "signup_date": "10.02.2018", "status": "a"}
+{"id": 109, "name": "Customer 0109", "email": "customer0109@example.invalid", "signup_date": "28.10.2023", "status": "A"}
+{"id": 110, "name": "Customer 0110", "email": "customer0110@example.invalid", "signup_date": "27.07.2015", "status": "A"}
+{"id": 111, "name": "Customer 0111", "email": "customer0111@example.invalid", "signup_date": "01.10.2017", "status": "I"}
+{"id": 112, "name": "  Customer 0112 ", "email": "customer0112@example.invalid", "signup_date": "11.09.2021", "status": "A"}
+{"id": 113, "name": "Customer 0113", "email": "customer0113@example.invalid", "signup_date": "2021-05-04", "status": "I"}
+{"id": 114, "name": "Customer 0114", "email": "customer0114@example.invalid", "signup_date": "06.01.2022", "status": "A"}
+{"id": 115, "name": "Customer 0115", "email": "customer0115@example.invalid", "signup_date": "28.02.2018", "status": "A"}
+{"id": 116, "name": "Customer 0116", "email": "customer0116@example.invalid", "signup_date": "15.01.2024", "status": "I"}
+{"id": 117, "name": "Customer 0117", "email": "customer0117@example.invalid", "signup_date": "05.02.2017", "status": "A"}
+{"id": 118, "name": "Customer 0118", "email": "customer0118@example.invalid", "signup_date": "03.12.2023", "status": "B"}
+{"id": 119, "name": "  Customer 0119 ", "email": "customer0119@example.invalid", "signup_date": "15.11.2021", "status": "A"}
+{"id": 120, "name": "Customer 0120", "email": "customer0120@example.invalid", "signup_date": "28.04.2022", "status": "I"}
+{"id": 121, "name": "Customer 0121", "email": "customer0121@example.invalid", "signup_date": "02.12.2020", "status": "a"}
+{"id": 122, "name": "Customer 0122", "email": "customer0122@example.invalid", "signup_date": "09.09.2024", "status": "I"}
+{"id": 123, "name": "Customer 0123", "email": "customer0123@example.invalid", "signup_date": "06.10.2019", "status": "A"}
+{"id": 124, "name": "Customer 0124", "email": "customer0124@example.invalid", "signup_date": "08.11.2021", "status": " i"}
+{"id": 125, "name": "Customer 0125", "email": "customer0125@example.invalid", "signup_date": "17.02.2021", "status": " i"}
+{"id": 126, "name": "  Customer 0126 ", "email": "customer0126@example.invalid", "signup_date": "25.03.2019", "status": "I"}
+{"id": 127, "name": "Customer 0127", "email": "customer0127@example.invalid", "signup_date": "06.12.2022", "status": "A"}
+{"id": 128, "name": "Customer 0128", "email": "customer0128@example.invalid", "signup_date": "27.06.2016", "status": "A"}
+{"id": 129, "name": "Customer 0129", "email": "customer0129@example.invalid", "signup_date": "23.01.2017", "status": " i"}
+{"id": 130, "name": "Customer 0130", "email": "customer0130@example.invalid", "signup_date": "03.05.2023", "status": "I"}
+{"id": 131, "name": "Customer 0131", "email": "customer0131@example.invalid", "signup_date": "07.03.2018", "status": "I"}
+{"id": 132, "name": "Customer 0132", "email": "customer0132@example.invalid", "signup_date": "27.05.2019", "status": "B"}
+{"id": 133, "name": "  Customer 0133 ", "email": "customer0133@example.invalid", "signup_date": "09.02.2022", "status": "B"}
+{"id": 134, "name": "Customer 0134", "email": "customer0134@example.invalid", "signup_date": "28.02.2018", "status": "A"}
+{"id": 135, "name": "Customer 0135", "email": "customer0135@example.invalid", "signup_date": "26.07.2018", "status": "A"}
+{"id": 136, "name": "Customer 0136", "email": "customer0136@example.invalid", "signup_date": "04.09.2018", "status": "a"}
+{"id": 137, "name": "Customer 0137", "email": "customer0137@example.invalid", "signup_date": "02.03.2024", "status": "a"}
+{"id": 138, "name": "Customer 0138", "email": "customer0138@example.invalid", "signup_date": "14.06.2016", "status": "a"}
+{"id": 139, "name": "Customer 0139", "email": "customer0139@example.invalid", "signup_date": "17.08.2020", "status": "B"}
+{"id": 140, "name": "  Customer 0140 ", "email": "customer0140@example.invalid", "signup_date": "20.06.2020", "status": "B"}
+{"id": 141, "name": "Customer 0141", "email": "customer0141@example.invalid", "signup_date": "02.04.2022", "status": "A"}
+{"id": 142, "name": "Customer 0142", "email": "customer0142@example.invalid", "signup_date": "03.09.2019", "status": "A"}
+{"id": 143, "name": "Customer 0143", "email": "customer0143@example.invalid", "signup_date": "10.01.2017", "status": "B"}
+{"id": 144, "name": "Customer 0144", "email": "customer0144@example.invalid", "signup_date": "12.04.2015", "status": "A"}
+{"id": 145, "name": "Customer 0145", "email": "customer0145@example.invalid", "signup_date": "10.08.2017", "status": "I"}
+{"id": 146, "name": "Customer 0146", "email": "customer0146@example.invalid", "signup_date": "21.06.2018", "status": "A"}
+{"id": 147, "name": "  Customer 0147 ", "email": "customer0147@example.invalid", "signup_date": "12.08.2021", "status": "I"}
+{"id": 148, "name": "Customer 0148", "email": "customer0148@example.invalid", "signup_date": "05.03.2024", "status": " i"}
+{"id": 149, "name": "Customer 0149", "email": "customer0149@example.invalid", "signup_date": "26.06.2019", "status": " i"}
+{"id": 150, "name": "Customer 0150", "email": "customer0150@example.invalid", "signup_date": "02.05.2023", "status": "I"}
+{"id": 151, "name": "Customer 0151", "email": "customer0151@example.invalid", "signup_date": "15.10.2022", "status": "A"}
+{"id": 152, "name": "Customer 0152", "email": "customer0152@example.invalid", "signup_date": "10.08.2023", "status": "A"}
+{"id": 153, "name": "Customer 0153", "email": "customer0153@example.invalid", "signup_date": "26.09.2022", "status": "A"}
+{"id": 154, "name": "  Customer 0154 ", "email": "customer0154@example.invalid", "signup_date": "10.09.2021", "status": "I"}
+{"id": 155, "name": "Customer 0155", "email": "customer0155@example.invalid", "signup_date": "27.09.2019", "status": "B"}
+{"id": 156, "name": "Customer 0156", "email": "customer0156@example.invalid", "signup_date": "06.10.2018", "status": "B"}
+{"id": 157, "name": "Customer 0157", "email": "customer0157@example.invalid", "signup_date": "28.09.2022", "status": "A"}
+{"id": 158, "name": "Customer 0158", "email": "customer0158@example.invalid", "signup_date": "04.08.2019", "status": " i"}
+{"id": 159, "name": "Customer 0159", "email": "customer0159@example.invalid", "signup_date": "06.11.2024", "status": "I"}
+{"id": 160, "name": "Customer 0160", "email": "customer0160@example.invalid", "signup_date": "25.12.2021", "status": "I"}
+{"id": 161, "name": "  Customer 0161 ", "email": "customer0161@example.invalid", "signup_date": "04.02.2023", "status": "a"}
+{"id": 162, "name": "Customer 0162", "email": "customer0162@example.invalid", "signup_date": "18.06.2021", "status": "I"}
+{"id": 163, "name": "Customer 0163", "email": "customer0163@example.invalid", "signup_date": "14.02.2021", "status": "A"}
+{"id": 164, "name": "Customer 0164", "email": "customer0164@example.invalid", "signup_date": "15.01.2021", "status": "A"}
+{"id": 165, "name": "Customer 0165", "email": "customer0165@example.invalid", "signup_date": "03.06.2023", "status": "A"}
+{"id": 166, "name": "Customer 0166", "email": "customer0166@example.invalid", "signup_date": "17.06.2021", "status": " i"}
+{"id": 167, "name": "Customer 0167", "email": "customer0167@example.invalid", "signup_date": "27.01.2015", "status": "A"}
+{"id": 168, "name": "  Customer 0168 ", "email": "customer0168@example.invalid", "signup_date": "13.08.2017", "status": "A"}
+{"id": 169, "name": "Customer 0169", "email": "customer0169@example.invalid", "signup_date": "17.10.2022", "status": "a"}
+{"id": 170, "name": "Customer 0170", "email": "customer0170@example.invalid", "signup_date": "15.02.2017", "status": "I"}
+{"id": 171, "name": "Customer 0171", "email": "customer0171@example.invalid", "signup_date": "07.07.2019", "status": "I"}
+{"id": 172, "name": "Customer 0172", "email": "customer0172@example.invalid", "signup_date": "11.02.2020", "status": " i"}
+{"id": 173, "name": "Customer 0173", "email": "customer0173@example.invalid", "signup_date": "22.06.2024", "status": "A"}
+{"id": 174, "name": "Customer 0174", "email": "customer0174@example.invalid", "signup_date": "11.09.2015", "status": "a"}
+{"id": 175, "name": "  Customer 0175 ", "email": "customer0175@example.invalid", "signup_date": "13.11.2020", "status": "A"}
+{"id": 176, "name": "Customer 0176", "email": "customer0176@example.invalid", "signup_date": "06.12.2022", "status": "A"}
+{"id": 177, "name": "Customer 0177", "email": "customer0177@example.invalid", "signup_date": "10.08.2016", "status": " i"}
+{"id": 178, "name": "Customer 0178", "email": "customer0178@example.invalid", "signup_date": "19.01.2019", "status": "A"}
+{"id": 179, "name": "Customer 0179", "email": "customer0179@example.invalid", "signup_date": "10.07.2020", "status": "B"}
+{"id": 180, "name": "Customer 0180", "email": "customer0180@example.invalid", "signup_date": "02.03.2018", "status": "A"}
+{"id": 181, "name": "Customer 0181", "email": "customer0181@example.invalid", "signup_date": "12.01.2023", "status": "I"}
+{"id": 182, "name": "  Customer 0182 ", "email": "customer0182@example.invalid", "signup_date": "09.08.2024", "status": " i"}
+{"id": 183, "name": "Customer 0183", "email": "customer0183@example.invalid", "signup_date": "05.10.2019", "status": "A"}
+{"id": 184, "name": "Customer 0184", "email": "customer0184@example.invalid", "signup_date": "12.08.2017", "status": "I"}
+{"id": 185, "name": "Customer 0185", "email": "customer0185@example.invalid", "signup_date": "12.10.2021", "status": " i"}
+{"id": 186, "name": "Customer 0186", "email": "customer0186@example.invalid", "signup_date": "24.07.2016", "status": "A"}
+{"id": 187, "name": "Customer 0187", "email": "customer0187@example.invalid", "signup_date": "17.11.2016", "status": "A"}
+{"id": 188, "name": "Customer 0188", "email": "customer0188@example.invalid", "signup_date": "26.11.2022", "status": "a"}
+{"id": 189, "name": "  Customer 0189 ", "email": "customer0189@example.invalid", "signup_date": "22.08.2022", "status": "A"}
+{"id": 190, "name": "Customer 0190", "email": "customer0190@example.invalid", "signup_date": "21.03.2020", "status": "B"}
+{"id": 191, "name": "Customer 0191", "email": "customer0191@example.invalid", "signup_date": "04.03.2016", "status": "A"}
+{"id": 192, "name": "Customer 0192", "email": "customer0192@example.invalid", "signup_date": "27.04.2021", "status": " i"}
+{"id": 193, "name": "Customer 0193", "email": "customer0193@example.invalid", "signup_date": "12.06.2022", "status": "A"}
+{"id": 194, "name": "Customer 0194", "email": "customer0194@example.invalid", "signup_date": "10.02.2021", "status": "B"}
+{"id": 195, "name": "Customer 0195", "email": "customer0195@example.invalid", "signup_date": "13.05.2020", "status": "a"}
+{"id": 196, "name": "  Customer 0196 ", "email": "customer0196@example.invalid", "signup_date": "16.10.2018", "status": "I"}
+{"id": 197, "name": "Customer 0197", "email": "customer0197@example.invalid", "signup_date": "21.04.2016", "status": " i"}
+{"id": 198, "name": "Customer 0198", "email": "customer0198@example.invalid", "signup_date": "19.11.2017", "status": "A"}
+{"id": 199, "name": "Customer 0199", "email": "customer0199@example.invalid", "signup_date": "24.09.2018", "status": "A"}
+{"id": 200, "name": "Customer 0200", "email": "customer0200@example.invalid", "signup_date": "20.09.2021", "status": "a"}
+{"id": 201, "name": "Customer 0201", "email": "customer0201@example.invalid", "signup_date": "09.06.2022", "status": "A"}
+{"id": 202, "name": "Customer 0202", "email": "customer0202@example.invalid", "signup_date": "05.10.2016", "status": "A"}
+{"id": 203, "name": "  Customer 0203 ", "email": "customer0203@example.invalid", "signup_date": "11.10.2015", "status": "A"}
+{"id": 204, "name": "Customer 0204", "email": "customer0204@example.invalid", "signup_date": "04.02.2019", "status": "B"}
+{"id": 205, "name": "Customer 0205", "email": "customer0205@example.invalid", "signup_date": "23.05.2023", "status": "A"}
+{"id": 206, "name": "Customer 0206", "email": "customer0206@example.invalid", "signup_date": "13.10.2020", "status": "A"}
+{"id": 207, "name": "Customer 0207", "email": "customer0207@example.invalid", "signup_date": "08.05.2017", "status": "A"}
+{"id": 208, "name": "Customer 0208", "email": "customer0208@example.invalid", "signup_date": "02.12.2019", "status": "A"}
+{"id": 209, "name": "Customer 0209", "email": "customer0209@example.invalid", "signup_date": "17.11.2016", "status": "A"}
+{"id": 210, "name": "  Customer 0210 ", "email": "customer0210@example.invalid", "signup_date": "08.10.2024", "status": "A"}
+{"id": 211, "name": "Customer 0211", "email": "customer0211@example.invalid", "signup_date": "03.12.2018", "status": "a"}
+{"id": 212, "name": "Customer 0212", "email": "customer0212@example.invalid", "signup_date": "08.10.2020", "status": "a"}
+{"id": 213, "name": "Customer 0213", "email": "customer0213@example.invalid", "signup_date": "22.01.2021", "status": "A"}
+{"id": 214, "name": "Customer 0214", "email": "customer0214@example.invalid", "signup_date": "22.08.2024", "status": "a"}
+{"id": 215, "name": "Customer 0215", "email": "customer0215@example.invalid", "signup_date": "13.07.2015", "status": "a"}
+{"id": 216, "name": "Customer 0216", "email": "customer0216@example.invalid", "signup_date": "26.07.2017", "status": "A"}
+{"id": 217, "name": "  Customer 0217 ", "email": "customer0217@example.invalid", "signup_date": "08.11.2024", "status": "A"}
+{"id": 218, "name": "Customer 0218", "email": "customer0218@example.invalid", "signup_date": "19.06.2018", "status": "a"}
+{"id": 219, "name": "Customer 0219", "email": "customer0219@example.invalid", "signup_date": "01.04.2022", "status": "I"}
+{"id": 220, "name": "Customer 0220", "email": "customer0220@example.invalid", "signup_date": "18.08.2020", "status": "A"}
+{"id": 221, "name": "Customer 0221", "email": "customer0221@example.invalid", "signup_date": "15.10.2022", "status": "a"}
+{"id": 222, "name": "Customer 0222", "email": "customer0222@example.invalid", "signup_date": "22.12.2023", "status": "Q"}
+{"id": 223, "name": "Customer 0223", "email": "customer0223@example.invalid", "signup_date": "13.04.2016", "status": "a"}
+{"id": 224, "name": "  Customer 0224 ", "email": "customer0224@example.invalid", "signup_date": "07.03.2018", "status": "A"}
+{"id": 225, "name": "Customer 0225", "email": "customer0225@example.invalid", "signup_date": "06.07.2018", "status": "A"}
+{"id": 226, "name": "Customer 0226", "email": "customer0226@example.invalid", "signup_date": "21.03.2022", "status": "A"}
+{"id": 227, "name": "Customer 0227", "email": "customer0227@example.invalid", "signup_date": "20.09.2017", "status": " i"}
+{"id": 228, "name": "Customer 0228", "email": "customer0228@example.invalid", "signup_date": "12.03.2015", "status": "a"}
+{"id": 229, "name": "Customer 0229", "email": "customer0229@example.invalid", "signup_date": "14.03.2021", "status": " i"}
+{"id": 230, "name": "Customer 0230", "email": "customer0230@example.invalid", "signup_date": "10.11.2022", "status": "A"}
+{"id": 231, "name": "  Customer 0231 ", "email": "customer0231@example.invalid", "signup_date": "27.10.2020", "status": "A"}
+{"id": 232, "name": "Customer 0232", "email": "customer0232@example.invalid", "signup_date": "16.10.2021", "status": "B"}
+{"id": 233, "name": "Customer 0233", "email": "customer0233@example.invalid", "signup_date": "23.05.2016", "status": "A"}
+{"id": 234, "name": "Customer 0234", "email": "customer0234@example.invalid", "signup_date": "01.08.2015", "status": "A"}
+{"id": 235, "name": "Customer 0235", "email": "customer0235@example.invalid", "signup_date": "26.11.2018", "status": "a"}
+{"id": 236, "name": "Customer 0236", "email": "customer0236@example.invalid", "signup_date": "28.01.2019", "status": " i"}
+{"id": 237, "name": "Customer 0237", "email": "customer0237@example.invalid", "signup_date": "05.03.2019", "status": " i"}
+{"id": 238, "name": "  Customer 0238 ", "email": "customer0238@example.invalid", "signup_date": "01.03.2018", "status": " i"}
+{"id": 239, "name": "Customer 0239", "email": "customer0239@example.invalid", "signup_date": "22.05.2019", "status": " i"}
+{"id": 240, "name": "Customer 0240", "email": "customer0240@example.invalid", "signup_date": "19.10.2022", "status": "B"}
+{"id": 241, "name": "Customer 0241", "email": "customer0241@example.invalid", "signup_date": "06.07.2016", "status": "I"}
+{"id": 242, "name": "Customer 0242", "email": "customer0242@example.invalid", "signup_date": "11.07.2022", "status": "B"}
+{"id": 243, "name": "Customer 0243", "email": "customer0243@example.invalid", "signup_date": "28.02.2017", "status": "a"}
+{"id": 244, "name": "Customer 0244", "email": "customer0244@example.invalid", "signup_date": "21.07.2018", "status": "A"}
+{"id": 245, "name": "  Customer 0245 ", "email": "customer0245@example.invalid", "signup_date": "15.11.2021", "status": "I"}
+{"id": 246, "name": "Customer 0246", "email": "customer0246@example.invalid", "signup_date": "19.07.2019", "status": "I"}
+{"id": 247, "name": "Customer 0247", "email": "customer0247@example.invalid", "signup_date": "12.10.2023", "status": "A"}
+{"id": 248, "name": "Customer 0248", "email": "customer0248@example.invalid", "signup_date": "18.06.2018", "status": "I"}
+{"id": 249, "name": "Customer 0249", "email": "customer0249@example.invalid", "signup_date": "26.12.2024", "status": "a"}
+{"id": 250, "name": "Customer 0250", "email": "customer0250@example.invalid", "signup_date": "28.01.2024", "status": "B"}
+{"id": 251, "name": "Customer 0251", "email": "customer0251@example.invalid", "signup_date": "06.05.2016", "status": "A"}
+{"id": 252, "name": "  Customer 0252 ", "email": "customer0252@example.invalid", "signup_date": "11.01.2023", "status": "A"}
+{"id": 253, "name": "Customer 0253", "email": "customer0253@example.invalid", "signup_date": "10.06.2018", "status": " i"}
+{"id": 254, "name": "Customer 0254", "email": "customer0254@example.invalid", "signup_date": "13.13.2020", "status": "A"}
+{"id": 255, "name": "Customer 0255", "email": "customer0255@example.invalid", "signup_date": "07.09.2020", "status": " i"}
+{"id": 256, "name": "Customer 0256", "email": "customer0256@example.invalid", "signup_date": "16.07.2021", "status": "B"}
+{"id": 257, "name": "Customer 0257", "email": "customer0257@example.invalid", "signup_date": "01.03.2018", "status": "B"}
+{"id": 258, "name": "Customer 0258", "email": "customer0258@example.invalid", "signup_date": "24.01.2019", "status": "B"}
+{"id": 259, "name": "  Customer 0259 ", "email": "customer0259@example.invalid", "signup_date": "20.12.2024", "status": "A"}
+{"id": 260, "name": "Customer 0260", "email": "customer0260@example.invalid", "signup_date": "14.03.2020", "status": "A"}
+{"id": 261, "name": "Customer 0261", "email": "customer0261@example.invalid", "signup_date": "14.06.2017", "status": "B"}
+{"id": 262, "name": "Customer 0262", "email": "customer0262@example.invalid", "signup_date": "02.10.2017", "status": "I"}
+{"id": 263, "name": "Customer 0263", "email": "customer0263@example.invalid", "signup_date": "05.07.2015", "status": " i"}
+{"id": 264, "name": "Customer 0264", "email": "customer0264@example.invalid", "signup_date": "07.04.2020", "status": "B"}
+{"id": 265, "name": "Customer 0265", "email": "customer0265@example.invalid", "signup_date": "12.07.2022", "status": "B"}
+{"id": 266, "name": "  Customer 0266 ", "email": "customer0266@example.invalid", "signup_date": "18.04.2023", "status": "a"}
+{"id": 267, "name": "Customer 0267", "email": "customer0267@example.invalid", "signup_date": "09.01.2015", "status": "A"}
+{"id": 268, "name": "Customer 0268", "email": "customer0268@example.invalid", "signup_date": "19.10.2015", "status": "A"}
+{"id": 269, "name": "Customer 0269", "email": "customer0269@example.invalid", "signup_date": "03.02.2016", "status": "A"}
+{"id": 270, "name": "Customer 0270", "email": "customer0270@example.invalid", "signup_date": "13.02.2021", "status": "A"}
+{"id": 271, "name": "Customer 0271", "email": "customer0271@example.invalid", "signup_date": "06.11.2022", "status": "A"}
+{"id": 272, "name": "Customer 0272", "email": "customer0272@example.invalid", "signup_date": "04.08.2018", "status": "A"}
+{"id": 273, "name": "  Customer 0273 ", "email": "customer0273@example.invalid", "signup_date": "20.12.2016", "status": "B"}
+{"id": 274, "name": "Customer 0274", "email": "customer0274@example.invalid", "signup_date": "18.10.2017", "status": "B"}
+{"id": 275, "name": "Customer 0275", "email": "customer0275@example.invalid", "signup_date": "17.08.2023", "status": "A"}
+{"id": 276, "name": "Customer 0276", "email": "customer0276@example.invalid", "signup_date": "21.10.2020", "status": "I"}
+{"id": 277, "name": "Customer 0277", "email": "customer0277@example.invalid", "signup_date": "22.05.2020", "status": "A"}
+{"id": 278, "name": "Customer 0278", "email": "customer0278@example.invalid", "signup_date": "01.09.2016", "status": "A"}
+{"id": 279, "name": "Customer 0279", "email": "customer0279@example.invalid", "signup_date": "06.04.2022", "status": " i"}
+{"id": 280, "name": "  Customer 0280 ", "email": "customer0280@example.invalid", "signup_date": "08.03.2015", "status": "B"}
+{"id": 281, "name": "Customer 0281", "email": "customer0281@example.invalid", "signup_date": "06.05.2023", "status": "A"}
+{"id": 282, "name": "Customer 0282", "email": "customer0282@example.invalid", "signup_date": "28.05.2016", "status": "A"}
+{"id": 283, "name": "Customer 0283", "email": "customer0283@example.invalid", "signup_date": "14.06.2015", "status": "a"}
+{"id": 284, "name": "Customer 0284", "email": "customer0284@example.invalid", "signup_date": "10.02.2020", "status": " i"}
+{"id": 285, "name": "Customer 0285", "email": "customer0285@example.invalid", "signup_date": "01.03.2022", "status": "B"}
+{"id": 286, "name": "Customer 0286", "email": "customer0286@example.invalid", "signup_date": "17.09.2020", "status": "A"}
+{"id": 287, "name": "  Customer 0287 ", "email": "customer0287@example.invalid", "signup_date": "23.04.2015", "status": "I"}
+{"id": 288, "name": "Customer 0288", "email": "customer0288@example.invalid", "signup_date": "12.02.2017", "status": "B"}
+{"id": 289, "name": "Customer 0289", "email": "customer0289@example.invalid", "signup_date": "25.07.2024", "status": "I"}
+{"id": 290, "name": "Customer 0290", "email": "customer0290@example.invalid", "signup_date": "04.11.2022", "status": "a"}
+{"id": 291, "name": "Customer 0291", "email": "customer0291@example.invalid", "signup_date": "05.09.2017", "status": " i"}
+{"id": 292, "name": "Customer 0292", "email": "customer0292@example.invalid", "signup_date": "19.02.2017", "status": "I"}
+{"id": 293, "name": "Customer 0293", "email": "customer0293@example.invalid", "signup_date": "25.11.2023", "status": "I"}
+{"id": 294, "name": "  Customer 0294 ", "email": "customer0294@example.invalid", "signup_date": "23.08.2023", "status": "a"}
+{"id": 295, "name": "Customer 0295", "email": "customer0295@example.invalid", "signup_date": "07.06.2016", "status": "A"}
+{"id": 296, "name": "Customer 0296", "email": "customer0296@example.invalid", "signup_date": "04.09.2022", "status": "A"}
+{"id": 297, "name": "Customer 0297", "email": "customer0297@example.invalid", "signup_date": "01.07.2018", "status": "B"}
+{"id": 298, "name": "Customer 0298", "email": "customer0298@example.invalid", "signup_date": "28.11.2022", "status": "B"}
+{"id": 299, "name": "Customer 0299", "email": "customer0299@example.invalid", "signup_date": "04.05.2016", "status": "A"}
+{"id": 300, "name": "Customer 0300", "email": "customer0300@example.invalid", "signup_date": "07.06.2018", "status": "I"}
+{"id": 301, "name": "  Customer 0301 ", "email": "customer0301@example.invalid", "signup_date": "10.11.2021", "status": "A"}
+{"id": 302, "name": "Customer 0302", "email": "customer0302@example.invalid", "signup_date": "27.02.2023", "status": "a"}
+{"id": 303, "name": "Customer 0303", "email": "customer0303@example.invalid", "signup_date": "06.10.2023", "status": "a"}
+{"id": 304, "name": "Customer 0304", "email": "customer0304@example.invalid", "signup_date": "15.04.2021", "status": "A"}
+{"id": 305, "name": "Customer 0305", "email": "customer0305@example.invalid", "signup_date": "26.05.2017", "status": "B"}
+{"id": 306, "name": "Customer 0306", "email": "customer0306@example.invalid", "signup_date": "08.09.2018", "status": "B"}
+{"id": 307, "name": "Customer 0307", "email": "customer0307@example.invalid", "signup_date": "22.01.2019", "status": "A"}
+{"id": 308, "name": "  Customer 0308 ", "email": "customer0308@example.invalid", "signup_date": "11.09.2015", "status": "a"}
+{"id": 309, "name": "Customer 0309", "email": "customer0309@example.invalid", "signup_date": "25.08.2018", "status": "I"}
+{"id": 310, "name": "Customer 0310", "email": "customer0310@example.invalid", "signup_date": "11.03.2023", "status": " i"}
+{"id": 311, "name": "Customer 0311", "email": "customer0311@example.invalid", "signup_date": "24.06.2020", "status": "A"}
+{"id": 312, "name": "Customer 0312", "email": "customer0312@example.invalid", "signup_date": "27.04.2017", "status": "I"}
+{"id": 313, "name": "Customer 0313", "email": "customer0313@example.invalid", "signup_date": "26.10.2018", "status": "A"}
+{"id": 314, "name": "Customer 0314", "email": "customer0314@example.invalid", "signup_date": "03.05.2016", "status": "A"}
+{"id": 315, "name": "  Customer 0315 ", "email": "customer0315@example.invalid", "signup_date": "03.08.2018", "status": "a"}
+{"id": 316, "name": "Customer 0316", "email": "customer0316@example.invalid", "signup_date": "01.01.2020", "status": "B"}
+{"id": 317, "name": "Customer 0317", "email": "customer0317@example.invalid", "signup_date": "11.08.2017", "status": "A"}
+{"id": 318, "name": "Customer 0318", "email": "customer0318@example.invalid", "signup_date": "23.07.2022", "status": "A"}
+{"id": 319, "name": "Customer 0319", "email": "customer0319@example.invalid", "signup_date": "24.01.2023", "status": "a"}
+{"id": 320, "name": "Customer 0320", "email": "customer0320@example.invalid", "signup_date": "20.02.2017", "status": "B"}
+{"id": 321, "name": "Customer 0321", "email": "customer0321@example.invalid", "signup_date": "04.01.2024", "status": " i"}
+{"id": 322, "name": "  Customer 0322 ", "email": "customer0322@example.invalid", "signup_date": "21.06.2017", "status": "A"}
+{"id": 323, "name": "Customer 0323", "email": "customer0323@example.invalid", "signup_date": "04.08.2017", "status": "B"}
+{"id": 324, "name": "Customer 0324", "email": "customer0324@example.invalid", "signup_date": "28.11.2016", "status": "B"}
+{"id": 325, "name": "Customer 0325", "email": "customer0325@example.invalid", "signup_date": "22.06.2019", "status": "A"}
+{"id": 326, "name": "Customer 0326", "email": "customer0326@example.invalid", "signup_date": "10.02.2018", "status": "A"}
+{"id": 327, "name": "Customer 0327", "email": "customer0327@example.invalid", "signup_date": "28.06.2019", "status": "A"}
+{"id": 328, "name": "Customer 0328", "email": "customer0328@example.invalid", "signup_date": "16.04.2023", "status": "B"}
+{"id": 329, "name": "  Customer 0329 ", "email": "customer0329@example.invalid", "signup_date": "14.06.2015", "status": " i"}
+{"id": 330, "name": "Customer 0330", "email": "customer0330@example.invalid", "signup_date": "11.11.2019", "status": " i"}
+{"id": 331, "name": "Customer 0331", "email": "customer0331@example.invalid", "signup_date": "10.03.2022", "status": "I"}
+{"id": 332, "name": "Customer 0332", "email": "customer0332@example.invalid", "signup_date": "06.01.2016", "status": "A"}
+{"id": 333, "name": "Customer 0333", "email": "customer0333@example.invalid", "signup_date": "18.12.2021", "status": "B"}
+{"id": 334, "name": "Customer 0334", "email": "customer0334@example.invalid", "signup_date": "07.07.2016", "status": "A"}
+{"id": 335, "name": "Customer 0335", "email": "customer0335@example.invalid", "signup_date": "10.05.2019", "status": "B"}
+{"id": 336, "name": "  Customer 0336 ", "email": "customer0336@example.invalid", "signup_date": "13.02.2024", "status": "A"}
+{"id": 337, "name": "Customer 0337", "email": "customer0337@example.invalid", "signup_date": "09.09.2021", "status": "a"}
+{"id": 338, "name": "Customer 0338", "email": "customer0338@example.invalid", "signup_date": "21.06.2018", "status": "a"}
+{"id": 339, "name": "Customer 0339", "email": "customer0339@example.invalid", "signup_date": "02.07.2021", "status": "a"}
+{"id": 340, "name": "Customer 0340", "email": "customer0340@example.invalid", "signup_date": "16.06.2015", "status": "B"}
+{"id": 341, "name": "Customer 0341", "email": "customer0341@example.invalid", "signup_date": "10.08.2020", "status": "A"}
+{"id": 342, "name": "Customer 0342", "email": "customer0342@example.invalid", "signup_date": "16.08.2017", "status": "A"}
+{"id": 343, "name": "  Customer 0343 ", "email": "customer0343@example.invalid", "signup_date": "28.10.2023", "status": "A"}
+{"id": 344, "name": "Customer 0344", "email": "customer0344@example.invalid", "signup_date": "04.12.2018", "status": "A"}
+{"id": 345, "name": "Customer 0345", "email": "customer0345@example.invalid", "signup_date": "12.03.2024", "status": "A"}
+{"id": 346, "name": "Customer 0346", "email": "customer0346@example.invalid", "signup_date": "19.09.2023", "status": "I"}
+{"id": 347, "name": "Customer 0347", "email": "customer0347@example.invalid", "signup_date": "05.12.2018", "status": "B"}
+{"id": 348, "name": "Customer 0348", "email": "customer0348@example.invalid", "signup_date": "01.09.2020", "status": "B"}
+{"id": 349, "name": "Customer 0349", "email": "customer0349@example.invalid", "signup_date": "14.11.2024", "status": "A"}
+{"id": 350, "name": "  Customer 0350 ", "email": "customer0350@example.invalid", "signup_date": "11.08.2022", "status": "I"}
+{"id": 351, "name": "Customer 0351", "email": "customer0351@example.invalid", "signup_date": "24.08.2019", "status": "A"}
+{"id": 352, "name": "Customer 0352", "email": "customer0352@example.invalid", "signup_date": "21.02.2018", "status": "a"}
+{"id": 353, "name": "Customer 0353", "email": "customer0353@example.invalid", "signup_date": "05.07.2017", "status": "I"}
+{"id": 354, "name": "Customer 0354", "email": "customer0354@example.invalid", "signup_date": "16.04.2015", "status": "A"}
+{"id": 355, "name": "Customer 0355", "email": "customer0355@example.invalid", "signup_date": "19.11.2022", "status": "A"}
+{"id": 356, "name": "Customer 0356", "email": "customer0356@example.invalid", "signup_date": "12.06.2015", "status": "B"}
+{"id": 357, "name": "  Customer 0357 ", "email": "customer0357@example.invalid", "signup_date": "19.01.2016", "status": "a"}
+{"id": 358, "name": "Customer 0358", "email": "customer0358@example.invalid", "signup_date": "24.04.2024", "status": "B"}
+{"id": 359, "name": "Customer 0359", "email": "customer0359@example.invalid", "signup_date": "08.05.2019", "status": "B"}
+{"id": 360, "name": "Customer 0360", "email": "customer0360@example.invalid", "signup_date": "19.02.2022", "status": "A"}
+{"id": 361, "name": "Customer 0361", "email": "customer0361@example.invalid", "signup_date": "06.12.2020", "status": "A"}
+{"id": 362, "name": "Customer 0362", "email": "customer0362@example.invalid", "signup_date": "07.04.2022", "status": " i"}
+{"id": 363, "name": "Customer 0363", "email": "customer0363@example.invalid", "signup_date": "23.01.2015", "status": "I"}
+{"id": 364, "name": "  Customer 0364 ", "email": "customer0364@example.invalid", "signup_date": "28.06.2015", "status": "A"}
+{"id": 365, "name": "Customer 0365", "email": "customer0365@example.invalid", "signup_date": "16.11.2020", "status": " i"}
+{"id": 366, "name": "Customer 0366", "email": "customer0366@example.invalid", "signup_date": "05.09.2016", "status": "a"}
+{"id": 367, "name": "Customer 0367", "email": "customer0367@example.invalid", "signup_date": "18.05.2016", "status": "A"}
+{"id": 368, "name": "Customer 0368", "email": "customer0368@example.invalid", "signup_date": "15.08.2022", "status": "A"}
+{"id": 369, "name": "Customer 0369", "email": "customer0369@example.invalid", "signup_date": "20.06.2023", "status": " i"}
+{"id": 370, "name": "Customer 0370", "email": "customer0370@example.invalid", "signup_date": "20.06.2017", "status": " i"}
+{"id": 371, "name": "  Customer 0371 ", "email": "customer0371@example.invalid", "signup_date": "04.11.2018", "status": " i"}
+{"id": 372, "name": "Customer 0372", "email": "customer0372@example.invalid", "signup_date": "21.05.2023", "status": "I"}
+{"id": 373, "name": "Customer 0373", "email": "customer0373@example.invalid", "signup_date": "15.05.2020", "status": " i"}
+{"id": 374, "name": "Customer 0374", "email": "customer0374@example.invalid", "signup_date": "12.12.2023", "status": "A"}
+{"id": 375, "name": "Customer 0375", "email": "customer0375@example.invalid", "signup_date": "18.12.2024", "status": " i"}
+{"id": 376, "name": "Customer 0376", "email": "customer0376@example.invalid", "signup_date": "17.11.2023", "status": "B"}
+{"id": 377, "name": "Customer 0377", "email": "customer0377@example.invalid", "signup_date": "25.03.2021", "status": " i"}
+{"id": 378, "name": "  Customer 0378 ", "email": "customer0378@example.invalid", "signup_date": "04.09.2017", "status": "A"}
+{"id": 379, "name": "Customer 0379", "email": "customer0379@example.invalid", "signup_date": "17.10.2015", "status": "I"}
+{"id": 380, "name": "Customer 0380", "email": "customer0380@example.invalid", "signup_date": "23.07.2017", "status": "A"}
+{"id": 381, "name": "Customer 0381", "email": "customer0381@example.invalid", "signup_date": "12.02.2020", "status": "A"}
+{"id": 382, "name": "Customer 0382", "email": "customer0382@example.invalid", "signup_date": "11.01.2024", "status": "A"}
+{"id": 383, "name": "Customer 0383", "email": "customer0383@example.invalid", "signup_date": "13.09.2015", "status": "A"}
+{"id": 384, "name": "Customer 0384", "email": "customer0384@example.invalid", "signup_date": "12.09.2020", "status": "a"}
+{"id": 385, "name": "  Customer 0385 ", "email": "customer0385@example.invalid", "signup_date": "10.08.2020", "status": "B"}
+{"id": 386, "name": "Customer 0386", "email": "customer0386@example.invalid", "signup_date": "14.10.2015", "status": "A"}
+{"id": 387, "name": "Customer 0387", "email": "customer0387@example.invalid", "signup_date": "25.12.2021", "status": "I"}
+{"id": 388, "name": "Customer 0388", "email": "customer0388@example.invalid", "signup_date": "13.07.2017", "status": " i"}
+{"id": 389, "name": "Customer 0389", "email": "customer0389@example.invalid", "signup_date": "18.12.2022", "status": "A"}
+{"id": 390, "name": "Customer 0390", "email": "customer0390@example.invalid", "signup_date": "21.11.2017", "status": "A"}
+{"id": 391, "name": "Customer 0391", "email": "customer0391@example.invalid", "signup_date": "00.01.2022", "status": "A"}
+{"id": 392, "name": "  Customer 0392 ", "email": "customer0392@example.invalid", "signup_date": "17.06.2024", "status": " i"}
+{"id": 393, "name": "Customer 0393", "email": "customer0393@example.invalid", "signup_date": "15.02.2019", "status": "a"}
+{"id": 394, "name": "Customer 0394", "email": "customer0394@example.invalid", "signup_date": "18.11.2021", "status": "A"}
+{"id": 395, "name": "Customer 0395", "email": "customer0395@example.invalid", "signup_date": "09.03.2023", "status": "A"}
+{"id": 396, "name": "Customer 0396", "email": "customer0396@example.invalid", "signup_date": "16.01.2015", "status": "a"}
+{"id": 397, "name": "Customer 0397", "email": "customer0397@example.invalid", "signup_date": "09.11.2019", "status": "a"}
+{"id": 398, "name": "Customer 0398", "email": "customer0398@example.invalid", "signup_date": "10.07.2022", "status": "B"}
+{"id": 399, "name": "  Customer 0399 ", "email": "customer0399@example.invalid", "signup_date": "19.08.2015", "status": "A"}
+{"id": 400, "name": "Customer 0400", "email": "customer0400@example.invalid", "signup_date": "28.04.2018", "status": "A"}
+{"id": 401, "name": "Customer 0401", "email": "customer0401@example.invalid", "signup_date": "20.05.2018", "status": "B"}
+{"id": 402, "name": "Customer 0402", "email": "customer0402@example.invalid", "signup_date": "01.04.2019", "status": "A"}
+{"id": 403, "name": "Customer 0403", "email": "customer0403@example.invalid", "signup_date": "08.09.2024", "status": "B"}
+{"id": 404, "name": "Customer 0404", "email": "customer0404@example.invalid", "signup_date": "24.05.2024", "status": "I"}
+{"id": 405, "name": "Customer 0405", "email": "customer0405@example.invalid", "signup_date": "10.05.2024", "status": "A"}
+{"id": 406, "name": "  Customer 0406 ", "email": "customer0406@example.invalid", "signup_date": "13.08.2019", "status": "B"}
+{"id": 407, "name": "Customer 0407", "email": "customer0407@example.invalid", "signup_date": "20.02.2020", "status": "A"}
+{"id": 408, "name": "Customer 0408", "email": "customer0408@example.invalid", "signup_date": "21.09.2023", "status": "A"}
+{"id": 409, "name": "Customer 0409", "email": "customer0409@example.invalid", "signup_date": "17.02.2016", "status": "a"}
+{"id": 410, "name": "Customer 0410", "email": "customer0410@example.invalid", "signup_date": "23.08.2023", "status": "A"}
+{"id": 411, "name": "Customer 0411", "email": "customer0411@example.invalid", "signup_date": "11.12.2024", "status": " i"}
+{"id": 412, "name": "Customer 0412", "email": "customer0412@example.invalid", "signup_date": "17.04.2021", "status": "A"}
+{"id": 413, "name": "  Customer 0413 ", "email": "customer0413@example.invalid", "signup_date": "23.02.2024", "status": "A"}
+{"id": 414, "name": "Customer 0414", "email": "customer0414@example.invalid", "signup_date": "04.10.2020", "status": " i"}
+{"id": 415, "name": "Customer 0415", "email": "customer0415@example.invalid", "signup_date": "03.03.2022", "status": "A"}
+{"id": 416, "name": "Customer 0416", "email": "customer0416@example.invalid", "signup_date": "04.06.2019", "status": " i"}
+{"id": 417, "name": "Customer 0417", "email": "customer0417@example.invalid", "signup_date": "17.11.2015", "status": "I"}
+{"id": 418, "name": "Customer 0418", "email": "customer0418@example.invalid", "signup_date": "13.05.2024", "status": "I"}
+{"id": 419, "name": "Customer 0419", "email": "customer0419@example.invalid", "signup_date": "14.07.2015", "status": " i"}
+{"id": 420, "name": "  Customer 0420 ", "email": "customer0420@example.invalid", "signup_date": "14.11.2021", "status": "A"}
+{"id": 421, "name": "Customer 0421", "email": "customer0421@example.invalid", "signup_date": "04.05.2024", "status": "A"}
+{"id": 422, "name": "Customer 0422", "email": "customer0422@example.invalid", "signup_date": "05.02.2018", "status": "A"}
+{"id": 423, "name": "Customer 0423", "email": "customer0423@example.invalid", "signup_date": "21.12.2023", "status": "A"}
+{"id": 424, "name": "Customer 0424", "email": "customer0424@example.invalid", "signup_date": "01.02.2020", "status": " i"}
+{"id": 425, "name": "Customer 0425", "email": "customer0425@example.invalid", "signup_date": "21.06.2015", "status": "A"}
+{"id": 426, "name": "Customer 0426", "email": "customer0426@example.invalid", "signup_date": "20.04.2016", "status": "A"}
+{"id": 427, "name": "  Customer 0427 ", "email": "customer0427@example.invalid", "signup_date": "02.09.2015", "status": "A"}
+{"id": 428, "name": "Customer 0428", "email": "customer0428@example.invalid", "signup_date": "11.06.2020", "status": "A"}
+{"id": 429, "name": "Customer 0429", "email": "customer0429@example.invalid", "signup_date": "24.07.2019", "status": "A"}
+{"id": 430, "name": "Customer 0430", "email": "customer0430@example.invalid", "signup_date": "05.01.2023", "status": "I"}
+{"id": 431, "name": "Customer 0431", "email": "customer0431@example.invalid", "signup_date": "04.07.2022", "status": "a"}
+{"id": 432, "name": "Customer 0432", "email": "customer0432@example.invalid", "signup_date": "14.12.2023", "status": "A"}
+{"id": 433, "name": "Customer 0433", "email": "customer0433@example.invalid", "signup_date": "12.03.2024", "status": "A"}
+{"id": 434, "name": "  Customer 0434 ", "email": "customer0434@example.invalid", "signup_date": "19.04.2017", "status": "A"}
+{"id": 435, "name": "Customer 0435", "email": "customer0435@example.invalid", "signup_date": "26.08.2018", "status": "A"}
+{"id": 436, "name": "Customer 0436", "email": "customer0436@example.invalid", "signup_date": "13.04.2015", "status": "A"}
+{"id": 437, "name": "Customer 0437", "email": "customer0437@example.invalid", "signup_date": "25.02.2024", "status": " i"}
+{"id": 438, "name": "Customer 0438", "email": "customer0438@example.invalid", "signup_date": "02.11.2020", "status": "A"}
+{"id": 439, "name": "Customer 0439", "email": "customer0439@example.invalid", "signup_date": "16.04.2022", "status": "a"}
+{"id": 440, "name": "Customer 0440", "email": "customer0440@example.invalid", "signup_date": "25.01.2016", "status": "A"}
+{"id": 441, "name": "  Customer 0441 ", "email": "customer0441@example.invalid", "signup_date": "21.10.2017", "status": "A"}
+{"id": 442, "name": "Customer 0442", "email": "customer0442@example.invalid", "signup_date": "08.06.2022", "status": "A"}
+{"id": 443, "name": "Customer 0443", "email": "customer0443@example.invalid", "signup_date": "15.06.2020", "status": "A"}
+{"id": 444, "name": "Customer 0444", "email": "customer0444@example.invalid", "signup_date": "18.10.2020", "status": "Z"}
+{"id": 445, "name": "Customer 0445", "email": "customer0445@example.invalid", "signup_date": "23.02.2024", "status": "A"}
+{"id": 446, "name": "Customer 0446", "email": "customer0446@example.invalid", "signup_date": "19.05.2015", "status": "I"}
+{"id": 447, "name": "Customer 0447", "email": "customer0447@example.invalid", "signup_date": "18.05.2016", "status": "A"}
+{"id": 448, "name": "  Customer 0448 ", "email": "customer0448@example.invalid", "signup_date": "16.10.2023", "status": " i"}
+{"id": 449, "name": "Customer 0449", "email": "customer0449@example.invalid", "signup_date": "02.12.2015", "status": "A"}
+{"id": 450, "name": "Customer 0450", "email": "customer0450@example.invalid", "signup_date": "28.06.2017", "status": "I"}
+{"id": 451, "name": "Customer 0451", "email": "customer0451@example.invalid", "signup_date": "05.08.2017", "status": "A"}
+{"id": 452, "name": "Customer 0452", "email": "customer0452@example.invalid", "signup_date": "26.05.2017", "status": "a"}
+{"id": 453, "name": "Customer 0453", "email": "customer0453@example.invalid", "signup_date": "16.07.2024", "status": "a"}
+{"id": 454, "name": "Customer 0454", "email": "customer0454@example.invalid", "signup_date": "13.04.2022", "status": "a"}
+{"id": 455, "name": "  Customer 0455 ", "email": "customer0455@example.invalid", "signup_date": "11.12.2018", "status": "A"}
+{"id": 456, "name": "Customer 0456", "email": "customer0456@example.invalid", "signup_date": "17.05.2020", "status": "B"}
+{"id": 457, "name": "Customer 0457", "email": "customer0457@example.invalid", "signup_date": "23.09.2019", "status": "A"}
+{"id": 458, "name": "Customer 0458", "email": "customer0458@example.invalid", "signup_date": "24.02.2019", "status": "A"}
+{"id": 459, "name": "Customer 0459", "email": "customer0459@example.invalid", "signup_date": "25.01.2022", "status": "A"}
+{"id": 460, "name": "Customer 0460", "email": "customer0460@example.invalid", "signup_date": "16.01.2018", "status": "a"}
+{"id": 461, "name": "Customer 0461", "email": "customer0461@example.invalid", "signup_date": "06.12.2024", "status": "A"}
+{"id": 462, "name": "  Customer 0462 ", "email": "customer0462@example.invalid", "signup_date": "28.07.2017", "status": "A"}
+{"id": 463, "name": "Customer 0463", "email": "customer0463@example.invalid", "signup_date": "17.03.2017", "status": "A"}
+{"id": 464, "name": "Customer 0464", "email": "customer0464@example.invalid", "signup_date": "21.12.2023", "status": "A"}
+{"id": 465, "name": "Customer 0465", "email": "customer0465@example.invalid", "signup_date": "20.07.2022", "status": "A"}
+{"id": 466, "name": "Customer 0466", "email": "customer0466@example.invalid", "signup_date": "12.09.2021", "status": "B"}
+{"id": 467, "name": "Customer 0467", "email": "customer0467@example.invalid", "signup_date": "27.06.2023", "status": "I"}
+{"id": 468, "name": "Customer 0468", "email": "customer0468@example.invalid", "signup_date": "01.03.2015", "status": "A"}
+{"id": 469, "name": "  Customer 0469 ", "email": "customer0469@example.invalid", "signup_date": "23.03.2020", "status": "a"}
+{"id": 470, "name": "Customer 0470", "email": "customer0470@example.invalid", "signup_date": "01.05.2024", "status": "A"}
+{"id": 471, "name": "Customer 0471", "email": "customer0471@example.invalid", "signup_date": "08.01.2024", "status": "B"}
+{"id": 472, "name": "Customer 0472", "email": "customer0472@example.invalid", "signup_date": "05.05.2022", "status": " i"}
+{"id": 473, "name": "Customer 0473", "email": "customer0473@example.invalid", "signup_date": "07.07.2019", "status": " i"}
+{"id": 474, "name": "Customer 0474", "email": "customer0474@example.invalid", "signup_date": "25.05.2022", "status": "A"}
+{"id": 475, "name": "Customer 0475", "email": "customer0475@example.invalid", "signup_date": "18.02.2020", "status": "a"}
+{"id": 476, "name": "  Customer 0476 ", "email": "customer0476@example.invalid", "signup_date": "03.07.2017", "status": " i"}
+{"id": 477, "name": "Customer 0477", "email": "customer0477@example.invalid", "signup_date": "01.09.2022", "status": "A"}
+{"id": 478, "name": "Customer 0478", "email": "customer0478@example.invalid", "signup_date": "11.01.2016", "status": "B"}
+{"id": 479, "name": "Customer 0479", "email": "customer0479@example.invalid", "signup_date": "21.03.2018", "status": "B"}
+{"id": 480, "name": "Customer 0480", "email": "customer0480@example.invalid", "signup_date": "19.06.2019", "status": "a"}

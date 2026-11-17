@@ -1,0 +1,35 @@
+schema: theprotocol.migration/v1
+name: sql-to-rest
+title: Products from an old SQL table to a REST API
+summary: One products table to POST /products, one request per product, the record key as Idempotency-Key; prices from text, flags to booleans
+from: {kind: sql, engines: [postgresql, mysql, sqlserver, sqlite], what: a products table}
+to: {kind: rest, what: 'a products API: POST /products, and GET /products for the read-back'}
+parameters:
+  SOURCE_ENGINE: {description: the old database's engine, default: sqlite, enum: [postgresql, mysql, sqlserver, sqlite]}
+  SOURCE_PATH: {description: 'sqlite only: the old database file', default: legacy.db}
+  SOURCE_HOST: {description: the old database server (all but sqlite), default: localhost}
+  SOURCE_DATABASE: {description: the old database (all but sqlite), default: legacy}
+  SOURCE_USER: {description: a login that may only read the products table, default: tp_readonly}
+  SOURCE_PASSWORD: {description: 'its password, as a reference such as env:LEGACY_DB_PASSWORD', secret: true}
+  SOURCE_TABLE: {description: the old table, default: products}
+  PRODUCTS_URL: {description: where each product is POSTed, default: 'http://127.0.0.1:8765/products'}
+  PRODUCTS_TOKEN: {description: 'the API''s bearer token, as a reference such as env:PRODUCTS_API_TOKEN', secret: true}
+load:
+  mappings: [products]
+  batch_rows: 1000
+reconcile:
+  - mapping: products
+    source: {key: [id], fields: [name, price_text, active]}
+    target:
+      key: [id]
+      fields: [name, price, active]
+      # the read-back: one GET answering every product the load wrote (fake/products_api.py serves it at the
+      # POST address); an API that reads elsewhere: a parameter of its own here, and a header whose value is a
+      # reference if the read needs one: {X-Api-Key: 'env:NAME'}
+      read: {url: '${PRODUCTS_URL}', items_path: $.items}
+    pairs: {name: name, price_text: price, active: active}
+sample:
+  legacy: {file: sample/products.jsonl, format: jsonl}
+cutover:
+  checklist: [Stop writes to the old table, Load again (only changes move), Reconcile again, Point the shop at the API]
+rollback: manual

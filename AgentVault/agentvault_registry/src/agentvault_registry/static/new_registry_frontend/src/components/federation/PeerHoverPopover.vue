@@ -61,6 +61,9 @@ const props = defineProps<{
   // When omitted, falls back to raw peer.hop_distance (legacy behavior).
   peersById?: Map<number, PeerLite>
   localName?: string
+  /** V0663: the peer's logo as the page resolved it (resolvePeerAsset: on the peer's own origin, drawn from this
+   *  registry). The popover had passed the raw address as `src`, which UserAvatar does not take, so it never drew. */
+  iconSrc?: string | null
 }>()
 
 // §pass62.7 — Tree-walk hop derivation (mirrors deriveDisplayHop in
@@ -239,7 +242,7 @@ const bundleAgeClass = computed(() => {
             :variant="flareVariant"
             :overlay="flareOverlay"
             size="xs" />
-          <UserAvatar v-else-if="peer.visual?.icon_url" :src="peer.visual.icon_url" :alt="peer.name || 'peer'" :size="32" />
+          <UserAvatar v-else-if="iconSrc" :avatar-url="iconSrc" :display-name="peer.name || 'peer'" size="sm" />
           <div v-else class="phpop-orb" :style="orbStyle"></div>
         </div>
         <div class="phpop-titleblock">

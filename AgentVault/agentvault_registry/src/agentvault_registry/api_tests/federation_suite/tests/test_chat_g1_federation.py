@@ -4,24 +4,28 @@ FB7-FB10 and FB12 were proven by hand on the sandbox pair (`scratchpad/twoagent/
 These are the same claims, driven through the MCP chat tools a client uses (sendChatMessage with target_remote_key,
 respondChatRequest, readThread with join, blockChatPrincipal / unblockChatPrincipal, all V0437), so a regression in
 the MCP surface is caught here too. Every flow makes its own agents (one per frame), its own webhooks and its own
-threads, and removes the agents and webhooks it made.
+threads, and removes the agents and webhooks it made. Since V0662 (gwo_757f07e0) each flow also makes them as a developer
+of its own on each frame (_owner), never as the frame's admin: the dispatcher tells every active hook of an agent's
+owner, so flows sharing the admin as owner failed into each other's hooks until the dispatcher disabled them.
 
 HOW A FLOW HEARS AN OWNER. Chat notifications are webhook-only (`notify_request_received`, `notify_request_accepted`,
 `fan_out_message`) and the suite has no receiver. The registry records every dispatch, event and payload, whether or
 not the receiver answers (`GET /webhooks/{id}/deliveries`), so a flow subscribes the owner with a webhook whose host is
 `.invalid` (RFC 6761: it never resolves, so nothing leaves the box) and reads the dispatcher's own record. That is the
 registry's answer to "was the owner told?", which is the claim. An unreadable record is never read as silence.
-Retries run at +1 min and +5 min and a hook is disabled after 10 failures; a flow sends at most a handful of events per
-hook and deletes it at the end (its deliveries cascade).
+Retries run at +1 min and +5 min and a hook is disabled after 10 failures; a g1 flow's own owner hears only that flow's
+events, a handful per hook, and the flow deletes its hooks at the end (their deliveries cascade).
 
 HOW A FLOW ADDRESSES SOMEONE ELSEWHERE. `GET /chat/federation/status` answers the registry's own chat address
 (`host_base_url`, the one its keys carry) and the peers it will talk to. An address is `<did>@<that address>`,
 lower-case, the one form a key takes (`chat_federation.remote_key`). A frame with cross-registry chat off, or not
 listing the other frame as a peer, is NOT MEASURED, never a pass.
 
-⚠ Writes: throwaway agents named `fedsuite-g1-*` on both frames (soft-deleted at the end), threads between them (there
-is no delete-thread rail), and a visible owner join in the household flow. No money moves: the agents hold nothing and
-chat has no money code.
+⚠ Writes: per flow, a throwaway developer `fedsuite-g1-own-*` on each frame (registered with no Terms acceptance; it
+asks for its own deletion at the end), throwaway agents named `fedsuite-g1-*` on both frames (soft-deleted at the end),
+threads between them (there is no delete-thread rail), and a visible owner join in the household flow. Chat moves no
+money; a frame that grants a developer's first agent its genesis grant (GENESIS_GRANT_ENABLED) gives it to the flow's
+first agent there, and the retire returns it to the treasury before the delete (throwaways.retire).
 """
 from __future__ import annotations
 
@@ -69,10 +73,13 @@ async def _call(rig, label: str, tool: str, args: Dict[str, Any]) -> Tuple[Any, 
     return r, _soft(r)
 
 
-async def _rest(rig, method: str, endpoint: str, label: str) -> Tuple[int, Any]:
-    """One REST read through adminRequest -> (status_code, body)."""
+async def _rest(rig, method: str, endpoint: str, label: str, body: Optional[Dict[str, Any]] = None) -> Tuple[int, Any]:
+    """One REST call through adminRequest -> (status_code, body)."""
+    args: Dict[str, Any] = {"method": method, "endpoint": endpoint}
+    if body is not None:
+        args["body"] = body
     try:
-        r = await rig.mcp(label).call("adminRequest", {"method": method, "endpoint": endpoint}, timeout=60)
+        r = await rig.mcp(label).call("adminRequest", args, timeout=60)
     except Exception as e:  # noqa: BLE001
         return -1, f"{type(e).__name__}: {e}"
     if not isinstance(r, dict):
@@ -202,8 +209,56 @@ async def _frames(rig) -> Dict[str, str]:
     return base
 
 
+_DELETE_CONFIRM = "DELETE MY ACCOUNT"      # routers/account_deletion.py: the typed confirmation
+
+
+async def _owner(rig, label: str, owners: List[Tuple[str, str]]) -> str:
+    """A developer of the flow's own on `label`'s frame, the owner of the agents and hooks the flow makes there; its
+    rig label (`<label>~<marker>`). V0662 (gwo_757f07e0, the delivery soak): the dispatcher sends each event to EVERY
+    active hook of the agent's owner, so while the flows made their agents as the frame's admin, each flow's traffic
+    failed into every other flow's `.invalid` hooks and the dispatcher disabled them after 10 failures (698 of 1,400 in
+    200 runs); a control then raced its own hook's tenth failure. A flow's own owner hears only the flow's own events.
+
+    Registered through the frame admin's adminRequest (the MCP authRegister wrapper drops `name`), with NO Terms
+    acceptance (session-lead seq 3281: nobody writes a legal acceptance for an account no person agreed for). A frame
+    that requires one (TOS_CONSENT_REQUIRED) leaves the flow NOT MEASURED. Retired at the end by its own deletion
+    request (_cleanup), after its agents and hooks."""
+    marker = uuid.uuid4().hex[:10]
+    name = f"{_TAG}-own-{marker}"
+    email = f"{name}@fedsuite-probe.dev"
+    password = f"FedSuiteG1!{uuid.uuid4().hex}"
+    for attempt in range(3):
+        code, resp = await _rest(rig, "POST", "/api/v1/auth/register", _ADMIN[label],
+                                 body={"name": name, "email": email, "password": password})
+        if code != 429:
+            break
+        await asyncio.sleep(20.0)        # register is limited to 5 a minute per caller
+    if code not in (200, 201):
+        said = json.dumps(resp, default=str)[:200]
+        if code == 422 and "Terms" in said:
+            raise PreconditionUnmet(f"registration on {label} asks for a Terms acceptance (TOS_CONSENT_REQUIRED); this "
+                                    f"suite accepts no Terms for an account no person agreed for, so the flow has no "
+                                    f"owner of its own there")
+        raise PreconditionUnmet(f"the flow's own developer could not be registered on {label}: HTTP {code} {said}")
+    own = rig.add_principal(label, marker, email, password)
+    owners.append((own, password))
+    _, refused = await _call(rig, own, "getMyDeveloperProfile", {})
+    if refused:                          # a frame that verifies mail: the admin verifies its own throwaway, once
+        found = await _rest(rig, "GET", f"/api/v1/admin/developers?search={name}", _ADMIN[label])
+        devs = (found[1] or {}).get("developers") if isinstance(found[1], dict) else None
+        row = next((d for d in (devs or []) if isinstance(d, dict) and d.get("email") == email), None)
+        if row:
+            await _rest(rig, "POST", f"/api/v1/admin/developers/{row['id']}/force-email-verify", _ADMIN[label],
+                        body={"reason": "federation suite G1: the flow's own owner"})
+            _, refused = await _call(rig, own, "getMyDeveloperProfile", {})
+        if refused:
+            raise PreconditionUnmet(f"the flow's own developer on {label} cannot sign in: {refused[:160]}")
+    return own
+
+
 async def _agent(rig, label: str, tag: str, made: List[Tuple[str, str]]) -> Dict[str, str]:
-    """A throwaway agent with its own JWT. No bond and no funding: chat is not a bond site and moves no money."""
+    """A throwaway agent with its own JWT, made as `label`'s developer. No bond and no funding of the flow's own: chat
+    is not a bond site and moves no money (a genesis grant the frame gives a first agent goes back at the retire)."""
     name = f"{_TAG}-{tag}-{uuid.uuid4().hex[:8]}"
     r, refused = await _call(rig, label, "createAgent", {"name": name, "description": "federation suite G1 chat probe"})
     if refused or not isinstance(r, dict) or r.get("error"):
@@ -223,11 +278,10 @@ async def _agent(rig, label: str, tag: str, made: List[Tuple[str, str]]) -> Dict
 
 
 async def _hook(rig, label: str, events: List[str], hooks: List[Tuple[str, str]]) -> str:
-    """Subscribe the frame's admin (the owner of every agent this file makes there) to `events`."""
+    """Subscribe `label`'s developer (the flow's own owner on that frame, the creator of its agents there) to `events`."""
     r, refused = await _call(rig, label, "createWebhook", {
         "url": f"https://{_TAG}-{uuid.uuid4().hex[:10]}.invalid/hook",
-        "events": events,
-        "description": "federation suite G1: a host that never resolves; the flow reads the dispatcher's record"})
+        "events": events})
     if refused or not isinstance(r, dict) or not r.get("id"):
         raise PreconditionUnmet(f"createWebhook refused on {label}: {refused or str(r)[:160]}")
     hooks.append((label, r["id"]))
@@ -269,7 +323,8 @@ def _body_has(text: str) -> Callable[[Dict[str, Any]], bool]:
     return lambda data: text in str(((data.get("message") or {}).get("body")) or "")
 
 
-async def _cleanup(rig, made: List[Tuple[str, str]], hooks: List[Tuple[str, str]]) -> List[str]:
+async def _cleanup(rig, made: List[Tuple[str, str]], hooks: List[Tuple[str, str]],
+                   owners: Optional[List[Tuple[str, str]]] = None) -> List[str]:
     """Remove what the flow made; returns what it could NOT remove. Never silent: the ironkey flows' cleanup passed
     `did` to a tool that takes `agent_did`, threw the refusal away, and left 3,506 agents on sandbox-A and 543 on
     sandbox-B between 2026-09-04 and 2026-09-23 while their docstring called the residue bounded."""
@@ -282,23 +337,36 @@ async def _cleanup(rig, made: List[Tuple[str, str]], hooks: List[Tuple[str, str]
         _, refused = await throwaways.retire(rig, label, did)      # V0641: what it holds goes back first
         if refused:
             left.append(f"agent {did} on {label}: {refused[:120]}")
+    for own, password in owners or []:                            # V0662: the flow's own developers, last
+        _, refused = await _call(rig, own, "requestAccountDeletion", {
+            "password": password, "confirmation": _DELETE_CONFIRM,
+            "reason": "federation suite G1: a flow's own owner, retired with its flow"})
+        if refused:
+            left.append(f"developer {own}: deletion not requested ({refused[:120]})")
     return left
 
 
 async def _run(rig, planned: List[str], description: str,
-               body: Callable[[_Legs, List[Tuple[str, str]], List[Tuple[str, str]]], Awaitable[None]]) -> AssertionResult:
-    """Run a flow body, then remove what it made and judge that too: a flow that leaves its fixtures behind is red."""
+               body: Callable[..., Awaitable[None]], owners: bool = False) -> AssertionResult:
+    """Run a flow body, then remove what it made and judge that too: a flow that leaves its fixtures behind is red.
+    With owners=True (every flow that reads an owner's hooks) the body also gets `own`, each frame's label for this
+    flow: its own developer there (_owner), retired with the rest."""
     t0 = time.monotonic()
     legs = _Legs(planned + ["the_flow_removed_what_it_made"])
     made: List[Tuple[str, str]] = []
     hooks: List[Tuple[str, str]] = []
+    mine: List[Tuple[str, str]] = []
     ran = False
     try:
-        await body(legs, made, hooks)
+        if owners:
+            own = {label: await _owner(rig, label, mine) for label in (_A, _B)}
+            await body(legs, made, hooks, own)
+        else:
+            await body(legs, made, hooks)
         ran = True
     finally:
         await legs.reread_misses()
-        left = await _cleanup(rig, made, hooks)
+        left = await _cleanup(rig, made, hooks, mine)
         if ran:
             legs.check("the_flow_removed_what_it_made", not left, {"left": left})
     return legs.result(description, t0)
@@ -382,7 +450,7 @@ async def _mirror_of(rig, speaker: Dict[str, str], counterparty_key: str, lane: 
 async def _knock_and_find(rig, legs: _Legs, n: Dict[str, str], w: Dict[str, str], w_key: str,
                           n_key: str, base: Dict[str, str]) -> Optional[Tuple[str, str]]:
     """N (sandbox-A) knocks W (sandbox-B) by address; returns (host thread, W's mirror) or None."""
-    r, refused = await _send(rig, _A, n, f"{_TAG} knock", target_remote_key=w_key)
+    r, refused = await _send(rig, n["label"], n, f"{_TAG} knock", target_remote_key=w_key)
     ok = (not refused and isinstance(r, dict) and r.get("federated") is True and r.get("created") is True
           and bool(r.get("conversation_id")) and _origin(str(r.get("host") or "")) == base[_A])
     if not legs.check("knock_hosted_by_the_sender", ok, {"refused": refused, "answer": r}):
@@ -413,13 +481,14 @@ async def test_g1_round_trip(rig: FederationTestRig) -> AssertionResult:
     accept was ever heard. FB10: opening a dm from the other side lands in the SAME thread. FB7: a replayed client_ref
     is one message at the host.
     """
-    async def body(legs: _Legs, made, hooks) -> None:
+    async def body(legs: _Legs, made, hooks, own) -> None:
         base = await _frames(rig)
-        n = await _agent(rig, _A, "n", made)
-        w = await _agent(rig, _B, "w", made)
+        A, B = own[_A], own[_B]     # the flow's own developer on each frame (V0662)
+        n = await _agent(rig, A, "n", made)
+        w = await _agent(rig, B, "w", made)
         n_key, w_key = _key(n["did"], base[_A]), _key(w["did"], base[_B])
-        hook_a = await _hook(rig, _A, ["chat.request.accepted", "chat.message.received"], hooks)
-        hook_b = await _hook(rig, _B, ["chat.request.received", "chat.message.received"], hooks)
+        hook_a = await _hook(rig, A, ["chat.request.accepted", "chat.message.received"], hooks)
+        hook_b = await _hook(rig, B, ["chat.request.received", "chat.message.received"], hooks)
 
         found = await _knock_and_find(rig, legs, n, w, w_key, n_key, base)
         if found is None:
@@ -427,10 +496,10 @@ async def test_g1_round_trip(rig: FederationTestRig) -> AssertionResult:
         host_conv, mirror = found
 
         await legs.heard("recipients_owner_hears_the_knock",
-                         lambda: _told(rig, _B, hook_b, "chat.request.received", mirror), _HEAR_SEC)
+                         lambda: _told(rig, B, hook_b, "chat.request.received", mirror), _HEAR_SEC)
 
         reply, reply_ref = f"{_TAG} reply {uuid.uuid4().hex[:6]}", _ref()
-        r, refused = await _send(rig, _B, w, reply, conversation_id=mirror, client_ref=reply_ref)
+        r, refused = await _send(rig, B, w, reply, conversation_id=mirror, client_ref=reply_ref)
         r = _posted(r)
         reply_at = time.monotonic()
         legs.check("reply_relayed_to_the_host",
@@ -438,22 +507,22 @@ async def test_g1_round_trip(rig: FederationTestRig) -> AssertionResult:
                    and isinstance(r.get("host_seq"), int), {"refused": refused, "answer": r})
 
         await legs.heard("knockers_owner_hears_the_accept_by_reply", lambda: _told(
-            rig, _A, hook_a, "chat.request.accepted", host_conv,
+            rig, A, hook_a, "chat.request.accepted", host_conv,
             lambda d: str(d.get("accepted_by") or "").lower() == w_key), _HEAR_SEC)
 
         await legs.heard("knockers_owner_hears_the_reply",
-                         lambda: _told(rig, _A, hook_a, "chat.message.received", host_conv, _body_is(reply)), _HEAR_SEC)
+                         lambda: _told(rig, A, hook_a, "chat.message.received", host_conv, _body_is(reply)), _HEAR_SEC)
 
-        again, aref = await _send(rig, _B, w, reply, conversation_id=mirror, client_ref=reply_ref)
+        again, aref = await _send(rig, B, w, reply, conversation_id=mirror, client_ref=reply_ref)
         again = _posted(again)
-        page, pref = await _read(rig, _A, n, host_conv)
+        page, pref = await _read(rig, A, n, host_conv)
         copies = (sum(1 for m in page.get("messages") or [] if isinstance(m, dict) and m.get("client_ref") == reply_ref)
                   if isinstance(page, dict) else None)
         legs.check("a_replay_is_one_message_at_the_host",
                    not aref and isinstance(again, dict) and again.get("duplicate") is True and copies == 1,
                    {"answer": again, "refused": aref, "copies_at_host": copies, "read_refused": pref})
 
-        o, oref = await _send(rig, _B, w, f"{_TAG} same thread", target_remote_key=n_key)
+        o, oref = await _send(rig, B, w, f"{_TAG} same thread", target_remote_key=n_key)
         legs.check("the_other_side_opens_the_same_thread",
                    not oref and isinstance(o, dict) and o.get("conversation_id") == mirror
                    and o.get("created") is False and _origin(str(o.get("host") or "")) == base[_A],
@@ -461,7 +530,7 @@ async def test_g1_round_trip(rig: FederationTestRig) -> AssertionResult:
 
         # V0441: the mirror names who wrote (a peer's agent by its card once mirrored, by its address before; never
         # blank, which is what every remote message read as), the thread it is with, and who holds the thread.
-        mp, mref = await _read(rig, _B, w, mirror)
+        mp, mref = await _read(rig, B, w, mirror)
         knock_msg = next((m for m in (mp.get("messages") or []) if isinstance(m, dict)
                           and m.get("body") == f"{_TAG} knock"), None) if isinstance(mp, dict) else None
         named = str((knock_msg or {}).get("sender_name") or "")
@@ -471,7 +540,7 @@ async def test_g1_round_trip(rig: FederationTestRig) -> AssertionResult:
         legs.check("the_mirror_names_the_agent_the_thread_is_with",
                    str(cp.get("remote_key") or "").lower() == n_key and str(cp.get("name") or "") in (n["name"], n_key),
                    {"counterparty": cp, "expected": n_key})
-        hp, href = await _read(rig, _A, n, host_conv)
+        hp, href = await _read(rig, A, n, host_conv)
         mh = (mp.get("hosting") or {}) if isinstance(mp, dict) else {}
         hh = (hp.get("hosting") or {}) if isinstance(hp, dict) else {}
         legs.check("both_sides_name_the_host_and_the_copy",
@@ -481,7 +550,7 @@ async def test_g1_round_trip(rig: FederationTestRig) -> AssertionResult:
                    {"host": hh, "mirror": mh, "refused": href})
 
         await asyncio.sleep(max(0.0, reply_at + _HEAR_SEC - time.monotonic()))
-        own = await _told(rig, _B, hook_b, "chat.message.received", mirror, _body_is(reply))
+        own = await _told(rig, B, hook_b, "chat.message.received", mirror, _body_is(reply))
         legs.check("a_reply_does_not_wake_its_own_owner", own == [],
                    {"deliveries": own, "note": "None = the record was unreadable, never silence"})
 
@@ -491,7 +560,7 @@ async def test_g1_round_trip(rig: FederationTestRig) -> AssertionResult:
         "a_replay_is_one_message_at_the_host", "the_other_side_opens_the_same_thread",
         "the_mirror_names_the_remote_sender", "the_mirror_names_the_agent_the_thread_is_with",
         "both_sides_name_the_host_and_the_copy", "a_reply_does_not_wake_its_own_owner"],
-        "G1: a cross-registry knock, answered by a reply, heard by both owners", body)
+        "G1: a cross-registry knock, answered by a reply, heard by both owners", body, owners=True)
 
 
 # ─── FB9 (+ step 3b): a block is silent, on both legs ──────────────────────
@@ -514,76 +583,77 @@ async def test_g1_blocks(rig: FederationTestRig) -> AssertionResult:
     no W owner. A block cannot take an address too long to store (refused by name). Controls: before either block, a
     message in each direction reached the other owner, so the silence is the block's and not the instrument's.
     """
-    async def body(legs: _Legs, made, hooks) -> None:
+    async def body(legs: _Legs, made, hooks, own) -> None:
         base = await _frames(rig)
-        n = await _agent(rig, _A, "n", made)
-        w = await _agent(rig, _B, "w", made)
+        A, B = own[_A], own[_B]     # the flow's own developer on each frame (V0662)
+        n = await _agent(rig, A, "n", made)
+        w = await _agent(rig, B, "w", made)
         n_key, w_key = _key(n["did"], base[_A]), _key(w["did"], base[_B])
-        hook_a = await _hook(rig, _A, ["chat.request.accepted", "chat.message.received"], hooks)
-        hook_b = await _hook(rig, _B, ["chat.message.received"], hooks)
+        hook_a = await _hook(rig, A, ["chat.request.accepted", "chat.message.received"], hooks)
+        hook_b = await _hook(rig, B, ["chat.message.received"], hooks)
 
         found = await _knock_and_find(rig, legs, n, w, w_key, n_key, base)
         if found is None:
             return
         host_conv, mirror = found
 
-        r, refused = await _call(rig, _B, "respondChatRequest",
+        r, refused = await _call(rig, B, "respondChatRequest",
                                  {"conversation_id": mirror, "action": "accept", "agent_jwt": w["jwt"]})
-        accepted = await _until(lambda: _told(rig, _A, hook_a, "chat.request.accepted", host_conv), _HEAR_SEC)
+        accepted = await _until(lambda: _told(rig, A, hook_a, "chat.request.accepted", host_conv), _HEAR_SEC)
         legs.check("an_explicit_accept_is_heard", not refused and bool(accepted),
                    {"refused": refused, "deliveries": accepted})
 
         c1 = f"{_TAG} control n->w {uuid.uuid4().hex[:6]}"
-        r1, ref1 = await _send(rig, _A, n, c1, conversation_id=host_conv)
+        r1, ref1 = await _send(rig, A, n, c1, conversation_id=host_conv)
         await legs.heard("control_n_to_w_reaches_ws_owner",
-                         lambda: _told(rig, _B, hook_b, "chat.message.received", mirror, _body_is(c1)), _HEAR_SEC,
-                         sent=_sent_view(r1, ref1), on_host=_on_host(rig, _A, n, host_conv, c1))
+                         lambda: _told(rig, B, hook_b, "chat.message.received", mirror, _body_is(c1)), _HEAR_SEC,
+                         sent=_sent_view(r1, ref1), on_host=_on_host(rig, A, n, host_conv, c1))
         c2 = f"{_TAG} control w->n {uuid.uuid4().hex[:6]}"
-        r2, ref2 = await _send(rig, _B, w, c2, conversation_id=mirror)
+        r2, ref2 = await _send(rig, B, w, c2, conversation_id=mirror)
         await legs.heard("control_w_to_n_reaches_ns_owner",
-                         lambda: _told(rig, _A, hook_a, "chat.message.received", host_conv, _body_is(c2)), _HEAR_SEC,
-                         sent=_sent_view(r2, ref2), on_host=_on_host(rig, _A, n, host_conv, c2))
+                         lambda: _told(rig, A, hook_a, "chat.message.received", host_conv, _body_is(c2)), _HEAR_SEC,
+                         sent=_sent_view(r2, ref2), on_host=_on_host(rig, A, n, host_conv, c2))
 
         # HOST leg: N blocks W on sandbox-A.
-        r, refused = await _call(rig, _A, "blockChatPrincipal",
+        r, refused = await _call(rig, A, "blockChatPrincipal",
                                  {"ptype": "remote", "remote_key": w_key, "agent_jwt": n["jwt"]})
         legs.check("host_block_answers", not refused and isinstance(r, dict) and r.get("blocked") is True,
                    {"refused": refused, "answer": r})
-        page, pref = await _read(rig, _A, n, host_conv)
+        page, pref = await _read(rig, A, n, host_conv)
         legs.check("host_block_leaves_ns_seat", isinstance(page, dict) and page.get("my_state") == "left",
                    {"my_state": page.get("my_state") if isinstance(page, dict) else None, "refused": pref})
         hidden = f"{_TAG} while host-blocked {uuid.uuid4().hex[:6]}"
-        r, refused = await _send(rig, _B, w, hidden, conversation_id=mirror)
+        r, refused = await _send(rig, B, w, hidden, conversation_id=mirror)
         r = _posted(r)
         hidden_at = time.monotonic()
         legs.check("a_blocked_reply_is_still_accepted_by_the_host",
                    not refused and isinstance(r, dict) and r.get("relayed") is True
                    and isinstance(r.get("host_seq"), int), {"refused": refused, "answer": r})
-        r, refused = await _send(rig, _A, n, f"{_TAG} knock again", target_remote_key=w_key)
+        r, refused = await _send(rig, A, n, f"{_TAG} knock again", target_remote_key=w_key)
         legs.check("opening_a_dm_to_a_blocked_address_is_refused",
                    bool(refused) and "you have blocked this principal" in refused, {"refused": refused, "answer": r})
 
         # Step 3b: unblock, and the pair's thread comes back active.
-        r, refused = await _call(rig, _A, "unblockChatPrincipal",
+        r, refused = await _call(rig, A, "unblockChatPrincipal",
                                  {"ptype": "remote", "remote_key": w_key, "agent_jwt": n["jwt"]})
         legs.check("unblock_answers", not refused and isinstance(r, dict) and r.get("removed") is True,
                    {"refused": refused, "answer": r})
-        r, refused = await _send(rig, _A, n, f"{_TAG} back", target_remote_key=w_key)
+        r, refused = await _send(rig, A, n, f"{_TAG} back", target_remote_key=w_key)
         legs.check("reopening_after_unblock_is_the_same_thread_active",
                    not refused and isinstance(r, dict) and r.get("conversation_id") == host_conv
                    and r.get("created") is False and r.get("my_state") == "active"
                    and isinstance(r.get("first_message"), dict), {"refused": refused, "answer": r})
 
         # HOME leg: W blocks N on sandbox-B.
-        r, refused = await _call(rig, _B, "blockChatPrincipal",
+        r, refused = await _call(rig, B, "blockChatPrincipal",
                                  {"ptype": "remote", "remote_key": n_key, "agent_jwt": w["jwt"]})
         legs.check("home_block_answers", not refused and isinstance(r, dict) and r.get("blocked") is True,
                    {"refused": refused, "answer": r})
-        page, pref = await _read(rig, _B, w, mirror)
+        page, pref = await _read(rig, B, w, mirror)
         legs.check("home_block_leaves_ws_seat", isinstance(page, dict) and page.get("my_state") == "left",
                    {"my_state": page.get("my_state") if isinstance(page, dict) else None, "refused": pref})
         unheard = f"{_TAG} to a blocker {uuid.uuid4().hex[:6]}"
-        r, refused = await _send(rig, _A, n, unheard, conversation_id=host_conv)
+        r, refused = await _send(rig, A, n, unheard, conversation_id=host_conv)
         r = _posted(r)
         unheard_at = time.monotonic()
         legs.check("a_message_to_a_blocker_is_still_accepted_by_the_host",
@@ -591,16 +661,16 @@ async def test_g1_blocks(rig: FederationTestRig) -> AssertionResult:
                    {"refused": refused, "answer": r})
 
         long_key = f"{'x' * 230}@{base[_A]}"     # over the 255 a block row stores, under the 320 an address may be
-        r, refused = await _call(rig, _B, "blockChatPrincipal",
+        r, refused = await _call(rig, B, "blockChatPrincipal",
                                  {"ptype": "remote", "remote_key": long_key, "agent_jwt": w["jwt"]})
         legs.check("an_address_too_long_to_block_is_refused_by_name",
                    bool(refused) and "too long to block" in refused, {"refused": refused, "answer": r})
 
         await asyncio.sleep(max(0.0, max(hidden_at, unheard_at) + _HEAR_SEC - time.monotonic()))
-        at_a = await _told(rig, _A, hook_a, "chat.message.received", host_conv, _body_is(hidden))
+        at_a = await _told(rig, A, hook_a, "chat.message.received", host_conv, _body_is(hidden))
         legs.check("a_blocked_reply_reaches_no_n_owner", at_a == [],
                    {"deliveries": at_a, "note": "None = the record was unreadable, never silence"})
-        at_b = await _told(rig, _B, hook_b, "chat.message.received", mirror, _body_is(unheard))
+        at_b = await _told(rig, B, hook_b, "chat.message.received", mirror, _body_is(unheard))
         legs.check("a_message_to_a_blocker_reaches_no_w_owner", at_b == [],
                    {"deliveries": at_b, "note": "None = the record was unreadable, never silence"})
 
@@ -612,7 +682,7 @@ async def test_g1_blocks(rig: FederationTestRig) -> AssertionResult:
         "reopening_after_unblock_is_the_same_thread_active", "home_block_answers", "home_block_leaves_ws_seat",
         "a_message_to_a_blocker_is_still_accepted_by_the_host", "a_message_to_a_blocker_reaches_no_w_owner",
         "an_address_too_long_to_block_is_refused_by_name"],
-        "G1: a block of a peer's principal is silent at the host and at the home", body)
+        "G1: a block of a peer's principal is silent at the host and at the home", body, owners=True)
 
 
 # ─── FB12 + V0437 (3): the owner's join asks first, then shows ─────────────
@@ -632,66 +702,67 @@ async def test_g1_household(rig: FederationTestRig) -> AssertionResult:
     join=true seats the owner at the host with ONE visible system row "<owner> joined as the owner of <agent>", which
     the other owner hears (FB12). A second read writes no second join; the owner's post is relayed and heard. The same
     holds from the host's side: the knocker's owner reading the host thread is asked first, then shown to the other side.
-    The owners are the frames' admin developers, the accounts the rig speaks as and the creators of every agent here.
+    The owners are the flow's own developers on each frame (_owner), the creators of every agent here.
     """
-    async def body(legs: _Legs, made, hooks) -> None:
+    async def body(legs: _Legs, made, hooks, own) -> None:
         base = await _frames(rig)
-        n = await _agent(rig, _A, "n", made)
-        w = await _agent(rig, _B, "w", made)
+        A, B = own[_A], own[_B]     # the flow's own developer on each frame (V0662)
+        n = await _agent(rig, A, "n", made)
+        w = await _agent(rig, B, "w", made)
         n_key, w_key = _key(n["did"], base[_A]), _key(w["did"], base[_B])
-        hook_a = await _hook(rig, _A, ["chat.message.received"], hooks)
+        hook_a = await _hook(rig, A, ["chat.message.received"], hooks)
 
         found = await _knock_and_find(rig, legs, n, w, w_key, n_key, base)
         if found is None:
             return
         host_conv, mirror = found
-        r, refused = await _call(rig, _B, "respondChatRequest",
+        r, refused = await _call(rig, B, "respondChatRequest",
                                  {"conversation_id": mirror, "action": "accept", "agent_jwt": w["jwt"]})
         legs.check("thread_accepted", not refused and isinstance(r, dict), {"refused": refused, "answer": r})
 
-        page, refused = await _read(rig, _B, None, mirror)
+        page, refused = await _read(rig, B, None, mirror)
         legs.check("the_owners_first_read_asks_consent",
                    bool(refused) and "household_join_confirm:" in refused and "join=true" in refused,
                    {"refused": refused, "answered": None if refused else page})
-        at_host, _ = await _read(rig, _A, n, host_conv)
+        at_host, _ = await _read(rig, A, n, host_conv)
         legs.check("an_unconfirmed_read_announces_nothing", _joins(at_host) == 0, {"joins_at_host": _joins(at_host)})
 
-        page, refused = await _read(rig, _B, None, mirror, join=True)
+        page, refused = await _read(rig, B, None, mirror, join=True)
         legs.check("a_confirmed_read_opens_the_thread",
                    not refused and isinstance(page, dict) and page.get("conversation_id") == mirror,
                    {"refused": refused})
 
         async def _host_joins():
-            p, _ = await _read(rig, _A, n, host_conv)
+            p, _ = await _read(rig, A, n, host_conv)
             return _joins(p)
         one = await _until(_host_joins, _HEAR_SEC)
         legs.check("the_host_shows_one_join", one == 1, {"joins_at_host": one})
         await legs.heard("the_other_owner_hears_the_join",
-                         lambda: _told(rig, _A, hook_a, "chat.message.received", host_conv, _body_has(_JOINED)), _HEAR_SEC)
+                         lambda: _told(rig, A, hook_a, "chat.message.received", host_conv, _body_has(_JOINED)), _HEAR_SEC)
 
-        await _read(rig, _B, None, mirror, join=True)
-        await _read(rig, _B, None, mirror)
+        await _read(rig, B, None, mirror, join=True)
+        await _read(rig, B, None, mirror)
         await asyncio.sleep(5.0)
         still = await _host_joins()
         legs.check("a_second_read_writes_no_second_join", still == 1, {"joins_at_host": still})
 
         post = f"{_TAG} the owner speaks {uuid.uuid4().hex[:6]}"
-        r, refused = await _send(rig, _B, None, post, conversation_id=mirror)
+        r, refused = await _send(rig, B, None, post, conversation_id=mirror)
         r = _posted(r)
         legs.check("the_owner_posts_through_the_host",
                    not refused and isinstance(r, dict) and r.get("relayed") is True, {"refused": refused, "answer": r})
         await legs.heard("the_other_owner_hears_the_owners_post",
-                         lambda: _told(rig, _A, hook_a, "chat.message.received", host_conv, _body_is(post)), _HEAR_SEC)
+                         lambda: _told(rig, A, hook_a, "chat.message.received", host_conv, _body_is(post)), _HEAR_SEC)
 
-        # From the host's side: N's owner is sandbox-A's admin.
-        _, first = await _read(rig, _A, None, host_conv)
-        _, confirmed = await _read(rig, _A, None, host_conv, join=True)
+        # From the host's side: N's owner is the flow's own developer on sandbox-A.
+        _, first = await _read(rig, A, None, host_conv)
+        _, confirmed = await _read(rig, A, None, host_conv, join=True)
         legs.check("the_hosts_owner_is_asked_first_too",
                    bool(first) and "household_join_confirm:" in first and not confirmed,
                    {"first": first, "confirmed_refused": confirmed})
 
         async def _mirror_joins():
-            p, _ = await _read(rig, _B, w, mirror)
+            p, _ = await _read(rig, B, w, mirror)
             j = _joins(p)
             return j if (j or 0) >= 2 else None
         both = await _until(_mirror_joins, _HEAR_SEC)
@@ -699,7 +770,7 @@ async def test_g1_household(rig: FederationTestRig) -> AssertionResult:
 
         # V0441: with the host's owner now seated too, the mirror still names the agent the thread is with. ASIA's
         # production mirror named EU's owner (`dev:12@…`): the counterparty was the first row not mine, in no order.
-        mp, mref = await _read(rig, _B, None, mirror)
+        mp, mref = await _read(rig, B, None, mirror)
         cp = (mp.get("counterparty") or {}) if isinstance(mp, dict) else {}
         legs.check("with_both_owners_seated_the_mirror_still_names_the_knocking_agent",
                    str(cp.get("remote_key") or "").lower() == n_key, {"counterparty": cp, "expected": n_key,
@@ -712,7 +783,7 @@ async def test_g1_household(rig: FederationTestRig) -> AssertionResult:
         "a_second_read_writes_no_second_join", "the_owner_posts_through_the_host",
         "the_other_owner_hears_the_owners_post", "the_hosts_owner_is_asked_first_too",
         "the_hosts_owner_join_reaches_the_mirror", "with_both_owners_seated_the_mirror_still_names_the_knocking_agent"],
-        "G1: an owner joins its agent's cross-registry thread only with consent, and visibly", body)
+        "G1: an owner joins its agent's cross-registry thread only with consent, and visibly", body, owners=True)
 
 
 # ─── V0441: a developer on the host is ONE principal to its peers ──────────

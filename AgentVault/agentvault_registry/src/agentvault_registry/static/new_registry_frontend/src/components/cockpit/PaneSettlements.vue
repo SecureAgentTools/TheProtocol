@@ -41,6 +41,7 @@ function host(url: string): string {
 
 async function load() {
   try {
+    // admin-guarded: the pane mounts only where paneRegistry's available() holds adminFlag(ctx, 'enforcement')
     const r = await apiClient.get('/federation/disputes/settlements')
     const list: any[] = Array.isArray(r.data?.settlements) ? r.data.settlements : []
     rows.value = list.map(s => ({

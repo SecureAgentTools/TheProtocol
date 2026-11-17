@@ -137,7 +137,7 @@ def _status_is(*want: str):
 BACKSTOP_OFF = "does not backstop bonds from its treasury"
 
 
-async def _backstop(bag: Any, parse: ParseResult, did: str) -> Optional[str]:
+async def _backstop(bag: Any, parse: ParseResult, did: str, owner_jwt: Optional[str] = None) -> Optional[str]:
     """A treasury-backed bond for an agent of the runner's (it moves no money; REPUTATION_BOND_TREASURY_BACKSTOP): a
     provider needs one to accept under REPUTATION_BOND_MODE=enforce. None, or why it failed.
 
@@ -146,7 +146,9 @@ async def _backstop(bag: Any, parse: ParseResult, did: str) -> Optional[str]:
     backstop bonds from its treasury") left 14 contract and Guild rows NOT MEASURED in V0651's pair proof. On a target
     torn down after its run (MCP_TESTER_EPHEMERAL_TARGET) the agent then bonds from its own balance, funded first from
     the treasury (federation_suite rig._bond_from_own_funds' two rails); elsewhere the refusal stands, said."""
-    st, resp = await _rest(bag, parse, "POST", f"/api/v1/developers/me/agents/{did}/reputation-bond/backstop", {})
+    # V0664: an agent of another developer is bonded as that developer (the route is the owner's: /developers/me)
+    st, resp = await _rest(bag, parse, "POST", f"/api/v1/developers/me/agents/{did}/reputation-bond/backstop", {},
+                           as_jwt=owner_jwt)
     if st == 200 and _d(resp).get("status") == "locked":
         return None
     why = f"the provider's backstop bond answered HTTP {st}: {ef.said(resp)}"
@@ -155,10 +157,10 @@ async def _backstop(bag: Any, parse: ParseResult, did: str) -> Optional[str]:
     from agentvault_registry.api_tests.contracts.earned_ad_ephemeral import ephemeral_target
     if not ephemeral_target():
         return why + " (an agent bonds from its own funds only on a target torn down after its run)"
-    return await _bond_from_own_funds(bag, parse, did)
+    return await _bond_from_own_funds(bag, parse, did, owner_jwt)
 
 
-async def _bond_from_own_funds(bag: Any, parse: ParseResult, did: str) -> Optional[str]:
+async def _bond_from_own_funds(bag: Any, parse: ParseResult, did: str, owner_jwt: Optional[str] = None) -> Optional[str]:
     """The agent funded with its bond (and 1 % for a fee) from the treasury (the canonical fund-agent rail, reason
     admin_grant), then bonded from that balance (the owner's deposit rail, funder_did = the agent). Both legs conserve
     supply: treasury to the agent, the agent to the bond's escrow. None, or why it failed."""
@@ -175,7 +177,8 @@ async def _bond_from_own_funds(bag: Any, parse: ParseResult, did: str) -> Option
         "reference_id": f"mcp-bond-{did.rsplit(':', 1)[-1][:40]}"})
     if not 200 <= st < 300:
         return f"funding the provider's bond from the treasury answered HTTP {st}: {ef.said(got)}"
-    st, got = await _rest(bag, parse, "POST", f"/api/v1/developers/me/agents/{did}/reputation-bond", {"funder_did": did})
+    st, got = await _rest(bag, parse, "POST", f"/api/v1/developers/me/agents/{did}/reputation-bond", {"funder_did": did},
+                          as_jwt=owner_jwt)
     if _d(got).get("status") in ("locked", "matured"):
         return None
     return f"the provider's bond from its own funds answered HTTP {st}: {ef.said(got)}"
@@ -1310,7 +1313,9 @@ async def lifecycle_earned_guild_local(rpc: RpcCall, parse: ParseResult, bag: An
     oids: Dict[str, str] = {}
     try:
         P = await t.agent(_admin_dev(bag), "poster")
-        W = await t.agent(_admin_dev(bag), "worker")
+        # V0664 (session-lead seq 4287): the worker is ANOTHER developer's agent. The self-dealing gate refuses an order
+        # one developer posts and bids on ("a Guild order is for someone else's work"), and it is right
+        W = await t.agent(await t.developer("guild-worker"), "worker")
         if P.get("why") or W.get("why"):
             return _unmeasured_all(outcomes, GUILD_LOCAL_TOOLS, f"no poster or worker agent ({P.get('why') or W.get('why')})")
         need = Decimal(DUST) * len(GUILD_LOCAL_ORDERS)
@@ -1325,7 +1330,7 @@ async def lifecycle_earned_guild_local(rpc: RpcCall, parse: ParseResult, bag: An
             shown = "an unread balance" if held is None else format(held, "f")
             return _unmeasured_all(outcomes, GUILD_LOCAL_TOOLS, f"the poster holds {shown} after funding, and the "
                                    f"{len(GUILD_LOCAL_ORDERS)} bounties need {need}")
-        why = await _backstop(bag, parse, W["did"])
+        why = await _backstop(bag, parse, W["did"], W.get("owner_jwt"))
         if why:
             return _unmeasured_all(outcomes, GUILD_LOCAL_TOOLS, why.replace("provider", "worker"))
         for i, role in enumerate(GUILD_LOCAL_ORDERS):

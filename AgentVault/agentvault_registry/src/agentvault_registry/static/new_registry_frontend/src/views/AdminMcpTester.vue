@@ -1471,6 +1471,11 @@
       </div>
     </section>
 
+    <!-- TAB: Coverage, per tool and per target, from the latest run of each target (V0663) -->
+    <section v-if="activeTab === 'coverage'" class="mcp-section" data-testid="mcp-coverage">
+      <McpCoverage />
+    </section>
+
     <!-- TAB: Recent runs history -->
     <section v-if="activeTab === 'history'" class="mcp-section">
       <div class="mcp-card">
@@ -1748,6 +1753,7 @@
 
 <script setup lang="ts">
 import McpSandboxPanel from '@/components/admin/McpSandboxPanel.vue'
+import McpCoverage from '@/components/admin/McpCoverage.vue'
 import { useI18n } from '@/composables/useI18n'
 import { appLocale } from '@/services/appLocale'
 import { openSse, type SseHandle } from '@/services/sse'
@@ -2220,12 +2226,12 @@ function evtClose() {
 
 // ─── Tabs ────────────────────────────────────────────────────────────────
 
-type TabId = 'log' | 'bugfind' | 'fails' | 'results' | 'probes' | 'notrun' | 'phasef' | 'history'
+type TabId = 'log' | 'bugfind' | 'fails' | 'results' | 'probes' | 'notrun' | 'phasef' | 'coverage' | 'history'
 const activeTab = ref<TabId>('log')
 // §FESUITE (09's ask, 2026-10-03: he looked for the console suite's runs in this page's history): a link may name the
 // tab (`?tab=history`, the console-suite page's link back). It wins over the remembered tab at mount, and vue-router
 // keeps this page on a query-only change, so a later arrival is read by the watcher (PART 1: the second arrival).
-const TAB_IDS: readonly TabId[] = ['log', 'bugfind', 'fails', 'results', 'probes', 'notrun', 'phasef', 'history']
+const TAB_IDS: readonly TabId[] = ['log', 'bugfind', 'fails', 'results', 'probes', 'notrun', 'phasef', 'coverage', 'history']
 const route = useRoute()
 function tabFromQuery(q: unknown): TabId | null {
   return typeof q === 'string' && (TAB_IDS as readonly string[]).includes(q) ? (q as TabId) : null
@@ -2245,6 +2251,8 @@ const tabs = computed(() => [
   // "how many were left out" in one number, with the split visible inside.
   { id: 'notrun' as const, label: tr('mcpTester.tabs.notrun', 'Not run'), icon: 'mdi:cancel',               count: (skipped.value.length + policyDenied.value.length) || undefined },
   { id: 'phasef' as const, label: tr('mcpTester.tabs.phasef', 'Drift & integrity'), icon: 'mdi:shield-check',    count: phaseFTabCount.value || undefined },
+  // V0663 (gwo_0b31c0b849ebd207102d8bf4): per tool, per target, from the latest run of each target (McpCoverage)
+  { id: 'coverage' as const, label: tr('mcpTester.tabs.coverage', 'Coverage'), icon: 'mdi:clipboard-check-multiple-outline', count: undefined },
   { id: 'history' as const,label: tr('mcpTester.tabs.history', 'History'), icon: 'mdi:history',              count: runHistory.value.length || undefined },
 ])
 

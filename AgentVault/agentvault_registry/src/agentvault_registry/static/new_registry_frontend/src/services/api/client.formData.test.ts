@@ -25,6 +25,12 @@ beforeAll(async () => {
   ;({ bundlesApi } = await import('@/services/api/bundles'))
   ;({ registryCardAdminApi } = await import('@/services/api/registryCardAdmin'))
   ;({ authApi } = await import('@/services/api/auth'))
+  // V0662: the registry card's uploads are admin_platform routes, and the client's admin guard (services/api/adminGuard)
+  // does not send them for a session without that flag; these tests are about the body, so the session is an admin
+  const { useAuthStore } = await import('@/stores/auth')
+  const auth: any = useAuthStore()
+  auth.token = 'dev.jwt'
+  auth.user = { id: 1, is_admin: true }
 }, 30_000)
 
 const undo: Array<() => void> = []

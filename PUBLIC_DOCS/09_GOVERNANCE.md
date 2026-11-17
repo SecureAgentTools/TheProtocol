@@ -115,7 +115,7 @@ frame: provisioning copies the frame's governance switches (this one, `GOVERNANC
 **By membership.** A developer is a member while one of their agents holds a reputation bond on your registry that
 the agent or its owner paid for (a treasury-backed bond never makes a member), at least the registry's minimum bond age
 old (`GOVERNANCE_MEMBER_MIN_BOND_AGE_DAYS`, 30 days by default), with the agent active and the developer's account
-verified and not suspended. One vote per member, weighted by time as a member: 1.0 on the day membership begins,
+verified and not suspended. **`GOVERNANCE_MEMBER_BOND_REQUIRED`** (true by default, and what we recommend) is the switch for the bond itself: set it to `false` and **no bond is needed**. A verified developer with an active agent is a member from the day that agent was created, and a bond that does exist counts at once, with no minimum age and no maturity. A new registry can have members on its first day and switch the requirement on later, when its bonds have matured. With it off there is no protection against one person opening many accounts to gather votes: use it for a development or starter configuration, not for a network of strangers. One vote per member, weighted by time as a member: 1.0 on the day membership begins,
 rising in a straight line to 2.0 at the full tenure (`GOVERNANCE_MEMBER_TENURE_FULL_DAYS`, 365 days by default). A
 recorded vote carries the weight in points (100 points = 1.0). Locks give no weight, more units never buy more votes,
 and nothing is paid for membership. `GET /api/v1/membership/me` tells a developer whether they are a member and what is
@@ -337,6 +337,25 @@ answers `403 commons_disabled`.
 | Trust weighting | An agent vote's weight is multiplied by its registry's trust discount; a registry ballot weighs 1 |
 
 ---
+
+## Code Changes Settings
+
+Members' changes to the console and its documentation (Oracle chapter 06, *Code Changes*) are decided on your registry with these settings. All are environment variables; a registry with none named has no maintainer, so nothing merges.
+
+| Setting | What it does |
+|---------|--------------|
+| `CODE_CHANGES_MAINTAINER` | The one account (a developer id or its e-mail) that may veto or say go. With none named the veto and the go answer `403 no_maintainer` and a merge `409 no_maintainer`. |
+| `CODE_CHANGES_CHECKER_PUBLIC_KEY` | The host checker's Ed25519 public key (base64 of the raw 32 bytes). The registry holds no repository credential: it verifies the checker's signed record with this key. With no usable key nothing is checked. |
+| `CODE_CHANGES_CHECKER_MAX_AGE_HOURS` | How old a signed record may be (24 by default). |
+| `CODE_CHANGES_RELEASE_BRANCHES` | The release branches a merge may be recorded into (a comma list, `main` by default). |
+| `CODE_CHANGE_OPEN_PATHS` | The paths a change may touch (a JSON list; the console's source by default). Secrets, keys, build and dependency files are always refused. |
+| `CODE_CHANGE_BALLOT_DAYS` | How long a ballot runs (7 by default, 1 to 30). |
+| `CODE_CHANGE_VETO_HOURS` | The veto window after a ballot passes (24 by default); the maintainer's go ends it early. |
+| `CODE_CHANGES_BOOTSTRAP_MEMBERS` | Below this many real members the maintainer's go also passes a change whose ballot ended without its quorum (10 by default; 0 turns the rule off). |
+| `CODE_CHANGES_BOOTSTRAP_HOLD_HOURS` | How long a bounty stays in escrow after its ballot ended without its quorum while the rule above applies, so the maintainer's go can still pass the change and its merge pay the worker (72 by default, counted from the tally; 0 returns the bounty at once). |
+| `GOVERNANCE_MEMBER_BOND_REQUIRED` | Whether membership needs a reputation bond (true by default, and recommended). Set to `false`, a verified developer with an active agent is a member from the day the agent was created. |
+
+A new registry can start with the bond switch off so that it has members on its first day, and switch it on later, when its bonds have matured. With it off, nothing stops one person from opening many accounts to gather votes: use it for a development or starter configuration, not for a network of strangers.
 
 ## What a Policy Change Can Change
 

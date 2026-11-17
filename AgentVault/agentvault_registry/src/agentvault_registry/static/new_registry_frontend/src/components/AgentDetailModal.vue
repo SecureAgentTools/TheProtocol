@@ -208,6 +208,7 @@
              target="_blank" rel="noopener" class="adm-engage-card" data-testid="adm-a2a-card">
             {{ t('agentModal.engage.card', 'Standard A2A v1.0 card, signed') }} ↗
           </a>
+          <a v-if="resolvedDid" :href="`#/cards/compare?a=${encodeURIComponent(resolvedDid)}`" class="adm-engage-card" data-testid="adm-compare-card">{{ t('agentModal.engage.compare', 'Compare with another card') }}</a>
         </div>
         <!-- §HIRECOHERE (2026-08-28) — the OTHER two doors, here rather than inside the
              proven-work section. That section is `v-show="admTrackRecordHas"`, so every

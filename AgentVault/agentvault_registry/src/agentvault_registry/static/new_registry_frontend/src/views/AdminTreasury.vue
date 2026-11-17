@@ -2336,7 +2336,7 @@ function goToEventStoreAggregate(agentDid: string) {
   text-align: center;
   font-family: var(--mono);
   font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--nc-text-muted);   /* V0663: was white at 40% (3.8:1 on #0a0d16); the theme's muted text reads 6.3:1 */
   padding: 1.4rem;
   letter-spacing: 0.06em;
 }

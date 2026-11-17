@@ -145,6 +145,7 @@
 <script setup lang="ts">
 import { appLocale } from '@/services/appLocale'
 import { computed, ref } from 'vue'
+import { registryImageSrc } from '@/services/registryImage'   // V0663: outside images from the registry
 import Icon from '@/components/Icon.vue'
 import { useI18n } from '@/composables/useI18n'
 
@@ -228,7 +229,7 @@ const customStyle = computed(() => {
 // recursion + RangeError on render).
 const logoBroken = ref(false)
 function onLogoError() { logoBroken.value = true }
-const effectiveLogoUrl = computed(() => (logoBroken.value ? null : props.logoUrl))
+const effectiveLogoUrl = computed(() => (logoBroken.value ? null : registryImageSrc(props.logoUrl)))
 
 const tooltip = computed(() => {
   const t = props.tier as FlareTier | null

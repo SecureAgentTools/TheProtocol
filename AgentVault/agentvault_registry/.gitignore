@@ -92,3 +92,6 @@ backups/
 # Temp files
 temp/
 tmp/
+
+# V0664 (gwo_9105add7): the SDK's starter kits, copied whole for the kit check: their .sql fixtures are part of the kit
+!tests/data/shipped_kits/**/*.sql

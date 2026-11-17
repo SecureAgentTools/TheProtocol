@@ -7,6 +7,8 @@
  * messages and not at last unread message". The rules, pure and tested here; the thread wires them
  * (composables/useThreadCatchUp.ts, views/pocket/PocketOurStateThread.vue).
  */
+import { applyMessageChange } from './messageEdit'
+
 export type LiveState = 'live' | 'catching_up' | 'offline'
 
 export interface SeqMsg { id: string; seq: number; [k: string]: any }
@@ -31,9 +33,19 @@ export function mergeBySeq(have: SeqMsg[], incoming: SeqMsg[]): { messages: SeqM
   let updated = 0
   const kept = have.map((m) => {
     const n = newer.get(m.id)
-    if (!n || (Number(n.card_rev) || 0) <= (Number(m.card_rev) || 0)) return m
+    if (!n) return m
+    // V0662: a line the answer shows edited or taken back since the thread last held it takes that (by its time)
+    const ch = applyMessageChange([m], n.deleted ? { id: n.id, deleted: true } : { id: n.id, body: n.body, edited_at: n.edited_at })
+    let base: any = ch.changed ? ch.messages[0] : m
+    // V0662: the reaction words the answer shows (counts and which are the reader's) replace the held ones
+    if (Array.isArray(n.reactions) && JSON.stringify(n.reactions) !== JSON.stringify(m.reactions || [])) {
+      base = { ...base, reactions: n.reactions }
+      updated++
+    }
+    if (ch.changed) updated++
+    if ((Number(n.card_rev) || 0) <= (Number(base.card_rev) || 0)) return base
     updated++
-    return { ...m, card: n.card, card_rev: Number(n.card_rev) || 0, card_updated_at: n.card_updated_at ?? null }
+    return { ...base, card: n.card, card_rev: Number(n.card_rev) || 0, card_updated_at: n.card_updated_at ?? null }
   })
   const top = have.reduce((s, m) => Math.max(s, Number(m.seq) || 0), 0)
   const low = fresh.reduce((s, m) => Math.min(s, Number(m.seq) || Infinity), Infinity)

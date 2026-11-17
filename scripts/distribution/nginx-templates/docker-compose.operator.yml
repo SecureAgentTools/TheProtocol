@@ -146,6 +146,11 @@ services:
     image: ${IMAGES_PREFIX:-images.theprotocol.cloud}/registry:${VERSION:-stable}
     container_name: ${REGISTRY_NAME:-operator}-registry
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
     ports:
       - "127.0.0.1:12000:8000"
     env_file: .env.operator
@@ -298,6 +303,11 @@ services:
     image: ${IMAGES_PREFIX:-images.theprotocol.cloud}/teg-layer:${VERSION:-stable}
     container_name: ${REGISTRY_NAME:-operator}-teg
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
     # §pass66 (2026-05-22) — `ports:` placeholder added so cloud_provisioner's
     # literal `"127.0.0.1:12080:8080" → "<bind>:<teg_port>:8080"` replace can find a match.
     # Previously the template had no placeholder, and the regex-based ports-

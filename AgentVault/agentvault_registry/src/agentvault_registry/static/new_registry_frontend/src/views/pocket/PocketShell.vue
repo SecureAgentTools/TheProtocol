@@ -513,4 +513,10 @@ function micClick() { if (!voice.listening.value && !voice.interim.value) router
 /* §POCKETBRIDGE3 — the mic bell */
 .pk-mic.live { color: #ff8a8a; border-color: rgba(255,138,138,0.5); }
 .pk-mic { touch-action: none; }
+
+/* V0663 (the browser pass, seq 3591): in a short window the bar sat over the OurChat composer (a keyboard is open there). It leaves
+   while the composer has the focus and is back the moment it loses it. */
+@media (max-height: 560px) {
+  .pk-shell:has(.ost-input:focus) .pk-bar { display: none; }
+}
 </style>

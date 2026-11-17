@@ -102,6 +102,26 @@ class StakingService:
         await db.commit()
 
 
+async def dispatch_position_updated(agent_did: str, remainders, transaction_id) -> int:
+    """D6-763: tell the holder of each position that continues after a partial release (webhook staking.position_updated).
+    Returns how many events it sent. A failure to deliver is the dispatcher's own (it logs and counts); this never raises."""
+    if not remainders:
+        return 0
+    from agentvault_registry.background_tasks.reactor_helpers import dispatch_webhook_for_agents
+    sent = 0
+    for pos in remainders:
+        try:
+            await dispatch_webhook_for_agents(
+                "staking.position_updated",
+                {"agent_did": agent_did, "position_id": pos.id, "amount": str(pos.amount),
+                 "lock_period_days": pos.lock_period_days, "transaction_id": transaction_id},
+                [agent_did], source_label="staking.unstake")
+            sent += 1
+        except Exception as exc:  # noqa: BLE001 - a webhook must never fail the release that already committed
+            logger.warning("position_updated webhook for %s not sent: %r", getattr(pos, "id", "?"), exc)
+    return sent
+
+
 @router.post("/stake", summary="Lock units in a position", response_model=StakeTransactionRead, dependencies=[Depends(require_staking_enabled)])  # §BAFIN
 async def stake_tokens(
     stake_request: StakeRequest,
@@ -285,6 +305,11 @@ async def stake_tokens(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="TEG Layer temporarily unavailable. Please try again."
         )
+    except HTTPException:
+        # §DOCSTRIAGE D1: the route's own refusal (400 "Insufficient balance...") is the answer, as in unstake below;
+        # the catch-all turned it into a 500 "Failed to process the lock request".
+        await db.rollback()
+        raise
     except Exception as e:
         logger.exception(f"Unexpected error during staking: {str(e)}")
         await db.rollback()
@@ -424,6 +449,7 @@ async def unstake_tokens(
         # Process unstaking (FIFO) — lock_period_days controls cooldown per position
         remaining_to_unstake = unstake_request.amount
         unstaked_stakes = []
+        remainder_stakes = []   # D6-763: positions that go on after a partial release (their holder is told: position_updated)
         
         for stake in active_stakes:
             if remaining_to_unstake <= 0:
@@ -469,6 +495,7 @@ async def unstake_tokens(
                     ve_power_snapshot=float(remaining_amount) * (getattr(stake, 've_power_snapshot', 0.0) / max(float(stake.amount), 1.0))
                 )
                 db.add(new_stake)
+                remainder_stakes.append(new_stake)
                 
                 # Update original stake
                 stake.amount = unstake_amount
@@ -544,6 +571,10 @@ async def unstake_tokens(
             {"agent_did": current_agent.did, "amount": str(unstake_request.amount),
              "transaction_id": transaction.teg_transaction_id or transaction.id},
             [current_agent.did], source_label="staking.unstake"))
+        # D6-763 (V0663): a position released in part goes on as a smaller one: that is what staking.position_updated says
+        # (it was subscribable and documented "accepted but never sent"). One event per remainder, after the commit.
+        _aio.create_task(dispatch_position_updated(
+            current_agent.did, remainder_stakes, transaction.teg_transaction_id or transaction.id))
         return StakeTransactionRead(**response_data)
         
     except HTTPException:

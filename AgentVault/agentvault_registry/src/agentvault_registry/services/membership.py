@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import logging
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -83,11 +83,42 @@ def presence_mode() -> str:
     return v
 
 
+def bond_required() -> bool:
+    """V0666 (the maintainer's word, room seq 4478 and 4481: "a switch for bond need yes or not ... new frames can use it and switch it later when the bonds
+    matured", "no sybil attack protection for our development/starter configuration"). GOVERNANCE_MEMBER_BOND_REQUIRED, default true and what we recommend: today's
+    rule, a bond that has aged (and matured, where that is asked) makes a member. False: NO bond is needed. A developer is a member from the day their first active
+    agent exists (verified, not suspended, not deleted, as for every member), and a bond that does exist counts at once, with no minimum age and no maturity. With it off
+    nothing stops one person opening many accounts to gather votes. Only an explicit false, 0, no or off lowers it: a typo keeps the bond required."""
+    return str(_np.knob("GOVERNANCE_MEMBER_BOND_REQUIRED", "true") or "true").strip().lower() not in ("0", "false", "no", "off")   # only an explicit "no" lowers it
+
+
+def no_bond_membership() -> bool:
+    """True when no bond is needed to be a member (GOVERNANCE_MEMBER_BOND_REQUIRED off): the ONE question every reader of membership asks."""
+    return not bond_required()
+
+
+def member_since_without_bond(agents: Iterable[Mapping[str, Any]], *, now: _dt.datetime) -> Optional[_dt.datetime]:
+    """When a developer with no bond becomes a member under the switch off: the day their earliest ACTIVE agent was created (status and enforcement active), if that day has
+    come. The developer's own state (verified, suspended, deleted) is the caller's, as for a bond."""
+    best: Optional[_dt.datetime] = None
+    for a in agents:
+        if (a.get("status") or "active") != "active" or (a.get("enforcement_status") or "active") != "active":
+            continue
+        at = _aware(a.get("created_at"))
+        if at is not None and at <= _aware(now) and (best is None or at < best):
+            best = at
+    return best
+
+
 def min_bond_age_days() -> int:
+    if not bond_required():
+        return 0
     return max(0, _np.int_knob("GOVERNANCE_MEMBER_MIN_BOND_AGE_DAYS", 30))
 
 
 def requires_matured_bond() -> bool:
+    if not bond_required():
+        return False
     return _np.bool_knob("GOVERNANCE_MEMBER_REQUIRES_MATURED_BOND", False)
 
 
@@ -95,7 +126,15 @@ def tenure_full_days() -> int:
     return max(1, _np.int_knob("GOVERNANCE_MEMBER_TENURE_FULL_DAYS", 365))
 
 
+NOT_A_MEMBER_SENTENCE_NO_WAIT = (
+    "not_a_member: Only members of this registry can do this. A member is a verified developer with an active agent here; "
+    "no bond is needed on this registry (GOVERNANCE_MEMBER_BOND_REQUIRED=false), and a bond that exists counts at once."
+)
+
+
 def not_a_member_sentence() -> str:
+    if not bond_required():
+        return NOT_A_MEMBER_SENTENCE_NO_WAIT
     return NOT_A_MEMBER_SENTENCE.format(days=min_bond_age_days())
 
 
@@ -197,6 +236,17 @@ SELECT a.creator_developer_id AS developer_id, b.status, b.funded_by, b.locked_a
 """
 
 
+# V0666: the developers a registry counts as members while no bond is needed (GOVERNANCE_MEMBER_BOND_REQUIRED off): the same eligibility as a bond member, with the day of
+# the earliest ACTIVE agent as the day membership begins. The one-developer form (" AND a.creator_developer_id = :dev") is what member_since_for appends.
+_NO_BOND_MEMBERS_SQL = f"""
+SELECT a.creator_developer_id AS developer_id, MIN(a.created_at) AS since
+  FROM agents a
+  JOIN developers d ON d.id = a.creator_developer_id
+ WHERE a.status = 'active' AND COALESCE(a.enforcement_status, 'active') = 'active'
+   AND {_ELIGIBLE_DEVELOPER_SQL}
+"""
+
+
 async def _bond_rows_by_developer(db: AsyncSession) -> Dict[int, List[Dict[str, Any]]]:
     rows = (await db.execute(text(_MEMBER_BOND_ROWS_SQL))).mappings().all()
     out: Dict[int, List[Dict[str, Any]]] = {}
@@ -214,7 +264,28 @@ async def members(db: AsyncSession, now: Optional[_dt.datetime] = None) -> Dict[
         since = member_since_from_rows(rows, now=now, min_age_days=min_age, requires_matured=matured)
         if since is not None:
             out[dev_id] = since
+    if no_bond_membership():
+        for r in (await db.execute(text(_NO_BOND_MEMBERS_SQL + " GROUP BY a.creator_developer_id"))).mappings().all():
+            at = _aware(r["since"])
+            if at is not None and at <= now and (int(r["developer_id"]) not in out or at < out[int(r["developer_id"])]):
+                out[int(r["developer_id"])] = at
     return out
+
+
+def real_member_ids(member_ids: Iterable[int], *, service_ids: Iterable[int]) -> Set[int]:
+    """The members that are not service accounts (V0666: the bootstrap rule counts people, not the frame's own standup accounts)."""
+    return set(member_ids) - set(service_ids)
+
+
+async def real_member_count(db: AsyncSession, now: Optional[_dt.datetime] = None) -> int:
+    """How many REAL members this registry has: every member except the frame's service accounts. ONE place: a service account is what the standup marks
+    with developers.agents_unlisted_by_default (the mark that keeps its agents out of discovery), so nothing else decides who counts."""
+    ids = list((await members(db, now)).keys())
+    if not ids:
+        return 0
+    flagged = {int(r) for r in (await db.execute(
+        text("SELECT id FROM developers WHERE id = ANY(:ids) AND COALESCE(agents_unlisted_by_default, false)"), {"ids": ids})).scalars().all()}
+    return len(real_member_ids(ids, service_ids=flagged))
 
 
 async def member_since_for(db: AsyncSession, developer_id: int,
@@ -223,8 +294,15 @@ async def member_since_for(db: AsyncSession, developer_id: int,
     rows = (await db.execute(
         text(_MEMBER_BOND_ROWS_SQL + " AND a.creator_developer_id = :dev"), {"dev": int(developer_id)}
     )).mappings().all()
-    return member_since_from_rows([dict(r) for r in rows], now=now, min_age_days=min_bond_age_days(),
-                                  requires_matured=requires_matured_bond())
+    since = member_since_from_rows([dict(r) for r in rows], now=now, min_age_days=min_bond_age_days(),
+                                   requires_matured=requires_matured_bond())
+    if no_bond_membership():
+        r = (await db.execute(text(_NO_BOND_MEMBERS_SQL + " AND a.creator_developer_id = :dev GROUP BY a.creator_developer_id"),
+                              {"dev": int(developer_id)})).mappings().first()
+        at = _aware(r["since"]) if r else None
+        if at is not None and at <= now and (since is None or at < since):
+            since = at
+    return since
 
 
 async def weight_points_for(db: AsyncSession, developer_id: int,
@@ -275,6 +353,7 @@ async def stats(db: AsyncSession, now: Optional[_dt.datetime] = None) -> Dict[st
         "left_30d": left,
         "network_points": sum(points_for(weight_for(s, now, full)) for s in current.values()),
         "points_per_weight": POINTS_PER_WEIGHT,
+        "bond_required": bond_required(),
         "min_bond_age_days": min_age,
         "requires_matured_bond": requires_matured_bond(),
         "tenure_full_days": full,
@@ -343,7 +422,16 @@ async def status_for_developer(db: AsyncSession, developer: Any,
         for code in reasons:
             if code not in missing:
                 missing.append(code)
-    if not rows:
+    if no_bond_membership():
+        # V0666: no bond is needed: an active agent makes a member from the day it was created (the bond rows above still count, at once)
+        mine = (await db.execute(text("SELECT status, enforcement_status, created_at FROM agents WHERE creator_developer_id = :dev"),
+                                 {"dev": int(developer.id)})).mappings().all()
+        nb = member_since_without_bond([dict(x) for x in mine], now=now)
+        if nb is not None and (since is None or nb < since):
+            since = nb
+        if nb is None and not rows:
+            missing.append("agent")
+    elif not rows:
         missing.append("bond")
     if not getattr(developer, "is_verified", False):
         missing.append("developer_unverified")
@@ -378,6 +466,8 @@ async def status_for_developer(db: AsyncSession, developer: Any,
         next_step = "use_own_funds"
     elif "agent_suspended" in missing and not any(a["qualifies_at"] for a in agents):
         next_step = "resolve_agent"
+    elif "agent" in missing:
+        next_step = "create_agent"
     else:
         next_step = "post_bond"
     next_text = {
@@ -392,6 +482,7 @@ async def status_for_developer(db: AsyncSession, developer: Any,
         "resolve_agent": "The agent holding your bond is suspended; a bond on an active agent is needed.",
         "post_bond": (f"Post the reputation bond for one of your agents (funded by the agent or your wallet); "
                       f"it makes you a member {min_age} days later."),
+        "create_agent": "Create an agent: no bond is needed on this registry, and a verified developer with an active agent is a member.",
     }[next_step]
     shown = sorted(agents, key=_shown_order)[:AGENTS_SHOWN]
     names = {}
@@ -409,6 +500,7 @@ async def status_for_developer(db: AsyncSession, developer: Any,
         "points": points_for(weight) if is_member else 0,
         "tenure_days": int((now - since).total_seconds() // 86400) if is_member else 0,
         "tenure_full_days": full,
+        "bond_required": bond_required(),
         "min_bond_age_days": min_age,
         "requires_matured_bond": matured,
         "presence_mode": presence_mode(),

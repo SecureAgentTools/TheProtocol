@@ -547,7 +547,8 @@ async def agent_card_template():
     }
 
 
-@router.post("/bootstrap/request-token", response_model=BootstrapTokenResponse)
+@router.post("/bootstrap/request-token", response_model=BootstrapTokenResponse,
+             summary="Request a single-use bootstrap key for creating an agent")
 @limiter.limit("20/minute")  # Beta: 20/min generous for real use. API test runner uses admin (bypasses limits).
 async def request_bootstrap_token(
     token_request: BootstrapTokenRequest,
