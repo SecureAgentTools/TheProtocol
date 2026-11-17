@@ -15,4 +15,4 @@ Usage:
     from theprotocol.quantum import QuantumWorkload    # the quantum workload agent card extension (V0660)
 """
 
-__version__ = "0.11.0"
+__version__ = "0.11.1"

@@ -108,9 +108,9 @@ class RestSink(Sink):
                                          timeout=float(self.config.get("timeout_s") or 30)) as http:
                 r = await http.request(method, url, content=self._body(data).encode("utf-8"), headers=headers)
         except httpx.TimeoutException as e:
-            raise Retry(f"{self._where(self.config["url"])}: no answer in time ({type(e).__name__})") from None
+            raise Retry(f"{self._where(self.config['url'])}: no answer in time ({type(e).__name__})") from None
         except httpx.HTTPError as e:
-            raise Retry(f"{self._where(self.config["url"])}: could not be reached ({type(e).__name__})") from None
+            raise Retry(f"{self._where(self.config['url'])}: could not be reached ({type(e).__name__})") from None
         st = r.status_code
         if 200 <= st < 300:
             ref = ""
@@ -121,8 +121,8 @@ class RestSink(Sink):
             return Outcome.done(ref or key, f"HTTP {st}", status=st)
         text = (r.text or "")[:300]
         if st in (408, 425, 429) or st >= 500:
-            raise Retry(f"{self._where(self.config["url"])}: HTTP {st}: {text}", after=retry_after(r), status=st)
-        raise Refused(f"{self._where(self.config["url"])}: HTTP {st}: {text}", status=st, answer=text)
+            raise Retry(f"{self._where(self.config['url'])}: HTTP {st}: {text}", after=retry_after(r), status=st)
+        raise Refused(f"{self._where(self.config['url'])}: HTTP {st}: {text}", status=st, answer=text)
 
     @staticmethod
     def _body(data: Mapping[str, Any]) -> str:

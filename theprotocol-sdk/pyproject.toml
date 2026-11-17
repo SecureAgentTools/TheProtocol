@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "theprotocol-sdk"
-version = "0.11.0"
+version = "0.11.1"
 description = "Build sovereign AI agents with DID identity on TheProtocol. Speaks the A2A protocol (v1.0) natively, with bridges for Google A2A, ANP, and MCP. Works with Vertex AI, AWS AgentCore, LangGraph, CrewAI."
 readme = "README.md"
 license = {text = "Apache-2.0"}

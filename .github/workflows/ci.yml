@@ -147,7 +147,9 @@ jobs:
           python-version: "3.14"
       - name: The kit tools' tests
         run: |
-          pip install --quiet pytest
+          # tests/test_gen_proxy_catalog.py runs the Proxy's catalog from theprotocol-sdk/src with this Python, which needs the
+          # SDK's own dependencies (httpx and the rest): the SDK with its proxy extras, as the sdk job installs it
+          pip install --quiet pytest -e '../../theprotocol-sdk[proxy]'
           RC=0; python -m pytest tests -q -p no:cacheprovider -rs -W ignore::DeprecationWarning > "$RUNNER_TEMP/kit.log" 2>&1 || RC=$?
           cat "$RUNNER_TEMP/kit.log"
           [ "$RC" -eq 0 ] || { echo "FATAL: the kit tools' tests exited $RC"; exit 1; }
@@ -204,11 +206,16 @@ jobs:
           python-version: ${{ matrix.py }}
       - name: SDK tests
         run: |
-          pip install --quiet -e '.[test,server,keyring,anp,proxy,proxy-mqtt,proxy-sftp]'
+          # hatchling (the SDK's own build backend, pinned as in pyproject.toml) and twine let the starter kits' wheel tests run:
+          # the wheel is built and checked with twine check, as an upload to PyPI would be
+          pip install --quiet -e '.[test,server,keyring,anp,proxy,proxy-mqtt,proxy-sftp]' hatchling==1.27.0 twine
           RC=0; python -m pytest -q -p no:cacheprovider -rs > "$RUNNER_TEMP/sdk.log" 2>&1 || RC=$?
           cat "$RUNNER_TEMP/sdk.log"
           [ "$RC" -eq 0 ] || { echo "FATAL: SDK tests exited $RC"; exit 1; }
           PASSED=$(grep -oE '[0-9]+ passed' "$RUNNER_TEMP/sdk.log" | tail -1 | cut -d' ' -f1 || true); PASSED=${PASSED:-0}
           SKIPPED=$(grep -oE '[0-9]+ skipped' "$RUNNER_TEMP/sdk.log" | tail -1 | cut -d' ' -f1 || true); SKIPPED=${SKIPPED:-0}
-          echo "SDK tests passed=$PASSED skipped=$SKIPPED (floor 880, skip ceiling 89: the Proxy's database, SFTP and MQTT tests need servers this job does not run)"
-          [ "$PASSED" -ge 880 ] && [ "$SKIPPED" -le 89 ] || { echo "FATAL: the suite collapsed"; exit 1; }
+          # the skips allowed, by reason: the Proxy's database (51), MQTT (25) and SFTP (17) tests need servers this job does not
+          # run; the quantum meter's cross-check needs the registry's server SDK and the workload schema test the stack's
+          # PRODUCTION_DOCS, neither in this repository (2)
+          echo "SDK tests passed=$PASSED skipped=$SKIPPED (floor 880, skip ceiling 95: the servers this job does not run, and two files this repository does not carry)"
+          [ "$PASSED" -ge 880 ] && [ "$SKIPPED" -le 95 ] || { echo "FATAL: the suite collapsed"; exit 1; }

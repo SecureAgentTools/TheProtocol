@@ -58,6 +58,7 @@ def _zoned(s: str) -> Optional[str]:
         return None
     t = s.replace(" ", "T", 1)
     t = t[:-1] + "+00:00" if t.endswith("Z") else t
+    t = re.sub(r"([+-]\d{2})(\d{2})$", r"\1:\2", t)    # -0500 as -05:00: Python 3.10's fromisoformat takes only the colon form
     if re.search(r"[+-]\d{2}$", t):
         t += ":00"
     m = re.match(r"^(.*\.)(\d+)([+-].*)$", t)

@@ -161,6 +161,10 @@ Connectors are plugins on a published interface (`theprotocol.proxy.plugins`) wi
 
 ## Changelog
 
+**0.11.1** (after V0668; uploaded to PyPI only on his card)
+- The Proxy loads on Python 3.10 and 3.11 again, the floor the SDK declares (`requires-python >=3.10`). Four messages of the REST writer (`theprotocol.proxy.sinks.rest`) nested the same quote inside an f-string, which only Python 3.12 and later compile (PEP 701), and `theprotocol.proxy.sinks` imports that writer, so from 0.9.0 to 0.11.0 no Proxy writer loaded on 3.10 or 3.11. Every file of the SDK now compiles on 3.10 in our CI.
+- `tp-proxy migrate reconcile` reads a time zone written without a colon (`-0500`) on Python 3.10 as it does on 3.11 and later: 3.10's parser takes only `-05:00`, so there the same moment read back in another zone counted as a mismatch.
+
 **0.11.0** (V0667; uploaded to PyPI only on V0667's production card)
 - `theprotocol.registry.verify_distribution_envelope(envelope, jwks)`: checks an organization's signed release report or a signed change record from its registry offline, with nothing but the document and the registry's published keys (no network).
 
